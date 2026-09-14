@@ -1,0 +1,9 @@
+{
+  "id": "modelica-studio",
+  "name": "Modelica Studio",
+  "version": "0.1.0-beta.1",
+  "minAppVersion": "1.5.0",
+  "description": "Model, simulate, and plot Modelica systems with a visual drag-and-drop schematic editor powered by OpenModelica.",
+  "author": "Modelica Studio contributors",
+  "isDesktopOnly": true
+}
