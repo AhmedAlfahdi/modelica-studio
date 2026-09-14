@@ -53,8 +53,10 @@ if (fs.existsSync(manifestPath)) {
     for (const key of ["id", "name", "version", "minAppVersion", "description", "author"]) {
       if (!manifest[key]) errors.push(`manifest.json is missing required field: ${key}`);
     }
-    if (manifest.version && !/^\d+\.\d+\.\d+$/.test(manifest.version)) {
-      errors.push(`manifest.json version must be x.y.z, got "${manifest.version}"`);
+    // Obsidian accepts a semver prerelease suffix, and a beta needs one:
+    // "x.y.z-beta.N" is what marks the release as not-yet-final.
+    if (manifest.version && !/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(manifest.version)) {
+      errors.push(`manifest.json version must be x.y.z or x.y.z-tag, got "${manifest.version}"`);
     }
     if (manifest.id && /[A-Z]/.test(manifest.id)) {
       errors.push(`manifest.json id must be lowercase: "${manifest.id}"`);

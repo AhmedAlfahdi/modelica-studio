@@ -293,7 +293,14 @@ test("release artifacts match the distribution contract", () => {
   }
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.json"), "utf8"));
   assert.equal(manifest.isDesktopOnly, true, "must be desktop-only (spawns a compiler, uses Node fs)");
-  assert.match(manifest.version, /^\d+\.\d+\.\d+$/, "version must be x.y.z");
+  // Obsidian accepts a semver prerelease suffix, and a beta release needs one.
+  assert.match(
+    manifest.version,
+    /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/,
+    "version must be x.y.z or x.y.z-tag"
+  );
+  // A beta must say so, or a user cannot tell this from a stable release.
+  assert.match(manifest.version, /-/, "a beta version carries a prerelease tag");
   assert.equal(manifest.id, manifest.id.toLowerCase(), "id must be lowercase");
   assert.ok(manifest.description.length <= 250, "description within Obsidian's limit");
   assert.ok(manifest.minAppVersion, "minAppVersion is required");
