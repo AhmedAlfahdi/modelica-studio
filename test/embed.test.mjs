@@ -356,3 +356,46 @@ test("a fractional span is written without floating-point noise", () => {
   assert.equal(formatDirective({ stopTime: 2.5000000000000004 }), "//@ time=2.5");
   assert.equal(withDirective("model M\nend M;", { height: 300.6 }), "//@ height=301\nmodel M\nend M;");
 });
+
+test("a block keeps its span through a full read/write cycle", async () => {
+  // The write-back dropped the directive entirely: `persist` handed the note
+  // `serializeDiagram(model)` and the options were never re-attached, so the
+  // first studio edit deleted the line and the block silently inherited the
+  // studio's span. This walks the whole cycle, because the directive parsing and
+  // the file replacement each work on their own — it was the join that failed.
+  const { withDirective } = langMod;
+
+  const note = [
+    "# A note",
+    "",
+    "```modelica",
+    "//@ time=6",
+    'model FluidReservoir "Water draining"',
+    "  inner Modelica.Fluid.System system;",
+    "equation",
+    "end FluidReservoir;",
+    "```",
+    "",
+  ].join("\n");
+
+  // 1. Read: the block declares its own span.
+  const body = /```modelica\n([\s\S]*?)```/.exec(note)[1];
+  const read = parseDirective(body);
+  assert.equal(read.opts.stopTime, 6, "the span is read from the block");
+
+  // 2. The studio edits the model and persists. `persist` writes the directive
+  //    back onto the serialized source.
+  const reserialized = read.body.replace("height=1", "height=2");
+  const written = withDirective(reserialized, { stopTime: read.opts.stopTime });
+
+  // 3. Write back into the note, using the same replacement the plugin uses.
+  const updated = replaceFencedBlock(note, 2, 8, written);
+  assert.match(updated, /^```modelica\n\/\/@ time=6\n/m, `the directive is still there:\n${updated}`);
+
+  // 4. And it reads the same again on the next open, so a note survives being
+  //    written and read repeatedly rather than eroding on each edit.
+  const again = parseDirective(/```modelica\n([\s\S]*?)```/.exec(updated)[1]);
+  assert.equal(again.opts.stopTime, 6, "the span survives the round trip");
+  assert.ok(!again.body.includes("//@"), "and the directive is not left inside the Modelica");
+  assert.match(again.body, /^model FluidReservoir/, "the model starts the block");
+});
