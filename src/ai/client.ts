@@ -12,6 +12,7 @@
  */
 
 import { requestUrl } from "obsidian";
+import { aiReady, secretNameOf } from "./prompts";
 import type { AiConfig, ChatMessage } from "./prompts";
 
 export * from "./prompts";
@@ -27,11 +28,6 @@ export class AiError extends Error {
   }
 }
 
-/** True when the feature has enough configuration to be attempted. */
-export function aiReady(cfg: AiConfig): boolean {
-  return Boolean(cfg.apiKey.trim() && cfg.baseUrl.trim() && cfg.model.trim());
-}
-
 function endpoint(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
 }
@@ -43,9 +39,24 @@ function endpoint(baseUrl: string): string {
  * subject to the renderer's CORS policy, which is what lets a local llama.cpp
  * server be reached at all.
  */
-export async function chat(cfg: AiConfig, messages: ChatMessage[], signal?: AbortSignal): Promise<string> {
-  if (!aiReady(cfg)) {
-    throw new AiError("No AI provider configured. Add an API key in the plugin settings.");
+export async function chat(
+  cfg: AiConfig,
+  messages: ChatMessage[],
+  /**
+   * Resolves the API key. It comes from Obsidian's keychain, which only the app
+   * can reach, so it is resolved here rather than read from the config — the
+   * config holds the secret's NAME.
+   */
+  getKey: () => string | null,
+  signal?: AbortSignal
+): Promise<string> {
+  const apiKey = getKey();
+  if (!aiReady(cfg, apiKey)) {
+    throw new AiError(
+      secretNameOf(cfg)
+        ? `The secret "${secretNameOf(cfg)}" is empty or missing. Choose a secret in the plugin settings.`
+        : "No API key configured. Choose one in the plugin settings under AI assistance."
+    );
   }
 
   let response;
@@ -54,7 +65,7 @@ export async function chat(cfg: AiConfig, messages: ChatMessage[], signal?: Abor
       url: endpoint(cfg.baseUrl),
       method: "POST",
       contentType: "application/json",
-      headers: { Authorization: `Bearer ${cfg.apiKey.trim()}` },
+      headers: { Authorization: `Bearer ${apiKey!.trim()}` },
       body: JSON.stringify({
         model: cfg.model.trim(),
         temperature: cfg.temperature,

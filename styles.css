@@ -1229,3 +1229,17 @@ body.modelica-studio-resizing * {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* A warning that must be read: used where the plugin is declining to do
+   something for the user's own good, such as refusing to keep an API key in
+   plain text. */
+.modelica-studio-warn {
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--background-modifier-error);
+  background: var(--background-modifier-error-hover);
+  color: var(--text-normal);
+  font-size: 12px;
+  line-height: 1.45;
+}

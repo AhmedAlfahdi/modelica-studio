@@ -9,13 +9,7 @@
  * Obsidian loads plugins synchronously during startup.
  */
 
-import {
-  Notice,
-  Plugin,
-  TFile,
-  WorkspaceLeaf,
-  type MarkdownPostProcessorContext,
-} from "obsidian";
+import { App, Notice, Plugin, TFile, WorkspaceLeaf, type MarkdownPostProcessorContext } from "obsidian";
 import { LibraryIndex, loadLibraryIndex } from "./modelica/library";
 import {
   EmbeddedDiagram,
@@ -30,6 +24,7 @@ import { findClass, parseModelica, toDiagramModel } from "./modelica/parser";
 import { serializeDiagram } from "./modelica/serializer";
 import { findExample } from "./modelica/examples";
 import { AiError, chat } from "./ai/client";
+import { LEGACY_SECRET_NAME, legacyKeyOf, secretNameOf } from "./ai/prompts";
 import { ModelicaStudioView, VIEW_TYPE_MODELICA } from "./view/studio-view";
 import { ModelicaStudioSettingTab, DEFAULT_SETTINGS, type ModelicaStudioSettings } from "./settings";
 
@@ -238,6 +233,9 @@ export default class ModelicaStudioPlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    // Move an old plaintext key into the keychain before anything can use it.
+    await this.migrateLegacyAiKey();
+    this.diag("ai: " + describeSecretPresence(this.app, secretNameOf(this.settings.ai)));
     this.diag(`onload start; omcPath="${this.settings.omcPath}" jobs=${this.settings.jobs}`);
 
     this.register(() => {
@@ -523,6 +521,70 @@ export default class ModelicaStudioPlugin extends Plugin {
   /* ---------------- persistence ---------------- */
 
   /**
+   * The API key for the configured secret, from Obsidian's keychain.
+   *
+   * Returns null when no secret is chosen or the secret has no value. The legacy
+   * plaintext field is consulted last so a key configured before secret storage
+   * existed keeps working until it is migrated.
+   */
+  aiKey(): string | null {
+    const name = secretNameOf(this.settings.ai);
+    if (name) {
+      try {
+        const value = this.app.secretStorage?.getSecret(name);
+        if (value) return value;
+      } catch {
+        // SecretStorage is absent before Obsidian 1.11.4, or the name is invalid.
+      }
+    }
+    return legacyKeyOf(this.settings.ai) || null;
+  }
+
+  /** True when this Obsidian build has the keychain at all. */
+  get hasSecretStorage(): boolean {
+    return Boolean(this.app.secretStorage);
+  }
+
+  /**
+   * Move a plaintext key out of `data.json` and into the keychain.
+   *
+   * The old field was written unencrypted into the plugin's data file, which
+   * lives inside the vault: it travelled to every backup and sync service and
+   * was readable by anything that could read the vault. Called once on load when
+   * a legacy key is present, and the plaintext copy is removed only after the
+   * secret is actually stored.
+   */
+  async migrateLegacyAiKey(): Promise<void> {
+    const legacy = legacyKeyOf(this.settings.ai);
+    if (!legacy) return;
+
+    if (!this.hasSecretStorage) {
+      // Nothing to migrate into. Leave it alone rather than delete the only copy.
+      return;
+    }
+
+    const name = secretNameOf(this.settings.ai) || LEGACY_SECRET_NAME;
+    try {
+      this.app.secretStorage.setSecret(name, legacy);
+      this.settings.ai.secretName = name;
+      delete this.settings.ai.apiKey;
+      await this.saveSettings();
+      new Notice(
+        `Modelica: your AI API key was moved into Obsidian's keychain as "${name}", ` +
+          "and removed from the plugin's data file.",
+        8000
+      );
+    } catch (err) {
+      // Keep the plaintext key rather than lose it, and say why.
+      new Notice(
+        `Modelica: could not move your AI API key into the keychain (${String(err)}). ` +
+          "It remains in the plugin settings.",
+        10000
+      );
+    }
+  }
+
+  /**
    * Confirm the AI provider answers, and say why if it does not.
    *
    * Exists because "nothing happened" is the hardest failure to act on: a wrong
@@ -531,14 +593,24 @@ export default class ModelicaStudioPlugin extends Plugin {
    */
   async testAiConnection(): Promise<{ ok: boolean; text: string }> {
     const cfg = this.settings.ai;
-    if (!cfg.apiKey.trim()) {
-      return { ok: false, text: "No API key set. The feature is off until one is entered." };
+    const key = this.aiKey();
+    if (!key) {
+      return {
+        ok: false,
+        text: this.hasSecretStorage
+          ? "No secret selected. Choose or create one under AI assistance."
+          : "This Obsidian version has no keychain. Update Obsidian to store the key securely.",
+      };
     }
     try {
-      const reply = await chat(cfg, [
-        { role: "system", content: "Reply with the single word: ready" },
-        { role: "user", content: "ping" },
-      ]);
+      const reply = await chat(
+        cfg,
+        [
+          { role: "system", content: "Reply with the single word: ready" },
+          { role: "user", content: "ping" },
+        ],
+        () => this.aiKey()
+      );
       return { ok: true, text: `Connected to ${cfg.model}. The provider replied: ${reply.trim().slice(0, 80)}` };
     } catch (err) {
       return { ok: false, text: err instanceof AiError ? err.message : String(err) };
@@ -729,3 +801,22 @@ const MODEL_SCHEMA = 2;
  * reads as the plugin's name and makes the intent obvious in a note.
  */
 const EMBED_LANGUAGES = ["modelica", "modelica-studio"];
+
+/**
+ * Report whether the configured secret resolves, WITHOUT revealing it.
+ *
+ * Added because "the key moved into the keychain" cannot be verified from the
+ * outside: the value lives in the app's local storage, so the only way to tell a
+ * successful migration from a silently dropped key is to ask the app. Only the
+ * length is reported, never any part of the value.
+ */
+export function describeSecretPresence(app: App, name: string): string {
+  if (!name) return "no secret configured";
+  try {
+    const value = app.secretStorage?.getSecret(name);
+    if (value === null || value === undefined) return `secret "${name}" NOT FOUND`;
+    return `secret "${name}" resolves, length ${value.length}`;
+  } catch (err) {
+    return `secret lookup failed: ${String(err)}`;
+  }
+}

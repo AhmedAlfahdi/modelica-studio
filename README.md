@@ -120,8 +120,9 @@ a block re-simulates when a value it ran with changes.
 Optional, off until an API key is entered.
 
 1. Settings → Modelica Studio → AI assistance.
-2. Paste a key. Pick a provider preset, or set the base URL and model directly.
-   Any OpenAI-compatible endpoint works, including a local Ollama or llama.cpp
+2. **API key** opens Obsidian's keychain: pick an existing secret, or create one.
+   Pick a provider preset, or set the base URL and model directly. Any
+   OpenAI-compatible endpoint works, including a local Ollama or llama.cpp
    server.
 3. **Test** confirms the provider answers, and says what it said if it does not.
 
@@ -129,17 +130,31 @@ In the studio, switch to **Code** and press **AI**. Describe the model you want
 and it is written into the editor; if the last simulation failed, **Fix errors**
 sends the compiler output with the source and asks for a repair.
 
-The key is stored in this plugin's `data.json` inside the vault. It is never
-written to the debug log and never attached to an error message, and it is only
-ever sent to the endpoint configured here. Generated code is **unverified**: it
-is a draft to simulate and check, not an answer. The request includes the current
-source and a shortlist of library classes relevant to your description, so the
-model composes real MSL classes instead of inventing names.
+The key lives in **Obsidian's keychain**, not in this plugin's `data.json`. Only
+the *name* of the secret is stored with the plugin, so the value stays out of
+vault backups, sync services and version control, and any other plugin can reuse
+the same secret. It is never written to the debug log, never attached to an error
+message, and only ever sent to the endpoint configured here.
+
+This needs **Obsidian 1.11.4 or later**, which is where the keychain API arrived;
+the plugin declares that as its minimum. On an older build the AI section says so
+rather than falling back to storing a key in plain text.
+
+If you configured a key with an earlier version of this plugin, it is still in
+`data.json` and the settings page offers to move it into the keychain and delete
+the plaintext copy.
+
+Generated code is **unverified**: it is a draft to simulate and check, not an
+answer. The request includes the current source and a shortlist of library
+classes relevant to your description, so the model composes real MSL classes
+instead of inventing names.
 
 ## Beta status
 
 Experimental, and it wants more testing. Specifically:
 
+- **Requires Obsidian 1.11.4+**, for the keychain the AI feature stores its key
+  in. Earlier builds are refused rather than downgraded to plain-text storage.
 - **Tested against one OpenModelica build** (1.27.0) on one platform (Linux).
   Windows and macOS are untested, and so is every other OpenModelica version.
 - **MSL 4.1.0 is what the examples use.** Other library versions have not been

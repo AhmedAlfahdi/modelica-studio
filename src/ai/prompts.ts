@@ -8,8 +8,27 @@
 import type { LibraryIndex } from "../modelica/library";
 
 export interface AiConfig {
-  /** Empty disables the feature. */
-  apiKey: string;
+  /**
+   * Name of the secret holding the API key, as stored in Obsidian's own
+   * keychain — NOT the key itself.
+   *
+   * The value never reaches `data.json`. Obsidian's SecretStorage keeps secrets
+   * in local storage keyed to the vault, so they stay out of vault backups,
+   * sync services and version control, and the same secret can be reused by any
+   * other plugin that wants it. This field is only the label to look up.
+   *
+   * Empty disables the feature.
+   */
+  secretName: string;
+  /**
+   * Legacy field: a plaintext key from before secret storage was used.
+   *
+   * Still declared so the value can be found and migrated. It is cleared by
+   * `migrateLegacyKey` and must never be read for a request.
+   *
+   * @deprecated use {@link secretName}
+   */
+  apiKey?: string;
   /** Base URL without the trailing path. */
   baseUrl: string;
   model: string;
@@ -19,7 +38,7 @@ export interface AiConfig {
 }
 
 export const AI_DEFAULTS: AiConfig = {
-  apiKey: "",
+  secretName: "",
   baseUrl: "https://api.openai.com/v1",
   model: "gpt-4o-mini",
   temperature: 0.2,
@@ -27,6 +46,15 @@ export const AI_DEFAULTS: AiConfig = {
 };
 
 /** Providers worth offering by name, so the URL does not have to be recalled. */
+/**
+ * Secret name used when migrating a key that predates the keychain.
+ *
+ * Namespaced and in kebab-case: SecretStorage requires lowercase alphanumeric
+ * with optional dashes, and the namespace stops it colliding with a secret
+ * another plugin created.
+ */
+export const LEGACY_SECRET_NAME = "modelica-studio-api-key";
+
 export const AI_PROVIDERS: Array<{ label: string; baseUrl: string; model: string }> = [
   { label: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
   { label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "anthropic/claude-3.5-sonnet" },
@@ -39,6 +67,33 @@ export const AI_PROVIDERS: Array<{ label: string; baseUrl: string; model: string
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
+}
+
+/* ---- readiness ---- */
+
+/**
+ * True when a request has everything it needs.
+ *
+ * The key is passed in rather than read from the config, because the config
+ * holds a secret NAME and only Obsidian's keychain can resolve it to a value.
+ */
+export function aiReady(cfg: AiConfig, apiKey: string | null | undefined): boolean {
+  return Boolean(apiKey && apiKey.trim() && cfg.baseUrl.trim() && cfg.model.trim());
+}
+
+/** The configured secret name, or an empty string. */
+export function secretNameOf(cfg: AiConfig): string {
+  return cfg.secretName?.trim() ?? "";
+}
+
+/**
+ * Whether a legacy plaintext key is still sitting in the settings.
+ *
+ * Such a key predates the use of Obsidian's keychain and is stored unencrypted
+ * in `data.json`, so it wants migrating out.
+ */
+export function legacyKeyOf(cfg: AiConfig): string {
+  return cfg.apiKey?.trim() ?? "";
 }
 
 /* ---- prompt construction ---- */

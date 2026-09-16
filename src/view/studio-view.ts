@@ -535,8 +535,10 @@ export class ModelicaStudioView extends ItemView {
   private async runAiRequest(repair = false): Promise<void> {
     if (this.aiBusy) return;
     const cfg = this.plugin.settings.ai;
-    if (!cfg.apiKey.trim()) {
-      this.setStatus("No AI provider configured. Add an API key in the plugin settings.");
+    if (!this.plugin.aiKey()) {
+      this.setStatus(
+        "No AI key available. Choose or create a secret in the plugin settings under AI assistance."
+      );
       return;
     }
 
@@ -561,7 +563,7 @@ export class ModelicaStudioView extends ItemView {
         library: this.plugin.library,
         systemPrompt: cfg.systemPrompt,
       });
-      const reply = await chat(cfg, messages);
+      const reply = await chat(cfg, messages, () => this.plugin.aiKey());
       const source = extractModelica(reply);
       if (!source) {
         this.setStatus("The model replied without any Modelica source. Nothing was changed.");

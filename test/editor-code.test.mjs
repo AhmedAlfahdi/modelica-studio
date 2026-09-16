@@ -22,7 +22,10 @@ const {
 } = langMod;
 
 const aiMod = await import(path.join(buildLibs("ai-lib", ["src/ai/prompts.ts"]), "prompts.js"));
-const { buildMessages, extractModelica, modelNameOf, AI_DEFAULTS, relevantClasses } = aiMod;
+const {
+  buildMessages, extractModelica, modelNameOf, AI_DEFAULTS, relevantClasses,
+  aiReady, secretNameOf, legacyKeyOf, LEGACY_SECRET_NAME,
+} = aiMod;
 
 /** Strip tags and unescape, to compare against the original source. */
 function textOf(html) {
@@ -176,7 +179,7 @@ test("modelNameOf reads the declared class", () => {
 test("the default configuration has the feature switched off", () => {
   // Shipping an enabled AI feature with a placeholder key would mean requests
   // going somewhere the user did not choose.
-  assert.equal(AI_DEFAULTS.apiKey, "", "no key by default");
+  assert.equal(AI_DEFAULTS.secretName, "", "no secret chosen by default");
   assert.ok(AI_DEFAULTS.baseUrl.startsWith("https://"), "and a sane default endpoint");
   assert.ok(AI_DEFAULTS.temperature <= 0.5, "low temperature suits code");
 });
@@ -288,4 +291,41 @@ test("the CSS is loadable and the selectors match what the editor emits", () => 
     if (!cls.startsWith("mst-code")) continue;
     assert.ok(css.includes("." + cls), `${cls} has a style rule`);
   }
+});
+
+test("the config holds a secret NAME, never the key itself", () => {
+  // The whole point of using the keychain: the value must not be persistable.
+  assert.equal(AI_DEFAULTS.secretName, "", "nothing chosen by default");
+  assert.equal(AI_DEFAULTS.apiKey, undefined, "and no plaintext field in a fresh install");
+
+  const cfg = { ...AI_DEFAULTS, secretName: "my-openai-key" };
+  assert.equal(secretNameOf(cfg), "my-openai-key");
+  assert.equal(secretNameOf({ ...AI_DEFAULTS }), "", "absent means empty, not undefined");
+  assert.equal(secretNameOf({ ...AI_DEFAULTS, secretName: "   " }), "", "whitespace is not a name");
+});
+
+test("readiness needs a resolved key, not just a name", () => {
+  const cfg = { ...AI_DEFAULTS, secretName: "k" };
+  // A name with no value behind it must not be treated as configured: the
+  // secret may have been deleted from the keychain after being chosen.
+  assert.equal(aiReady(cfg, null), false, "no key resolved");
+  assert.equal(aiReady(cfg, ""), false, "empty key");
+  assert.equal(aiReady(cfg, "   "), false, "whitespace key");
+  assert.equal(aiReady(cfg, "sk-real"), true);
+  // And a key with no endpoint or model is still not usable.
+  assert.equal(aiReady({ ...cfg, model: "" }, "sk-real"), false);
+  assert.equal(aiReady({ ...cfg, baseUrl: "" }, "sk-real"), false);
+});
+
+test("a legacy plaintext key is detectable so it can be migrated", () => {
+  assert.equal(legacyKeyOf({ ...AI_DEFAULTS }), "", "nothing to migrate in a fresh install");
+  assert.equal(legacyKeyOf({ ...AI_DEFAULTS, apiKey: "sk-old" }), "sk-old");
+  assert.equal(legacyKeyOf({ ...AI_DEFAULTS, apiKey: "  sk-old  " }), "sk-old", "trimmed");
+});
+
+test("the migration secret name is valid for SecretStorage", () => {
+  // SecretStorage requires lowercase alphanumeric with optional dashes and
+  // throws otherwise, so an invalid constant would fail only at run time.
+  assert.match(LEGACY_SECRET_NAME, /^[a-z0-9-]+$/, "lowercase alphanumeric with dashes");
+  assert.ok(LEGACY_SECRET_NAME.includes("modelica"), "namespaced to avoid another plugin\'s secret");
 });

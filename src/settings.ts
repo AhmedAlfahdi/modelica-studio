@@ -6,9 +6,9 @@
  * unusual setup rather than to require tuning.
  */
 
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import type ModelicaStudioPlugin from "./main";
-import { AI_DEFAULTS, AI_PROVIDERS, AiConfig } from "./ai/prompts";
+import { AI_DEFAULTS, AI_PROVIDERS, AiConfig, LEGACY_SECRET_NAME, legacyKeyOf } from "./ai/prompts";
 
 /**
  * How the result plot is configured: which traces, and over what range.
@@ -316,24 +316,63 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
       text:
         "Optional. Adds a prompt box to the source editor that can write or " +
         "repair a model for you. It works with any OpenAI-compatible endpoint. " +
-        "The key is stored in this plugin's data.json inside the vault, is never " +
-        "written to the debug log, and is only ever sent to the endpoint below. " +
+        "The key is held in Obsidian's keychain, not in this plugin's data file, " +
+        "so it stays out of vault backups and sync and can be shared with any " +
+        "other plugin that wants it. It is only ever sent to the endpoint below. " +
         "Code the model writes is not verified — simulate it before trusting it.",
     });
 
-    new Setting(containerEl)
-      .setName("API key")
-      .setDesc("Leave empty to switch the feature off.")
-      .addText((t) => {
-        t.inputEl.type = "password";
-        t.inputEl.autocomplete = "off";
-        t.setPlaceholder("sk-...")
-          .setValue(this.plugin.settings.ai.apiKey)
-          .onChange(async (v) => {
-            this.plugin.settings.ai.apiKey = v.trim();
+    // The key itself lives in Obsidian's keychain. Only the NAME of the secret is
+    // stored here, which is what makes it survive a vault backup without the
+    // secret travelling with it.
+    if (this.plugin.hasSecretStorage) {
+      const keySetting = new Setting(containerEl)
+        .setName("API key")
+        .setDesc(
+          "Select a secret from Obsidian's keychain, or create one. " +
+            "Leave empty to switch the feature off."
+        );
+      keySetting.addComponent((el) =>
+        new SecretComponent(this.app, el)
+          .setValue(this.plugin.settings.ai.secretName ?? "")
+          .onChange(async (value) => {
+            this.plugin.settings.ai.secretName = value ?? "";
             await this.plugin.saveSettings();
-          });
+          })
+      );
+
+      const legacy = legacyKeyOf(this.plugin.settings.ai);
+      if (legacy) {
+        // Say plainly that the old key is still in the data file, rather than
+        // silently leaving it there.
+        const warn = keySetting.descEl.createDiv({ cls: "modelica-studio-warn" });
+        warn.setText(
+          "An API key from an earlier version is still stored unencrypted in this " +
+            "plugin's data.json. Choose a secret above to replace it."
+        );
+        new Setting(containerEl)
+          .setName("Move the old key into the keychain")
+          .setDesc(
+            `Stores it as "${LEGACY_SECRET_NAME}" and removes the plaintext copy from data.json.`
+          )
+          .addButton((b) =>
+            b.setButtonText("Move").onClick(async () => {
+              await this.plugin.migrateLegacyAiKey();
+              this.display();
+            })
+          );
+      }
+    } else {
+      // No keychain in this Obsidian build. Say so instead of quietly writing a
+      // key in plaintext.
+      containerEl.createDiv({
+        cls: "modelica-studio-warn",
+        text:
+          "This Obsidian version has no keychain, so AI assistance is unavailable. " +
+          "Obsidian 1.11.4 or later is required. Updating Obsidian is the fix — " +
+          "this plugin will not store an API key in plain text.",
       });
+    }
 
     new Setting(containerEl)
       .setName("Provider preset")

@@ -40,7 +40,11 @@ fs.writeFileSync(
   path.join(pkgDir, "index.js"),
   "export class PluginSettingTab { constructor(app, plugin) { this.app = app; this.plugin = plugin; } }\n" +
     "export class Setting { constructor() {} }\n" +
-    "export class App {}\n"
+    "export class App {}\n" +
+    // The settings tab builds a SecretComponent, so the stub must export it or
+    // the module fails to instantiate at import time.
+    "export class SecretComponent { constructor(app, el) { this.app = app; this.el = el; } " +
+    "setValue(v) { this.value = v; return this; } onChange(cb) { this.cb = cb; return this; } }\n"
 );
 const { DEFAULT_SETTINGS } = await import(path.join(staging, "settings.js"));
 
