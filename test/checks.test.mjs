@@ -136,3 +136,55 @@ test("an event-driven model needs no derivative", () => {
   });
   assert.deepEqual(problems, []);
 });
+
+test("fixed on a parameter is reported, because its error names nothing useful", () => {
+  // OpenModelica answers `parameter Real m(... fixed = true)` with
+  //
+  //     Modified element m not found in class Real.
+  //
+  // which names neither the declaration nor the attribute. `fixed` describes
+  // whether a VARIABLE holds its start value; on a parameter it does nothing,
+  // because a parameter is already fixed for the run.
+  const problems = checkModel({
+    declared: declared("mu_s", "x"),
+    declarations: [
+      { name: "mu_s", text: 'parameter Real mu_s(start = 0.5, fixed = true) "friction";', line: 2 },
+    ],
+    equations: ["der(x) = 1;"],
+    hasComponents: false,
+    firstEquationLine: 5,
+  });
+  assert.equal(problems.filter((p) => p.severity === "error").length, 1);
+  assert.match(problems[0].message, /fixed/);
+  assert.match(problems[0].message, /parameter/, "it says why");
+  assert.equal(problems[0].line, 2, "and which declaration");
+});
+
+test("fixed on a variable is NOT reported", () => {
+  // The counterpart that matters: `fixed` is correct and necessary on a state,
+  // and a check that flagged it would be worse than none.
+  const problems = checkModel({
+    declared: declared("s", "v"),
+    declarations: [
+      { name: "s", text: "Real s(start = 0, fixed = true);", line: 3 },
+      { name: "v", text: "Real v(start = 0, fixed = true);", line: 4 },
+    ],
+    equations: ["der(s) = v;", "der(v) = -1;"],
+    hasComponents: false,
+    firstEquationLine: 6,
+  });
+  assert.deepEqual(problems, [], `expected silence, got ${JSON.stringify(problems)}`);
+});
+
+test("constant is treated like parameter, and multi-line declarations are seen", () => {
+  const problems = checkModel({
+    declared: declared("k", "x"),
+    declarations: [
+      { name: "k", text: "constant Real k(quantity = \"Mass\", unit = \"kg\", fixed = true) = 1;", line: 4 },
+    ],
+    equations: ["der(x) = k;"],
+    hasComponents: false,
+    firstEquationLine: 7,
+  });
+  assert.equal(problems.filter((p) => p.message.includes("fixed")).length, 1);
+});

@@ -550,8 +550,29 @@ export class ModelicaStudioView extends ItemView {
       return at >= 0 ? at + 2 : 1;
     })();
 
+    // Declarations with their raw text, for checks that are about how something
+    // was declared rather than what it is named.
+    const lines = text.split("\n");
+    const declarations: Array<{ name: string; text: string; line: number }> = [];
+    let pending: { parts: string[]; line: number } | null = null;
+    lines.forEach((line, i) => {
+      const decl = /^\s*(?:parameter|constant|discrete|input|output|final|inner|outer|flow|stream|replaceable|each|\s)*([A-Za-z_][\w.]*)\s+([A-Za-z_]\w*)\s*(\(|;|$)/.exec(line);
+      if (decl) {
+        if (pending) declarations.push(finishDecl(pending));
+        pending = { parts: [line], line: i + 1 };
+      } else if (pending) {
+        pending.parts.push(line);
+        if (line.includes(";")) {
+          declarations.push(finishDecl(pending));
+          pending = null;
+        }
+      }
+    });
+    if (pending) declarations.push(finishDecl(pending));
+
     const problems = checkModel({
       declared: starImport ? new Set([...declared, "*"]) : declared,
+      declarations,
       equations: model.equations ?? [],
       hasComponents: model.components.length > 0,
       library: this.plugin.library,
@@ -2510,4 +2531,15 @@ export function describeFailure(err: unknown): string {
     parts.push(err instanceof Error ? err.message : String(err));
   }
   return parts.join("\n");
+}
+
+/** Close a multi-line declaration being collected for the attribute checks. */
+function finishDecl(pending: { parts: string[]; line: number }): {
+  name: string;
+  text: string;
+  line: number;
+} {
+  const text = pending.parts.join(" ");
+  const m = /(?:^|\s)([A-Za-z_]\w*)\s*(\(|;)/.exec(text.replace(/^\s*[A-Za-z_][\w.]*\s+/, ""));
+  return { name: m?.[1] ?? "?", text, line: pending.line };
 }

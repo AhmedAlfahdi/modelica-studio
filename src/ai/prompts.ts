@@ -208,17 +208,65 @@ export function relevantClasses(library: LibraryIndex | undefined, request: stri
   return out;
 }
 
-const BASE_RULES = `You write Modelica models for the Modelica Standard Library (MSL) 4.1.0.
+const BASE_RULES = `You write Modelica for the Modelica Standard Library (MSL) 4.1.0.
 
-Rules:
-- Use fully qualified MSL class names, e.g. Modelica.Electrical.Analog.Basic.Resistor.
+## Shape of the answer
 - Output ONE complete model: "model <Name> ... end <Name>;"
-- The model must be self-contained. If it uses physical components, include an "inner Modelica.Fluid.System" or World component where MSL requires one.
-- Every declared variable and component must be used, or OpenModelica reports it.
-- Every connector must be connected, or the model will not compile.
-- Prefer a parameter for anything a user would want to change.
-- Do not include a "within" clause and do not include an experiment annotation.
-- Reply with the Modelica source in a single fenced code block and nothing else.`;
+- Reply with the Modelica source in a single fenced code block and nothing else.
+- Do not include a "within" clause, and do not include an experiment annotation: the tool that runs this applies its own run settings.
+
+## Prefer equations to components
+Write the physics as EQUATIONS. This is the point of Modelica and it is almost
+always the better answer:
+- An equation model is one block to read, and it always simulates.
+- A model assembled from primitive MSL blocks (Mass, Force, Acceleration,
+  Velocity, Position, Inertia, Torque) is large, easy to get wrong, and needs
+  every block wired with connect(). Eight unconnected blocks stacked on the
+  diagram is a broken model.
+- Use physical components ONLY when the request is about a circuit, a fluid
+  network, or a mechanism whose STRUCTURE is the subject. When you do, every
+  component must be declared, placed and connected.
+
+## Every name must exist
+- Declare every name you use. A model that uses m or g without a declaration
+  fails to compile: "Variable m not found in scope".
+- Use fully qualified MSL class names, e.g.
+  Modelica.Electrical.Analog.Basic.Resistor.
+- Do not invent classes, parameters or attributes. If you are unsure a parameter
+  exists on a class, leave it out rather than guess.
+
+## Declarations
+- "parameter" declares a value fixed for the run. The ONLY attributes a parameter
+  may carry are quantity, unit, displayUnit, min, max, start and fixed. Never put
+  fixed = true on a parameter.
+- "start" and "fixed" belong to a VARIABLE and describe its initial value.
+- Give every variable a unit where one exists, and every parameter a comment
+  saying what it is.
+- An equation model that starts at rest needs fixed = true on its states, not on
+  its parameters.
+
+## Equations must balance
+- The number of equations must equal the number of unknowns, in EVERY branch of
+  an if. An if-equation SELECTS between equations; it does not add them, so an
+  assignment inside a branch to a variable that already has an equation makes the
+  model over-determined.
+- Do not write an equation for a variable twice.
+- A connect() contributes equations; two connects to the same pin double-count.
+
+## Avoid mode switching where a smooth law will do
+Friction, backlash, diodes and valves tempt you into a Boolean mode with when and
+reinit. That produces models that are over-determined in one mode and
+under-determined in the other, and it is hard to simulate. Use a regularised law
+instead: tanh(v/v_eps) for friction, for example. It needs no event, no mode
+variable and no reinit, and it approaches the ideal answer as the regularisation
+scale goes to zero.
+
+## Check before answering
+- Every name used appears in a declaration.
+- Every declared component appears in the equations or a connect.
+- Every connector is connected.
+- The equation count matches the unknown count.
+- No fixed = true on a parameter.`;
 
 export interface GenerateRequest {
   /** What the user asked for. */

@@ -81,9 +81,20 @@ function knownClass(library: LibraryIndex | undefined, name: string): boolean | 
   return Boolean(library.component(name));
 }
 
+/** One declaration's raw text, for attribute checks. */
+export interface DeclarationText {
+  name: string;
+  /** The declaration as written, one line or several. */
+  text: string;
+  /** 1-based line of the declaration. */
+  line: number;
+}
+
 export interface CheckInput {
   /** Declared names: variables, components, parameters, `import` aliases. */
   declared: Set<string>;
+  /** Declarations with their text, when available, for attribute checks. */
+  declarations?: DeclarationText[];
   /** The equation section, verbatim. */
   equations: string[];
   /** True when any component comes from the library, which brings its own equations. */
@@ -155,7 +166,32 @@ export function checkModel(input: CheckInput): ModelProblem[] {
     }
   }
 
-  /* ---- 3. a qualified class that does not exist ---- */
+  /* ---- 3. attributes on the wrong kind of declaration ---- */
+  //
+  // `parameter Real x(start = 1, fixed = true)` is a common mistake, and
+  // OpenModelica's answer names neither the declaration nor the attribute:
+  //
+  //     Modified element m not found in class Real.
+  //
+  // `fixed` is an attribute of a VARIABLE, describing whether its start value
+  // holds. On a parameter it means nothing, because a parameter is already fixed
+  // for the whole run.
+  for (const eq of input.equations) void eq;
+  if (input.declarations) {
+    for (const d of input.declarations) {
+      if (!/\bparameter\b|\bconstant\b/.test(d.text)) continue;
+      if (!/\bfixed\s*=/.test(d.text)) continue;
+      problems.push({
+        line: d.line,
+        severity: "error",
+        message:
+          `"${d.name}" is a parameter, so "fixed" does nothing on it and OpenModelica reports it as ` +
+          `a missing element of its type. Remove fixed=true; keep start if you meant an initial value.`,
+      });
+    }
+  }
+
+  /* ---- 4. a qualified class that does not exist ---- */
   if (input.library && input.library.size > 0) {
     for (const m of text.matchAll(/\b([A-Z][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)\b/g)) {
       const name = m[1];

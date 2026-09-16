@@ -536,3 +536,71 @@ resolve to" are different facts, and only the first should be written back.
 Three tests cover it, including that a written block re-parses to the same body
 and the same span — the property that matters, since a note is read and written
 repeatedly.
+
+---
+
+## What the run log revealed about the AI's models
+
+The log was added so a failure could be handed to the model in full. Its first
+use was on the model that had already defeated me once, and it immediately showed
+what I had been missing.
+
+**The error I could not reproduce.** The earlier report was "Modified element not
+found in class Real", with no line. The log recorded the pairing that made it
+legible:
+
+```
+parameters: m=1, s0=0, v0=3, v_eps=1e-3, s.fixed=true, v.fixed=true,
+            mu_s=0.50, mu_d=0.40, stuck.fixed=true
+error: Modified element m not found in class Real. (line 8, column 38)
+```
+
+`fixed` was being set on **parameters**. It is an attribute of a variable,
+describing whether its start value holds; on a parameter it does nothing at all,
+because a parameter is already fixed for the whole run. OpenModelica's answer
+names neither the declaration nor the attribute, which is why the message read as
+nonsense. The checker now flags it, and the prompt forbids it.
+
+**A second model was structurally broken.** Compiling the version in the settings
+gave a different error from the same family:
+
+```
+Error: Too many equations, over-determined system.
+The model has 8 equation(s) and 7 variable(s).
+warning: Equation 6 ... is not big enough to solve for enough variables.
+```
+
+A Boolean `stuck` mode with two `when` clauses, assigning `F_f`, `m*a` and `v`
+inside branches. An `if`-equation selects between equations rather than adding
+them, so a branch that assigns a variable already determined makes the model
+over-determined — and the branch that does not leaves it under-determined.
+
+**And the diagram was eight unconnected blocks.** The model had been assembled
+from primitive translational components — Mass, Force, Acceleration, Velocity,
+Length, Angle — placed at the origin in a heap with no `connect` between them.
+That is a broken model drawn as a picture, and it is what a model reaches for
+when it has not been told that an equation is the better answer.
+
+### The fix, in three parts
+
+**The prompt.** It now says to prefer equations to components, gives the reason
+(unconnected primitive assemblies), lists the exact attributes a parameter may
+carry, states the if-equation rule, and asks for a smooth regularised law instead
+of a Boolean mode with `when` and `reinit`. Rules are stated rather than left to
+judgement because the same mistakes recurred.
+
+**The checker.** `fixed` on a `parameter` or `constant` is now an error, on the
+declaration's own line.
+
+**A model that works.** The friction example was rewritten as one equation with
+no mode variable:
+
+```
+F_f = -min(mu_s, mu_d + (mu_s - mu_d)*tanh(abs(v)/v_eps))*F_n*tanh(v/v_eps);
+```
+
+Verified: it holds below the static limit (creep 0.05 mm/s, the known artefact of
+regularisation rather than the 1.6 mm of the first attempt), and its acceleration
+converges on the analytic `g(sin α − mu_d cos α)` as the speed rises — 77%, 88%,
+94% of the ideal at α = 0.7, 0.9, 1.1, which is what a correct regularisation
+does.
