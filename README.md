@@ -29,7 +29,9 @@ discrepancy was settled — is in
   and a full-screen view with a cursor readout.
 - **Diagram and code modes.** The same model, either built by dragging or edited
   as Modelica source with syntax highlighting, completion from the library, and
-  inline diagnostics.
+  inline diagnostics. Long models scroll, and the caret keeps itself in view.
+- **Models as files.** Create a model, save it as `.mo` source anywhere in the
+  vault, with the folder set in Settings.
 - **Optional AI assistance.** With your own API key, describe a model in words
   and have it written into the editor, or ask for a compile error to be fixed.
 - **Inline results in notes.** A fenced `modelica` block renders a live diagram
@@ -127,6 +129,10 @@ Optional, off until an API key is entered.
    OpenAI-compatible endpoint works, including a local Ollama or llama.cpp
    server.
 3. **Test** confirms the provider answers, and says what it said if it does not.
+4. **Refresh model list** asks the provider which models it currently offers.
+   Model names are retired without notice — `deepseek-chat` became
+   `deepseek-flash` — and a retired name fails with an error that reads like a
+   bad key, so the plugin fetches the list rather than shipping a stale one.
 
 In the studio, switch to **Code** and press **AI**. Describe the model you want
 and it is written into the editor; if the last simulation failed, **Fix errors**

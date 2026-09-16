@@ -35,6 +35,14 @@ export interface AiConfig {
   temperature: number;
   /** Optional extra instruction prepended to every request. */
   systemPrompt: string;
+  /**
+   * Model ids fetched from the provider, if they have ever been fetched.
+   *
+   * Preferred over the built-in suggestions when present: they are the
+   * provider's own answer rather than a list compiled into the plugin, which is
+   * what went stale when `deepseek-chat` was retired.
+   */
+  models?: string[];
 }
 
 export const AI_DEFAULTS: AiConfig = {
@@ -55,13 +63,80 @@ export const AI_DEFAULTS: AiConfig = {
  */
 export const LEGACY_SECRET_NAME = "modelica-studio-api-key";
 
-export const AI_PROVIDERS: Array<{ label: string; baseUrl: string; model: string }> = [
-  { label: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
-  { label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "anthropic/claude-3.5-sonnet" },
-  { label: "Groq", baseUrl: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile" },
-  { label: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
-  { label: "Ollama (local)", baseUrl: "http://localhost:11434/v1", model: "qwen2.5-coder" },
-  { label: "llama.cpp (local)", baseUrl: "http://localhost:8080/v1", model: "local-model" },
+export interface AiProvider {
+  label: string;
+  baseUrl: string;
+  /** Default model. Kept first in the suggestions. */
+  model: string;
+  /**
+   * Other models worth offering, as `id` or `id — note`.
+   *
+   * A static list of model names goes stale, and stale is worse than absent: a
+   * retired name fails at request time with a provider error, which is what
+   * happened when `deepseek-chat` was retired in favour of `deepseek-flash`.
+   * So these are only a fallback — the settings page can ask the provider for
+   * its current list, and that is the authoritative answer.
+   */
+  models?: string[];
+  /** Where the defaults were last confirmed. Shown in the settings page. */
+  verified?: string;
+}
+
+/**
+ * Known providers, with the defaults confirmed from each provider's own
+ * documentation on 2026-09-16. Anything not confirmed is marked so rather than
+ * presented as fact.
+ */
+export const AI_PROVIDERS: AiProvider[] = [
+  {
+    label: "OpenAI",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-5.6-terra",
+    models: ["gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.1", "gpt-5.4-mini"],
+    verified: "2026-09-16",
+  },
+  {
+    label: "DeepSeek",
+    baseUrl: "https://api.deepseek.com/v1",
+    model: "deepseek-flash",
+    models: ["deepseek-flash", "deepseek-v4-pro"],
+    verified: "2026-09-16",
+  },
+  {
+    label: "OpenRouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    model: "deepseek/deepseek-v4.1-flash",
+    models: [
+      "deepseek/deepseek-v4.1-flash",
+      "openai/gpt-5.6-terra",
+      "openai/gpt-6-astra",
+      "anthropic/claude-sonnet-4.5",
+      "google/gemini-3.7-flash",
+      "x-ai/grok-4.6",
+    ],
+    verified: "2026-09-16",
+  },
+  {
+    label: "Groq",
+    baseUrl: "https://api.groq.com/openai/v1",
+    model: "openai/gpt-oss-120b",
+    // Only the featured model could be confirmed; Groq's model table is
+    // paginated and the rest of the ids move often. Ask the provider.
+    models: ["openai/gpt-oss-120b", "openai/gpt-oss-20b"],
+    verified: "2026-09-16 (partial)",
+  },
+  {
+    label: "Ollama (local)",
+    baseUrl: "http://localhost:11434/v1",
+    model: "qwen2.5-coder",
+    models: ["qwen2.5-coder", "llama3.2", "mistral"],
+  },
+  {
+    label: "llama.cpp (local)",
+    baseUrl: "http://localhost:8080/v1",
+    model: "local-model",
+    models: ["local-model"],
+  },
 ];
 
 export interface ChatMessage {

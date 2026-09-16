@@ -98,6 +98,59 @@ export async function chat(
   return text;
 }
 
+/**
+ * Ask the provider which models it currently offers.
+ *
+ * The authoritative answer, and the reason the settings page can offer a
+ * refresh: a curated list of model names goes stale silently, and a retired
+ * name fails at request time with an error that reads like a bad key. Every
+ * OpenAI-compatible provider exposes `GET /models`.
+ */
+export async function listModels(cfg: AiConfig, apiKey: string): Promise<string[]> {
+  const url = `${cfg.baseUrl.replace(/\/+$/, "")}/models`;
+  let response;
+  try {
+    response = await requestUrl({
+      url,
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey.trim()}` },
+      throw: false,
+    });
+  } catch (err) {
+    throw new AiError(`Could not reach ${url}. (${String(err)})`);
+  }
+  if (response.status < 200 || response.status >= 300) {
+    throw new AiError(describeHttpError(response.status, response.text), response.status);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(response.text);
+  } catch {
+    throw new AiError("The provider returned a model list that was not JSON.");
+  }
+
+  const data = (parsed as { data?: unknown }).data;
+  if (!Array.isArray(data)) {
+    throw new AiError("The provider returned no model list at /models.");
+  }
+  const ids: string[] = [];
+  for (const entry of data) {
+    const id =
+      typeof entry === "string"
+        ? entry
+        : ((entry as { id?: unknown; name?: unknown }).id ??
+           (entry as { name?: unknown }).name);
+    if (typeof id === "string" && id.trim()) ids.push(id.trim());
+  }
+  // Offer the models before the embeddings and the audio ones, which no chat
+  // request can use.
+  return [...new Set(ids)].sort((a, b) => {
+    const rank = (n: string) => (/embed|whisper|tts|audio|moderation|image|dall/i.test(n) ? 1 : 0);
+    return rank(a) - rank(b) || a.localeCompare(b);
+  });
+}
+
 /** Turn a provider error into something a user can act on. */
 function describeHttpError(status: number, body: string): string {
   let detail = body.slice(0, 400);

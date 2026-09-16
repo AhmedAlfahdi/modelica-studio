@@ -55,6 +55,20 @@ export interface ModelicaStudioSettings {
   paletteRoots: string[];
 
   /**
+   * Vault folder that models are saved into, relative to the vault root. Empty
+   * means the root itself. Created on first save if it does not exist.
+   */
+  modelFolder: string;
+
+  /**
+   * Where each model was last saved, keyed by model name.
+   *
+   * Remembered so saving an existing model overwrites the file it came from
+   * rather than writing a second copy beside it after the model is renamed.
+   */
+  modelFiles: Record<string, string>;
+
+  /**
    * Libraries to leave out of search, the palette and completion, one qualified
    * name per line.
    *
@@ -115,6 +129,15 @@ export interface ModelicaStudioSettings {
    * ever sent to the endpoint configured here.
    */
   ai: AiConfig;
+
+  /**
+   * Model ids fetched from the provider, newest fetch wins.
+   *
+   * Held on the plugin rather than inside `ai` so that clearing the AI settings
+   * does not also discard the list, and so it is obvious this is discovered
+   * rather than configured.
+   */
+  aiModels: string[];
 }
 
 export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
@@ -128,6 +151,8 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   tolerance: 1e-6,
   solver: "",
   paletteRoots: [],
+  modelFolder: "",
+  modelFiles: {},
   excludedLibraries: "",
   debugLog: false,
   debugOverlay: false,
@@ -136,6 +161,7 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   modelStopTimes: {},
   charts: {},
   ai: { ...AI_DEFAULTS },
+  aiModels: [],
 };
 
 export class ModelicaStudioSettingTab extends PluginSettingTab {
@@ -388,7 +414,11 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Provider preset")
-      .setDesc("Fills in the base URL and model for a known provider.")
+      .setDesc(
+        "Fills in the base URL and model for a known provider. Defaults were " +
+          "confirmed against each provider's documentation on 2026-09-16; use " +
+          "Refresh below to get the current list from the provider itself."
+      )
       .addDropdown((d) => {
         d.addOption("", "Choose...");
         AI_PROVIDERS.forEach((p, i) => d.addOption(String(i), p.label));
@@ -399,6 +429,8 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           if (!p) return;
           this.plugin.settings.ai.baseUrl = p.baseUrl;
           this.plugin.settings.ai.model = p.model;
+          // A list fetched from one provider says nothing about another.
+          this.plugin.settings.aiModels = [];
           await this.plugin.saveSettings();
           this.display();
         });
@@ -417,17 +449,71 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(containerEl)
+    // Models on offer: whatever the provider last reported, else the built-in
+    // suggestions for the chosen provider, else nothing. A curated list baked
+    // into the plugin is what went stale when `deepseek-chat` was retired, so the
+    // fetched list always wins.
+    const fetched = this.plugin.settings.aiModels;
+    const preset = AI_PROVIDERS.find((p) => p.baseUrl === this.plugin.settings.ai.baseUrl);
+    const suggested = fetched.length
+      ? fetched
+      : (preset?.models ?? (preset ? [preset.model] : []));
+    const source = fetched.length ? "fetched from the provider" : "built in";
+
+    const modelSetting = new Setting(containerEl)
       .setName("Model")
-      .setDesc("The model name the provider expects.")
-      .addText((t) =>
-        t
-          .setPlaceholder(AI_DEFAULTS.model)
+      .setDesc(
+        suggested.length
+          ? `Choose one of ${suggested.length} models (${source}), or type any name the provider accepts.`
+          : "The model name the provider expects."
+      )
+      .addText((t) => {
+        t.setPlaceholder(AI_DEFAULTS.model)
           .setValue(this.plugin.settings.ai.model)
           .onChange(async (v) => {
             this.plugin.settings.ai.model = v.trim();
             await this.plugin.saveSettings();
-          })
+          });
+        t.inputEl.style.minWidth = "220px";
+      });
+
+    if (suggested.length) {
+      modelSetting.addDropdown((d) => {
+        d.addOption("", "Suggestions...");
+        for (const m of suggested.slice(0, 200)) d.addOption(m, m);
+        d.setValue(suggested.includes(this.plugin.settings.ai.model) ? this.plugin.settings.ai.model : "");
+        d.onChange(async (v) => {
+          if (!v) return;
+          this.plugin.settings.ai.model = v;
+          await this.plugin.saveSettings();
+          this.display();
+        });
+      });
+    }
+
+    const modelStatus = containerEl.createDiv({ cls: "modelica-studio-setting-status" });
+    modelStatus.style.display = "none";
+
+    new Setting(containerEl)
+      .setName("Refresh model list")
+      .setDesc(
+        "Asks the provider which models it currently offers and replaces the " +
+          "suggestions above. Model names are retired without notice, so this is " +
+          "the reliable way to see what is available."
+      )
+      .addButton((b) =>
+        b.setButtonText("Refresh").onClick(async () => {
+          b.setButtonText("Asking...");
+          b.setDisabled(true);
+          const result = await this.plugin.refreshAiModels();
+          b.setButtonText("Refresh");
+          b.setDisabled(false);
+          modelStatus.style.display = "";
+          modelStatus.setText(result.text);
+          modelStatus.toggleClass("is-ok", result.ok);
+          modelStatus.toggleClass("is-bad", !result.ok);
+          if (result.ok) this.display();
+        })
       );
 
     new Setting(containerEl)
@@ -476,6 +562,34 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           resultBox.toggleClass("is-bad", !result.ok);
         })
       );
+
+    containerEl.createEl("h3", { text: "Models" });
+    containerEl.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "Models are saved as plain Modelica source, which is what OpenModelica " +
+        "compiles and what OMEdit opens. Nothing about the diagram is lost by " +
+        "saving: the graphical annotations are part of the same text.",
+    });
+
+    new Setting(containerEl)
+      .setName("Save folder")
+      .setDesc("Vault folder for new models. Empty saves to the vault root. Created on first save.")
+      .addText((t) =>
+        t
+          .setPlaceholder("models")
+          .setValue(this.plugin.settings.modelFolder)
+          .onChange(async (v) => {
+            this.plugin.settings.modelFolder = v.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    const saved = Object.entries(this.plugin.settings.modelFiles);
+    if (saved.length) {
+      const list = containerEl.createDiv({ cls: "modelica-studio-muted" });
+      list.setText("Saved models: " + saved.map(([name, file]) => `${name} → ${file}`).join(", "));
+    }
 
     containerEl.createEl("h3", { text: "Library" });
     containerEl.createEl("p", {

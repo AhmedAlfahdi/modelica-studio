@@ -1085,17 +1085,24 @@ body.modelica-studio-resizing * {
 }
 
 /* The two layers. Both must measure identically. */
+/* The scrolling viewport. `auto`, not `hidden`: a long model has to be
+   reachable, and `hidden` made the pane unscrollable at any length. `min-height:
+   0` lets it shrink in the flex column so the overflow actually happens here
+   rather than being pushed out of the pane. */
 .mst-code-scroll {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
+  min-height: 0;
+  overflow: auto;
 }
 
 .mst-code-editor {
   margin: 0;
   border: 0;
+  /* Fills the viewport when the model is short, grows past it when long. */
   min-height: 100%;
+  min-width: max-content;
   padding: 8px 12px;
   font: inherit;
   line-height: inherit;
@@ -1212,4 +1219,26 @@ body.modelica-studio-resizing * {
 .modelica-studio-palette-path {
   color: var(--text-faint);
   font-size: 0.85em;
+}
+
+/* Prompt modal for naming a new model */
+.modelica-studio-prompt-input {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.modelica-studio-prompt-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* A status line that reports success as well as failure. */
+.modelica-studio-setting-status.is-ok {
+  border-color: var(--background-modifier-success);
+}
+
+.modelica-studio-setting-status.is-bad {
+  border-color: var(--background-modifier-error);
 }

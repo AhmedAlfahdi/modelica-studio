@@ -9,7 +9,7 @@
  * Obsidian loads plugins synchronously during startup.
  */
 
-import { App, Notice, Plugin, TFile, WorkspaceLeaf, type MarkdownPostProcessorContext } from "obsidian";
+import { App, Modal, Notice, Plugin, TFile, WorkspaceLeaf, type MarkdownPostProcessorContext } from "obsidian";
 import { LibraryIndex, loadLibraryIndex } from "./modelica/library";
 import {
   EmbeddedDiagram,
@@ -23,7 +23,7 @@ import { emptyDiagram, type DiagramModel } from "./modelica/types";
 import { findClass, parseModelica, toDiagramModel } from "./modelica/parser";
 import { serializeDiagram } from "./modelica/serializer";
 import { findExample } from "./modelica/examples";
-import { AiError, chat } from "./ai/client";
+import { AiError, chat, listModels } from "./ai/client";
 import { LEGACY_SECRET_NAME, legacyKeyOf, secretNameOf } from "./ai/prompts";
 import { ModelicaStudioView, VIEW_TYPE_MODELICA } from "./view/studio-view";
 import { ModelicaStudioSettingTab, DEFAULT_SETTINGS, type ModelicaStudioSettings } from "./settings";
@@ -286,6 +286,23 @@ export default class ModelicaStudioPlugin extends Plugin {
       id: "load-example",
       name: "Load example model",
       callback: () => void this.activateView(),
+    });
+
+    this.addCommand({
+      id: "new-model",
+      name: "New model",
+      callback: () => void this.promptNewModel(),
+    });
+
+    this.addCommand({
+      id: "save-model",
+      name: "Save model to a .mo file",
+      checkCallback: (checking) => {
+        const view = this.getView();
+        if (!view) return false;
+        if (!checking) void view.saveToNote();
+        return true;
+      },
     });
 
     this.addCommand({
@@ -635,6 +652,27 @@ export default class ModelicaStudioPlugin extends Plugin {
     }
   }
 
+  /**
+   * Refresh the model list from the provider and remember it.
+   *
+   * Stored so the next visit to the settings page is instant, and so a model
+   * that was fetched once is still offered if the provider is unreachable.
+   */
+  async refreshAiModels(): Promise<{ ok: boolean; text: string; models?: string[] }> {
+    const cfg = this.settings.ai;
+    const key = this.aiKey();
+    if (!key) return { ok: false, text: "Choose or create an API key first." };
+    try {
+      const models = await listModels(cfg, key);
+      if (!models.length) return { ok: false, text: "The provider returned an empty model list." };
+      this.settings.aiModels = models;
+      await this.saveSettings();
+      return { ok: true, text: `${models.length} models available from ${cfg.baseUrl}.`, models };
+    } catch (err) {
+      return { ok: false, text: err instanceof AiError ? err.message : String(err) };
+    }
+  }
+
   async loadSettings(): Promise<void> {
     const data = (await this.loadData()) as Partial<ModelicaStudioSettings> & {
       model?: DiagramModel;
@@ -721,14 +759,104 @@ export default class ModelicaStudioPlugin extends Plugin {
    *
    * The model is the note's content, so the file round-trips through OMEdit.
    */
-  async saveModelToNote(): Promise<void> {
+  /**
+   * Write the model to a `.mo` file in the vault.
+   *
+   * The format is plain Modelica source, which is the only format that matters
+   * here: it is what OpenModelica compiles, what OMEdit opens, and what the
+   * round trip through the diagram preserves. Nothing is lost by saving it — the
+   * graphical annotations are part of the same text.
+   *
+   * The destination is `<modelFolder>/<ModelName>.mo`. A model that has been
+   * saved before goes back to the file it came from, so renaming the class
+   * overwrites that file rather than leaving a second copy beside it.
+   */
+  async saveModelToNote(): Promise<{ path: string; created: boolean }> {
     const source = serializeDiagram(this.model);
-    const existing = this.app.vault.getAbstractFileByPath(`${this.model.name}.mo`);
+    const folder = this.settings.modelFolder.trim().replace(/^\/+|\/+$/g, "");
+
+    if (folder) await this.ensureFolder(folder);
+
+    // Prefer the remembered path; fall back to the conventional one.
+    const remembered = this.settings.modelFiles[this.model.name];
+    let target = remembered && remembered.trim() ? remembered.trim() : "";
+    if (!target) {
+      target = folder ? `${folder}/${this.model.name}.mo` : `${this.model.name}.mo`;
+    } else if (folder && !target.includes("/")) {
+      // A model saved at the root before a folder was configured moves into it.
+      target = `${folder}/${target}`;
+    }
+
+    const existing = this.app.vault.getAbstractFileByPath(target);
     if (existing instanceof TFile) {
       await this.app.vault.modify(existing, source);
-      return;
+      this.settings.modelFiles[this.model.name] = target;
+      await this.saveSettings();
+      return { path: target, created: false };
     }
-    await this.app.vault.create(`${this.model.name}.mo`, source);
+
+    // The file may be there under the conventional name but not yet remembered:
+    // overwrite rather than create a duplicate.
+    const conventional = folder ? `${folder}/${this.model.name}.mo` : `${this.model.name}.mo`;
+    const atConventional = this.app.vault.getAbstractFileByPath(conventional);
+    if (atConventional instanceof TFile) {
+      await this.app.vault.modify(atConventional, source);
+      this.settings.modelFiles[this.model.name] = conventional;
+      await this.saveSettings();
+      return { path: conventional, created: false };
+    }
+
+    await this.app.vault.create(target, source);
+    this.settings.modelFiles[this.model.name] = target;
+    await this.saveSettings();
+    return { path: target, created: true };
+  }
+
+  /** Create a vault folder, and any parents, if it is not already there. */
+  private async ensureFolder(folder: string): Promise<void> {
+    const parts = folder.split("/").filter(Boolean);
+    let soFar = "";
+    for (const part of parts) {
+      soFar = soFar ? `${soFar}/${part}` : part;
+      if (!this.app.vault.getAbstractFileByPath(soFar)) {
+        try {
+          await this.app.vault.createFolder(soFar);
+        } catch (err) {
+          // A race with another save, or a path that already exists as a file.
+          if (!this.app.vault.getAbstractFileByPath(soFar)) throw err;
+        }
+      }
+    }
+  }
+
+  /**
+   * Start an empty model.
+   *
+   * A new model used to be reachable only from the command palette and always
+   * took the name passed in; this asks for one and refuses a name that is not a
+   * legal Modelica identifier, because the class name and the file name are the
+   * same string and OpenModelica cannot compile the difference.
+   */
+  async promptNewModel(): Promise<void> {
+    const name = await promptForText(this.app, {
+      title: "New Modelica model",
+      placeholder: "ModelName",
+      initial: "MyModel",
+      validate: (value) => {
+        const v = value.trim();
+        if (!v) return "A name is required.";
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(v)) {
+          return "Use letters, digits and underscores, and do not start with a digit.";
+        }
+        if (findExample(v)) return `"${v}" is the name of a built-in example. Choose another.`;
+        return null;
+      },
+    });
+    if (!name) return;
+    // A new model is a new file, so no remembered path may carry over.
+    delete this.settings.modelFiles[name];
+    await this.newModel(name.trim());
+    await this.activateView();
   }
 
   /**
@@ -837,4 +965,79 @@ export function describeSecretPresence(app: App, name: string): string {
   } catch (err) {
     return `secret lookup failed: ${String(err)}`;
   }
+}
+
+/**
+ * A one-field text prompt.
+ *
+ * Obsidian has no text prompt in its public API, only `SuggestModal` (a list)
+ * and `Modal`. This is the smallest modal that does the job, with validation
+ * shown inline so a bad name is refused before it becomes a file.
+ */
+function promptForText(
+  app: App,
+  opts: {
+    title: string;
+    placeholder?: string;
+    initial?: string;
+    validate?: (value: string) => string | null;
+  }
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    const modal = new Modal(app);
+    modal.titleEl.setText(opts.title);
+    let settled = false;
+
+    const finish = (value: string | null) => {
+      if (settled) return;
+      settled = true;
+      modal.close();
+      resolve(value);
+    };
+
+    const input = modal.contentEl.createEl("input", {
+      cls: "modelica-studio-prompt-input",
+      attr: { type: "text", placeholder: opts.placeholder ?? "" },
+    });
+    input.value = opts.initial ?? "";
+    const problem = modal.contentEl.createDiv({ cls: "modelica-studio-warn" });
+    problem.style.display = "none";
+
+    const submit = () => {
+      const value = input.value.trim();
+      const error = opts.validate?.(value) ?? null;
+      if (error) {
+        problem.setText(error);
+        problem.style.display = "";
+        return;
+      }
+      finish(value);
+    };
+
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        submit();
+      }
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        finish(null);
+      }
+    });
+
+    const buttons = modal.contentEl.createDiv({ cls: "modelica-studio-prompt-buttons" });
+    const ok = buttons.createEl("button", { cls: "mod-cta", text: "Create" });
+    ok.addEventListener("click", submit);
+    const cancel = buttons.createEl("button", { text: "Cancel" });
+    cancel.addEventListener("click", () => finish(null));
+
+    // Resolve if the modal is dismissed by clicking away, or the promise never
+    // settles and its caller waits for ever.
+    modal.onClose = () => finish(null);
+    modal.open();
+    window.setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 0);
+  });
 }

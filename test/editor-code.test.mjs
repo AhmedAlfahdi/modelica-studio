@@ -24,7 +24,7 @@ const {
 const aiMod = await import(path.join(buildLibs("ai-lib", ["src/ai/prompts.ts"]), "prompts.js"));
 const {
   buildMessages, extractModelica, modelNameOf, AI_DEFAULTS, relevantClasses,
-  aiReady, secretNameOf, legacyKeyOf, LEGACY_SECRET_NAME,
+  aiReady, secretNameOf, legacyKeyOf, LEGACY_SECRET_NAME, AI_PROVIDERS,
 } = aiMod;
 
 /** Strip tags and unescape, to compare against the original source. */
@@ -484,4 +484,60 @@ test("a library can be excluded, on segment boundaries", () => {
   // or everything.
   assert.ok(!isUnderAny("Modelica.Fluid.Vessels.OpenTank", ["", "   "]));
   assert.ok(isUnderAny("Modelica.Fluid.X", ["  Modelica.Fluid  "]), "entries are trimmed");
+});
+
+test("no AI preset ships a retired model name", () => {
+  // `deepseek-chat` was the default and has been retired in favour of
+  // `deepseek-flash`. A stale name fails at request time with an error that
+  // reads like a bad key, so the presets are pinned to names confirmed from each
+  // provider's own documentation.
+  const retired = ["deepseek-chat", "deepseek-reasoner", "gpt-4o-mini", "gpt-4-turbo"];
+  for (const p of AI_PROVIDERS) {
+    assert.ok(!retired.includes(p.model), `${p.label} does not default to the retired "${p.model}"`);
+    for (const m of p.models ?? []) {
+      assert.ok(!retired.includes(m), `${p.label} does not suggest the retired "${m}"`);
+    }
+  }
+});
+
+test("DeepSeek defaults to the current model names", () => {
+  const deepseek = AI_PROVIDERS.find((p) => p.label === "DeepSeek");
+  assert.ok(deepseek, "the provider is listed");
+  assert.equal(deepseek.model, "deepseek-flash");
+  assert.ok(deepseek.models.includes("deepseek-v4-pro"), "and the pro model is offered");
+});
+
+test("every preset names where its defaults came from", () => {
+  // A preset that cannot say when it was checked is one nobody can tell is stale.
+  for (const p of AI_PROVIDERS) {
+    if (p.baseUrl.includes("localhost")) continue; // local servers, nothing to check
+    assert.ok(p.verified, `${p.label} records a verification date`);
+    assert.match(p.verified, /^\d{4}-\d{2}-\d{2}/, `${p.label} records a real date`);
+  }
+});
+
+test("provider base URLs are distinct, so a preset cannot be ambiguous", () => {
+  const urls = AI_PROVIDERS.map((p) => p.baseUrl);
+  assert.equal(new Set(urls).size, urls.length, "no two providers share a base URL");
+});
+
+test("the code pane scrolls, and the caret pulls it", () => {
+  // The scroll container used `overflow: hidden`, so a long model could not be
+  // scrolled at all. And because the scrolling element is not the focused one —
+  // the editable div is inside it — nothing brings the caret back into view on
+  // its own; the editor has to do it.
+  const css = fs.readFileSync(path.join(repoRoot, "styles.css"), "utf8");
+  const scroll = /(?:^|\n)\.mst-code-scroll\s*\{[^}]*\}/.exec(css);
+  assert.ok(scroll, "the viewport has a rule");
+  assert.match(scroll[0], /overflow:\s*auto/, "it scrolls");
+  assert.ok(!/overflow:\s*hidden/.test(scroll[0]), "and is not clipped");
+  assert.match(scroll[0], /min-height:\s*0/, "it can shrink, so overflow lands here");
+
+  const editor = fs.readFileSync(path.join(repoRoot, "src/view/code-editor.ts"), "utf8");
+  assert.match(editor, /function revealCaret/, "the editor scrolls the caret into view");
+  // Called wherever the caret moves.
+  assert.ok(
+    (editor.match(/revealCaret\(\)/g) ?? []).length >= 4,
+    "and is called after typing, after moving the caret, and after undo"
+  );
 });

@@ -282,7 +282,8 @@ export class ModelicaStudioView extends ItemView {
       this.plugin.invalidateBuild();
       this.setStatus("Build cache cleared; the next simulation will recompile.");
     });
-    addBtn("save", "Save model", () => void this.saveToNote());
+    addBtn("file-plus", "New", () => void this.plugin.promptNewModel());
+    addBtn("save", "Save", () => void this.saveToNote());
     // Diagnostic: report the exact geometry the editor is using. Shown only
     // when the debug overlay is enabled in settings.
     this.geometryBtn = addBtn("ruler", "Geometry", () => this.showGeometry());
@@ -2220,8 +2221,8 @@ export class ModelicaStudioView extends ItemView {
 
   async saveToNote(): Promise<void> {
     try {
-      await this.plugin.saveModelToNote();
-      new Notice("Model saved.");
+      const { path, created } = await this.plugin.saveModelToNote();
+      new Notice(`Modelica: ${created ? "created" : "saved"} ${path}`, 4000);
     } catch (err) {
       new Notice(`Could not save: ${err instanceof Error ? err.message : String(err)}`);
     }

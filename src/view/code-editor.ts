@@ -55,6 +55,10 @@ export interface CodeEditorHandle {
   setDiagnostics(list: Diagnostic[]): void;
   /** Scroll a line into view and flash it. */
   revealLine(line: number): void;
+  /** Scroll the caret into view. Called automatically while editing. */
+  revealCaret(): void;
+  /** Put the caret at a text offset. */
+  setCaretOffset(offset: number): void;
   destroy(): void;
 }
 
@@ -168,6 +172,30 @@ export function createCodeEditor(
   }
 
   /**
+   * Keep the caret inside the visible area.
+   *
+   * The browser scrolls the FOCUSED element into view, and the focused element
+   * here is the whole editor — which is taller than its viewport. So the caret
+   * can be moved off screen by typing or by an arrow key with nothing bringing
+   * it back. This is the missing half of making the pane scrollable.
+   */
+  function revealCaret(): void {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const rect = sel.getRangeAt(0).getBoundingClientRect();
+    if (!rect.height && !rect.width) return; // collapsed at a boundary
+    const view = scroll.getBoundingClientRect();
+    const line = parseFloat(getComputedStyle(editor).lineHeight) || 18;
+
+    if (rect.bottom > view.bottom - 4) {
+      scroll.scrollTop += rect.bottom - view.bottom + line;
+    } else if (rect.top < view.top + 4) {
+      scroll.scrollTop -= view.top - rect.top + line;
+    }
+    syncScroll();
+  }
+
+  /**
    * Repaint the highlighted HTML, keeping the caret where it was.
    *
    * Rewriting `innerHTML` destroys the selection, so the offset is saved and
@@ -181,7 +209,10 @@ export function createCodeEditor(
     editor.innerHTML = highlight(text());
     internal = false;
     syncScroll();
-    if (offset !== null) setCaret(offset);
+    if (offset !== null) {
+      setCaret(offset);
+      revealCaret();
+    }
   }
 
   /* ---- undo history ---- */
@@ -200,8 +231,8 @@ export function createCodeEditor(
     editor.innerHTML = highlight(state.text);
     internal = false;
     renderGutter();
-    syncScroll();
     setCaret(state.caret);
+    revealCaret();
     emitChange();
   }
 
@@ -358,6 +389,7 @@ export function createCodeEditor(
     repaint();
     renderGutter();
     emitChange();
+    revealCaret();
     showPopup(false);
   });
 
@@ -398,6 +430,13 @@ export function createCodeEditor(
 
   editor.addEventListener("keydown", (ev) => {
     const mod = ev.ctrlKey || ev.metaKey;
+
+    // Keys that move the caret without editing: let the browser move it, then
+    // bring the viewport along.
+    if (ev.key.startsWith("Arrow") || ev.key === "PageUp" || ev.key === "PageDown" || ev.key === "Home" || ev.key === "End") {
+      window.setTimeout(revealCaret, 0);
+      return;
+    }
 
     if (mod && ev.key.toLowerCase() === "z") {
       ev.preventDefault();
@@ -477,6 +516,11 @@ export function createCodeEditor(
       replaceAll(value, 0);
     },
     focus: () => editor.focus(),
+    revealCaret,
+    setCaretOffset: (offset: number) => {
+      setCaret(offset);
+      revealCaret();
+    },
     setDiagnostics(list) {
       diagnostics = list;
       renderGutter();
