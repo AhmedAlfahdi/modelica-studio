@@ -29,6 +29,7 @@ import { emptyDiagram, type DiagramModel } from "./modelica/types";
 import { findClass, parseModelica, toDiagramModel } from "./modelica/parser";
 import { serializeDiagram } from "./modelica/serializer";
 import { findExample } from "./modelica/examples";
+import { AiError, chat } from "./ai/client";
 import { ModelicaStudioView, VIEW_TYPE_MODELICA } from "./view/studio-view";
 import { ModelicaStudioSettingTab, DEFAULT_SETTINGS, type ModelicaStudioSettings } from "./settings";
 
@@ -521,6 +522,29 @@ export default class ModelicaStudioPlugin extends Plugin {
 
   /* ---------------- persistence ---------------- */
 
+  /**
+   * Confirm the AI provider answers, and say why if it does not.
+   *
+   * Exists because "nothing happened" is the hardest failure to act on: a wrong
+   * base URL, a rejected key and an unavailable model all look identical from
+   * the editor. This asks the provider directly and reports what it said.
+   */
+  async testAiConnection(): Promise<{ ok: boolean; text: string }> {
+    const cfg = this.settings.ai;
+    if (!cfg.apiKey.trim()) {
+      return { ok: false, text: "No API key set. The feature is off until one is entered." };
+    }
+    try {
+      const reply = await chat(cfg, [
+        { role: "system", content: "Reply with the single word: ready" },
+        { role: "user", content: "ping" },
+      ]);
+      return { ok: true, text: `Connected to ${cfg.model}. The provider replied: ${reply.trim().slice(0, 80)}` };
+    } catch (err) {
+      return { ok: false, text: err instanceof AiError ? err.message : String(err) };
+    }
+  }
+
   async loadSettings(): Promise<void> {
     const data = (await this.loadData()) as Partial<ModelicaStudioSettings> & {
       model?: DiagramModel;
@@ -636,6 +660,44 @@ export default class ModelicaStudioPlugin extends Plugin {
       view.reloadFromPlugin();
     }
     return this.model;
+  }
+
+  /**
+   * Parse source into a diagram model without touching the plugin's state.
+   *
+   * Split from `adoptModel` so the code editor can validate on every keystroke
+   * without the diagram lurching about underneath a half-typed line.
+   */
+  parseSource(source: string): DiagramModel | undefined {
+    const classes = parseModelica(source);
+    if (classes.length === 0) return undefined;
+    // Prefer the first class that actually has components, so a file with a
+    // package wrapper still opens on the model inside it.
+    const target = classes.find((c) => c.components.length > 0) ?? classes[0];
+    return toDiagramModel(target, (n) => this.library.component(n));
+  }
+
+  /** Make a parsed model current, keeping the source it came from. */
+  adoptModel(model: DiagramModel, source: string): void {
+    this.model = model;
+    this.modelSource = source;
+    this.modelOutdated = false;
+    this.schedulePersist();
+  }
+
+  /**
+   * Persist on a short delay.
+   *
+   * The code editor validates on a 250 ms debounce, so writing to disk on every
+   * call would mean a file write per keystroke burst.
+   */
+  private persistTimer: number | null = null;
+  private schedulePersist(): void {
+    if (this.persistTimer !== null) window.clearTimeout(this.persistTimer);
+    this.persistTimer = window.setTimeout(() => {
+      this.persistTimer = null;
+      void this.persist();
+    }, 600);
   }
 
   /** Create a fresh diagram, e.g. from the command palette. */

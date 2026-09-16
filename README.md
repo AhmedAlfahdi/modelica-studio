@@ -20,6 +20,11 @@ expect rough edges. See [Beta status](#beta-status).
   with OpenModelica, and reads the results back.
 - **Plots.** Time-series traces with automatic axis grouping, a resizable pane,
   and a full-screen view with a cursor readout.
+- **Diagram and code modes.** The same model, either built by dragging or edited
+  as Modelica source with syntax highlighting, completion from the library, and
+  inline diagnostics.
+- **Optional AI assistance.** With your own API key, describe a model in words
+  and have it written into the editor, or ask for a compile error to be fixed.
 - **Inline results in notes.** A fenced `modelica` block renders a live diagram
   and simulates when the note opens.
 - **Worked examples.** 30 models across electrical, mechanical, fluid, thermal,
@@ -60,7 +65,7 @@ To try it without your own vault, `examples/vault/` is a ready-made one — see
 npm install
 npm run build          # typecheck, then bundle to main.js
 npm run dev            # rebuild on change
-npm test               # 188 tests, including a numerical audit of every example
+npm test               # 207 tests, including a numerical audit of every example
 ```
 
 `npm test` runs the real OpenModelica compiler, so it needs `omc` on your PATH
@@ -101,6 +106,27 @@ plugin, so a fence reading `modelica time=2` never reaches the code.
 Blocks follow the studio: change the plot scale, the visible traces or the
 simulation span there and the blocks follow. Parameter values travel with it, and
 a block re-simulates when a value it ran with changes.
+
+## AI assistance
+
+Optional, off until an API key is entered.
+
+1. Settings → Modelica Studio → AI assistance.
+2. Paste a key. Pick a provider preset, or set the base URL and model directly.
+   Any OpenAI-compatible endpoint works, including a local Ollama or llama.cpp
+   server.
+3. **Test** confirms the provider answers, and says what it said if it does not.
+
+In the studio, switch to **Code** and press **AI**. Describe the model you want
+and it is written into the editor; if the last simulation failed, **Fix errors**
+sends the compiler output with the source and asks for a repair.
+
+The key is stored in this plugin's `data.json` inside the vault. It is never
+written to the debug log and never attached to an error message, and it is only
+ever sent to the endpoint configured here. Generated code is **unverified**: it
+is a draft to simulate and check, not an answer. The request includes the current
+source and a shortlist of library classes relevant to your description, so the
+model composes real MSL classes instead of inventing names.
 
 ## Beta status
 
@@ -173,6 +199,7 @@ recompiling, and why an edit re-simulates immediately. Details in
 ```
 src/
   main.ts              plugin entry, commands, settings, embeds
+  ai/                  prompt construction and the OpenAI-compatible client
   modelica/            parser, serializer, library index, examples
   render/              canvas drawing of Modelica graphical primitives
   view/                schematic editor, studio view, plots, inline blocks

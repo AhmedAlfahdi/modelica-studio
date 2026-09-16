@@ -26,6 +26,8 @@ import type {
   ParameterDef,
 } from "../modelica/types";
 import { serializeDiagram } from "../modelica/serializer";
+import { createCodeEditor, CodeEditorHandle, Diagnostic } from "./code-editor";
+import { AiError, buildMessages, chat, extractModelica, modelNameOf } from "../ai/client";
 import type { SimResult, SimSeries } from "../omc/backend";
 
 export const VIEW_TYPE_MODELICA = "modelica-studio-view";
@@ -40,6 +42,16 @@ export class ModelicaStudioView extends ItemView {
   private inspectorCol!: HTMLElement;
   private splitterEl!: HTMLElement;
   private sourceEl!: HTMLElement;
+  /** The whole editable area: palette, canvas and inspector. */
+  private bodyEl!: HTMLElement;
+  /** Editing mode. Diagram and code are two views of one model. */
+  private mode: "diagram" | "code" = "diagram";
+  /** Code-mode pane, created on first use. */
+  private codeHost!: HTMLElement;
+  private codeEditor: CodeEditorHandle | null = null;
+  private codeToolbar!: HTMLElement;
+  private aiRow!: HTMLElement;
+  private modeButtons: Record<string, HTMLElement> = {};
   private statusEl!: HTMLElement;
   private plotCanvas: HTMLCanvasElement | null = null;
   private plotHost: HTMLElement | null = null;
@@ -120,6 +132,7 @@ export class ModelicaStudioView extends ItemView {
     this.buildToolbar(header);
 
     const body = root.createDiv({ cls: "modelica-studio-body" });
+    this.bodyEl = body;
 
     // Palette
     const paletteCol = body.createDiv({ cls: "modelica-studio-col modelica-studio-palette" });
@@ -169,6 +182,11 @@ export class ModelicaStudioView extends ItemView {
     this.sourceEl = resultsCol.createEl("pre", { cls: "modelica-studio-source-code" });
     this.sourceEl.style.display = "none";
 
+    // Code mode replaces the whole editing area rather than sitting beside
+    // Results. Diagram and code are two views of the same model, so showing both
+    // at once would mean two things claiming to be the truth.
+    this.buildCodePane(root);
+
     this.statusEl = root.createDiv({ cls: "modelica-studio-status" });
     this.setStatus("Ready.");
 
@@ -217,6 +235,8 @@ export class ModelicaStudioView extends ItemView {
   async onClose(): Promise<void> {
     this.editor?.destroy();
     this.editor = null;
+    this.codeEditor?.destroy();
+    this.codeEditor = null;
   }
 
   /* ---------------- toolbar ---------------- */
@@ -230,6 +250,22 @@ export class ModelicaStudioView extends ItemView {
       b.addEventListener("click", onClick);
       return b;
     };
+
+    // The mode switch leads the toolbar: it changes what the rest of the bar
+    // acts on, so it belongs before the actions rather than among them.
+    const modeGroup = bar.createDiv({ cls: "modelica-studio-modes" });
+    const addMode = (id: "diagram" | "code", icon: string, label: string, hint: string) => {
+      const b = modeGroup.createEl("button", { cls: "modelica-studio-btn modelica-studio-mode" });
+      setIcon(b, icon);
+      b.createSpan({ text: label });
+      b.title = hint;
+      b.addEventListener("click", () => this.setMode(id));
+      this.modeButtons[id] = b;
+      return b;
+    };
+    addMode("diagram", "shapes", "Diagram", "Build the model by dragging components");
+    addMode("code", "code", "Code", "Edit the Modelica source directly, with completion and AI");
+    bar.createDiv({ cls: "modelica-studio-mode-sep" });
 
     const examplesBtn = addBtn("library", "Examples", () => this.showExamplePicker(examplesBtn));
     addBtn("play", "Simulate", () => void this.runSimulation(), "mod-cta");
@@ -255,6 +291,304 @@ export class ModelicaStudioView extends ItemView {
     this.geometryBtn = addBtn("ruler", "Geometry", () => this.showGeometry());
     this.applyDebugOverlay();
   }
+
+  /* ---------------- code mode ---------------- */
+
+  /**
+   * The code pane.
+   *
+   * Built once and hidden until needed: creating the editor lazily would make
+   * the first switch stutter, and the pane is cheap when it is empty.
+   */
+  private buildCodePane(root: HTMLElement): void {
+    const host = root.createDiv({ cls: "modelica-studio-code" });
+    host.style.display = "none";
+    this.codeHost = host;
+
+    // Its own toolbar: the diagram's zoom, rotate and delete buttons mean
+    // nothing here, and leaving them visible would be a lie about what they do.
+    const bar = host.createDiv({ cls: "modelica-studio-code-bar" });
+    this.codeToolbar = bar;
+
+    const mk = (icon: string, label: string, hint: string, onClick: () => void) => {
+      const b = bar.createEl("button", { cls: "modelica-studio-btn" });
+      setIcon(b, icon);
+      b.createSpan({ text: label });
+      b.title = hint;
+      b.addEventListener("click", onClick);
+      return b;
+    };
+
+    mk("play", "Simulate", "Compile and run the source in the editor (Ctrl+Enter)", () => void this.runSimulation());
+    mk("git-compare", "Apply to diagram", "Re-parse the source and rebuild the schematic", () =>
+      this.applyCodeToDiagram(true)
+    );
+    mk("sparkles", "AI", "Describe what you want, or ask for a repair", () => this.toggleAiRow());
+
+    const diagEl = bar.createDiv({ cls: "modelica-studio-code-diag" });
+    this.codeDiagEl = diagEl;
+
+    // The AI request row, hidden until asked for.
+    const aiRow = host.createDiv({ cls: "modelica-studio-ai" });
+    aiRow.style.display = "none";
+    this.aiRow = aiRow;
+
+    const input = aiRow.createEl("input", {
+      cls: "modelica-studio-ai-input",
+      attr: {
+        type: "text",
+        placeholder: "e.g. a tank draining through an orifice, 2 m of water",
+      },
+    });
+    this.aiInput = input;
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        void this.runAiRequest();
+      }
+      if (ev.key === "Escape") this.toggleAiRow(false);
+    });
+
+    const go = aiRow.createEl("button", { cls: "modelica-studio-btn mod-cta" });
+    setIcon(go, "send");
+    go.createSpan({ text: "Generate" });
+    go.addEventListener("click", () => void this.runAiRequest());
+    this.aiGoBtn = go;
+
+    const fix = aiRow.createEl("button", { cls: "modelica-studio-btn" });
+    setIcon(fix, "wrench");
+    fix.createSpan({ text: "Fix errors" });
+    fix.title = "Ask the model to repair the current source using the compiler messages";
+    fix.addEventListener("click", () => void this.runAiRequest(true));
+    this.aiFixBtn = fix;
+
+    aiRow.createDiv({
+      cls: "modelica-studio-ai-note",
+      text: "Generated code is unverified. Simulate it before trusting it.",
+    });
+
+    this.codeStatusEl = bar.createDiv({ cls: "modelica-studio-code-status" });
+  }
+
+  private codeDiagEl: HTMLElement | null = null;
+  private codeStatusEl: HTMLElement | null = null;
+  private aiInput: HTMLInputElement | null = null;
+  private aiGoBtn: HTMLButtonElement | null = null;
+  private aiFixBtn: HTMLButtonElement | null = null;
+  private aiBusy = false;
+
+  /** Switch between the diagram and the source, keeping the model in step. */
+  private setMode(mode: "diagram" | "code"): void {
+    if (mode === this.mode) return;
+
+    if (mode === "code") {
+      // Carry the diagram's current state into the editor before showing it, so
+      // switching never loses an edit.
+      this.syncDiagramToCode();
+    } else {
+      // Leaving code mode: what is in the editor becomes the model.
+      this.applyCodeToDiagram(false);
+    }
+
+    this.mode = mode;
+    const isCode = mode === "code";
+    if (this.bodyEl) this.bodyEl.style.display = isCode ? "none" : "";
+    if (this.codeHost) this.codeHost.style.display = isCode ? "" : "none";
+    for (const [id, b] of Object.entries(this.modeButtons)) {
+      b.toggleClass("is-active", id === mode);
+    }
+    // The diagram-only actions belong to the diagram.
+    this.setDiagramActionsEnabled(!isCode);
+    if (isCode) {
+      this.codeEditor?.focus();
+      this.validateCode();
+    } else {
+      this.editor?.requestDraw();
+    }
+    this.setStatus(isCode ? "Code mode. Ctrl+Space completes, Ctrl+Enter simulates." : "Diagram mode.");
+  }
+
+  /**
+   * Hide the actions that only make sense on the diagram.
+   *
+   * Rather than tracking each button, everything in the toolbar after the mode
+   * group is diagram-specific, which is exactly why the switch sits first.
+   */
+  private setDiagramActionsEnabled(enabled: boolean): void {
+    const bar = this.modeButtons["diagram"]?.parentElement?.parentElement;
+    if (!bar) return;
+    let seenSep = false;
+    for (const child of Array.from(bar.children) as HTMLElement[]) {
+      if (child.classList.contains("modelica-studio-mode-sep")) {
+        seenSep = true;
+        continue;
+      }
+      if (!seenSep) continue;
+      child.style.display = enabled ? "" : "none";
+    }
+  }
+
+  /** Serialize the diagram into the editor. */
+  private syncDiagramToCode(): void {
+    let text: string;
+    try {
+      text = serializeDiagram(this.plugin.model);
+    } catch (err) {
+      text = `// The diagram could not be serialized:\n// ${String(err)}\n`;
+    }
+    if (!this.codeEditor) {
+      this.codeEditor = createCodeEditor(this.codeHost, text, {
+        library: () => this.plugin.library,
+        onChange: () => this.validateCode(),
+        onSubmit: () => void this.runSimulation(),
+        onStatus: (t) => this.setStatus(t),
+      });
+    } else if (this.codeEditor.getValue() !== text) {
+      this.codeEditor.setValue(text);
+    }
+  }
+
+  /**
+   * Parse the editor's text into the model.
+   *
+   * `announce` separates the two callers: switching modes should say so, while
+   * a background change should stay quiet unless it failed.
+   */
+  private applyCodeToDiagram(announce: boolean): void {
+    if (!this.codeEditor) return;
+    const text = this.codeEditor.getValue();
+    try {
+      const model = this.plugin.parseSource(text);
+      if (!model) {
+        this.reportCodeProblem("The source declares no model class.", []);
+        return;
+      }
+      this.plugin.adoptModel(model, text);
+      this.clearCodeProblem();
+      this.editor?.setModel(model);
+      this.editor?.scheduleFit();
+      this.refreshSource();
+      if (announce) this.setStatus(`Diagram rebuilt from source (${model.components.length} components).`);
+    } catch (err) {
+      this.reportCodeProblem(String(err), []);
+    }
+  }
+
+  /** Parse and report, without touching the diagram. */
+  private validateCode(): void {
+    if (!this.codeEditor) return;
+    const text = this.codeEditor.getValue();
+    try {
+      const model = this.plugin.parseSource(text);
+      if (!model) {
+        this.reportCodeProblem("The source declares no model class.", []);
+        return;
+      }
+      // Adopt silently so Simulate works without a mode switch, but leave the
+      // diagram alone until the user asks for it.
+      this.plugin.adoptModel(model, text);
+      this.clearCodeProblem();
+    } catch (err) {
+      // A parse failure is reported against the first line if the message names
+      // one, and against the top otherwise: the parser does not promise a
+      // position, and a wrong mark is worse than a general one.
+      const line = lineOfParseError(String(err), text);
+      this.reportCodeProblem(String(err), line ? [{ line, message: String(err), severity: "error" }] : []);
+    }
+  }
+
+  /** Show compiler output beside the code, where it is needed. */
+  private setCodeStatus(text: string, bad = false): void {
+    if (!this.codeStatusEl) return;
+    this.codeStatusEl.setText(text);
+    this.codeStatusEl.toggleClass("is-bad", bad && text.length > 0);
+  }
+
+  private reportCodeProblem(message: string, diags: Diagnostic[]): void {
+    this.codeEditor?.setDiagnostics(diags);
+    if (this.codeDiagEl) {
+      this.codeDiagEl.setText(message);
+      this.codeDiagEl.addClass("is-bad");
+    }
+  }
+
+  private clearCodeProblem(): void {
+    this.codeEditor?.setDiagnostics([]);
+    if (this.codeDiagEl) {
+      this.codeDiagEl.setText("");
+      this.codeDiagEl.removeClass("is-bad");
+    }
+  }
+
+  /* ---------------- AI ---------------- */
+
+  private toggleAiRow(force?: boolean): void {
+    if (!this.aiRow) return;
+    const show = force ?? this.aiRow.style.display === "none";
+    this.aiRow.style.display = show ? "" : "none";
+    if (show) this.aiInput?.focus();
+  }
+
+  /**
+   * Ask the configured model to write or repair the source.
+   *
+   * The request carries the current source and any compiler output, because a
+   * model asked to fix code it cannot see is guessing.
+   */
+  private async runAiRequest(repair = false): Promise<void> {
+    if (this.aiBusy) return;
+    const cfg = this.plugin.settings.ai;
+    if (!cfg.apiKey.trim()) {
+      this.setStatus("No AI provider configured. Add an API key in the plugin settings.");
+      return;
+    }
+
+    const prompt = repair
+      ? "The model below does not compile. Fix it, keeping what it is trying to do."
+      : this.aiInput?.value.trim() ?? "";
+    if (!prompt) {
+      this.setStatus("Describe the model you want first.");
+      return;
+    }
+
+    this.aiBusy = true;
+    this.aiGoBtn?.setAttribute("disabled", "true");
+    this.aiFixBtn?.setAttribute("disabled", "true");
+    this.setStatus(`Asking ${cfg.model}…`);
+
+    try {
+      const messages = buildMessages({
+        prompt,
+        current: this.codeEditor?.getValue(),
+        diagnostics: repair ? this.lastSimulationError ?? this.codeDiagEl?.getText() ?? "" : "",
+        library: this.plugin.library,
+        systemPrompt: cfg.systemPrompt,
+      });
+      const reply = await chat(cfg, messages);
+      const source = extractModelica(reply);
+      if (!source) {
+        this.setStatus("The model replied without any Modelica source. Nothing was changed.");
+        return;
+      }
+      const name = modelNameOf(source);
+      this.codeEditor?.setValue(source);
+      this.applyCodeToDiagram(false);
+      this.setStatus(
+        `AI wrote ${name ? `"${name}"` : "a model"} (${source.split("\n").length} lines). Simulate it to check it works.`
+      );
+      if (!repair && this.aiInput) this.aiInput.value = "";
+    } catch (err) {
+      const msg = err instanceof AiError ? err.message : String(err);
+      this.setStatus(`AI request failed. ${msg}`);
+    } finally {
+      this.aiBusy = false;
+      this.aiGoBtn?.removeAttribute("disabled");
+      this.aiFixBtn?.removeAttribute("disabled");
+    }
+  }
+
+  /** Compiler output from the last failed simulation, used to repair source. */
+  private lastSimulationError: string | null = null;
 
   /* ---------------- palette ---------------- */
 
@@ -1457,6 +1791,9 @@ export class ModelicaStudioView extends ItemView {
     this.editor?.setModel(this.plugin.model);
     this.refreshSource();
     this.renderInspector();
+    // Loading a model replaces the source too, or code mode keeps showing the
+    // previous model while the diagram shows the new one.
+    if (this.mode === "code") this.syncDiagramToCode();
     this.setStatus(`Loaded ${this.plugin.model.name}.`);
   }
 
@@ -1666,6 +2003,8 @@ export class ModelicaStudioView extends ItemView {
       });
 
       this.result = result;
+      this.lastSimulationError = null;
+      this.setCodeStatus("");
       this.resetZoom();
       this.plugin.diag(
         `sim ${this.plugin.model.name}: t=${result.time[0]}..${result.time[result.time.length - 1]}` +
@@ -1709,6 +2048,9 @@ export class ModelicaStudioView extends ItemView {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.setStatus("Simulation failed.");
+      // Kept so the AI can be asked to repair the model it just failed on.
+      this.lastSimulationError = msg;
+      this.setCodeStatus(firstLine(msg), true);
       new Notice(`Modelica: ${firstLine(msg)}`, 8000);
       this.showDiagnostics(msg);
       void previous;
@@ -1858,3 +2200,21 @@ function plotLayoutFor(w: number, h: number, result: SimResult) {
   return { left, right, top, bottom, width: Math.max(10, w - left - right), height: Math.max(10, h - top - bottom) };
 }
 
+/**
+ * Best-effort line number from a parse error message.
+ *
+ * Used only to put a mark in the gutter. Textual position reporting is not
+ * guaranteed, so anything that cannot be located is reported as "line 1" rather
+ * than guessed at.
+ */
+function lineOfParseError(message: string, source: string): number | undefined {
+  const named = /line\s+(\d+)/i.exec(message);
+  if (named) return Math.max(1, Number(named[1]));
+  // Quote from the message, if any, and find where it occurs in the source.
+  const quoted = /["'\u201c]([^"'\u201d]{2,40})["'\u201d]/.exec(message);
+  if (quoted) {
+    const at = source.indexOf(quoted[1]);
+    if (at >= 0) return source.slice(0, at).split("\n").length;
+  }
+  return source.trim() ? 1 : undefined;
+}

@@ -8,6 +8,7 @@
 
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type ModelicaStudioPlugin from "./main";
+import { AI_DEFAULTS, AI_PROVIDERS, AiConfig } from "./ai/prompts";
 
 /**
  * How the result plot is configured: which traces, and over what range.
@@ -94,6 +95,15 @@ export interface ModelicaStudioSettings {
    * each of them filtering a result whose variable names it did not contain.
    */
   charts: Record<string, ChartState>;
+
+  /**
+   * AI assistance configuration.
+   *
+   * The key is stored in this plugin's own `data.json` inside the vault. It is
+   * never written to the debug log, never included in an error message, and only
+   * ever sent to the endpoint configured here.
+   */
+  ai: AiConfig;
 }
 
 export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
@@ -113,6 +123,7 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   plotHeight: 0,
   modelStopTimes: {},
   charts: {},
+  ai: { ...AI_DEFAULTS },
 };
 
 export class ModelicaStudioSettingTab extends PluginSettingTab {
@@ -295,6 +306,123 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           this.plugin.settings.debugOverlay = v;
           await this.plugin.saveSettings();
           this.plugin.applyDebugOverlay();
+        })
+      );
+
+    /* ---- AI assistance ---- */
+    containerEl.createEl("h3", { text: "AI assistance" });
+    containerEl.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "Optional. Adds a prompt box to the source editor that can write or " +
+        "repair a model for you. It works with any OpenAI-compatible endpoint. " +
+        "The key is stored in this plugin's data.json inside the vault, is never " +
+        "written to the debug log, and is only ever sent to the endpoint below. " +
+        "Code the model writes is not verified — simulate it before trusting it.",
+    });
+
+    new Setting(containerEl)
+      .setName("API key")
+      .setDesc("Leave empty to switch the feature off.")
+      .addText((t) => {
+        t.inputEl.type = "password";
+        t.inputEl.autocomplete = "off";
+        t.setPlaceholder("sk-...")
+          .setValue(this.plugin.settings.ai.apiKey)
+          .onChange(async (v) => {
+            this.plugin.settings.ai.apiKey = v.trim();
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("Provider preset")
+      .setDesc("Fills in the base URL and model for a known provider.")
+      .addDropdown((d) => {
+        d.addOption("", "Choose...");
+        AI_PROVIDERS.forEach((p, i) => d.addOption(String(i), p.label));
+        d.setValue("");
+        d.onChange(async (v) => {
+          if (v === "") return;
+          const p = AI_PROVIDERS[Number(v)];
+          if (!p) return;
+          this.plugin.settings.ai.baseUrl = p.baseUrl;
+          this.plugin.settings.ai.model = p.model;
+          await this.plugin.saveSettings();
+          this.display();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Base URL")
+      .setDesc("Without the trailing /chat/completions.")
+      .addText((t) =>
+        t
+          .setPlaceholder(AI_DEFAULTS.baseUrl)
+          .setValue(this.plugin.settings.ai.baseUrl)
+          .onChange(async (v) => {
+            this.plugin.settings.ai.baseUrl = v.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Model")
+      .setDesc("The model name the provider expects.")
+      .addText((t) =>
+        t
+          .setPlaceholder(AI_DEFAULTS.model)
+          .setValue(this.plugin.settings.ai.model)
+          .onChange(async (v) => {
+            this.plugin.settings.ai.model = v.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Temperature")
+      .setDesc("Lower is more literal. 0.2 suits code.")
+      .addSlider((sl) =>
+        sl
+          .setLimits(0, 1, 0.05)
+          .setValue(this.plugin.settings.ai.temperature)
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.ai.temperature = v;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Extra instructions")
+      .setDesc("Appended to every request. Use it for house style or units.")
+      .addTextArea((t) => {
+        t.setPlaceholder("e.g. Prefer SI units and add a comment above each equation.")
+          .setValue(this.plugin.settings.ai.systemPrompt)
+          .onChange(async (v) => {
+            this.plugin.settings.ai.systemPrompt = v;
+            await this.plugin.saveSettings();
+          });
+        t.inputEl.rows = 3;
+      });
+
+    const resultBox = containerEl.createDiv({ cls: "modelica-studio-setting-status" });
+    resultBox.style.display = "none";
+
+    new Setting(containerEl)
+      .setName("Test connection")
+      .setDesc("Sends a one-line request to confirm the key and model work.")
+      .addButton((b) =>
+        b.setButtonText("Test").onClick(async () => {
+          b.setButtonText("Testing...");
+          b.setDisabled(true);
+          const result = await this.plugin.testAiConnection();
+          b.setButtonText("Test");
+          b.setDisabled(false);
+          resultBox.style.display = "";
+          resultBox.setText(result.text);
+          resultBox.toggleClass("is-ok", result.ok);
+          resultBox.toggleClass("is-bad", !result.ok);
         })
       );
 
