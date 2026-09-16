@@ -13,6 +13,10 @@ and checks an invariant instead.
 **Start here:** [Modelica in ten minutes](00-modelica-intro.md) — what the language
 is, how a model becomes a result, and how to read the notes.
 
+**Then:** [Learning a subject with a simulator](01-learning-with-a-simulator.md) —
+a worked demonstration of using this to learn something new, with two aerospace
+models.
+
 | Domain | Examples |
 |---|---|
 | Electrical | [Electrical](electrical.md), [RLC](rlc.md), [Rectifier](rectifier.md), [SineAC](sine-ac.md), [BuckConverter](buck-converter.md), [BatteryDischarge](battery-discharge.md), [DCMotor](dcmotor.md) |
@@ -20,6 +24,7 @@ is, how a model becomes a result, and how to read the notes.
 | Fluid | [FluidPipe](fluid-pipe.md), [FluidReservoir](fluid-reservoir.md), [FluidLoop](fluid-loop.md), [TankOrifice](tank-orifice.md), [NonlinearOrifice](nonlinear-orifice.md), [PipeFriction](pipe-friction.md) |
 | Thermal | [Thermal](thermal.md), [HeatConduction](heat-conduction.md), [HeatExchanger](heat-exchanger.md) |
 | Discrete | [StateMachine](state-machine.md) |
+| Aerospace | [AirfoilLift](airfoil-lift.md), [Phugoid](phugoid.md) |
 
 ---
 

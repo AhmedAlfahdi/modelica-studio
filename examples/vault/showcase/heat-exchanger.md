@@ -18,7 +18,7 @@ Studio last used. (Obsidian does not pass a fence's info string to a code-block
 processor, so the option has to live inside the block.)
 
 ```modelica
-//@ time=600
+//@ time=200
 model HeatExchanger "A heated mass losing heat to ambient by convection"
   Modelica.Thermal.HeatTransfer.Sources.PrescribedHeatFlow heater
     annotation(Placement(transformation(extent={{-60,-10},{-40,10}})));

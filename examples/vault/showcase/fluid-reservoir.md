@@ -18,7 +18,7 @@ Studio last used. (Obsidian does not pass a fence's info string to a code-block
 processor, so the option has to live inside the block.)
 
 ```modelica
-//@ time=100
+//@ time=20
 model FluidReservoir "Water draining from a tank under gravity"
   inner Modelica.Fluid.System system
     annotation(Placement(transformation(extent={{-90,-80},{-70,-60}})));
