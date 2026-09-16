@@ -14,6 +14,9 @@
  * misread out of a result file. Nothing in this list was an OpenModelica error:
  * the solver's arithmetic has never once been the thing that was wrong.
  *
+ * The full account, including the five models abandoned rather than fixed and
+ * the one bridge whose topology I misread, is in docs/testing-findings.md.
+ *
  *   - RLC is a SERIES RLC with a step input. zeta = 1.58 > 1 does NOT mean no
  *     overshoot here: the capacitor and inductor in series give complex zeros,
  *     so it rings. The closed form is used instead of the usual formula.

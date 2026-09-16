@@ -176,9 +176,12 @@ double pendulum is chaotic, so its total energy is checked (drift under 1%,
 non-growing) instead of its trajectory; pipe friction depends on an empirical
 correlation, so a mass balance is checked rather than a pressure drop.
 
-Three expectations were themselves wrong when first written, and were corrected
-only after tracing the discrepancy to the expectation rather than the simulation.
-Those corrections are recorded in `test/audit.test.mjs`.
+Twelve expectations were themselves wrong when first written, and every one was
+corrected only after tracing the discrepancy to the expectation rather than the
+simulation. Not once was the solver at fault. The full account — what was
+expected, what came out, which side was wrong and how it was settled — is in
+[`docs/testing-findings.md`](docs/testing-findings.md), along with the five models
+that were built, found unverifiable, and abandoned.
 
 ## Performance
 
