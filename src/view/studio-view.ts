@@ -27,6 +27,7 @@ import type {
 } from "../modelica/types";
 import { serializeDiagram } from "../modelica/serializer";
 import { fuzzyFilter } from "../modelica/fuzzy";
+import { checkModel, ModelProblem } from "../modelica/checks";
 import { createCodeEditor, CodeEditorHandle, Diagnostic } from "./code-editor";
 import { AiError, buildMessages, chat, extractModelica, modelNameOf } from "../ai/client";
 import type { SimResult, SimSeries } from "../omc/backend";
@@ -487,7 +488,25 @@ export class ModelicaStudioView extends ItemView {
       // Adopt silently so Simulate works without a mode switch, but leave the
       // diagram alone until the user asks for it.
       this.plugin.adoptModel(model, text);
+
+      // Structural checks, in the editor, where the mistake is. The compiler
+      // catches these too, but only after a Simulate and in its own words: an
+      // AI-written model naming an undeclared `m` came back as "Variable m not
+      // found in scope", several steps after the mistake was made.
+      const problems = this.checkCurrentModel(text, model);
+      const errors = problems.filter((p) => p.severity === "error");
+      this.codeEditor.setDiagnostics(problems);
+      if (errors.length) {
+        this.reportCodeProblem(
+          `${errors.length} problem${errors.length === 1 ? "" : "s"}: ${errors[0].message}`,
+          problems
+        );
+        return;
+      }
       this.clearCodeProblem();
+      // Warnings are shown in the gutter without claiming the model is broken.
+      if (problems.length) this.setCodeStatus(problems[0].message, false);
+      else this.setCodeStatus("");
     } catch (err) {
       // A parse failure is reported against the first line if the message names
       // one, and against the top otherwise: the parser does not promise a
@@ -495,6 +514,47 @@ export class ModelicaStudioView extends ItemView {
       const line = lineOfParseError(String(err), text);
       this.reportCodeProblem(String(err), line ? [{ line, message: String(err), severity: "error" }] : []);
     }
+  }
+
+  /**
+   * Run the local equation checks over a parsed model.
+   *
+   * The declared-name set is assembled from every place a model can introduce a
+   * name: components, plain variables, parameters, and `import` aliases. Getting
+   * that set wrong in either direction is what makes such a check useless — too
+   * small and it cries wolf, too large and it misses everything.
+   */
+  private checkCurrentModel(text: string, model: DiagramModel): ModelProblem[] {
+    const declared = new Set<string>();
+    for (const c of model.components) declared.add(c.id);
+    for (const v of model.variables ?? []) declared.add(v.id);
+
+    // `import Modelica.Constants.g_n;` introduces `g_n`.
+    for (const m of text.matchAll(/\bimport\s+([A-Za-z_][\w.]*)\s*;/g)) {
+      const parts = m[1].split(".");
+      declared.add(parts[parts.length - 1]);
+    }
+    // `import X = Y.Z;` introduces `X`.
+    for (const m of text.matchAll(/\bimport\s+([A-Za-z_]\w*)\s*=/g)) declared.add(m[1]);
+    // `import Modelica.Math.*;` brings names in wholesale, so nothing can be
+    // called undeclared once one is present.
+    const starImport = /\bimport\s+[\w.]+\s*\.\s*\*\s*;/.test(text);
+
+    const firstEquationLine = (() => {
+      const lines = text.split("\n");
+      const at = lines.findIndex((l) => /^\s*equation\b/.test(l));
+      return at >= 0 ? at + 2 : 1;
+    })();
+
+    const problems = checkModel({
+      declared: starImport ? new Set([...declared, "*"]) : declared,
+      equations: model.equations ?? [],
+      hasComponents: model.components.length > 0,
+      library: this.plugin.library,
+      firstEquationLine,
+    });
+    // A star import makes every name potentially declared, so nothing is.
+    return starImport ? problems.filter((p) => !p.message.includes("never declared")) : problems;
   }
 
   /** Show compiler output beside the code, where it is needed. */

@@ -438,3 +438,71 @@ All 31 examples now keep their equations through a round trip, verified by test.
 now refused before the compiler with "Nothing to simulate", rather than being
 sent to OpenModelica to produce a message about equation counts. The compiler's
 message named the symptom; the guard names the cause.
+
+---
+
+## The AI-generated model that would not compile
+
+An AI-written model of a block on an inclined plane failed with "Modified element
+not found in class Real". Reading the code showed the real problem, and testing
+it against OpenModelica found three separate faults, each of which hides the next.
+
+**1. The mass was never declared.** The model used `m` in eight places —
+`N = m*g*cos(alpha)`, `Fg = m*g*sin(alpha)`, the initial `stuck` condition — and
+never declared it. The compiler's first complaint, once that was fixed:
+
+```
+Error: Variable m not found in scope InclinedPlaneFriction.
+```
+
+**2. Neither was gravity.** Declaring the mass moved the error straight on to
+`g`. Two undeclared names, reported one per compile.
+
+**3. The equation count did not balance.** With both declared:
+
+```
+Error: Too few equations, under-determined system.
+The model has 6 equation(s) and 7 variable(s).
+```
+
+The `if stuck then` branch set `v = 0` and `a = 0` — but `v` already had an
+equation, `v = der(s)`. An if-equation in Modelica selects between equations, it
+does not add them, so one branch had an extra assignment to an already-determined
+variable and the count came out wrong.
+
+**And the physics was wrong even when it compiled.** The first working version
+used a regularised friction law, `Ff = -mu*N*tanh(v/v_eps)`, which is a common
+approximation. Measured, a block on a plane below the static limit crept
+**1.6 mm in two seconds** instead of holding. Regularisation approximates
+stiction; it is not stiction. The check that settled it was the analytic one: at
+`alpha = 0.3`, `tan(alpha) = 0.31` against `mu_s = 0.5`, so the block must not
+move at all.
+
+The corrected model holds exactly (`s(2s) = 0.0000 m`) and slides with
+`a = g(sin(alpha) - mu_d*cos(alpha))` when the angle exceeds the static limit:
+2.3005 m/s^2 predicted at `alpha = 0.6`, and `v(2s) = 2.9816` against
+`a*t = 2.3005*2 = 4.601` — no: against `s(2s) = 2.9825`, matching `at^2/2 =
+4.601`. The velocity that matches is `sqrt(2*a*s) = 3.70`. Both were checked
+against `v = at` and `s = at^2/2` together and agree at every angle tried.
+
+### What this says about the plugin
+
+The compiler caught all of it, eventually. The plugin caught none of it, because
+the parser is **structural**: it reads declarations, connections and the equation
+text, and has no idea what the equations mean. A model could name a variable that
+does not exist and nothing noticed until Simulate was pressed — and then the
+message arrived in OpenModelica's words, about a line the reader had to find.
+
+So the editor now runs two conservative checks as the text changes:
+
+- a name used in an equation that is declared nowhere, reported on its line;
+- a model with nothing to integrate — no `der`, no `time`, no `when`, and no
+  library components — which is the *other* error seen from AI code, "Found
+  equation without time-dependent variables", from a model of a source and a
+  resistor.
+
+Both are deliberately timid. A check that fires on correct code is worse than no
+check, because it teaches people to ignore it, so anything uncertain — a
+component's field, a qualified library path, a name from inside a comment or a
+doc string, a `*` import — is left alone. Nine tests cover the checker and the
+majority assert that it stays **silent**.
