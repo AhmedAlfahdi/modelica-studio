@@ -1092,72 +1092,31 @@ body.modelica-studio-resizing * {
   overflow: hidden;
 }
 
-.mst-code-highlight,
-.mst-code-input {
+.mst-code-editor {
   margin: 0;
   border: 0;
+  min-height: 100%;
   padding: 8px 12px;
   font: inherit;
   line-height: inherit;
   letter-spacing: inherit;
   tab-size: 2;
+  /* `pre` behaviour without a `pre` element: the editable layer is the only
+     layer, so it must not wrap or collapse whitespace. */
   white-space: pre;
   overflow-wrap: normal;
   box-sizing: border-box;
-}
-
-.mst-code-highlight {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  overflow: hidden;
-  pointer-events: none;
-  background: transparent;
-}
-
-/* The highlight layer paints the text, so its default colour is stated
-   outright. Obsidian colours `pre`/`code` with its own code foreground
-   (rgb(34,34,34)), which is near-black: on a dark theme every token WITHOUT an
-   explicit colour — identifiers, punctuation, `connect`, `end` — came out
-   black on a dark background and looked like missing text, while the coloured
-   tokens stayed visible. Inheriting that value was the bug. */
-.mst-code-highlight {
-  color: var(--text-normal) !important;
-}
-
-/* `-webkit-text-fill-color` wins over `color` in Chromium, so it must be reset
-   too or a theme's code fill would still paint the text. Setting it to
-   `currentColor` makes each element's own `color` authoritative. */
-.mst-code-highlight,
-.mst-code-highlight span {
-  -webkit-text-fill-color: currentColor;
-}
-
-.mst-code-input {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  width: 100%;
-  height: 100%;
-  resize: none;
   outline: none;
-  overflow: auto;
-  background: transparent;
-  /* The glyphs are drawn by the layer behind; only the caret and the selection
-     belong to the textarea. Without this the text would be painted twice and
-     look bold and misaligned.
-     `-webkit-text-fill-color` is what actually paints text in Chromium, so it is
-     set as well as `color` — and with !important, because an inherited rule that
-     won on one of these alone left the textarea painting opaque text over the
-     highlight, hiding it. */
-  color: transparent !important;
-  -webkit-text-fill-color: transparent !important;
   caret-color: var(--text-normal);
+  /* The text is painted here and nowhere else. Nothing else may set a colour on
+     this element, or the two would disagree — which is the bug this design
+     removes. */
+  color: var(--text-normal);
 }
 
-.mst-code-input::selection {
-  background: var(--text-selection);
-}
+
+
+
 
 /* Token colours */
 .mst-comment {

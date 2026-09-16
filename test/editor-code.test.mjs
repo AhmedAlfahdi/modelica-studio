@@ -259,25 +259,35 @@ test("a new line keeps the indentation and deepens after a block opener", () => 
   assert.equal(indentForNewline("  Real x;", 9), "  ");
 });
 
-test("the highlight layer states its own text colour", () => {
-  // The layer paints the text, so if it inherits a colour it can inherit the
-  // wrong one. This was a real fault: Obsidian colours `pre`/`code` with
-  // rgb(34,34,34), so on a dark theme every token without an explicit colour —
-  // identifiers, punctuation, `connect`, `end` — was painted near-black on a
-  // dark background. The coloured tokens stayed visible, which made it look like
-  // text was randomly missing rather than miscoloured.
+test("the editor paints text in a single layer, so nothing can hide it", () => {
+  // The two-layer design — a transparent textarea over a painted <pre> — is what
+  // allowed "the text is invisible but the caret still moves": the glyphs were
+  // drawn by an element other than the one being edited, so any disagreement
+  // between them showed as missing text. Reported three times, never
+  // reproducible outside the reporter's app. One layer cannot disagree.
   const css = fs.readFileSync(path.join(repoRoot, "styles.css"), "utf8");
-  // The class has several rules; the colour is asserted on whichever one sets it.
-  const blocks = [...css.matchAll(/(?:^|\n)\.mst-code-highlight\s*\{[^}]*\}/g)].map((m) => m[0]);
-  assert.ok(blocks.length >= 2, "the layer has its own rules, separate from the shared metrics rule");
-  const joined = blocks.join("\n");
-  assert.match(joined, /color:\s*var\(--text-normal\)/, "it sets its own colour");
-  assert.match(joined, /!important/, "and cannot be overridden by a theme rule on pre/code");
-  assert.match(joined, /z-index:\s*1/, "it sits under the input");
+  const editor = fs.readFileSync(path.join(repoRoot, "src/view/code-editor.ts"), "utf8");
 
-  const input = [...css.matchAll(/(?:^|\n)\.mst-code-input\s*\{[^}]*\}/g)].map((m) => m[0]).join("\n");
-  assert.ok(input, "the textarea has a rule");
-  assert.match(input, /z-index:\s*2/, "and above the highlight");
+  assert.match(editor, /contenteditable/, "the editor is one editable element");
+  assert.ok(!/createEl\("textarea"/.test(editor), "and there is no textarea");
+  assert.ok(!/mst-code-input/.test(css), "the transparent textarea rule is gone");
+  assert.ok(!/mst-code-highlight/.test(css), "and so is the separate highlight layer");
+
+  // The single layer must state a real colour, and must not be transparent.
+  const rule = [...css.matchAll(/(?:^|\n)\.mst-code-editor\s*\{[^}]*\}/g)].map((m) => m[0]).join("\n");
+  assert.ok(rule, "the editable layer has a rule");
+  assert.match(rule, /color:\s*var\(--text-normal\)/, "it sets its own colour");
+  assert.ok(
+    !/transparent/.test(rule.replace(/caret-color:[^;]*;?/g, "")),
+    "and never makes its own text transparent"
+  );
+  // Preformatted behaviour is required, since a div collapses whitespace.
+  assert.match(rule, /white-space:\s*pre/, "whitespace is preserved");
+
+  // Tokens are coloured as spans inside it.
+  for (const cls of ["mst-keyword", "mst-type", "mst-string", "mst-number", "mst-comment"]) {
+    assert.ok(css.includes("." + cls), `${cls} is styled`);
+  }
 });
 
 test("the CSS is loadable and the selectors match what the editor emits", () => {

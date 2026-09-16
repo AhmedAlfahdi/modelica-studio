@@ -1,15 +1,26 @@
 /**
  * A Modelica source editor.
  *
- * Built from a textarea with a highlighted layer behind it rather than pulling
- * in CodeMirror. Obsidian bundles CodeMirror 6 but does not export a way to
- * construct an `EditorView` from a plugin, and reaching into the app's internals
- * for one is not something a plugin can rely on across versions. A textarea has
- * the editing behaviour people already expect — selection, undo, IME, spellcheck
- * suppression — and the layer behind it only has to get the colours right.
+ * ONE editable element, whose content IS the highlighted HTML. The editor is a
+ * `contenteditable` div rather than a textarea with a highlight layer behind it.
  *
- * The one hard requirement is that the two layers agree exactly: same font,
- * same padding, same wrapping. Everything else follows from that.
+ * That is a deliberate reversal. The two-layer design — a transparent textarea
+ * over a painted `<pre>` — is a common technique, but it has a failure mode that
+ * cannot be fixed from the inside: the text is drawn by a DIFFERENT element from
+ * the one being edited, so anything that makes those two disagree (a theme rule
+ * reaching the `<pre>`, a colour resolving differently in the host app, font
+ * resolution, compositing) presents as "the text is invisible" with the caret
+ * moving through empty space. That was reported three times and could not be
+ * reproduced outside the reporter's app, and each attempted fix was a guess at
+ * which of those it was.
+ *
+ * With one layer there is nothing to disagree. The glyphs being edited are the
+ * glyphs being painted, so no theme, snippet or stylesheet can separate them.
+ * The cost is that caret handling becomes explicit, which is what the rest of
+ * this file is about.
+ *
+ * CodeMirror would have avoided all of it, but Obsidian bundles CodeMirror 6
+ * without exporting a way to construct an `EditorView` from a plugin.
  */
 
 import { LibraryIndex } from "../modelica/library";
@@ -24,7 +35,7 @@ export interface CodeEditorOptions {
   library?: () => LibraryIndex | undefined;
   /** Ctrl/Cmd+Enter handler, for simulate. */
   onSubmit?: () => void;
-  /** Diagnostic sink for the layer geometry, called once on first focus. */
+  /** Diagnostic sink, called once on first focus. */
   probe?: (info: Record<string, string | number>) => void;
 }
 
@@ -47,23 +58,11 @@ export interface CodeEditorHandle {
   destroy(): void;
 }
 
-/**
- * A scratch 2D context for text measurement.
- *
- * Created lazily and reused. Canvas measurement needs no DOM mutation, so it can
- * run on every keystroke without forcing a layout of the painted text.
- */
-let scratch: CanvasRenderingContext2D | null | undefined;
-function measureContext(): CanvasRenderingContext2D | null {
-  if (scratch === undefined) {
-    try {
-      scratch = document.createElement("canvas").getContext("2d");
-    } catch {
-      scratch = null;
-    }
-  }
-  return scratch;
-}
+/** Indent unit. Shared with `indentForNewline`, which adds the same string. */
+const INDENT_UNIT = "  ";
+
+/** How many edits the in-editor undo stack holds. */
+const UNDO_LIMIT = 200;
 
 export function createCodeEditor(
   parent: HTMLElement,
@@ -75,69 +74,152 @@ export function createCodeEditor(
   const gutter = root.createDiv({ cls: "mst-code-gutter" });
   const gutterInner = gutter.createDiv({ cls: "mst-code-gutter-inner" });
   const scroll = root.createDiv({ cls: "mst-code-scroll" });
-  const pre = scroll.createEl("pre", { cls: "mst-code-highlight" });
-  const area = scroll.createEl("textarea", { cls: "mst-code-input" });
+  // The single editable layer. `pre` behaviour comes from CSS (`white-space:
+  // pre`), not from the tag, so the markup stays a plain div.
+  const editor = scroll.createEl("div", { cls: "mst-code-editor" });
   const popup = root.createDiv({ cls: "mst-code-popup" });
   popup.style.display = "none";
 
-  area.setAttribute("spellcheck", "false");
-  area.setAttribute("autocapitalize", "off");
-  area.setAttribute("autocomplete", "off");
-  area.setAttribute("wrap", "off");
-  area.value = initial;
+  editor.setAttribute("contenteditable", "plaintext-only");
+  editor.setAttribute("spellcheck", "false");
+  editor.setAttribute("autocapitalize", "off");
+  editor.setAttribute("autocomplete", "off");
+  // `plaintext-only` is what makes typing and pasting insert text rather than
+  // markup. It is supported in the Chromium Obsidian ships; the paste handler
+  // below is the fallback if it were ever ignored.
+  if (editor.contentEditable !== "plaintext-only") {
+    editor.setAttribute("contenteditable", "true");
+  }
 
   let diagnostics: Diagnostic[] = [];
   let popupItems: Completion[] = [];
   let popupIndex = 0;
-  /** Start of the word being completed, in textarea offsets. */
-  let popupFrom = 0;
   let changeTimer: number | null = null;
+  /** Guards handlers while we are the ones rewriting the DOM. */
+  let internal = false;
+
+  /* ---- text and caret ---- */
+
+  const text = (): string => editor.textContent ?? "";
+
+  /** Caret position as a plain-text offset from the start of the document. */
+  function caretOffset(): number {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return text().length;
+    const range = sel.getRangeAt(0);
+    if (!editor.contains(range.startContainer)) return text().length;
+    const before = range.cloneRange();
+    before.selectNodeContents(editor);
+    before.setEnd(range.startContainer, range.startOffset);
+    return before.toString().length;
+  }
+
+  /** Put the caret at a plain-text offset, clamped to the content. */
+  function setCaret(offset: number): void {
+    const target = Math.max(0, Math.min(offset, text().length));
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+    let seen = 0;
+    let node = walker.nextNode() as Text | null;
+    while (node) {
+      const len = node.data.length;
+      if (seen + len >= target) {
+        const range = document.createRange();
+        range.setStart(node, target - seen);
+        range.collapse(true);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+        return;
+      }
+      seen += len;
+      node = walker.nextNode() as Text | null;
+    }
+    // Empty content, or past the end: collapse at the end of the element.
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
 
   /* ---- rendering ---- */
 
   function lineCount(): number {
-    return area.value.split("\n").length;
+    return text().split("\n").length;
   }
 
   function renderGutter(): void {
-    const lines = lineCount();
-    const parts: string[] = [];
     const byLine = new Map<number, Diagnostic>();
     for (const d of diagnostics) byLine.set(d.line, d);
-    for (let i = 1; i <= lines; i++) {
+    const parts: string[] = [];
+    for (let i = 1; i <= lineCount(); i++) {
       const d = byLine.get(i);
-      const mark = d ? `<span class="mst-code-mark is-${d.severity}" title="${escapeAttr(d.message)}"></span>` : "";
+      const mark = d
+        ? `<span class="mst-code-mark is-${d.severity}" title="${escapeAttr(d.message)}"></span>`
+        : "";
       parts.push(`<div class="mst-code-ln${d ? " has-" + d.severity : ""}">${i}${mark}</div>`);
     }
     gutterInner.innerHTML = parts.join("");
   }
 
-  function renderHighlight(): void {
-    pre.innerHTML = highlight(area.value);
-  }
-
   function syncScroll(): void {
-    // Both layers must move together or the colours slide off the text.
-    pre.style.transform = `translate(${-area.scrollLeft}px, ${-area.scrollTop}px)`;
-    gutterInner.style.transform = `translateY(${-area.scrollTop}px)`;
+    gutterInner.style.transform = `translateY(${-scroll.scrollTop}px)`;
   }
 
-  function renderAll(): void {
-    renderHighlight();
+  /**
+   * Repaint the highlighted HTML, keeping the caret where it was.
+   *
+   * Rewriting `innerHTML` destroys the selection, so the offset is saved and
+   * restored around it. That round trip is the price of syntax colouring in a
+   * single layer, and it is why the caret is tracked as a text offset rather
+   * than as a DOM node.
+   */
+  function repaint(restoreCaret = true): void {
+    const offset = restoreCaret ? caretOffset() : null;
+    internal = true;
+    editor.innerHTML = highlight(text());
+    internal = false;
+    syncScroll();
+    if (offset !== null) setCaret(offset);
+  }
+
+  /* ---- undo history ---- */
+
+  const past: Array<{ text: string; caret: number }> = [];
+  const future: Array<{ text: string; caret: number }> = [];
+
+  function snapshot(): void {
+    past.push({ text: text(), caret: caretOffset() });
+    if (past.length > UNDO_LIMIT) past.shift();
+    future.length = 0;
+  }
+
+  function restore(state: { text: string; caret: number }): void {
+    internal = true;
+    editor.innerHTML = highlight(state.text);
+    internal = false;
     renderGutter();
     syncScroll();
+    setCaret(state.caret);
+    emitChange();
+  }
+
+  function undo(): void {
+    const prev = past.pop();
+    if (!prev) return;
+    future.push({ text: text(), caret: caretOffset() });
+    restore(prev);
+  }
+
+  function redo(): void {
+    const next = future.pop();
+    if (!next) return;
+    past.push({ text: text(), caret: caretOffset() });
+    restore(next);
   }
 
   /* ---- completion ---- */
-
-  function caretOffset(): number {
-    return area.selectionStart ?? 0;
-  }
-
-  /** The identifier fragment immediately before the caret. */
-  function prefixAtCaret(): { text: string; from: number } {
-    return prefixAt(area.value, caretOffset());
-  }
 
   function hidePopup(): void {
     popup.style.display = "none";
@@ -145,18 +227,17 @@ export function createCodeEditor(
   }
 
   function showPopup(force: boolean): void {
-    const { text, from } = prefixAtCaret();
-    if (!text || (text.length < (force ? 1 : 2))) {
+    const prefix = prefixAt(text(), caretOffset()).text;
+    if (!prefix || prefix.length < (force ? 1 : 2)) {
       hidePopup();
       return;
     }
-    const items = completionsFor(text, opts.library?.());
+    const items = completionsFor(prefix, opts.library?.());
     if (!items.length) {
       hidePopup();
       return;
     }
     popupItems = items;
-    popupFrom = from;
     popupIndex = 0;
     renderPopup();
     positionPopup();
@@ -164,161 +245,183 @@ export function createCodeEditor(
 
   function renderPopup(): void {
     popup.empty();
-    const max = 12;
-    const items = popupItems.slice(0, max);
-    items.forEach((c, i) => {
+    popupItems.slice(0, 12).forEach((c, i) => {
       const row = popup.createDiv({ cls: `mst-code-item${i === popupIndex ? " is-active" : ""}` });
       row.createSpan({ cls: "mst-code-item-label", text: c.label });
       row.createSpan({ cls: "mst-code-item-detail", text: c.detail });
       row.addEventListener("mousedown", (ev) => {
-        ev.preventDefault(); // keep focus in the textarea
+        ev.preventDefault(); // keep the caret in the editor
         acceptPopup(i);
       });
     });
     popup.style.display = "";
   }
 
-  /** Place the popup under the caret using a mirrored measurement. */
+  /**
+   * A scratch 2D context, created once and reused.
+   *
+   * Measuring the caret's pixel position by inserting a hidden element would
+   * perturb the very layer being measured, on every keystroke.
+   */
+  let measureCtx: CanvasRenderingContext2D | null | undefined;
+  function measureFont(style: CSSStyleDeclaration): CanvasRenderingContext2D | null {
+    if (measureCtx === undefined) {
+      try {
+        measureCtx = document.createElement("canvas").getContext("2d");
+      } catch {
+        measureCtx = null;
+      }
+    }
+    if (measureCtx) {
+      measureCtx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    }
+    return measureCtx;
+  }
+
   function positionPopup(): void {
-    const value = area.value;
-    const offset = caretOffset();
-    const before = value.slice(0, offset);
-    const lineStart = before.lastIndexOf("\n") + 1;
-    const line = before.slice(lineStart);
+    const before = text().slice(0, caretOffset());
+    const line = before.slice(before.lastIndexOf("\n") + 1);
     const lineIndex = before.split("\n").length - 1;
 
-    const style = getComputedStyle(area);
-    // Measure the prefix with a canvas rather than by inserting a hidden span
-    // into the highlight layer. Appending to that <pre> re-ran layout on every
-    // keystroke and left a stray span behind if anything threw in between.
-    const measure = measureContext();
-    if (measure) {
-      measure.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-    }
-    const width = measure ? measure.measureText(line || " ").width : 0;
+    const style = getComputedStyle(editor);
+    const ctx = measureFont(style);
+    const width = ctx ? ctx.measureText(line || " ").width : 0;
     const lineHeight = parseFloat(style.lineHeight) || 18;
     const paddingLeft = parseFloat(style.paddingLeft) || 0;
     const paddingTop = parseFloat(style.paddingTop) || 0;
 
-    const x = paddingLeft + width - area.scrollLeft;
-    const y = paddingTop + (lineIndex + 1) * lineHeight - area.scrollTop;
-    popup.style.left = `${Math.max(0, x)}px`;
-    popup.style.top = `${y}px`;
+    popup.style.left = `${Math.max(0, paddingLeft + width - scroll.scrollLeft)}px`;
+    popup.style.top = `${paddingTop + (lineIndex + 1) * lineHeight - scroll.scrollTop}px`;
   }
 
   function acceptPopup(index: number): void {
     const item = popupItems[index];
     if (!item) return;
-    const applied = applyCompletion(area.value, caretOffset(), item);
-    area.value = applied.text;
-    area.setSelectionRange(applied.caret, applied.caret);
+    const applied = applyCompletion(text(), caretOffset(), item);
+    snapshot();
+    replaceAll(applied.text, applied.caret);
     hidePopup();
-    renderAll();
     emitChange();
   }
 
-  /* ---- editing behaviour ---- */
+  /** Replace the whole document and place the caret. */
+  function replaceAll(value: string, caret: number): void {
+    internal = true;
+    editor.innerHTML = highlight(value);
+    internal = false;
+    renderGutter();
+    syncScroll();
+    setCaret(caret);
+  }
+
+  /* ---- editing ---- */
 
   function emitChange(): void {
     if (changeTimer !== null) window.clearTimeout(changeTimer);
     changeTimer = window.setTimeout(() => {
       changeTimer = null;
-      opts.onChange?.(area.value);
+      opts.onChange?.(text());
     }, 250);
   }
 
-  function insertText(text: string): void {
-    const start = area.selectionStart ?? 0;
-    const end = area.selectionEnd ?? 0;
-    area.value = area.value.slice(0, start) + text + area.value.slice(end);
-    const caret = start + text.length;
-    area.setSelectionRange(caret, caret);
-    renderAll();
+  /** Replace the current selection with plain text. */
+  function insertText(value: string): void {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !editor.contains(sel.getRangeAt(0).startContainer)) {
+      setCaret(text().length);
+    }
+    const range = window.getSelection()!.getRangeAt(0);
+    range.deleteContents();
+    const node = document.createTextNode(value);
+    range.insertNode(node);
+    const after = document.createRange();
+    after.setStart(node, node.data.length);
+    after.collapse(true);
+    const s = window.getSelection()!;
+    s.removeAllRanges();
+    s.addRange(after);
+    repaint();
+    renderGutter();
     emitChange();
   }
 
-  area.addEventListener("input", () => {
-    renderAll();
+  // One snapshot per edit burst. `beforeinput` fires before the DOM changes, so
+  // the state pushed is the one to return to.
+  editor.addEventListener("beforeinput", () => {
+    if (!internal) snapshot();
+  });
+
+  editor.addEventListener("input", () => {
+    if (internal) return;
+    // The DOM has already changed. Re-render it with colours and put the caret
+    // back; `plaintext-only` means the content is text, so nothing is lost.
+    repaint();
+    renderGutter();
     emitChange();
     showPopup(false);
   });
 
-  area.addEventListener("scroll", syncScroll);
-
-  area.addEventListener("blur", () => hidePopup());
-
-  area.addEventListener("click", () => {
-    hidePopup();
+  editor.addEventListener("paste", (ev) => {
+    // Belt and braces for a build that ignores `plaintext-only`: paste the text
+    // only, never markup.
+    ev.preventDefault();
+    const data = ev.clipboardData?.getData("text/plain") ?? "";
+    if (data) insertText(data);
   });
 
-  /**
-   * Report the layer geometry once, the first time the editor is focused.
-   *
-   * The text is painted by the layer behind the textarea, so if the two drift
-   * apart — different font resolution, a stray theme rule, a zero-height box —
-   * the visible symptom is "the text vanished" with nothing to inspect. This
-   * puts the numbers in the debug log at the moment it would happen.
-   */
+  scroll.addEventListener("scroll", syncScroll);
+  editor.addEventListener("blur", () => hidePopup());
+  editor.addEventListener("click", () => hidePopup());
+
   function report(tag: string): void {
     if (!opts.probe) return;
-    const pr = pre.getBoundingClientRect();
-    const ar = area.getBoundingClientRect();
-    const ps = getComputedStyle(pre);
-    const as = getComputedStyle(area);
-    const first = pre.firstElementChild as HTMLElement | null;
-    // Deliberately verbose. "The text is invisible" has several unrelated
-    // causes — a blank layer, a transparent colour, layers misaligned, zero
-    // height — and they are indistinguishable from a screenshot. Reporting the
-    // real HTML settles it in one line.
+    const cs = getComputedStyle(editor);
     opts.probe({
       tag,
-      preRect: `${Math.round(pr.width)}x${Math.round(pr.height)}`,
-      inputRect: `${Math.round(ar.width)}x${Math.round(ar.height)}`,
-      preOpacity: ps.opacity,
-      preVisibility: ps.visibility,
-      preDisplay: ps.display,
-      preColor: ps.color,
-      preFill: ps.webkitTextFillColor,
-      preZ: ps.zIndex,
-      inputColor: as.color,
-      inputFill: as.webkitTextFillColor,
-      inputZ: as.zIndex,
-      inputBorder: as.borderTopWidth,
-      highlightChars: pre.textContent?.length ?? 0,
-      sourceChars: area.value.length,
-      childCount: pre.childElementCount,
-      firstChildColor: first ? getComputedStyle(first).color : "-",
-      htmlHead: (pre.innerHTML || "").slice(0, 120),
-      // The colour resolves through a chain of Obsidian variables. If the
-      // computed value is wrong, which LINK is wrong is what matters, so the
-      // whole chain is reported.
-      // The surface the code actually sits on. If the theme class and the real
-      // background disagree, contrast cannot be taken from the theme variables.
+      layers: "single",
+      editorColor: cs.color,
+      editorFill: cs.webkitTextFillColor,
+      editorFont: `${cs.fontSize}/${cs.lineHeight}`,
+      textChars: text().length,
+      childCount: editor.childElementCount,
+      theme: document.body.classList.contains("theme-dark") ? "dark" : "light",
+      htmlHead: (editor.innerHTML || "").slice(0, 100),
     });
   }
 
-  // Reported on first focus, not at creation: the pane is display:none until
-  // the mode is switched, so a report taken then measures 0x0 and an empty
-  // layer and says nothing true about what is on screen.
   let probed = false;
-  area.addEventListener("focus", () => {
+  editor.addEventListener("focus", () => {
     if (probed) return;
     probed = true;
     window.setTimeout(() => report("focused"), 250);
   });
 
-  area.addEventListener("keydown", (ev) => {
-    // Completion is open: it owns the navigation keys.
+  editor.addEventListener("keydown", (ev) => {
+    const mod = ev.ctrlKey || ev.metaKey;
+
+    if (mod && ev.key.toLowerCase() === "z") {
+      ev.preventDefault();
+      if (ev.shiftKey) redo();
+      else undo();
+      return;
+    }
+    if (mod && ev.key.toLowerCase() === "y") {
+      ev.preventDefault();
+      redo();
+      return;
+    }
+
     if (popupItems.length) {
+      const max = Math.min(popupItems.length, 12);
       if (ev.key === "ArrowDown") {
         ev.preventDefault();
-        popupIndex = (popupIndex + 1) % Math.min(popupItems.length, 12);
+        popupIndex = (popupIndex + 1) % max;
         renderPopup();
         return;
       }
       if (ev.key === "ArrowUp") {
         ev.preventDefault();
-        popupIndex = (popupIndex - 1 + Math.min(popupItems.length, 12)) % Math.min(popupItems.length, 12);
+        popupIndex = (popupIndex - 1 + max) % max;
         renderPopup();
         return;
       }
@@ -336,54 +439,52 @@ export function createCodeEditor(
 
     if (ev.key === "Tab") {
       ev.preventDefault();
-      // The same unit `indentForNewline` adds, so Tab and auto-indent agree.
-      insertText("  ");
+      insertText(INDENT_UNIT);
       return;
     }
 
     if (ev.key === "Enter") {
-      // Keep the current indentation, and add a level after a block opener.
+      // Keep the current indentation, and deepen after a block opener.
       ev.preventDefault();
-      insertText("\n" + indentForNewline(area.value, caretOffset()));
+      insertText("\n" + indentForNewline(text(), caretOffset()));
       return;
     }
 
-    if ((ev.ctrlKey || ev.metaKey) && ev.key === " ") {
+    if (mod && ev.key === " ") {
       ev.preventDefault();
       showPopup(true);
       return;
     }
 
-    if ((ev.ctrlKey || ev.metaKey) && ev.key === "Enter") {
+    if (mod && ev.key === "Enter") {
       ev.preventDefault();
       opts.onSubmit?.();
       return;
     }
   });
 
-  renderAll();
+  // Seed the content: the highlighted HTML IS the editable content.
+  internal = true;
+  editor.innerHTML = highlight(initial);
+  internal = false;
+  renderGutter();
 
   return {
     element: root,
-    getValue: () => area.value,
-    setValue(text, o = {}) {
-      const caret = caretOffset();
-      area.value = text;
-      if (o.keepCursor) {
-        const at = Math.min(caret, text.length);
-        area.setSelectionRange(at, at);
-      }
-      renderAll();
+    getValue: () => text(),
+    setValue(value) {
+      snapshot();
+      replaceAll(value, 0);
     },
-    focus: () => area.focus(),
+    focus: () => editor.focus(),
     setDiagnostics(list) {
       diagnostics = list;
       renderGutter();
     },
     revealLine(line) {
-      const style = getComputedStyle(area);
+      const style = getComputedStyle(editor);
       const lineHeight = parseFloat(style.lineHeight) || 18;
-      area.scrollTop = Math.max(0, (line - 3) * lineHeight);
+      scroll.scrollTop = Math.max(0, (line - 3) * lineHeight);
       syncScroll();
       const el = gutterInner.children[line - 1] as HTMLElement | undefined;
       if (el) {

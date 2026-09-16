@@ -370,3 +370,17 @@ Two genuine defects were found along the way and fixed:
   `key=value` separated by spaces, and CSS colours contain spaces, so the log was
   unparseable exactly where it mattered — `rgb(255, 255, 255)` arrived as
   `rgb(255,`.
+
+### Resolution
+
+The two-layer editor was replaced with a single editable layer
+(`contenteditable="plaintext-only"`), whose content *is* the highlighted HTML.
+The bug class is removed rather than fixed: the glyphs being edited and the
+glyphs being painted are now the same nodes, so no theme, snippet or
+compositing rule can separate them.
+
+That is the right response to a fault that resists reproduction. Three
+hypotheses were tested and disproved, and a harness using Obsidian's own
+`app.css` — focused, fully selected, in the reporter's light theme — rendered
+correctly every time. When the failure cannot be observed, a design in which the
+failure is *possible* is the thing to change, not the next guess at its cause.
