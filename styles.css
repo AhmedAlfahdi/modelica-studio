@@ -1242,3 +1242,34 @@ body.modelica-studio-resizing * {
 .modelica-studio-setting-status.is-bad {
   border-color: var(--background-modifier-error);
 }
+
+/* Run log: shares the bottom pane with the plot. */
+.modelica-studio-log {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.modelica-studio-log-bar {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex: 0 0 auto;
+}
+
+.modelica-studio-log-text {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-normal);
+}

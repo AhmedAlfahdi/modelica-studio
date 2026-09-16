@@ -24,6 +24,8 @@ import { findClass, parseModelica, toDiagramModel } from "./modelica/parser";
 import { serializeDiagram } from "./modelica/serializer";
 import { findExample } from "./modelica/examples";
 import { AiError, chat, listModels } from "./ai/client";
+import { RunLog } from "./ai/run-log";
+import { AiEnvironment, describeAvailableClasses, describeEnvironment, describeLog } from "./ai/context";
 import { LEGACY_SECRET_NAME, legacyKeyOf, secretNameOf } from "./ai/prompts";
 import { ModelicaStudioView, VIEW_TYPE_MODELICA } from "./view/studio-view";
 import { ModelicaStudioSettingTab, DEFAULT_SETTINGS, type ModelicaStudioSettings } from "./settings";
@@ -478,6 +480,7 @@ export default class ModelicaStudioPlugin extends Plugin {
         10000
       );
     }
+    this.libraryRootsUsed = loadedRoots;
     this.libraryIndex = index;
     // Exclusions are part of the index rather than of the palette, so the tree,
     // search and completion all honour them.
@@ -671,6 +674,59 @@ export default class ModelicaStudioPlugin extends Plugin {
     } catch (err) {
       return { ok: false, text: err instanceof AiError ? err.message : String(err) };
     }
+  }
+
+  /**
+   * Every simulation this session, kept so a failure can be handed to the AI
+   * in full rather than as a first line.
+   */
+  readonly runLog = new RunLog();
+
+  /** Library roots the index was built from, for reporting. */
+  private libraryRootsUsed: string[] = [];
+
+  /** Short names of the indexed libraries, e.g. "Modelica 4.1.0". */
+  libraryRootNames(): string[] {
+    return this.libraryRootsUsed.map((r) => r.split("/").filter(Boolean).pop() ?? r);
+  }
+
+  /** What the AI needs to know about this installation. */
+  aiEnvironment(): AiEnvironment {
+    const s = this.settings;
+    const example = findExample(this.model.name);
+    return {
+      omcPath: this.omc?.omcPath,
+      omcVersion: this.omc?.version,
+      libraryRoots: this.omc?.libraryRoots,
+      classCount: this.library.size || undefined,
+      libraryNames: this.libraryRootNames?.(),
+      startTime: s.startTime,
+      stopTime: this.stopTime(),
+      numberOfIntervals: s.numberOfIntervals,
+      tolerance: s.tolerance,
+      solver: s.solver,
+      jobs: s.jobs,
+      excluded: this.excludedLibraries(),
+      fromExample: example?.name,
+    };
+  }
+
+  /**
+   * The standing brief for every AI request.
+   *
+   * Environment first, then the log of failed runs, because a model that knows
+   * which OpenModelica and which libraries it is writing for does not invent
+   * class names, and one that can see the compiler output can fix the actual
+   * fault instead of a paraphrase of it.
+   */
+  aiContext(request: string): string {
+    const parts = [describeEnvironment(this.aiEnvironment())];
+    if (this.library.size) parts.push(describeAvailableClasses(this.library, request));
+    const failures = describeLog(
+      this.runLog.recentFailures().map((e) => ({ at: e.at, model: e.model, ok: e.ok, detail: e.detail }))
+    );
+    if (failures) parts.push(failures);
+    return parts.join("\n\n");
   }
 
   async loadSettings(): Promise<void> {

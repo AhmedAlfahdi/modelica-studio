@@ -27,6 +27,7 @@ import type {
 } from "../modelica/types";
 import { serializeDiagram } from "../modelica/serializer";
 import { fuzzyFilter } from "../modelica/fuzzy";
+import { SimulationError } from "../omc/backend";
 import { checkModel, ModelProblem } from "../modelica/checks";
 import { createCodeEditor, CodeEditorHandle, Diagnostic } from "./code-editor";
 import { AiError, buildMessages, chat, extractModelica, modelNameOf } from "../ai/client";
@@ -41,6 +42,9 @@ export class ModelicaStudioView extends ItemView {
   private paletteEl!: HTMLElement;
   private canvasHost!: HTMLElement;
   private inspectorEl!: HTMLElement;
+  /** The run-log pane and its text, sharing the bottom area with the plot. */
+  private logHost: HTMLElement | null = null;
+  private logText: HTMLElement | null = null;
   private inspectorCol!: HTMLElement;
   private splitterEl!: HTMLElement;
   /** The whole editable area: palette, canvas and inspector. */
@@ -69,7 +73,7 @@ export class ModelicaStudioView extends ItemView {
   /** Filter text for the variable list. */
   private seriesFilter = "";
   /** Which bottom tab is showing. */
-  private bottomTab: "plot" | "source" = "plot";
+  private bottomTab: "plot" | "source" | "log" = "plot";
   /** Header of the bottom pane, whose actions depend on the tab. */
   private bottomBarEl: HTMLElement | null = null;
   private bottomActionsEl: HTMLElement | null = null;
@@ -557,6 +561,22 @@ export class ModelicaStudioView extends ItemView {
     return starImport ? problems.filter((p) => !p.message.includes("never declared")) : problems;
   }
 
+  /**
+   * The fullest failure text available for a repair request.
+   *
+   * Preference order: the last run's complete output, then the run log's most
+   * recent failure, then whatever the diagnostics line is showing. The log comes
+   * second rather than first because `lastSimulationError` is the run the user is
+   * looking at.
+   */
+  private fullFailureText(): string {
+    const direct = this.lastSimulationError?.trim();
+    if (direct) return direct;
+    const logged = this.plugin.runLog.lastFailure();
+    if (logged) return logged.detail;
+    return this.codeDiagEl?.getText()?.trim() ?? "";
+  }
+
   /** Show compiler output beside the code, where it is needed. */
   private setCodeStatus(text: string, bad = false): void {
     if (!this.codeStatusEl) return;
@@ -622,9 +642,13 @@ export class ModelicaStudioView extends ItemView {
       const messages = buildMessages({
         prompt,
         current: this.codeEditor?.getValue(),
-        diagnostics: repair ? this.lastSimulationError ?? this.codeDiagEl?.getText() ?? "" : "",
+        diagnostics: repair ? this.fullFailureText() : "",
         library: this.plugin.library,
         systemPrompt: cfg.systemPrompt,
+        // The standing brief: what this machine has, how a run is configured,
+        // and what has already failed. Without it the model writes for a machine
+        // it cannot see.
+        environment: this.plugin.aiContext(prompt),
       });
       const reply = await chat(cfg, messages, () => this.plugin.aiKey());
       const source = extractModelica(reply);
@@ -1081,8 +1105,14 @@ export class ModelicaStudioView extends ItemView {
   /** Show the bottom pane's active tab. */
   private applyBottomTab(): void {
     const showPlot = this.bottomTab === "plot" && this.result !== null;
+    const showLog = this.bottomTab === "log";
     if (this.plotHost) this.plotHost.style.display = showPlot ? "" : "none";
-    if (this.emptyEl) this.emptyEl.style.display = this.result ? "none" : "";
+    if (this.logHost) this.logHost.style.display = showLog ? "" : "none";
+    // Only the plot tab is empty without a result; the log is useful before one.
+    if (this.emptyEl) {
+      this.emptyEl.style.display = this.result || showLog ? "none" : "";
+    }
+    if (showLog) this.renderRunLog();
     // The plot's actions and scale controls belong to the plot, not the source.
     if (this.bottomActionsEl) {
       this.bottomActionsEl.style.display = showPlot ? "" : "none";
@@ -1100,6 +1130,18 @@ export class ModelicaStudioView extends ItemView {
       b.toggleClass("is-active", id === this.bottomTab);
     }
     if (showPlot) this.drawResults();
+  }
+
+  /**
+   * Draw the run log.
+   *
+   * The SAME text the AI is sent, deliberately: it should never be a mystery
+   * what the model was given, and a paraphrase in the panel would make the
+   * prompt unverifiable.
+   */
+  private renderRunLog(): void {
+    if (!this.logText) return;
+    this.logText.setText(this.plugin.runLog.toText() || "No simulations have been run yet.");
   }
 
   /** One labelled value field, for a parameter or an initial value. */
@@ -1293,6 +1335,7 @@ export class ModelicaStudioView extends ItemView {
       for (const [id, label] of [
         ["plot", "Plot"],
         ["source", "Source"],
+        ["log", "Run log"],
       ] as const) {
         const b = tabs.createEl("button", { cls: "modelica-studio-tab", text: label });
         b.addEventListener("click", () => {
@@ -1314,6 +1357,39 @@ export class ModelicaStudioView extends ItemView {
       this.plotHost = host;
       this.plotCanvas = host.createEl("canvas");
       this.bindPlotEvents(this.plotCanvas, () => this.drawResults());
+
+      const logHost = el.createDiv({ cls: "modelica-studio-log" });
+      logHost.style.display = "none";
+      this.logHost = logHost;
+      const logBar = logHost.createDiv({ cls: "modelica-studio-log-bar" });
+      const toAi = logBar.createEl("button", { cls: "modelica-studio-btn" });
+      setIcon(toAi, "sparkles");
+      toAi.createSpan({ text: "Send to AI" });
+      toAi.title = "Ask the model to fix the failure, sending it the full compiler output";
+      toAi.addEventListener("click", () => {
+        // The whole point of the log: the model gets the compiler's own words,
+        // not a paraphrase, and the editor is switched to code mode so the fix
+        // lands where it can be read.
+        this.setMode("code");
+        this.toggleAiRow(true);
+        if (this.aiInput) this.aiInput.value = "This model fails to simulate. Fix it.";
+        void this.runAiRequest(true);
+      });
+      const copyBtn = logBar.createEl("button", { cls: "modelica-studio-btn" });
+      setIcon(copyBtn, "clipboard-copy");
+      copyBtn.createSpan({ text: "Copy" });
+      copyBtn.addEventListener("click", () => {
+        void navigator.clipboard.writeText(this.plugin.runLog.toText());
+        new Notice("Run log copied.");
+      });
+      const clearBtn = logBar.createEl("button", { cls: "modelica-studio-btn" });
+      setIcon(clearBtn, "trash");
+      clearBtn.createSpan({ text: "Clear" });
+      clearBtn.addEventListener("click", () => {
+        this.plugin.runLog.clear();
+        this.renderRunLog();
+      });
+      this.logText = logHost.createEl("pre", { cls: "modelica-studio-log-text" });
     }
 
     const actions = this.bottomActionsEl;
@@ -2141,9 +2217,11 @@ export class ModelicaStudioView extends ItemView {
     this.setStatus("Simulating…");
     const t0 = performance.now();
 
+    let source = "";
+    let parameters: Record<string, string> = {};
     try {
-      const source = serializeDiagram(this.plugin.model);
-      const parameters = collectParameters(this.plugin.model);
+      source = serializeDiagram(this.plugin.model);
+      parameters = collectParameters(this.plugin.model);
 
       const result = await this.plugin.backend.simulate({
         modelName: this.plugin.model.name,
@@ -2194,19 +2272,57 @@ export class ModelicaStudioView extends ItemView {
       this.renderInspector();
       this.publishChart();
       const wall = Math.round(performance.now() - t0);
+      this.plugin.runLog.add({
+        at: new Date().toISOString(),
+        model: this.plugin.model.name,
+        ok: true,
+        source,
+        parameters,
+        settings: {
+          startTime: this.plugin.settings.startTime,
+          stopTime: this.plugin.stopTime(),
+          tolerance: this.plugin.settings.tolerance,
+          numberOfIntervals: this.plugin.settings.numberOfIntervals,
+          solver: this.plugin.settings.solver,
+        },
+        detail: `${result.time.length} samples in ${wall} ms; compile ${result.compileMs} ms, simulate ${result.simulateMs} ms`,
+        elapsedMs: wall,
+        reused: result.reusedBinary,
+      });
       this.setStatus(
         `${result.time.length} samples · compile ${result.compileMs} ms · ` +
           `simulate ${result.simulateMs} ms · total ${wall} ms` +
           (result.reusedBinary ? " · reused build" : "")
       );
     } catch (err) {
+      const detail = describeFailure(err);
       const msg = err instanceof Error ? err.message : String(err);
       this.setStatus("Simulation failed.");
-      // Kept so the AI can be asked to repair the model it just failed on.
-      this.lastSimulationError = msg;
+      // The WHOLE output is kept, not its first line. OpenModelica's first line
+      // is usually a file path or "Internal error"; the line naming the fault
+      // comes later, and a repair request built from the first line was asking
+      // the model to fix a fragment.
+      this.lastSimulationError = detail;
+      this.plugin.runLog.add({
+        at: new Date().toISOString(),
+        model: this.plugin.model.name,
+        ok: false,
+        source,
+        parameters,
+        settings: {
+          startTime: this.plugin.settings.startTime,
+          stopTime: this.plugin.stopTime(),
+          tolerance: this.plugin.settings.tolerance,
+          numberOfIntervals: this.plugin.settings.numberOfIntervals,
+          solver: this.plugin.settings.solver,
+        },
+        detail,
+        elapsedMs: Math.round(performance.now() - t0),
+      });
       this.setCodeStatus(firstLine(msg), true);
       new Notice(`Modelica: ${firstLine(msg)}`, 8000);
-      this.showDiagnostics(msg);
+      this.showDiagnostics(detail);
+      this.renderRunLog();
       void previous;
     } finally {
       this.busy = false;
@@ -2371,4 +2487,27 @@ function lineOfParseError(message: string, source: string): number | undefined {
     if (at >= 0) return source.slice(0, at).split("\n").length;
   }
   return source.trim() ? 1 : undefined;
+}
+
+/**
+ * Turn a simulation failure into the fullest text available.
+ *
+ * `SimulationError` carries structured diagnostics with line and column, which
+ * the plain message does not, and OpenModelica's own output is appended when the
+ * backend captured it. Sending the model a compiler message without its line
+ * numbers is sending it half the information.
+ */
+export function describeFailure(err: unknown): string {
+  const parts: string[] = [];
+  if (err instanceof SimulationError) {
+    parts.push(err.message);
+    for (const d of err.diagnostics) {
+      if (d.severity === "notification") continue;
+      const where = d.line !== undefined ? ` (line ${d.line}${d.column !== undefined ? `, column ${d.column}` : ""})` : "";
+      parts.push(`${d.severity}: ${d.message}${where}`);
+    }
+  } else {
+    parts.push(err instanceof Error ? err.message : String(err));
+  }
+  return parts.join("\n");
 }

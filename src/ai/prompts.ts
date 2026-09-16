@@ -230,6 +230,18 @@ export interface GenerateRequest {
   library?: LibraryIndex;
   /** User's standing extra instructions. */
   systemPrompt?: string;
+  /**
+   * What the AI needs to know about this installation.
+   *
+   * Built by `ai/context.ts`: the OpenModelica version, the indexed libraries,
+   * the run settings a simulation will actually use, the user's exclusions, and
+   * the log of failed runs. Without it the model writes for a machine it cannot
+   * see — inventing class names, setting parameters this MSL version does not
+   * have, and adding `experiment` annotations that fight the plugin's settings.
+   */
+  environment?: string;
+  /** Classes relevant to the request, as text grouped by package. */
+  availableClasses?: string;
 }
 
 export function buildMessages(req: GenerateRequest): ChatMessage[] {
@@ -238,12 +250,20 @@ export function buildMessages(req: GenerateRequest): ChatMessage[] {
     parts.push(`Additional instructions from the user:\n${req.systemPrompt.trim()}`);
   }
 
-  const names = relevantClasses(req.library, req.prompt);
-  if (names.length) {
-    parts.push(
-      `Library classes that may be relevant (these exist on this machine; use them rather than inventing names):\n` +
-        names.map((n) => `- ${n}`).join("\n")
-    );
+  // The environment goes in the SYSTEM message: it is a standing constraint on
+  // every answer, not part of the request being made.
+  if (req.environment?.trim()) parts.push(req.environment.trim());
+
+  if (req.availableClasses?.trim()) {
+    parts.push(req.availableClasses.trim());
+  } else {
+    const names = relevantClasses(req.library, req.prompt);
+    if (names.length) {
+      parts.push(
+        `Library classes that may be relevant (these exist on this machine; use them rather than inventing names):\n` +
+          names.map((n) => `- ${n}`).join("\n")
+      );
+    }
   }
 
   const user: string[] = [req.prompt.trim()];
@@ -251,7 +271,13 @@ export function buildMessages(req: GenerateRequest): ChatMessage[] {
     user.push(`The model currently in the editor is:\n\n\`\`\`modelica\n${req.current.trim()}\n\`\`\``);
   }
   if (req.diagnostics?.trim()) {
-    user.push(`It currently fails to compile with:\n\n\`\`\`\n${req.diagnostics.trim()}\n\`\`\``);
+    // The FULL output, not a summary. OpenModelica's first line is usually a file
+    // path or "Internal error"; what is actually wrong comes several lines later.
+    user.push(
+      `It currently fails to simulate. The complete output was:\n\n\`\`\`\n${req.diagnostics.trim()}\n\`\`\`\n\n` +
+        `Fix the cause, not the symptom: do not delete the equation or variable that is failing, ` +
+        `make it correct.`
+    );
   }
 
   return [

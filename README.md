@@ -135,8 +135,23 @@ Optional, off until an API key is entered.
    bad key, so the plugin fetches the list rather than shipping a stale one.
 
 In the studio, switch to **Code** and press **AI**. Describe the model you want
-and it is written into the editor; if the last simulation failed, **Fix errors**
-sends the compiler output with the source and asks for a repair.
+and it is written into the editor.
+
+**The Run log** tab keeps every simulation of the session: the model, the
+parameters and run settings used, the timings, and on failure OpenModelica's
+**complete output**. **Send to AI** hands that to the model and asks for a fix,
+so a repair request is built from the compiler's own words rather than a
+paraphrase — the first line of an OpenModelica error is usually a file path or
+`Internal error`, and the line naming the fault comes several lines later.
+**Copy** puts the same text on the clipboard for a bug report.
+
+Every request also carries a standing brief about this installation, so the model
+writes for the machine it is actually on rather than a generic one: the
+OpenModelica version and path, the indexed libraries and how many classes they
+hold, the run settings a simulation will use (span, intervals, tolerance,
+solver), the libraries you have excluded, and the failures already in the log.
+It is told not to add an `experiment` annotation, because the plugin applies the
+run settings itself and an annotation conflicts with them.
 
 The key lives in **Obsidian's keychain**, not in this plugin's `data.json`. Only
 the *name* of the secret is stored with the plugin, so the value stays out of

@@ -139,14 +139,16 @@ test("buildMessages carries the request, the current source and the rules", () =
 
 test("buildMessages includes diagnostics only when repairing", () => {
   const plain = buildMessages({ prompt: "make a tank" })[1].content;
-  assert.ok(!/fails to compile/.test(plain));
+  assert.ok(!/fails to simulate/.test(plain), "a fresh request carries no failure");
   const fixing = buildMessages({
     prompt: "fix it",
     current: "model X\nend X;",
     diagnostics: "Error: X is not declared",
   })[1].content;
-  assert.match(fixing, /fails to compile/);
+  assert.match(fixing, /fails to simulate/);
   assert.match(fixing, /X is not declared/);
+  // The model is told to repair the cause rather than to delete the failing line.
+  assert.match(fixing, /Fix the cause, not the symptom/);
 });
 
 test("a user's standing instructions are passed through", () => {
