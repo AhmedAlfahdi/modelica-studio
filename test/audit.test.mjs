@@ -363,6 +363,72 @@ test("every example matches an independently derived result", { skip: !HAS_OMC }
     check("never penetrates the floor", 1, Math.min(...h) > -1e-6 ? 1 : 0, 0, "");
   }
 
+  console.log("\n== AirfoilLift: thin-airfoil lift and induced drag ==");
+  {
+    const r = await sim("AirfoilLift", { numberOfIntervals: 4000 });
+    // At alpha = 5 deg the linear law applies: cl = 2*pi*(alpha - alpha0) in radians.
+    const deg2rad = (d) => (d * Math.PI) / 180;
+    const cl5 = 2 * Math.PI * deg2rad(5 - -2);
+    check("c_l at alpha=5deg = 2*pi*(alpha-alpha0)", cl5, at(r, "cl", 20 * (10 / 30)), 3e-3, "");
+    // Drag: profile plus induced.
+    check(
+      "c_d at alpha=5deg = 0.008 + c_l^2/(pi*ARe)",
+      0.008 + (cl5 * cl5) / (Math.PI * 7 * 0.85),
+      at(r, "cd", 20 * (10 / 30)),
+      1e-3,
+      ""
+    );
+    // Lift at the same point, from the definition L = 0.5 rho V^2 S cl.
+    check(
+      "L at alpha=5deg = 0.5*rho*V^2*S*c_l",
+      0.5 * 1.225 * 2500 * 16 * cl5,
+      at(r, "L", 20 * (10 / 30)),
+      60,
+      " N"
+    );
+    check("stall speed sqrt(2mg/(rho*S*cl_max))", Math.sqrt((2 * 1000 * 9.81) / (1.225 * 16 * 1.4)), at(r, "V_stall", 0), 0.05, " m/s");
+    // Lift must fall past the stall, not keep climbing.
+    // Past the stall the lift curve descends: the peak is at alpha_stall itself.
+    const peak = at(r, "cl", 20 * (20 / 30));       // alpha = 15 deg, the stall
+    const after = at(r, "cl", 20 * (24 / 30));      // alpha = 19 deg, past it
+    check("lift peaks at the stall and falls after", 1, after < peak && peak > 1.8 ? 1 : 0, 0, "");
+  }
+
+  console.log("\n== Phugoid: period from the model's own eigenvalues, energy conserved ==");
+  {
+    const r = await sim("Phugoid", { numberOfIntervals: 8000 });
+    const g = 9.81, V0 = 70;
+    // omega = sqrt(g * sqrt(2)*g/V0^2) = 2^(1/4) g / V0
+    const T = (2 * Math.PI * V0) / (Math.pow(2, 0.25) * g);
+    const gm = S(r, "gamma").values;
+    const cross = [];
+    for (let k = 1; k < gm.length; k++) if (gm[k - 1] < 0 && gm[k] >= 0) cross.push(r.time[k]);
+    const per = cross.slice(1).map((t, i) => t - cross[i]);
+    const mean = per.reduce((a, c) => a + c, 0) / Math.max(1, per.length);
+    check("period 2*pi*V0/(2^(1/4)*g)", T, mean, 0.15, " s");
+
+    // Energy is the invariant: nothing in the model removes or adds it.
+    const V = S(r, "V").values, h = S(r, "h").values;
+    const E = V.map((v, k) => 0.5 * v * v + g * h[k]);
+    let worst = 0;
+    for (const e of E) worst = Math.max(worst, Math.abs(e - E[0]) / Math.abs(E[0]));
+    check("energy drift", 0, worst * 100, 0.01, " %");
+
+    // The speed and height swings must be the ones the energy budget allows.
+    const dV = Math.max(...V) - Math.min(...V);
+    check("speed swing (twice the 5 m/s disturbance)", 10, dV, 0.1, " m/s");
+    // Energy ties the extremes together exactly: the whole peak-to-trough height
+    // swing must equal (Vmax^2 - Vmin^2)/(2g), with the fastest point at the
+    // bottom and the slowest at the top.
+    const dh = Math.max(...h) - Math.min(...h);
+    const predictedSwing = (Math.pow(Math.max(...V), 2) - Math.pow(Math.min(...V), 2)) / (2 * g);
+    check("peak-to-trough swing = (Vmax^2-Vmin^2)/(2g)", predictedSwing, dh, 0.05, " m");
+    const iTop = h.indexOf(Math.max(...h));
+    const iBottom = h.indexOf(Math.min(...h));
+    check("slowest at the top, fastest at the bottom", 1,
+      V[iTop] < V[iBottom] && Math.abs(V[iTop] - V0) > 4 ? 1 : 0, 0, "");
+  }
+
   console.log(`\n${results.filter((r) => r.ok).length}/${results.length} checks passed`);
 
   const failed = results.filter((r) => !r.ok);

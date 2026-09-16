@@ -28,7 +28,7 @@ function fences(text) {
 }
 
 /** Notes that are not about one example. */
-const NON_EXAMPLE_NOTES = ["00-modelica-intro.md"];
+const NON_EXAMPLE_NOTES = ["00-modelica-intro.md", "01-learning-with-a-simulator.md"];
 
 test("every example has a showcase note, plus the introduction", () => {
   assert.ok(fs.existsSync(NOTES_DIR), "showcase/notes exists");

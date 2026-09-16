@@ -553,6 +553,59 @@ equation
 end DampedBounce;
 `;
 
+const AIRFOILLIFT = `model AirfoilLift "Lift and drag of a wing as the angle of attack changes"
+  parameter Real rho=1.225 "Air density at sea level";
+  parameter Real V=50 "Airspeed";
+  parameter Real S=16 "Wing planform area";
+  parameter Real AR=7 "Aspect ratio";
+  parameter Real e_os=0.85 "Oswald efficiency factor";
+  parameter Real alpha0=-2 "Zero-lift angle of attack";
+  parameter Real alpha_stall=15 "Angle at which the flow separates";
+  parameter Real cl_max=1.4 "Peak lift coefficient";
+  parameter Real m=1000 "Aircraft mass";
+  Real alpha_deg "Angle of attack";
+  Real cl "Lift coefficient";
+  Real cd "Drag coefficient";
+  Real L "Lift force";
+  Real D "Drag force";
+  Real V_stall "Speed at which the wing can just carry the weight";
+equation
+  alpha_deg = -5 + 30*time/20;
+  // Thin-airfoil theory: lift grows linearly with angle at 2*pi per radian,
+  // until the flow separates. sin() keeps the curve smooth through the stall
+  // instead of a hard kink, and is exact for the linear part at small angles.
+  cl = if alpha_deg <= alpha_stall then
+         2*Modelica.Constants.pi*Modelica.Units.Conversions.from_deg(alpha_deg - alpha0)
+       else
+         cl_max*sin(Modelica.Constants.pi/2*(90 - alpha_deg)/(90 - alpha_stall));
+  // Induced drag from the trailing vortex sheet, plus a small profile drag.
+  cd = 0.008 + cl*cl/(Modelica.Constants.pi*AR*e_os);
+  L = 0.5*rho*V*V*S*cl;
+  D = 0.5*rho*V*V*S*cd;
+  V_stall = sqrt(2*m*9.81/(rho*S*cl_max));
+end AirfoilLift;
+`;
+const PHUGOID = `model Phugoid "The slow speed-and-height exchange of an aircraft"
+  parameter Real g=9.81 "Gravity";
+  parameter Real V0=70 "Trim speed";
+  Real V(start=V0+5, fixed=true) "Airspeed, disturbed from trim";
+  Real gamma(start=0, fixed=true) "Flight path angle, radians";
+  Real h(start=200, fixed=true) "Altitude";
+  Real energy "Kinetic plus potential, per unit mass";
+equation
+  // The classical phugoid approximation. A speed disturbance tilts the flight
+  // path, and the tilt trades speed for height. The restoring term carries
+  // sqrt(2), which is what sets the famously slow period pi*sqrt(2)*V0/g:
+  // without it the oscillation is sqrt(2) times slower again.
+  der(V) = -g*sin(gamma);
+  der(gamma) = sqrt(2)*g/V0*(V/V0 - 1);
+  der(h) = V*sin(gamma);
+  // No drag and no thrust: the aircraft exchanges kinetic and potential energy
+  // and nothing else, so this must stay constant.
+  energy = 0.5*V*V + g*h;
+end Phugoid;
+`;
+
 /** All built-in examples, grouped by physical domain, in the order shown. */
 export const EXAMPLES: ExampleModel[] = [
   {
@@ -733,6 +786,20 @@ export const EXAMPLES: ExampleModel[] = [
     stopTime: 10,
     series: ["h", "v"],
     source: DAMPEDBOUNCE,
+  },
+  {
+    name: "AirfoilLift",
+    description: "Aerospace: lift and drag as the angle of attack changes",
+    stopTime: 20,
+    series: ["cl", "L"],
+    source: AIRFOILLIFT,
+  },
+  {
+    name: "Phugoid",
+    description: "Aerospace: the slow speed-and-height exchange of an aircraft",
+    stopTime: 200,
+    series: ["V", "gamma"],
+    source: PHUGOID,
   },
 ];
 

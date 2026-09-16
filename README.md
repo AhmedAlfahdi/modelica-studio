@@ -22,9 +22,12 @@ expect rough edges. See [Beta status](#beta-status).
   and a full-screen view with a cursor readout.
 - **Inline results in notes.** A fenced `modelica` block renders a live diagram
   and simulates when the note opens.
-- **Worked examples.** 25 models across electrical, mechanical, fluid, thermal
-  and discrete domains, each with a derivation, the live model, and a table
-  comparing an independent calculation against the simulation.
+- **Worked examples.** 27 models across electrical, mechanical, fluid, thermal,
+  aerospace and discrete domains, each with a derivation, the live model, and a
+  table comparing an independent calculation against the simulation.
+- **A worked case for learning.** `showcase/01-learning-with-a-simulator.md`
+  demonstrates using the plugin to learn a new subject, worked through with two
+  aerospace models.
 
 Diagrams are stored as **real Modelica source with graphical annotations**, so
 files round-trip through OMEdit and other Modelica tools.
@@ -119,9 +122,10 @@ the editor's geometry.
 
 ## Testing
 
-`examples/vault/` is an Obsidian vault you can open directly: the 25 worked
+`examples/vault/` is an Obsidian vault you can open directly: the 27 worked
 examples, cross-linked, each with a live model and its verified numbers, plus an
-introduction to the language.
+introduction to the language and a demonstration of using it to learn a new
+subject.
 
 1. Copy `main.js`, `manifest.json` and `styles.css` into
    `examples/vault/.obsidian/plugins/modelica-studio/`.

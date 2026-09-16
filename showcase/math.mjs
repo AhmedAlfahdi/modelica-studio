@@ -420,4 +420,40 @@ export const NOTES = {
       ["final height and speed", "0, 0", "−1e−10, 0"],
     ],
   },
+
+  AirfoilLift: {
+    title: "Aerospace — lift and drag of a wing",
+    domain: "Aerospace",
+    equations: [
+      "c_l = 2\\pi(\\alpha - \\alpha_0) \\quad \\text{(thin-airfoil theory, until stall)}",
+      "c_d = c_{d0} + \\frac{c_l^2}{\\pi\\,AR\\,e} \\quad \\text{(induced drag from the trailing vortices)}",
+      "L = \\tfrac12 \\rho V^2 S\\,c_l, \\qquad D = \\tfrac12 \\rho V^2 S\\,c_d",
+      "V_{stall} = \\sqrt{\\frac{2mg}{\\rho S\\,c_{l,max}}}",
+    ],
+    insight:
+      "Two formulas explain the whole plot. Lift is **linear** in angle of attack, at 2π per radian, until the flow separates at the stall. Drag has a floor — the profile drag — plus a term growing with the **square** of the lift coefficient, because a wing that lifts harder trails stronger vortices and pays for them.",
+    checks: [
+      ["c_l = 2π·α_rad at α = 5 deg", "0.7679", "0.7682"],
+      ["c_d = 0.008 + c_l²/(πARe) at α = 5 deg", "0.0396", "0.0396"],
+      ["c_d at α = 10 deg", "0.1006", "0.1006"],
+      ["stall speed sqrt(2mg/(rho S cl_max))", "26.74 m/s", "26.74 m/s"],
+    ],
+  },
+  Phugoid: {
+    title: "Aerospace — the phugoid oscillation",
+    domain: "Aerospace",
+    equations: [
+      "\\dot V = -g\\sin\\gamma, \\qquad \\dot\\gamma = \\frac{\\sqrt2\\,g}{V_0}\\left(\\frac{V}{V_0}-1\\right)",
+      "\\omega = \\left(g\\,\\frac{\\sqrt2\\,g}{V_0^2}\\right)^{1/2} = \\frac{2^{1/4}g}{V_0}",
+      "T = \\frac{2\\pi V_0}{2^{1/4}g}, \\qquad E = \\tfrac12 V^2 + gh = \\text{const}",
+    ],
+    insight:
+      "A disturbed aircraft trades speed for height and back again, slowly enough that a pilot feels it as a gentle porpoising. With no drag and no thrust, **energy is the only thing that must be conserved** — kinetic and potential exchange, and nothing else. That makes this a rare case where a chaotic-looking motion has an exact invariant and an exact period.",
+    checks: [
+      ["period 2*pi*V0/(2^(1/4)*g) at V0 = 70", "37.7009 s", "37.719 s"],
+      ["energy 0.5*V^2 + g*h constant", "const", "drift 0.0001%"],
+      ["speed range about the trim point", "65 to 75 m/s", "65.00 to 75.00"],
+      ["amplitude independence of the period", "same at every amplitude", "37.701 s at 0.001 to 5 m/s"],
+    ],
+  },
 };

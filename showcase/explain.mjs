@@ -319,4 +319,31 @@ export const EXPLAIN = {
     takeaway:
       "An ideal ball never stops — the bounces get smaller but there are infinitely many, all squeezed into a finite time. So a ball that *does* stop needs a rule saying when the floor wins. Here it is a speed threshold: the floor catches anything arriving slower than 0.5 m/s. That makes the number of bounces countable (13) and the stopping time predictable (7.63 s), and both match the simulation exactly.",
   },
+  AirfoilLift: {
+    idea:
+      "A wing at a shallow angle generates lift in proportion to that angle. Past about 15 degrees the airflow separates from the upper surface and lift collapses. This model sweeps the angle from -5 to 25 degrees and shows both halves of that story on one plot.",
+    reading: [
+      ["`c_l = 2*pi*(alpha - alpha0)`", "thin-airfoil theory. `alpha0 = -2 deg` is the angle at which a cambered wing makes no lift at all."],
+      ["`if alpha_deg <= alpha_stall`", "below the stall the relation is linear; above it the flow has separated and a different curve takes over."],
+      ["`cl_max*sin(...)`", "a smooth post-stall falloff. Real stall is abrupt; a smooth curve keeps the simulation well behaved and matches the trend."],
+      ["`c_d = 0.008 + c_l^2/(pi*AR*e)`", "drag has two parts: a fixed profile drag, plus **induced** drag that grows with lift squared."],
+      ["`AR = 7`", "aspect ratio — span divided by chord. A long slender wing (high AR) makes less induced drag, which is why gliders look the way they do."],
+      ["`V_stall = sqrt(2*m*g/(rho*S*cl_max))`", "the slowest speed at which the wing can still carry the aircraft."],
+    ],
+    takeaway:
+      "This is the shape of a real lift curve, and three engineering trade-offs are visible in it at once. Fly faster and lift grows with the **square** of speed, so you can fly slower with more wing area or more angle — until the stall. Pull more angle for more lift and induced drag rises with its **square**, so turning harder costs disproportionately more fuel. And the stall speed is a single number that sets how fast an aircraft must land.",
+  },
+  Phugoid: {
+    idea:
+      "Nudge an aircraft off its trim speed and it does not simply settle back. It trades speed for height, then height for speed, oscillating slowly for minutes. Pilots call it porpoising; engineers call it the phugoid.",
+    reading: [
+      ["`der(V) = -g*sin(gamma)`", "climbing at angle gamma costs speed, exactly as a ball thrown upward slows."],
+      ["`der(gamma) = sqrt(2)*g/V0*(V/V0 - 1)`", "flying faster than trim makes lift exceed weight, so the aircraft curves upward. This is the restoring term, and the `sqrt(2)` is what sets the slow period."],
+      ["`der(h) = V*sin(gamma)`", "climb rate is speed times flight-path angle."],
+      ["`energy = 0.5*V*V + g*h`", "kinetic plus potential, per kilogram. Nothing else is in the model, so this must not change."],
+      ["`V(start=V0+5, fixed=true)`", "the disturbance: 5 m/s fast, straight and level."],
+    ],
+    takeaway:
+      "Two things make this worth studying. First, the period is **long** — about 38 seconds here, and it grows with speed, which is why it feels like a slow porpoise rather than a vibration. Second, it is one of the few motions in flight dynamics with an exact invariant: with no drag and no thrust, total energy cannot change, and the simulation holds it to 0.0001%. The speed swings 65 to 75 m/s while the altitude swings 200 to 271 m, and those two numbers are locked together by energy conservation.",
+  },
 };

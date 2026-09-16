@@ -65,6 +65,24 @@ The derivation and the checked numbers for it are in
   fs.writeFileSync(path.join(outDir, "00-modelica-intro.md"), intro);
 }
 
+// Why the notes exist: a worked demonstration of using the plugin to learn a
+// subject, using aerospace as the example.
+{
+  const learning = `# Learning a subject with a simulator
+
+> Why these examples exist, and what a simulation gives you that a textbook
+> cannot — worked through with two aerospace models.
+
+**New to Modelica?** Read [Modelica in ten minutes](00-modelica-intro.md) first.
+**All examples:** [index](README.md)
+
+---
+
+${fs.readFileSync(path.join(import.meta.dirname, "learning-body.md"), "utf8").trim()}
+`;
+  fs.writeFileSync(path.join(outDir, "01-learning-with-a-simulator.md"), learning);
+}
+
 let count = 0;
 for (const ex of EXAMPLES) {
   const note = NOTES[ex.name];
@@ -179,6 +197,10 @@ and checks an invariant instead.
 
 **Start here:** [Modelica in ten minutes](00-modelica-intro.md) — what the language
 is, how a model becomes a result, and how to read the notes.
+
+**Then:** [Learning a subject with a simulator](01-learning-with-a-simulator.md) —
+a worked demonstration of using this to learn something new, with two aerospace
+models.
 
 | Domain | Examples |
 |---|---|
