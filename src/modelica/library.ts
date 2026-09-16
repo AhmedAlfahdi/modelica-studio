@@ -57,6 +57,46 @@ export class LibraryIndex {
   private packageCache: string[] | null = null;
   /** Cached package trees, keyed by root. */
   private treeCache = new Map<string, TreeNode>();
+  /**
+   * Qualified name prefixes excluded from search and from the palette.
+   *
+   * Excluding a library is a policy of the index rather than of the palette, so
+   * that the palette tree, the search results, the browser and completion all
+   * agree about what is available. Filtering only the palette left excluded
+   * classes reachable by typing their name.
+   */
+  private excluded: string[] = [];
+  /** Cached lower-cased names, for the subsequence scan. */
+  private lowered: Array<{ name: string; lower: string }> | null = null;
+
+  /**
+   * Exclude libraries by qualified-name prefix.
+   *
+   * Clears the caches that depended on the previous set, or an exclusion would
+   * not take effect until the plugin was reloaded.
+   */
+  setExcluded(prefixes: readonly string[]): void {
+    const next = prefixes.map((p) => p.trim()).filter(Boolean).sort();
+    const same = next.length === this.excluded.length && next.every((p, i) => p === this.excluded[i]);
+    if (same) return;
+    this.excluded = next;
+    this.placeableCache.clear();
+    this.packageCache = null;
+    this.treeCache.clear();
+  }
+
+  get exclusions(): readonly string[] {
+    return this.excluded;
+  }
+
+  /** True when a class is hidden by the exclusion list. */
+  isExcluded(qualifiedName: string): boolean {
+    if (!this.excluded.length) return false;
+    for (const prefix of this.excluded) {
+      if (qualifiedName === prefix || qualifiedName.startsWith(prefix + ".")) return true;
+    }
+    return false;
+  }
 
   get size(): number {
     return this.classes.size;
@@ -491,6 +531,9 @@ export class LibraryIndex {
     const key = `${filter ?? ""}|${limit}`;
     const cached = this.placeableCache.get(key);
     if (cached) return cached;
+    // The palette calls this once per keystroke, so without a bound the cache
+    // grows with every prefix ever typed.
+    if (this.placeableCache.size > 64) this.placeableCache.clear();
 
     // Filter by name FIRST. Deciding placeability means resolving a class's
     // inheritance, which is the expensive part; doing it for all 4,782 classes
@@ -500,6 +543,7 @@ export class LibraryIndex {
     const candidates: string[] = [];
     for (const [qn, cls] of this.classes) {
       if (cls.kind !== "model" && cls.kind !== "block") continue;
+      if (this.isExcluded(qn)) continue;
       if (needle && !qn.toLowerCase().includes(needle)) continue;
       candidates.push(qn);
     }

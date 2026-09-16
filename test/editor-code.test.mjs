@@ -339,3 +339,149 @@ test("the migration secret name is valid for SecretStorage", () => {
   assert.match(LEGACY_SECRET_NAME, /^[a-z0-9-]+$/, "lowercase alphanumeric with dashes");
   assert.ok(LEGACY_SECRET_NAME.includes("modelica"), "namespaced to avoid another plugin\'s secret");
 });
+
+/* ---- fuzzy search and library exclusion ---- */
+
+const fuzzyMod = await import(
+  path.join(buildLibs("fuzzy-lib", ["src/modelica/fuzzy.ts"]), "fuzzy.js")
+);
+const { fuzzyMatch, fuzzyFilter, isUnderAny } = fuzzyMod;
+
+const LIB = [
+  "Modelica.Electrical.Analog.Basic.Resistor",
+  "Modelica.Electrical.Analog.Basic.Capacitor",
+  "Modelica.Electrical.Analog.Sources.ConstantVoltage",
+  "Modelica.Fluid.Vessels.OpenTank",
+  "Modelica.Fluid.Pipes.StaticPipe",
+  "Modelica.Mechanics.Rotational.Components.Inertia",
+  "Modelica.Blocks.Sources.Sine",
+];
+
+test("fuzzy matching accepts a subsequence, not just a substring", () => {
+  // The reason for fuzzy search: in ~6,900 classes the exact spelling is often
+  // what you are looking for. Substring search finds none of these.
+  assert.ok(fuzzyMatch("Modelica.Electrical.Analog.Basic.Resistor", "res"));
+  assert.ok(fuzzyMatch("Modelica.Fluid.Vessels.OpenTank", "tank"));
+  assert.ok(fuzzyMatch("Modelica.Blocks.Continuous.PID", "pid"));
+  assert.ok(fuzzyMatch("Modelica.Fluid.Fittings.SimpleGenericOrifice", "orifice"));
+  // Order still matters: a subsequence is ordered, not a bag of letters.
+  assert.equal(fuzzyMatch("Resistor", "rts"), null, "r-t-s is not in order");
+  assert.ok(fuzzyMatch("Resistor", "rst"), "but r-s-t is");
+  assert.ok(fuzzyMatch("Resistor", "rsr"), "and r-s-r");
+  // Absent characters never match.
+  assert.equal(fuzzyMatch("Sine", "xyz"), null);
+  assert.equal(fuzzyMatch("Sine", "sines"), null, "a longer query than the name");
+  assert.deepEqual(fuzzyMatch("Anything", ""), { score: 0, positions: [] });
+});
+
+test("the ranking puts the class a user means near the top", () => {
+  // The measure that matters, and the one the first hand-tuned scoring failed:
+  // against the real library `tank` returned `Brake` and `Rankine` while
+  // `OpenTank` ranked below both.
+  const names = [
+    "Modelica.Electrical.Analog.Basic.Resistor",
+    "Modelica.Electrical.Analog.Basic.Capacitor",
+    "Modelica.Blocks.Continuous.PID",
+    "Modelica.Fluid.Vessels.OpenTank",
+    "Modelica.Mechanics.Translational.Components.Brake",
+    "Modelica.Thermal.HeatTransfer.Rankine",
+    "Modelica.Fluid.Fittings.SimpleGenericOrifice",
+    "Modelica.Mechanics.Rotational.Components.Inertia",
+    "Modelica.Electrical.Analog.Semiconductors.Diode",
+  ];
+  const top = (q) => fuzzyFilter(names, q, 1)[0]?.name.split(".").pop();
+  assert.equal(top("res"), "Resistor");
+  assert.equal(top("capacitor"), "Capacitor");
+  assert.equal(top("pid"), "PID");
+  assert.equal(top("tank"), "OpenTank", "not Brake or Rankine");
+  assert.equal(top("orifice"), "SimpleGenericOrifice");
+  assert.equal(top("inertia"), "Inertia");
+  assert.equal(top("diode"), "Diode");
+});
+
+test("a name that starts with the query outranks one that merely contains it", () => {
+  const names = [
+    "Modelica.Mechanics.Rotational.Components.Inertia",
+    "Modelica.Blocks.Continuous.InertialDelay",
+  ];
+  assert.equal(fuzzyFilter(names, "inertia", 1)[0].name, "Modelica.Mechanics.Rotational.Components.Inertia");
+});
+
+test("matching reports positions that index the full qualified name", () => {
+  const name = "Modelica.Electrical.Analog.Basic.Resistor";
+  const m = fuzzyMatch(name, "res");
+  assert.equal(m.positions.length, 3, "one position per query character");
+  // The reports must point at the characters that matched, or highlighting a
+  // match would land on the wrong letters.
+  assert.equal(m.positions.map((p) => name[p].toLowerCase()).join(""), "res");
+  assert.ok(
+    m.positions[0] >= name.length - "Resistor".length,
+    `the match is in the class name, got ${m.positions[0]}`
+  );
+});
+
+test("filtering ranks, limits and never returns a non-match", () => {
+  const names = [
+    "Modelica.Electrical.Analog.Basic.Resistor",
+    "Modelica.Electrical.Analog.Basic.Capacitor",
+    "Modelica.Fluid.Vessels.OpenTank",
+  ];
+  const hits = fuzzyFilter(names, "res");
+  assert.equal(hits.length, 1, "only the real match comes back");
+  for (const h of hits) assert.ok(fuzzyMatch(h.name, "res"), `${h.name} matches`);
+  assert.equal(fuzzyFilter(names, "o", 2).length, 2, "the limit is honoured");
+  assert.deepEqual(fuzzyFilter(names, ""), [], "an empty query searches nothing");
+});
+
+test("a query can reach a class through its package path", () => {
+  // How a Modelica path is typed from memory: the start of a segment, then the
+  // rest of the path flattened.
+  //
+  // The anchor must be a segment's FIRST character, which is what stops the rule
+  // from being meaningless — without it `tank` matched
+  // `Mechanics.Translational.Components.Brake`: 't' from Translational, a-n-k
+  // from later in the path.
+  const name = "Modelica.Electrical.Analog.Basic.Resistor";
+  assert.equal(fuzzyFilter([name], "eleba", 1).length, 1, "Electrical...Basic is reachable");
+  assert.equal(fuzzyFilter([name], "moelba", 1).length, 1, "and from the root package");
+
+  // A query that matches neither the name nor opens a segment finds nothing.
+  // (`ank` is NOT a good example: it is a plain subsequence of "OpenTank", so
+  // it matches the name and correctly returns a result.)
+  assert.deepEqual(
+    fuzzyFilter(["Modelica.Fluid.Vessels.OpenTank"], "zzz", 1),
+    [],
+    "an absent query finds nothing"
+  );
+
+  // KNOWN LIMITATION, recorded rather than hidden: a path query that spans three
+  // or more segments while its own tail needs a late character can fail, because
+  // the tail is matched as one subsequence and the anchor must precede all of
+  // it. `elareba` (Electrical.Analog...Basic) is one such case; `eleba` works.
+  // Searching by the class name — `resistor` — always works, which is what the
+  // palette is mostly used for.
+  assert.equal(fuzzyFilter([name], "elareba", 1).length, 0, "the documented limitation");
+});
+
+test("scoring prefers tight matches over scattered ones", () => {
+  const tight = fuzzyMatch("OpenTank", "tank").score;
+  const scattered = fuzzyMatch("ThermalConductivity", "tank");
+  assert.ok(scattered === null || tight > scattered.score, "a contiguous run wins");
+});
+
+test("a library can be excluded, on segment boundaries", () => {
+  const fluid = "Modelica.Fluid";
+  assert.ok(isUnderAny("Modelica.Fluid.Vessels.OpenTank", [fluid]), "a member is excluded");
+  assert.ok(isUnderAny("Modelica.Fluid", [fluid]), "the package itself is excluded");
+  // The boundary rule: a prefix must not swallow a sibling that merely starts
+  // with the same letters.
+  assert.ok(
+    !isUnderAny("Modelica.ElectricalExtra.Thing", ["Modelica.Electrical"]),
+    "Modelica.Electrical must not exclude Modelica.ElectricalExtra"
+  );
+  assert.ok(!isUnderAny("Modelica.Blocks.Sources.Sine", [fluid]), "unrelated names are kept");
+  // Blank and whitespace-only entries are ignored rather than matching nothing
+  // or everything.
+  assert.ok(!isUnderAny("Modelica.Fluid.Vessels.OpenTank", ["", "   "]));
+  assert.ok(isUnderAny("Modelica.Fluid.X", ["  Modelica.Fluid  "]), "entries are trimmed");
+});

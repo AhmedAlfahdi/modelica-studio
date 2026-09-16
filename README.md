@@ -18,7 +18,9 @@ discrepancy was settled — is in
 ## What it does
 
 - **Schematic editor.** Drag components from a library tree onto a canvas, wire
-  their pins together, edit parameters. Drawing follows the Modelica
+  their pins together, edit parameters. The search box matches fuzzily, so
+  `tank` finds `OpenTank`, and whole libraries can be left out of the palette,
+  search and completion. Drawing follows the Modelica
   specification's graphical annotations, so library icons look as their authors
   drew them.
 - **Simulation.** Serializes the diagram to Modelica source, compiles and runs it

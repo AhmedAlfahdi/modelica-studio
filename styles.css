@@ -1202,3 +1202,14 @@ body.modelica-studio-resizing * {
   font-size: 12px;
   line-height: 1.45;
 }
+
+/* Fuzzy-search hits in the palette */
+.modelica-studio-palette-hit {
+  color: var(--text-accent);
+  font-weight: 700;
+}
+
+.modelica-studio-palette-path {
+  color: var(--text-faint);
+  font-size: 0.85em;
+}

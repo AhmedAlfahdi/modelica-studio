@@ -418,6 +418,19 @@ export default class ModelicaStudioPlugin extends Plugin {
    * It is now started at load and cached on disk, so the cost is paid before
    * the user asks for anything and only once per library version.
    */
+  /** The exclusion list, parsed from the settings text. */
+  excludedLibraries(): string[] {
+    return this.settings.excludedLibraries
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith("#"));
+  }
+
+  /** Apply the exclusion list to an index and refresh anything showing it. */
+  applyExclusions(index: LibraryIndex = this.library): void {
+    index.setExcluded(this.excludedLibraries());
+  }
+
   async ensureLibrary(): Promise<LibraryIndex> {
     if (this.libraryIndex) return this.libraryIndex;
     if (this.libraryPromise) return this.libraryPromise;
@@ -449,8 +462,13 @@ export default class ModelicaStudioPlugin extends Plugin {
       );
     }
     this.libraryIndex = index;
+    // Exclusions are part of the index rather than of the palette, so the tree,
+    // search and completion all honour them.
+    this.applyExclusions(index);
     this.libraryReady = true;
-    this.diag("library ready");
+    this.diag(
+      `library ready; ${this.excludedLibraries().length} exclusion(s)` 
+    );
     return index;
   }
 
@@ -492,7 +510,7 @@ export default class ModelicaStudioPlugin extends Plugin {
 
   /* ---------------- view ---------------- */
 
-  private getView(): ModelicaStudioView | null {
+  getView(): ModelicaStudioView | null {
     const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_MODELICA)[0];
     if (!leaf) return null;
     // Views are deferred by default; always verify the concrete type.

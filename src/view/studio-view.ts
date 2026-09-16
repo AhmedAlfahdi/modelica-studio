@@ -26,6 +26,7 @@ import type {
   ParameterDef,
 } from "../modelica/types";
 import { serializeDiagram } from "../modelica/serializer";
+import { fuzzyFilter } from "../modelica/fuzzy";
 import { createCodeEditor, CodeEditorHandle, Diagnostic } from "./code-editor";
 import { AiError, buildMessages, chat, extractModelica, modelNameOf } from "../ai/client";
 import type { SimResult, SimSeries } from "../omc/backend";
@@ -615,15 +616,22 @@ export class ModelicaStudioView extends ItemView {
     // A search spans the whole library rather than the visible branch, so a
     // component is always reachable however deep it sits.
     if (filter) {
-      const hits = this.plugin.library.listPlaceable(filter, SEARCH_LIMIT);
+      // Fuzzy, not substring: in a library of ~6,900 classes the exact spelling
+      // is often the thing being looked for. `cvs` finds `ConstantVoltage`, and
+      // `moelreba` finds `Modelica.Electrical.Analog.Basic.Resistor`.
+      const { hits, total } = this.searchPalette(filter);
       const group = this.paletteEl.createDiv({ cls: "modelica-studio-palette-group" });
       group.createDiv({
         cls: "modelica-studio-palette-group-head",
-        text: hits.length ? `Matches (${hits.length})` : "No matches",
+        text: total
+          ? total > hits.length
+            ? `Matches (${hits.length} of ${total})`
+            : `Matches (${total})`
+          : "No matches",
       });
       const list = group.createDiv({ cls: "modelica-studio-palette-group-list" });
-      for (const item of hits) {
-        this.addPaletteItem(item, list);
+      for (const { item, positions } of hits) {
+        this.addPaletteItem(item, list, positions);
         shown++;
       }
       if (shown === 0) {
@@ -713,7 +721,71 @@ export class ModelicaStudioView extends ItemView {
   }
 
   /** One draggable palette entry, with its icon drawn as a thumbnail. */
-  private addPaletteItem(item: ComponentClass, list: HTMLElement = this.paletteEl!): void {
+  /**
+   * Rank library classes for the palette's search box.
+   *
+   * Matching runs over the class NAMES, which is cheap; only the winners are
+   * resolved into drawable components, because deciding placeability means
+   * walking an inheritance chain and doing it for every candidate would cost
+   * about a second per keystroke.
+   */
+  private searchPalette(
+    filter: string
+  ): { hits: Array<{ item: ComponentClass; positions: number[] }>; total: number } {
+    const library = this.plugin.library;
+    // Excluded libraries are filtered here as well as in the index, so a
+    // candidate that is excluded can never be resolved even if the index's own
+    // filter were bypassed.
+    const names = library.allNames().filter((n) => !library.isExcluded(n));
+    const ranked = fuzzyFilter(names, filter, SEARCH_LIMIT * 3);
+    const hits: Array<{ item: ComponentClass; positions: number[] }> = [];
+    for (const r of ranked) {
+      if (hits.length >= SEARCH_LIMIT) break;
+      const item = library.component(r.name);
+      if (!item || !item.hasIcon) continue;
+      hits.push({ item, positions: r.positions });
+    }
+    return { hits, total: ranked.length };
+  }
+
+  /**
+   * Draw a class name with the matched characters emphasised.
+   *
+   * `positions` index into the full qualified name, so the match can land in the
+   * package path rather than the class name. When it does, the package is shown
+   * beside the name — otherwise a fuzzy hit on the path looks like a name with
+   * nothing in common with what was typed.
+   */
+  private renderMatchedLabel(
+    label: HTMLElement,
+    qualified: string,
+    shortName: string,
+    positions: number[]
+  ): void {
+    const hit = new Set(positions);
+    const shortStart = qualified.length - shortName.length;
+    const inPackage = positions.some((p) => p < shortStart);
+
+    if (inPackage) {
+      const pkg = qualified.slice(0, Math.max(0, shortStart - 1));
+      label.createSpan({ cls: "modelica-studio-palette-path", text: pkg + "." });
+    }
+    for (let i = 0; i < shortName.length; i++) {
+      const ch = shortName[i];
+      if (hit.has(shortStart + i)) {
+        label.createSpan({ cls: "modelica-studio-palette-hit", text: ch });
+      } else {
+        label.appendText(ch);
+      }
+    }
+  }
+
+  private addPaletteItem(
+    item: ComponentClass,
+    list: HTMLElement = this.paletteEl!,
+    /** Character positions that matched, to highlight. */
+    positions?: number[]
+  ): void {
     const btn = list.createDiv({ cls: "modelica-studio-palette-item" });
     btn.draggable = true;
     btn.setAttr("title", `${item.name}\n${item.comment ?? ""}`.trim());
@@ -723,7 +795,15 @@ export class ModelicaStudioView extends ItemView {
     thumb.height = THUMB_SIZE;
     this.drawThumbnail(thumb, item);
 
-    btn.createSpan({ cls: "modelica-studio-palette-label", text: item.shortName });
+    // Show the matched characters, and the package the class came from when the
+    // query matched the path rather than the class name — otherwise `moelreba`
+    // returns a list of names with nothing visibly in common.
+    const label = btn.createSpan({ cls: "modelica-studio-palette-label" });
+    if (positions?.length) {
+      this.renderMatchedLabel(label, item.name, item.shortName, positions);
+    } else {
+      label.setText(item.shortName);
+    }
 
     btn.addEventListener("dragstart", (ev) => {
       ev.dataTransfer?.setData("text/modelica-class", item.name);

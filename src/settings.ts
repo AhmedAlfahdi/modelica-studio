@@ -54,6 +54,17 @@ export interface ModelicaStudioSettings {
   /** Palette packages, in display order. */
   paletteRoots: string[];
 
+  /**
+   * Libraries to leave out of search, the palette and completion, one qualified
+   * name per line.
+   *
+   * A whole library is a lot to scroll past when a project uses two of them.
+   * Excluding is done by qualified-name prefix and matched on segment
+   * boundaries, so `Modelica.Electrical` does not also exclude
+   * `Modelica.ElectricalExtra`.
+   */
+  excludedLibraries: string;
+
   /** Append startup/simulation diagnostics to `.modelica-studio.log` in the vault. */
   debugLog: boolean;
 
@@ -117,6 +128,7 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   tolerance: 1e-6,
   solver: "",
   paletteRoots: [],
+  excludedLibraries: "",
   debugLog: false,
   debugOverlay: false,
   inspectorWidth: 380,
@@ -464,6 +476,40 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           resultBox.toggleClass("is-bad", !result.ok);
         })
       );
+
+    containerEl.createEl("h3", { text: "Library" });
+    containerEl.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "Leave out libraries you do not use. Excluded classes disappear from the " +
+        "palette, from search and from completion, which keeps a two-library " +
+        "project from scrolling past all of them.",
+    });
+
+    new Setting(containerEl)
+      .setName("Excluded libraries")
+      .setDesc(
+        "One qualified name per line, e.g. Modelica.Fluid. Lines starting with # " +
+          "are ignored. Matched on segment boundaries, so Modelica.Electrical " +
+          "does not also exclude Modelica.ElectricalExtra."
+      )
+      .addTextArea((t) => {
+        t.setPlaceholder("Modelica.Fluid\nModelica.Media")
+          .setValue(this.plugin.settings.excludedLibraries)
+          .onChange(async (v) => {
+            this.plugin.settings.excludedLibraries = v;
+            await this.plugin.saveSettings();
+            // Re-applying is cheap: the index clears its caches only when the
+            // list actually changed.
+            this.plugin.applyExclusions();
+            this.plugin.getView()?.refreshLibrary();
+          });
+        t.inputEl.rows = 4;
+        t.inputEl.style.width = "100%";
+      });
+
+    const known = containerEl.createDiv({ cls: "modelica-studio-muted" });
+    known.setText("Libraries found on this machine: " + (this.plugin.library.packages().join(", ") || "none indexed yet"));
 
     containerEl.createEl("h3", { text: "Performance" });
     containerEl.createEl("p", {
