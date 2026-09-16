@@ -265,6 +265,15 @@ export function serializeDiagram(
   for (const cn of model.connections) {
     lines.push(ind + serializeConnection(cn.from.component, cn.from.port, cn.to.component, cn.to.port, cn.points, cn.color));
   }
+  // Hand-written equations, kept verbatim from the source. The block is
+  // dedented by its common leading whitespace and then re-indented as a unit,
+  // so a `when` body keeps its relative shape without accumulating two spaces
+  // of drift on every save.
+  for (const eq of model.equations ?? []) {
+    for (const line of dedent(eq.split("\n"))) {
+      lines.push(line.length ? ind + line : line);
+    }
+  }
 
   lines.push(`end ${model.name};`);
   return lines.join("\n") + "\n";
@@ -356,4 +365,13 @@ export function serializeConnection(
     ann = ` annotation(Line(${p.join(", ")}))`;
   }
   return `connect(${a}, ${b})${ann};`;
+}
+
+/** Remove the common leading whitespace from a block of lines. */
+function dedent(lines: string[]): string[] {
+  const indents = lines
+    .filter((l) => l.trim().length > 0)
+    .map((l) => /^[ \t]*/.exec(l)![0].length);
+  const common = indents.length ? Math.min(...indents) : 0;
+  return common ? lines.map((l) => (l.length >= common ? l.slice(common) : l)) : lines;
 }

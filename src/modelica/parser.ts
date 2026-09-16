@@ -39,6 +39,22 @@ export interface ParsedClass {
   /** Component declarations found inside the class body. */
   components: ParsedComponent[];
   connections: Connection[];
+  /**
+   * The class's `equation` section, as verbatim source text.
+   *
+   * Declarations and `connect` statements are modelled structurally, but a
+   * hand-written equation has no structural form here. Discarding it lost the
+   * physics of every equation-based model: `BouncingBall` came back as three
+   * declarations and an empty `equation`, and OpenModelica then refused it with
+   * "Too few equations, under-determined system. The model has 0 equation(s) and
+   * 2 variable(s)."
+   *
+   * Captured by slicing the original source rather than by re-joining tokens.
+   * Re-joining was tried first and produced `- 9.81` and `0then`: text that
+   * still parses but is not what was written, and a reformatter that mangles
+   * code is worse than one that loses it.
+   */
+  equations: string[];
   /** Icon-layer graphics (short class name "Icon" or the class's own default icon). */
   icon: Graphic[];
   /**
@@ -248,6 +264,7 @@ class Parser {
         extendsTypes: [],
         components: [],
         connections: [],
+        equations: [],
         icon: [],
         componentIcons: [],
         diagram: [],
@@ -271,6 +288,7 @@ class Parser {
       extendsTypes: [],
       components: [],
       connections: [],
+      equations: [],
       icon: [],
       componentIcons: [],
       diagram: [],
@@ -294,6 +312,13 @@ class Parser {
   private parseClassBody(cls: ParsedClass, prefix: string[]): void {
     /** Visibility of the section the cursor is in; `public` until told otherwise. */
     let sectionVisibility: "public" | "protected" = "public";
+    /**
+     * Whether the cursor is inside the `equation` section.
+     *
+     * Only there are bare statements equations. Outside it a statement starting
+     * with an identifier is a declaration being parsed, not text to keep.
+     */
+    let inEquations = false;
     while (!this.isEof()) {
       // End of this class?
       //
@@ -352,10 +377,13 @@ class Parser {
         continue;
       }
       if (this.at("equation") || this.at("algorithm") || this.at("initial")) {
+        // `algorithm` and `initial` are not captured: an algorithm's meaning is
+        // the order of its assignments, and re-emitting it as an equation would
+        // misrepresent it. Only `equation` is kept.
+        inEquations = this.peek().value === "equation";
         this.next();
         continue;
       }
-      if (this.at("equation") || this.at("algorithm")) continue;
 
       // extends clause
       if (this.at("extends")) {
@@ -393,7 +421,13 @@ class Parser {
         continue;
       }
 
-      // Re declaration / equation statements we do not model: skip statement.
+      // A statement with no structural form. Inside the equation section it is
+      // kept verbatim; anywhere else it is skipped as before.
+      if (inEquations && (this.isStatementStart() || this.atIdent())) {
+        const statement = this.captureStatement();
+        if (statement) cls.equations.push(statement);
+        continue;
+      }
       if (this.isStatementStart()) {
         this.skipStatement();
         continue;
@@ -564,6 +598,29 @@ class Parser {
       this.next();
       void t;
     }
+  }
+
+  /**
+   * Consume one equation statement and return the source text it came from.
+   *
+   * The boundary is found by `skipStatement`, which already knows how to tell a
+   * statement `if` from an expression `if` — the hard case, and one this method
+   * got wrong when it tried to track blocks itself: `y2 = if x > 0 then 1 else
+   * -1;` was read as opening a block, and the rest of the file was swallowed.
+   *
+   * The text is then sliced from the ORIGINAL source between token offsets, so
+   * it is exactly what the author wrote — spacing and comments included — rather
+   * than a reconstruction. Re-joining tokens was tried first and produced
+   * `- 9.81` and `0then`.
+   */
+  private captureStatement(): string {
+    const first = this.peek();
+    if (!first) return "";
+    const sliceStart = first.start;
+    this.skipStatement();
+    const last = this.tokens[Math.max(0, this.pos - 1)];
+    const sliceEnd = last ? Math.max(first.end, last.end) : first.end;
+    return this.sourceSlice(sliceStart, sliceEnd).trim();
   }
 
   /** Parse a dotted type name, e.g. Modelica.Electrical.Analog.Basic.Resistor */
@@ -1627,6 +1684,7 @@ export function toDiagramModel(
     comment: cls.comment,
     components,
     variables,
+    equations: cls.equations,
     connections,
     graphics: cls.diagram.length ? cls.diagram : [],
   };

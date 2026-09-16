@@ -289,6 +289,15 @@ export interface DiagramModel {
    * re-parsed from source when absent.
    */
   variables?: VariableInstance[];
+  /**
+   * Hand-written equations, verbatim from the source.
+   *
+   * The diagram models components and wires; it has no representation for
+   * `der(h) = v`. Keeping them as text is what makes the round trip lossless —
+   * without it a model like `BouncingBall` serialized to declarations and an
+   * empty `equation` section, which OpenModelica rejects as under-determined.
+   */
+  equations?: string[];
   connections: Connection[];
   /** Free-floating annotations/text placed in the diagram layer. */
   graphics: Graphic[];

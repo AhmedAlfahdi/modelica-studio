@@ -1977,6 +1977,24 @@ export class ModelicaStudioView extends ItemView {
       if (!opts.silent) this.plugin.showSetupHelp();
       return;
     }
+    // Nothing to simulate: no components, no wires, no equations. Sending this
+    // to the compiler produces "Too few equations, under-determined system. The
+    // model has 0 equation(s) and N variable(s)", which names the symptom and
+    // not the cause. The cause is that the model has no physics at all.
+    const model = this.plugin.model;
+    const hasPhysics =
+      model.components.length > 0 ||
+      model.connections.length > 0 ||
+      (model.equations?.length ?? 0) > 0;
+    if (!hasPhysics) {
+      const message =
+        "Nothing to simulate: this model has no components, no connections and no equations.";
+      this.setStatus(message);
+      this.setCodeStatus(message, true);
+      new Notice(`Modelica: ${message}`, 6000);
+      return;
+    }
+
     this.busy = true;
     const previous = this.statusEl?.textContent ?? "";
     this.setStatus("Simulating…");

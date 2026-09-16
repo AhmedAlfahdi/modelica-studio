@@ -778,3 +778,90 @@ end T;
   const params = collectParameters(model);
   assert.equal(params["e"], "0.9", `the variable's parameter is collected, got ${JSON.stringify(params)}`);
 });
+
+test("an equation-based model survives a serialize round trip", () => {
+  // The diagram models components and wires; it has no representation for
+  // `der(h) = v`. Those equations were dropped entirely, so `BouncingBall` came
+  // back as three declarations and an empty `equation` section, and OpenModelica
+  // refused it with "Too few equations, under-determined system. The model has
+  // 0 equation(s) and 2 variable(s)."
+  const src = `model BouncingBall "A ball bouncing"
+  parameter Real e=0.9 "restitution";
+  Real h(start=1, fixed=true) "height";
+  Real v "velocity";
+equation
+  der(h) = v;
+  der(v) = -9.81;
+  when h <= 0 then
+    reinit(v, -e*pre(v));
+  end when;
+end BouncingBall;
+`;
+  const cls = findClass(parseModelica(src), "BouncingBall");
+  assert.equal(cls.equations.length, 3, "every equation is captured");
+  // Verbatim, not reconstructed: spacing and comments are the author's.
+  assert.equal(cls.equations[0], "der(h) = v;");
+  assert.equal(cls.equations[1], "der(v) = -9.81;");
+  assert.match(cls.equations[2], /^when h <= 0 then/);
+  assert.match(cls.equations[2], /end when;$/);
+
+  const out = serializeDiagram(toDiagramModel(cls, () => undefined));
+  assert.match(out, /der\(h\) = v;/, `the equations survive serialization:\n${out}`);
+  assert.match(out, /der\(v\) = -9\.81;/, "including the second");
+  assert.match(out, /reinit\(v, -e\*pre\(v\)\);/, "and the event handler");
+
+  // And the result re-parses to the same equations, so saving repeatedly is
+  // stable rather than eroding the model.
+  const again = findClass(parseModelica(out), "BouncingBall");
+  assert.ok(again, "the output re-parses");
+  assert.equal(again.equations.length, cls.equations.length, "no equation lost on a second pass");
+});
+
+test("an equation is kept verbatim", () => {
+  const src = `model M
+  Real x;
+equation
+  der(x) = -x;
+  x = 2*a + b;
+end M;
+`;
+  const cls = findClass(parseModelica(src), "M");
+  // Spacing is the author's, not a reconstruction. Re-joining tokens produced
+  // `der(x)=- x` and similar.
+  assert.deepEqual(cls.equations, ["der(x) = -x;", "x = 2*a + b;"]);
+});
+
+test("a comment inside an equation section is not swallowed into an equation", () => {
+  // A comment on its own line sits before the statement begins, so it is not
+  // part of any equation and is NOT preserved. Recorded here so the limitation
+  // is deliberate rather than a surprise: the equations themselves survive, and
+  // a comment between them is lost. Keeping it would mean attributing text that
+  // belongs to no statement.
+  const src = `model M
+  Real x;
+equation
+  // the rate
+  der(x) = -x;
+end M;
+`;
+  const cls = findClass(parseModelica(src), "M");
+  assert.equal(cls.equations.length, 1, "the equation is kept");
+  assert.equal(cls.equations[0], "der(x) = -x;", "and is exactly the statement");
+  assert.ok(!cls.equations[0].includes("the rate"), "the standalone comment is not attached to it");
+});
+
+test("an equation-only model is distinguishable from an empty one", () => {
+  // The studio used to send a model with no components and no equations to the
+  // compiler, which reported an under-determined system. Knowing the difference
+  // is what lets it say something useful instead.
+  const empty = toDiagramModel(findClass(parseModelica("model E\nend E;"), "E"), () => undefined);
+  assert.equal(empty.components.length, 0);
+  assert.equal((empty.equations ?? []).length, 0, "nothing to simulate");
+
+  const sourced = toDiagramModel(
+    findClass(parseModelica("model S\n  Real x;\nequation\n  der(x) = -x;\nend S;"), "S"),
+    () => undefined
+  );
+  assert.equal(sourced.components.length, 0, "no schematic either");
+  assert.equal((sourced.equations ?? []).length, 1, "but it does have physics");
+});

@@ -384,3 +384,57 @@ hypotheses were tested and disproved, and a harness using Obsidian's own
 `app.css` — focused, fully selected, in the reporter's light theme — rendered
 correctly every time. When the failure cannot be observed, a design in which the
 failure is *possible* is the thing to change, not the next guess at its cause.
+
+---
+
+## The bug this hunt uncovered
+
+Chasing the invisible-text report surfaced a worse fault that had nothing to do
+with rendering.
+
+**Symptom.** Simulating `BouncingBall` failed with:
+
+```
+Too few equations, under-determined system.
+The model has 0 equation(s) and 2 variable(s).
+```
+
+**Cause.** The parser modelled declarations, connections and annotations, and
+for everything else in the class body it called `skipStatement()`. Hand-written
+equations are everything else. So the diagram held the variables and none of the
+physics, and a round trip turned a working model into this:
+
+```modelica
+model BouncingBall "A ball bouncing on a floor with a restitution coefficient"
+  parameter Real e=0.9;
+  Real h(start=1, fixed=true);
+  Real v;
+
+equation          <- empty
+end BouncingBall;
+```
+
+Every equation-based model in the examples — `BouncingBall`, `DampedBounce`,
+`AirfoilLift`, `Phugoid` — was affected. It was data loss on load, and it had
+been there since the parser was written.
+
+**The fix, and one that was rejected.** Equations are now captured verbatim and
+re-emitted. The first attempt re-joined the captured tokens with spaces, which
+produced `der(v) = - 9.81` and `0then`: text that still parses but is not what
+was written. A reformatter that mangles code is worse than one that loses it, so
+that approach was abandoned for slicing the original source between token
+offsets.
+
+The second attempt then tried to track block nesting itself, to find where a
+`when` block ends. It read `y2 = if x > 0 then 1 else -1;` as opening a block and
+swallowed the remainder of the file — including a following class. That logic
+already existed and was already tested, in `skipStatement`, so the fix was to
+call it for the boundary and only slice the text. Reimplementing working logic is
+how the second bug got in.
+
+All 31 examples now keep their equations through a round trip, verified by test.
+
+**And a guard.** A model with no components, no connections and no equations is
+now refused before the compiler with "Nothing to simulate", rather than being
+sent to OpenModelica to produce a message about equation counts. The compiler's
+message named the symptom; the guard names the cause.

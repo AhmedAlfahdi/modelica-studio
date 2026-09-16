@@ -1,0 +1,10 @@
+{"format":"Transformational debugger info","version":1,
+"info":{"name":"BouncingBall","description":"A ball bouncing on a floor with a restitution coefficient"},
+"variables":{
+
+},
+"equations":[{"eqIndex":0,"tag":"dummy"}
+],
+"functions":[
+]
+}
