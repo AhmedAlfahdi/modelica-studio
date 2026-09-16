@@ -1109,15 +1109,34 @@ body.modelica-studio-resizing * {
 .mst-code-highlight {
   position: absolute;
   inset: 0;
+  z-index: 1;
   overflow: hidden;
   pointer-events: none;
   background: transparent;
-  will-change: transform;
+}
+
+/* The highlight layer paints the text, so its default colour is stated
+   outright. Obsidian colours `pre`/`code` with its own code foreground
+   (rgb(34,34,34)), which is near-black: on a dark theme every token WITHOUT an
+   explicit colour — identifiers, punctuation, `connect`, `end` — came out
+   black on a dark background and looked like missing text, while the coloured
+   tokens stayed visible. Inheriting that value was the bug. */
+.mst-code-highlight {
+  color: var(--text-normal) !important;
+}
+
+/* `-webkit-text-fill-color` wins over `color` in Chromium, so it must be reset
+   too or a theme's code fill would still paint the text. Setting it to
+   `currentColor` makes each element's own `color` authoritative. */
+.mst-code-highlight,
+.mst-code-highlight span {
+  -webkit-text-fill-color: currentColor;
 }
 
 .mst-code-input {
   position: absolute;
   inset: 0;
+  z-index: 2;
   width: 100%;
   height: 100%;
   resize: none;
@@ -1126,8 +1145,13 @@ body.modelica-studio-resizing * {
   background: transparent;
   /* The glyphs are drawn by the layer behind; only the caret and the selection
      belong to the textarea. Without this the text would be painted twice and
-     look bold and misaligned. */
-  color: transparent;
+     look bold and misaligned.
+     `-webkit-text-fill-color` is what actually paints text in Chromium, so it is
+     set as well as `color` — and with !important, because an inherited rule that
+     won on one of these alone left the textarea painting opaque text over the
+     highlight, hiding it. */
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
   caret-color: var(--text-normal);
 }
 

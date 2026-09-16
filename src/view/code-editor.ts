@@ -24,6 +24,8 @@ export interface CodeEditorOptions {
   library?: () => LibraryIndex | undefined;
   /** Ctrl/Cmd+Enter handler, for simulate. */
   onSubmit?: () => void;
+  /** Diagnostic sink for the layer geometry, called once on first focus. */
+  probe?: (info: Record<string, string | number>) => void;
 }
 
 /** A diagnostic to mark in the gutter. */
@@ -231,6 +233,37 @@ export function createCodeEditor(
 
   area.addEventListener("click", () => {
     hidePopup();
+  });
+
+  /**
+   * Report the layer geometry once, the first time the editor is focused.
+   *
+   * The text is painted by the layer behind the textarea, so if the two drift
+   * apart — different font resolution, a stray theme rule, a zero-height box —
+   * the visible symptom is "the text vanished" with nothing to inspect. This
+   * puts the numbers in the debug log at the moment it would happen.
+   */
+  let probed = false;
+  area.addEventListener("focus", () => {
+    if (probed) return;
+    probed = true;
+    window.setTimeout(() => {
+      const pr = pre.getBoundingClientRect();
+      const ar = area.getBoundingClientRect();
+      const ps = getComputedStyle(pre);
+      const as = getComputedStyle(area);
+      opts.probe?.({
+        preRect: `${Math.round(pr.width)}x${Math.round(pr.height)}`,
+        inputRect: `${Math.round(ar.width)}x${Math.round(ar.height)}`,
+        preFont: ps.fontFamily.split(",")[0] + " " + ps.fontSize + "/" + ps.lineHeight,
+        inputFont: as.fontFamily.split(",")[0] + " " + as.fontSize + "/" + as.lineHeight,
+        preColor: ps.color,
+        inputFill: as.webkitTextFillColor,
+        highlightChars: pre.textContent?.length ?? 0,
+        sourceChars: area.value.length,
+        scrollTop: Math.round(area.scrollTop),
+      });
+    }, 250);
   });
 
   area.addEventListener("keydown", (ev) => {

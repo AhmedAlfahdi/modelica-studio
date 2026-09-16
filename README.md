@@ -8,6 +8,11 @@ simulating them with a local OpenModelica installation, and plotting the results
 and its examples are verified numerically against independent calculations, but
 expect rough edges. See [Beta status](#beta-status).
 
+What that verification actually cost — twelve expectations that turned out to be
+wrong, the models that were abandoned rather than fixed, and how each
+discrepancy was settled — is in
+**[Testing findings](docs/testing-findings.md)**.
+
 ---
 
 ## What it does
@@ -34,6 +39,9 @@ expect rough edges. See [Beta status](#beta-status).
 - **A worked case for learning.** `showcase/01-learning-with-a-simulator.md`
   demonstrates using the plugin to learn a new subject, worked through with two
   aerospace models.
+- **A record of what went wrong.** [Testing findings](docs/testing-findings.md)
+  lists every expectation that failed, which side was wrong, and the five models
+  dropped for being unverifiable.
 
 Diagrams are stored as **real Modelica source with graphical annotations**, so
 files round-trip through OMEdit and other Modelica tools.
@@ -210,7 +218,9 @@ src/
 test/                  unit and integration tests, and the numerical audit
 showcase/              generator for the example notes (math, explanations)
 examples/vault/        the test vault, with the generated notes
-docs/                  design notes
+docs/
+  design.md            why it is built this way, and the measurements behind it
+  testing-findings.md  every failed expectation and what it turned out to be
 research/              background research kept from development
 scripts/               bundle checks
 ```

@@ -41,7 +41,6 @@ export class ModelicaStudioView extends ItemView {
   private inspectorEl!: HTMLElement;
   private inspectorCol!: HTMLElement;
   private splitterEl!: HTMLElement;
-  private sourceEl!: HTMLElement;
   /** The whole editable area: palette, canvas and inspector. */
   private bodyEl!: HTMLElement;
   /** Editing mode. Diagram and code are two views of one model. */
@@ -176,11 +175,9 @@ export class ModelicaStudioView extends ItemView {
     this.resultsResize = resultsSplitter;
     this.installResultsResize(resultsSplitter, resultsCol);
 
-    // The source shares the bottom pane with the plot. They answer the same
-    // question from two sides — what am I running, and what did it do — and
-    // neither is needed at the same moment as the other.
-    this.sourceEl = resultsCol.createEl("pre", { cls: "modelica-studio-source-code" });
-    this.sourceEl.style.display = "none";
+    // There is deliberately no source preview here. It was a read-only copy of
+    // the model, which code mode now edits directly, and showing the same text
+    // in two places at once made it unclear which one was authoritative.
 
     // Code mode replaces the whole editing area rather than sitting beside
     // Results. Diagram and code are two views of the same model, so showing both
@@ -215,7 +212,6 @@ export class ModelicaStudioView extends ItemView {
     this.updateToolbarState();
     this.renderPalette();
     this.renderInspector();
-    this.refreshSource();
     this.editor.scheduleFit();
 
     this.plugin.diag(`view open: ${(performance.now() - openStart).toFixed(0)} ms`);
@@ -442,6 +438,8 @@ export class ModelicaStudioView extends ItemView {
         onChange: () => this.validateCode(),
         onSubmit: () => void this.runSimulation(),
         onStatus: (t) => this.setStatus(t),
+        probe: (info) =>
+          this.plugin.diag("code layers: " + Object.entries(info).map(([k, v]) => `${k}=${v}`).join(" ")),
       });
     } else if (this.codeEditor.getValue() !== text) {
       this.codeEditor.setValue(text);
@@ -467,8 +465,7 @@ export class ModelicaStudioView extends ItemView {
       this.clearCodeProblem();
       this.editor?.setModel(model);
       this.editor?.scheduleFit();
-      this.refreshSource();
-      if (announce) this.setStatus(`Diagram rebuilt from source (${model.components.length} components).`);
+        if (announce) this.setStatus(`Diagram rebuilt from source (${model.components.length} components).`);
     } catch (err) {
       this.reportCodeProblem(String(err), []);
     }
@@ -941,7 +938,6 @@ export class ModelicaStudioView extends ItemView {
   private applyBottomTab(): void {
     const showPlot = this.bottomTab === "plot" && this.result !== null;
     if (this.plotHost) this.plotHost.style.display = showPlot ? "" : "none";
-    if (this.sourceEl) this.sourceEl.style.display = showPlot ? "none" : "";
     if (this.emptyEl) this.emptyEl.style.display = this.result ? "none" : "";
     // The plot's actions and scale controls belong to the plot, not the source.
     if (this.bottomActionsEl) {
@@ -950,6 +946,11 @@ export class ModelicaStudioView extends ItemView {
     if (this.inlineScale) {
       this.inlineScale.style.display =
         showPlot && this.inlineScale.childElementCount > 0 ? "" : "none";
+    }
+    // In code mode the source is already on screen, so the tab that reveals it
+    // is removed rather than left as a no-op.
+    if (this.bottomTabEls?.source) {
+      this.bottomTabEls.source.style.display = this.mode === "code" ? "none" : "";
     }
     for (const [id, b] of Object.entries(this.bottomTabEls ?? {})) {
       b.toggleClass("is-active", id === this.bottomTab);
@@ -1151,6 +1152,12 @@ export class ModelicaStudioView extends ItemView {
       ] as const) {
         const b = tabs.createEl("button", { cls: "modelica-studio-tab", text: label });
         b.addEventListener("click", () => {
+          if (id === "source") {
+            // Code mode is the source, so the tab switches to it rather than
+            // showing a second read-only copy of the same text.
+            this.setMode("code");
+            return;
+          }
           this.bottomTab = id;
           this.applyBottomTab();
         });
@@ -1720,7 +1727,6 @@ export class ModelicaStudioView extends ItemView {
   /* ---------------- model plumbing ---------------- */
 
   private onModelChanged(_m: DiagramModel): void {
-    this.refreshSource();
     this.renderInspector();
     this.updateToolbarState();
     void this.plugin.persist();
@@ -1789,7 +1795,6 @@ export class ModelicaStudioView extends ItemView {
   reloadFromPlugin(): void {
     this.result = null;
     this.editor?.setModel(this.plugin.model);
-    this.refreshSource();
     this.renderInspector();
     // Loading a model replaces the source too, or code mode keeps showing the
     // previous model while the diagram shows the new one.
@@ -1815,8 +1820,7 @@ export class ModelicaStudioView extends ItemView {
       // ignored as one the user had chosen.
       this.plugin.setStopTime(ex.stopTime, ex.name);
       this.editor?.scheduleFit();
-      this.refreshSource();
-      this.renderInspector();
+        this.renderInspector();
       this.setStatus(`Loaded example: ${ex.name} — ${ex.description}`);
     });
   }
@@ -1947,18 +1951,6 @@ export class ModelicaStudioView extends ItemView {
     this.editor?.requestDraw();
     const n = this.plugin.library.size;
     if (n > 0) this.setStatus(`Indexed ${n} Modelica classes.`);
-  }
-
-  /** Regenerate the Modelica source preview from the current diagram. */
-  refreshSource(): void {
-    if (!this.sourceEl) return;
-    try {
-      this.sourceEl.setText(serializeDiagram(this.plugin.model));
-      this.sourceEl.removeClass("modelica-studio-error");
-    } catch (err) {
-      this.sourceEl.setText(String(err));
-      this.sourceEl.addClass("modelica-studio-error");
-    }
   }
 
   /** Resolve `%param` macros for an instance, from its current parameters. */

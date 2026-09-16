@@ -10,6 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
+import fs from "node:fs";
 import { buildLibs, repoRoot } from "./helpers/build.mjs";
 
 const langMod = await import(
@@ -253,4 +254,38 @@ test("a new line keeps the indentation and deepens after a block opener", () => 
   assert.equal(indentForNewline("  Real x = 1;", 13), "  ");
   // A declaration does not open a block.
   assert.equal(indentForNewline("  Real x;", 9), "  ");
+});
+
+test("the highlight layer states its own text colour", () => {
+  // The layer paints the text, so if it inherits a colour it can inherit the
+  // wrong one. This was a real fault: Obsidian colours `pre`/`code` with
+  // rgb(34,34,34), so on a dark theme every token without an explicit colour —
+  // identifiers, punctuation, `connect`, `end` — was painted near-black on a
+  // dark background. The coloured tokens stayed visible, which made it look like
+  // text was randomly missing rather than miscoloured.
+  const css = fs.readFileSync(path.join(repoRoot, "styles.css"), "utf8");
+  // The class has several rules; the colour is asserted on whichever one sets it.
+  const blocks = [...css.matchAll(/(?:^|\n)\.mst-code-highlight\s*\{[^}]*\}/g)].map((m) => m[0]);
+  assert.ok(blocks.length >= 2, "the layer has its own rules, separate from the shared metrics rule");
+  const joined = blocks.join("\n");
+  assert.match(joined, /color:\s*var\(--text-normal\)/, "it sets its own colour");
+  assert.match(joined, /!important/, "and cannot be overridden by a theme rule on pre/code");
+  assert.match(joined, /z-index:\s*1/, "it sits under the input");
+
+  const input = [...css.matchAll(/(?:^|\n)\.mst-code-input\s*\{[^}]*\}/g)].map((m) => m[0]).join("\n");
+  assert.ok(input, "the textarea has a rule");
+  assert.match(input, /z-index:\s*2/, "and above the highlight");
+});
+
+test("the CSS is loadable and the selectors match what the editor emits", () => {
+  const css = fs.readFileSync(path.join(repoRoot, "styles.css"), "utf8");
+  // Every class the editor creates must have a rule, or it renders unstyled.
+  const editor = fs.readFileSync(path.join(repoRoot, "src/view/code-editor.ts"), "utf8");
+  const emitted = new Set(
+    [...editor.matchAll(/cls: ([`"])([^`"]+)\1/g)].flatMap((m) => m[2].split(/\s+/))
+  );
+  for (const cls of emitted) {
+    if (!cls.startsWith("mst-code")) continue;
+    assert.ok(css.includes("." + cls), `${cls} has a style rule`);
+  }
 });
