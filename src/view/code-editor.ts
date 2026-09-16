@@ -47,7 +47,23 @@ export interface CodeEditorHandle {
   destroy(): void;
 }
 
-const INDENT = "  ";
+/**
+ * A scratch 2D context for text measurement.
+ *
+ * Created lazily and reused. Canvas measurement needs no DOM mutation, so it can
+ * run on every keystroke without forcing a layout of the painted text.
+ */
+let scratch: CanvasRenderingContext2D | null | undefined;
+function measureContext(): CanvasRenderingContext2D | null {
+  if (scratch === undefined) {
+    try {
+      scratch = document.createElement("canvas").getContext("2d");
+    } catch {
+      scratch = null;
+    }
+  }
+  return scratch;
+}
 
 export function createCodeEditor(
   parent: HTMLElement,
@@ -171,15 +187,15 @@ export function createCodeEditor(
     const line = before.slice(lineStart);
     const lineIndex = before.split("\n").length - 1;
 
-    const probe = document.createElement("span");
-    probe.textContent = line || " ";
-    probe.style.cssText =
-      "position:absolute;visibility:hidden;white-space:pre;font:inherit;letter-spacing:inherit";
-    pre.appendChild(probe);
-    const width = probe.getBoundingClientRect().width;
-    probe.remove();
-
     const style = getComputedStyle(area);
+    // Measure the prefix with a canvas rather than by inserting a hidden span
+    // into the highlight layer. Appending to that <pre> re-ran layout on every
+    // keystroke and left a stray span behind if anything threw in between.
+    const measure = measureContext();
+    if (measure) {
+      measure.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    }
+    const width = measure ? measure.measureText(line || " ").width : 0;
     const lineHeight = parseFloat(style.lineHeight) || 18;
     const paddingLeft = parseFloat(style.paddingLeft) || 0;
     const paddingTop = parseFloat(style.paddingTop) || 0;
@@ -243,27 +259,52 @@ export function createCodeEditor(
    * the visible symptom is "the text vanished" with nothing to inspect. This
    * puts the numbers in the debug log at the moment it would happen.
    */
+  function report(tag: string): void {
+    if (!opts.probe) return;
+    const pr = pre.getBoundingClientRect();
+    const ar = area.getBoundingClientRect();
+    const ps = getComputedStyle(pre);
+    const as = getComputedStyle(area);
+    const first = pre.firstElementChild as HTMLElement | null;
+    // Deliberately verbose. "The text is invisible" has several unrelated
+    // causes — a blank layer, a transparent colour, layers misaligned, zero
+    // height — and they are indistinguishable from a screenshot. Reporting the
+    // real HTML settles it in one line.
+    opts.probe({
+      tag,
+      preRect: `${Math.round(pr.width)}x${Math.round(pr.height)}`,
+      inputRect: `${Math.round(ar.width)}x${Math.round(ar.height)}`,
+      preOpacity: ps.opacity,
+      preVisibility: ps.visibility,
+      preDisplay: ps.display,
+      preColor: ps.color,
+      preFill: ps.webkitTextFillColor,
+      preZ: ps.zIndex,
+      inputColor: as.color,
+      inputFill: as.webkitTextFillColor,
+      inputZ: as.zIndex,
+      inputBorder: as.borderTopWidth,
+      highlightChars: pre.textContent?.length ?? 0,
+      sourceChars: area.value.length,
+      childCount: pre.childElementCount,
+      firstChildColor: first ? getComputedStyle(first).color : "-",
+      htmlHead: (pre.innerHTML || "").slice(0, 120),
+      // The colour resolves through a chain of Obsidian variables. If the
+      // computed value is wrong, which LINK is wrong is what matters, so the
+      // whole chain is reported.
+      // The surface the code actually sits on. If the theme class and the real
+      // background disagree, contrast cannot be taken from the theme variables.
+    });
+  }
+
+  // Reported on first focus, not at creation: the pane is display:none until
+  // the mode is switched, so a report taken then measures 0x0 and an empty
+  // layer and says nothing true about what is on screen.
   let probed = false;
   area.addEventListener("focus", () => {
     if (probed) return;
     probed = true;
-    window.setTimeout(() => {
-      const pr = pre.getBoundingClientRect();
-      const ar = area.getBoundingClientRect();
-      const ps = getComputedStyle(pre);
-      const as = getComputedStyle(area);
-      opts.probe?.({
-        preRect: `${Math.round(pr.width)}x${Math.round(pr.height)}`,
-        inputRect: `${Math.round(ar.width)}x${Math.round(ar.height)}`,
-        preFont: ps.fontFamily.split(",")[0] + " " + ps.fontSize + "/" + ps.lineHeight,
-        inputFont: as.fontFamily.split(",")[0] + " " + as.fontSize + "/" + as.lineHeight,
-        preColor: ps.color,
-        inputFill: as.webkitTextFillColor,
-        highlightChars: pre.textContent?.length ?? 0,
-        sourceChars: area.value.length,
-        scrollTop: Math.round(area.scrollTop),
-      });
-    }, 250);
+    window.setTimeout(() => report("focused"), 250);
   });
 
   area.addEventListener("keydown", (ev) => {
@@ -295,7 +336,8 @@ export function createCodeEditor(
 
     if (ev.key === "Tab") {
       ev.preventDefault();
-      insertText(INDENT);
+      // The same unit `indentForNewline` adds, so Tab and auto-indent agree.
+      insertText("  ");
       return;
     }
 

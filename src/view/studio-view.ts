@@ -438,8 +438,9 @@ export class ModelicaStudioView extends ItemView {
         onChange: () => this.validateCode(),
         onSubmit: () => void this.runSimulation(),
         onStatus: (t) => this.setStatus(t),
-        probe: (info) =>
-          this.plugin.diag("code layers: " + Object.entries(info).map(([k, v]) => `${k}=${v}`).join(" ")),
+        // JSON, not key=value: CSS colours contain spaces, which made the
+        // first version of this log unparseable exactly where it mattered.
+        probe: (info) => this.plugin.diag("code layers " + JSON.stringify(info)),
       });
     } else if (this.codeEditor.getValue() !== text) {
       this.codeEditor.setValue(text);

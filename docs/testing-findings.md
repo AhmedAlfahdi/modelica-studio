@@ -319,3 +319,54 @@ result is not a check.
 different ways — an unverified count asserted with confidence, which is precisely
 the failure the list exists to prevent. It now says twelve, and the list has
 twelve entries.
+
+---
+
+## Appendix: the invisible-text chase
+
+Worth recording separately, because the bug was reported three times and the
+diagnosis was wrong twice before it was right.
+
+**Symptom.** In code mode the source appeared as bars of selection colour with no
+text, most visibly while the cursor was in the editor.
+
+**Hypothesis 1: the two layers had drifted apart.** The editor paints through a
+highlight layer behind a transparent textarea, so any difference in font,
+padding or wrapping slides the colours off the text. A probe reporting both
+layers' rects, fonts and padding disproved it immediately — the rects were
+identical to the pixel and the fonts matched exactly.
+
+**Hypothesis 2: transparency was failing on focus.** Chromium has form on
+`color: transparent` in a focused control. Computed style said otherwise:
+`color` and `-webkit-text-fill-color` were both `rgba(0, 0, 0, 0)` before and
+after focus, in both the app and a standalone harness.
+
+**What the measurement actually showed.** Obsidian colours `pre`/`code` with
+`--code-normal`, which is `--text-normal`, which is `--color-base-100`. The
+highlight layer had been left to inherit that, and the value in that app was
+`rgb(34, 34, 34)`. Every token with an explicit colour stayed visible; every
+identifier, punctuation mark and uncoloured keyword came out near-black. The
+layer now states its own colour with `!important`.
+
+**And the report that outlived the fix.** The screenshot showing it still broken
+also showed a **Source** tab beside **Plot** — but the very commit that fixed the
+colour also removed that tab, so the tab's presence dated the screenshot to
+before the fix. A later screenshot would have had to show the tab gone.
+
+This is the same lesson as the twelve above, at the level of the tooling rather
+than the physics: **the reflex was to trust the report over the measurement.**
+Three reports said "still broken"; the probe said the layer contained 757
+characters of correctly coloured HTML, and the app's own state said light theme,
+`#222222` on `#ffffff`. What settled it was not another guess but a field in a
+log that could only have one value if the fault were real.
+
+Two genuine defects were found along the way and fixed:
+
+- The completion popup measured the caret's pixel position by appending a hidden
+  span to the highlight layer, re-running layout on the painted text on every
+  keystroke and leaking the span if anything threw in between. It now measures
+  with a reusable canvas context.
+- The whole-editor diagnostic is emitted as JSON. The first version logged
+  `key=value` separated by spaces, and CSS colours contain spaces, so the log was
+  unparseable exactly where it mattered — `rgb(255, 255, 255)` arrived as
+  `rgb(255,`.
