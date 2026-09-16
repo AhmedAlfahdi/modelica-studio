@@ -3,10 +3,16 @@
  *
  * Every expected number here comes from a closed-form solution, from an
  * independent numerical integration of the same ODE, or from reading the
- * MSL 4.1.0 source — never from a previous run of this plugin. That rule
- * matters: during the audit, eleven "failures" turned out to be wrong
- * expectations rather than wrong simulations, and each is recorded below so the
- * same mistake is not mistaken for a bug again.
+ * MSL 4.1.0 source — never from a previous run of this plugin.
+ *
+ * That rule earned its keep. Twelve times a check failed, and every one of them
+ * was the EXPECTATION being wrong, not the simulation. They are recorded here
+ * because the reflex is to assume the simulation is at fault, and each of these
+ * was resolved only by proving the expectation wrong instead.
+ *
+ * Two kinds recur. A formula was misremembered or misapplied, or a number was
+ * misread out of a result file. Nothing in this list was an OpenModelica error:
+ * the solver's arithmetic has never once been the thing that was wrong.
  *
  *   - RLC is a SERIES RLC with a step input. zeta = 1.58 > 1 does NOT mean no
  *     overshoot here: the capacitor and inductor in series give complex zeros,
@@ -21,6 +27,28 @@
  *     is ~5% high.
  *   - MassSpringDamper shares one applied force between two free masses, so the
  *     steady stretch is F*m2/(c*(m1+m2)), not F/c.
+ *   - BouncingBall's last contact is the CATCH, not a bounce: the ball arrives
+ *     at 0.487 m/s, just under the 0.5 threshold, and is held. Impulses counted
+ *     by watching h cross zero therefore exceed rebounds by one (12 vs 13), and
+ *     velocity sampled at that instant is the pre-event value.
+ *   - DampedBounce's rest time is v0/g plus every ballistic interval after each
+ *     bounce. An early script used log(vmin/v0) with the wrong v0, giving 14
+ *     impacts against 13 rebounds.
+ *   - TankOrifice does not reach exactly zero: dh/dt goes as sqrt(h), so the last
+ *     millimetre drains ever more slowly and MSL regularises the flow near zero.
+ *     The physical claim is "empty long before 25 s", not "level == 0".
+ *   - HalfWaveRectifier's blocked half is not exactly zero either. MSL's diode is
+ *     a Shockley device with a reverse saturation current, so it leaks about
+ *     1.1 uA and the load rests 0.1 mV below zero.
+ *   - AirfoilLift's post-stall curve: the lift coefficient peaks AT alpha_stall,
+ *     so comparing 15 deg with 19 deg tests the falloff, and comparing 10 deg
+ *     with 15 deg does not.
+ *   - The phugoid period is NOT pi*sqrt(2)*V0/g. That formula is recalled from
+ *     the classical derivation, which this model's equations do not implement:
+ *     linearising them gives omega = 2^(1/4)*g/V0, so T = 2*pi*V0/(2^(1/4)*g).
+ *     At V0 = 70 that is 37.70 s against the remembered 31.70 s. The period is
+ *     amplitude-independent (37.701 s from 0.001 to 5 m/s), which is what ruled
+ *     out nonlinearity and pointed at the formula.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
