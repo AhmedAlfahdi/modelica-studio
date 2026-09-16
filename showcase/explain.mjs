@@ -346,4 +346,43 @@ export const EXPLAIN = {
     takeaway:
       "Two things make this worth studying. First, the period is **long** — about 38 seconds here, and it grows with speed, which is why it feels like a slow porpoise rather than a vibration. Second, it is one of the few motions in flight dynamics with an exact invariant: with no drag and no thrust, total energy cannot change, and the simulation holds it to 0.0001%. The speed swings 65 to 75 m/s while the altitude swings 200 to 271 m, and those two numbers are locked together by energy conservation.",
   },
+  ControlLoop: {
+    idea:
+      "A setpoint is compared with the measured output, the difference drives a PID controller, and the controller drives the plant. The output comes back to be subtracted. This is the loop everyone draws on a whiteboard — here it is a running system you can watch converge.",
+    reading: [
+      ["`Step setpoint(height=1, startTime=1)`", "the command: nothing, then suddenly 1 at t = 1 s."],
+      ["`Feedback error`", "the subtractor. `u1` is the setpoint, `u2` the measurement, and the output is the difference."],
+      ["`PID controller(k=2, Ti=0.5, Td=0.1)`", "proportional, integral and derivative action in one block. `Ti` is the integral time, `Td` the derivative time."],
+      ["`FirstOrder plant(k=1, T=1)`", "the thing being controlled: an ordinary lag with a 1 s time constant."],
+      ["`FirstOrder sensor(k=1, T=0.05)`", "the measurement path, with its own small lag — real sensors are not instantaneous."],
+      ["`connect(sensor.y, error.u2)`", "the feedback line. Without it this would be an open loop and the output would never reach the setpoint."],
+    ],
+    takeaway:
+      "Follow the error in the table and you can watch each term work. Before the step it is zero. Right after, it is 0.25 — the proportional term pushes hard. By 2 s the output has overshot slightly, and by 8 s the error is **−0.0001**, essentially zero. That vanishing error is the integral term's doing: proportional control alone always leaves a steady offset, because it needs an error to produce any output at all. Tuning `k`, `Ti` and `Td` and re-running is the whole craft of control engineering, and here it takes one edit.",
+  },
+  GearTrain: {
+    idea:
+      "A motor turns a heavy load through a 5:1 gearbox. The gearbox makes the load turn five times slower — and five times harder.",
+    reading: [
+      ["`TorqueStep motor(stepTorque=10, startTime=0.2)`", "10 N·m of drive, switched on at t = 0.2 s."],
+      ["`IdealGear gear(ratio=5)`", "the gearbox. Ideal means no losses: the power through it is unchanged."],
+      ["`Inertia loadInertia(J=2)`", "a heavy load, 2 kg·m² — much heavier than the motor's own 0.1."],
+      ["`SpringDamper bearing(c=200, d=20)`", "the stiffness and damping holding the load against its frame."],
+      ["`Fixed frame`", "the ground the bearing reacts against."],
+    ],
+    takeaway:
+      "The speed ratio is **exactly** 5 at every instant, and the load torque is exactly five times the motor torque — so 10 N·m of motor becomes 50 N·m of load, at one fifth the speed. That is the trade a gearbox makes, and it is why a small motor can move a heavy thing: it is not gaining torque for free, it is spending speed to buy it, and the power (torque × speed) is unchanged.",
+  },
+  HalfWaveRectifier: {
+    idea:
+      "A diode, a resistor and an AC source — three components, and the simplest circuit that shows what a diode is for. On the positive half of the cycle the diode conducts and the load sees the supply; on the negative half it blocks, and the load sees nothing. Out comes a one-way pulse train.",
+    reading: [
+      ["`SineVoltage source(V=12, f=50)`", "12 V amplitude at 50 Hz — one cycle every 20 ms. `V` is the peak, not the RMS."],
+      ["`Diode d`", "the one-way valve. Its `p` pin is the anode, so current flows `p` to `n` only."],
+      ["`Resistor load(R=100)`", "the useful output. It carries current only while the diode conducts."],
+      ["`Ground ground`", "the reference. Both the source's return and the load's return tie to it, so the load voltage is measured against the same zero the source is."],
+    ],
+    takeaway:
+      "The diode costs a **forward drop**: at 0.115 A it takes about 0.466 V, which is why the peak is 11.534 V rather than 12. It is also not perfect in reverse — Modelica's diode is a Shockley device with a saturation current, so the blocked half leaks about a microamp and the load sits 0.1 mV below zero rather than at exactly zero. Textbook diodes are idealisations; this one is not. That drop is a real design cost — it is a fixed tax on the voltage, so it hurts far more at 5 V than at 240 V. It is also why a bridge rectifier (four diodes) is used when you want to use both halves of the cycle: it doubles the output pulses but charges you two diode drops instead of one.",
+  },
 };

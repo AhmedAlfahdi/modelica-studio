@@ -19,12 +19,13 @@ models.
 
 | Domain | Examples |
 |---|---|
-| Electrical | [Electrical](electrical.md), [RLC](rlc.md), [Rectifier](rectifier.md), [SineAC](sine-ac.md), [BuckConverter](buck-converter.md), [BatteryDischarge](battery-discharge.md), [DCMotor](dcmotor.md) |
-| Mechanical | [MassSpring](mass-spring.md), [RotationalPendulum](rotational-pendulum.md), [MassSpringDamper](mass-spring-damper.md), [DoublePendulum](double-pendulum.md), [BouncingBall](bouncing-ball.md), [DampedOscillator](damped-oscillator.md), [ForcedOscillator](forced-oscillator.md), [DampedBounce](damped-bounce.md) |
+| Electrical | [Electrical](electrical.md), [RLC](rlc.md), [Rectifier](rectifier.md), [SineAC](sine-ac.md), [BuckConverter](buck-converter.md), [BatteryDischarge](battery-discharge.md), [DCMotor](dcmotor.md), [HalfWaveRectifier](half-wave-rectifier.md) |
+| Mechanical | [MassSpring](mass-spring.md), [RotationalPendulum](rotational-pendulum.md), [MassSpringDamper](mass-spring-damper.md), [DoublePendulum](double-pendulum.md), [BouncingBall](bouncing-ball.md), [DampedOscillator](damped-oscillator.md), [ForcedOscillator](forced-oscillator.md), [DampedBounce](damped-bounce.md), [GearTrain](gear-train.md) |
 | Fluid | [FluidPipe](fluid-pipe.md), [FluidReservoir](fluid-reservoir.md), [FluidLoop](fluid-loop.md), [TankOrifice](tank-orifice.md), [NonlinearOrifice](nonlinear-orifice.md), [PipeFriction](pipe-friction.md) |
 | Thermal | [Thermal](thermal.md), [HeatConduction](heat-conduction.md), [HeatExchanger](heat-exchanger.md) |
 | Discrete | [StateMachine](state-machine.md) |
 | Aerospace | [AirfoilLift](airfoil-lift.md), [Phugoid](phugoid.md) |
+| Control | [ControlLoop](control-loop.md) |
 
 ---
 

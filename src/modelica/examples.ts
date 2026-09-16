@@ -606,6 +606,64 @@ equation
 end Phugoid;
 `;
 
+const HALFWAVE = `model HalfWaveRectifier "One diode, one load, referenced to the source"
+  Modelica.Electrical.Analog.Sources.SineVoltage source(V=12, f=50)
+    annotation(Placement(transformation(extent={{-60,0},{-40,20}})));
+  Modelica.Electrical.Analog.Semiconductors.Diode d
+    annotation(Placement(transformation(extent={{-10,0},{10,20}})));
+  Modelica.Electrical.Analog.Basic.Resistor load(R=100)
+    annotation(Placement(transformation(extent={{30,0},{50,20}})));
+  Modelica.Electrical.Analog.Basic.Ground ground
+    annotation(Placement(transformation(extent={{30,-40},{50,-20}})));
+equation
+  connect(source.p, d.p);
+  connect(d.n, load.p);
+  connect(load.n, ground.p);
+  connect(source.n, ground.p);
+end HalfWaveRectifier;
+`;
+
+const CONTROLLOOP = `model ControlLoop "A PID controller driving a first-order plant"
+  Modelica.Blocks.Sources.Step setpoint(height=1, startTime=1)
+    annotation(Placement(transformation(extent={{-80,30},{-60,50}})));
+  Modelica.Blocks.Math.Feedback error
+    annotation(Placement(transformation(extent={{-30,30},{-10,50}})));
+  Modelica.Blocks.Continuous.PID controller(k=2, Ti=0.5, Td=0.1)
+    annotation(Placement(transformation(extent={{10,30},{30,50}})));
+  Modelica.Blocks.Continuous.FirstOrder plant(k=1, T=1)
+    annotation(Placement(transformation(extent={{50,30},{70,50}})));
+  Modelica.Blocks.Continuous.FirstOrder sensor(k=1, T=0.05)
+    annotation(Placement(transformation(extent={{50,-30},{30,-10}})));
+equation
+  connect(setpoint.y, error.u1);
+  connect(error.y, controller.u);
+  connect(controller.y, plant.u);
+  connect(plant.y, sensor.u);
+  // Negative feedback: the measured output returns to the subtractor.
+  connect(sensor.y, error.u2);
+end ControlLoop;
+`;
+const GEARTRAIN = `model GearTrain "A motor driving a load through a gearbox"
+  Modelica.Mechanics.Rotational.Sources.TorqueStep motor(stepTorque=10, startTime=0.2)
+    annotation(Placement(transformation(extent={{-70,-10},{-50,10}})));
+  Modelica.Mechanics.Rotational.Components.Inertia motorInertia(J=0.1)
+    annotation(Placement(transformation(extent={{-40,-10},{-20,10}})));
+  Modelica.Mechanics.Rotational.Components.IdealGear gear(ratio=5)
+    annotation(Placement(transformation(extent={{-5,-10},{15,10}})));
+  Modelica.Mechanics.Rotational.Components.Inertia loadInertia(J=2)
+    annotation(Placement(transformation(extent={{30,-10},{50,10}})));
+  Modelica.Mechanics.Rotational.Components.SpringDamper bearing(c=200, d=20)
+    annotation(Placement(transformation(extent={{60,-10},{80,10}})));
+  Modelica.Mechanics.Rotational.Components.Fixed frame
+    annotation(Placement(transformation(extent={{90,-10},{110,10}})));
+equation
+  connect(motor.flange, motorInertia.flange_a);
+  connect(motorInertia.flange_b, gear.flange_a);
+  connect(gear.flange_b, loadInertia.flange_a);
+  connect(loadInertia.flange_b, bearing.flange_a);
+  connect(bearing.flange_b, frame.flange);
+end GearTrain;
+`;
 /** All built-in examples, grouped by physical domain, in the order shown. */
 export const EXAMPLES: ExampleModel[] = [
   {
@@ -800,6 +858,27 @@ export const EXAMPLES: ExampleModel[] = [
     stopTime: 200,
     series: ["V", "gamma"],
     source: PHUGOID,
+  },
+  {
+    name: "HalfWaveRectifier",
+    description: "Electrical: a diode rectifier and its load",
+    stopTime: 0.06,
+    series: ["source.v", "load.p.v"],
+    source: HALFWAVE,
+  },
+  {
+    name: "ControlLoop",
+    description: "Control: a PID controller driving a first-order plant",
+    stopTime: 8,
+    series: ["setpoint.y", "plant.y"],
+    source: CONTROLLOOP,
+  },
+  {
+    name: "GearTrain",
+    description: "Mechanical: a motor driving a load through a 5:1 gearbox",
+    stopTime: 10,
+    series: ["motorInertia.w", "loadInertia.w"],
+    source: GEARTRAIN,
   },
 ];
 

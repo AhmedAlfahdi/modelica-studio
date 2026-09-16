@@ -456,4 +456,55 @@ export const NOTES = {
       ["amplitude independence of the period", "same at every amplitude", "37.701 s at 0.001 to 5 m/s"],
     ],
   },
+
+  ControlLoop: {
+    title: "Control — a PID loop driving a first-order plant",
+    domain: "Control",
+    equations: [
+      "e = r - y, \\qquad u = k\\left(e + \\frac{1}{T_i}\\int e\\,dt + T_d\\frac{de}{dt}\\right)",
+      "T\\frac{dy}{dt} + y = u \\qquad (\\text{first-order plant, } T = 1)",
+      "\\text{steady state: } y \\to r \\text{ exactly, because the integral term removes the error}",
+    ],
+    insight:
+      "This is the diagram everyone draws and few can point at in a running system. Three blocks and one feedback line: a **setpoint** feeds a subtractor, the error goes to a **PID**, its output drives a **plant**, and the measured output returns to be subtracted. The integral term is what makes the final error zero rather than merely small.",
+    checks: [
+      ["output follows a step setpoint", "y to 1", "0.7457 at 1.5 s, 1.0234 at 2 s"],
+      ["steady-state error with integral action", "0", "−1.03e−4"],
+      ["overshoot for k=2, Ti=0.5, Td=0.1", "finite", "9.20%"],
+      ["error before the step", "0", "0.0000"],
+    ],
+  },
+  GearTrain: {
+    title: "Mechanical — a motor driving a load through a gearbox",
+    domain: "Mechanical",
+    equations: [
+      "\\omega_a = \\text{ratio} \\times \\omega_b, \\qquad \\tau_b = \\text{ratio} \\times \\tau_a",
+      "J_a\\dot\\omega_a = \\tau_{motor} - \\tau_a, \\qquad J_b\\dot\\omega_b = \\tau_b - \\tau_{bearing}",
+    ],
+    insight:
+      "An ideal gearbox trades speed for torque, and it does so **exactly**: whatever the ratio does to one, it does the inverse to the other, so the power through it is unchanged. That is why a gearbox can let a small motor lift a heavy load — it is not creating torque, it is spending speed to buy it.",
+    checks: [
+      ["speed ratio ω_motor / ω_load", "5", "5.0000 at every t"],
+      ["torque ratio τ_load / τ_motor", "5", "50/10 = 5"],
+      ["steady-state load torque", "50 N·m", "−50.0000 N·m"],
+      ["settles within the run", "0", "load.w(10) = 0.00000"],
+    ],
+  },
+
+  HalfWaveRectifier: {
+    title: "Electrical — a diode rectifier and its load",
+    domain: "Electrical",
+    equations: [
+      "V_{out} = V_{source} - V_{diode} \\quad \\text{when } V_{source} > V_{diode}",
+      "V_{out} = 0 \\quad \\text{otherwise (the diode blocks)}",
+    ],
+    insight:
+      "This is the smallest circuit that shows what a diode is *for*. Positive half: the diode conducts and the load sees the source minus the diode's forward drop. Negative half: the diode blocks and the load sees nothing. One component turns an alternating supply into a one-way one.",
+    checks: [
+      ["peak output at the +12 V peak", "12 − 0.466", "11.5338 V"],
+      ["output at the −12 V peak", "0 (blocked)", "−0.0001 V"],
+      ["diode forward drop at 0.115 A", "≈0.466 V", "0.466 V"],
+      ["conduction", "half the cycle", "positive half only"],
+    ],
+  },
 };

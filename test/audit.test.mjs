@@ -429,6 +429,56 @@ test("every example matches an independently derived result", { skip: !HAS_OMC }
       V[iTop] < V[iBottom] && Math.abs(V[iTop] - V0) > 4 ? 1 : 0, 0, "");
   }
 
+  console.log("\n== HalfWaveRectifier: one diode turns AC into one-way pulses ==");
+  {
+    const r = await sim("HalfWaveRectifier", { numberOfIntervals: 6000 });
+    const out = S(r, "load.p.v").values, src = S(r, "source.v").values;
+    const i05 = r.time.findIndex((t) => t >= 0.005);   // source at +12 V
+    const i15 = r.time.findIndex((t) => t >= 0.015);   // source at -12 V
+    // Conducting half: the load sees the source less one forward drop.
+    const vDrop = 12 - out[i05];
+    check("forward drop is a diode drop, not a short", 1, vDrop > 0.2 && vDrop < 0.7 ? 1 : 0, 0, "");
+    check("peak output = 12 - drop", 11.5338, out[i05], 0.01, " V");
+    // Blocking half: the load must see essentially nothing.
+    check("blocked on the negative half", 0, out[i15], 1e-3, " V");
+    // One-way, but not perfectly: MSL's diode is a Shockley device with a
+    // reverse saturation current, so the blocked half still leaks about 1.1 uA
+    // and the load sits ~0.1 mV below zero. That is the model being physical,
+    // so the check allows a leakage floor rather than demanding exact zero.
+    check("output one-way to within the diode's reverse leakage", -1.12e-4, Math.min(...out), 1e-5, " V");
+    check("reverse leakage is negligible next to the peak", 1, Math.abs(Math.min(...out)) / out[i05] < 1e-4 ? 1 : 0, 0, "");
+    const i25 = r.time.findIndex((t) => t >= 0.025);
+    check("next cycle repeats", out[i05], out[i25], 1e-3, " V");
+  }
+
+  console.log("\n== ControlLoop: closed loop reaches the setpoint ==");
+  {
+    const r = await sim("ControlLoop", { numberOfIntervals: 4000 });
+    const y = S(r, "plant.y").values;
+    const setpoint = S(r, "setpoint.y").values;
+    check("no motion before the step", 0, at(r, "plant.y", 0.9), 1e-9, "");
+    // Integral action: the steady-state error must vanish, not merely be small.
+    check("steady-state error with integral action", 0, setpoint[setpoint.length - 1] - y[y.length - 1], 1e-3, "");
+    // And the output must actually settle at the setpoint value.
+    check("output settles at the setpoint", 1, y[y.length - 1], 1e-3, "");
+    // A real loop overshoots a little; an absurd value would mean a wiring error.
+    check("overshoot is modest, not divergent", 1, Math.max(...y) < 1.5 ? 1 : 0, 0, "");
+  }
+
+  console.log("\n== GearTrain: an ideal gearbox conserves power ==");
+  {
+    const r = await sim("GearTrain", { numberOfIntervals: 8000 });
+    // Speed ratio is exact at every instant, whatever the transient.
+    let worst = 0;
+    const wa = S(r, "motorInertia.w").values, wb = S(r, "loadInertia.w").values;
+    for (let k = 0; k < wa.length; k++) {
+      if (Math.abs(wb[k]) > 1e-3) worst = Math.max(worst, Math.abs(wa[k] / wb[k] - 5));
+    }
+    check("speed ratio is exactly 5", 0, worst, 1e-6, "");
+    check("steady load torque = 5 x motor torque", -50, at(r, "gear.flange_b.tau", 10), 1e-2, " N m");
+    check("load settles to rest against the bearing", 0, at(r, "loadInertia.w", 10), 1e-4, " rad/s");
+  }
+
   console.log(`\n${results.filter((r) => r.ok).length}/${results.length} checks passed`);
 
   const failed = results.filter((r) => !r.ok);
