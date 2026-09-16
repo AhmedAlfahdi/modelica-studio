@@ -356,3 +356,53 @@ export function indentForNewline(source: string, caret: number): string {
     );
   return indent + (deeper ? "  " : "");
 }
+
+/* ---- embed directives ---- */
+
+/** The options a `//@` directive line can carry. */
+export interface DirectiveOptions {
+  stopTime?: number;
+  height?: number;
+  showPlot?: boolean;
+  autoSimulate?: boolean;
+}
+
+/**
+ * Format a `//@` directive line, or return "" when there is nothing to say.
+ *
+ * Used when a block is written back to a note. The directive was being DROPPED
+ * on every write-back, because it is parsed out of the source and only the
+ * re-serialized Modelica was written: editing a block in the studio silently
+ * removed the line that set its simulation span, and the block then inherited
+ * whatever the studio last used.
+ */
+export function formatDirective(opts: DirectiveOptions): string {
+  const parts: string[] = [];
+  // Emitted only when set, so a block with no options gets no directive line
+  // rather than an empty marker.
+  if (opts.stopTime !== undefined && opts.stopTime > 0) {
+    parts.push(`time=${trimNumber(opts.stopTime)}`);
+  }
+  if (opts.height !== undefined && opts.height > 0) parts.push(`height=${Math.round(opts.height)}`);
+  if (opts.showPlot === false) parts.push("edit");
+  else if (opts.showPlot === true) parts.push("result");
+  if (opts.autoSimulate === false) parts.push("manual");
+  return parts.length ? `//@ ${parts.join(" ")}` : "";
+}
+
+/** Avoid `time=5.0000000001` from floating-point arithmetic. */
+function trimNumber(n: number): string {
+  return String(Number(n.toFixed(4)));
+}
+
+/**
+ * Put a directive back at the head of a block body.
+ *
+ * The directive belongs to the BLOCK, and the note's own text does not carry it
+ * once parsed, so it has to be re-attached before writing.
+ */
+export function withDirective(body: string, opts: DirectiveOptions): string {
+  const line = formatDirective(opts);
+  const trimmed = body.replace(/^\s*\n/, "");
+  return line ? `${line}\n${trimmed}` : trimmed;
+}

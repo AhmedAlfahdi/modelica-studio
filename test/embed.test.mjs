@@ -12,7 +12,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { repoRoot, testTmpDir } from "./helpers/build.mjs";
+import { buildLibs, repoRoot, testTmpDir } from "./helpers/build.mjs";
 
 // The embed imports `obsidian`, which has no Node equivalent; stub it.
 const staging = testTmpDir("mo-embed-");
@@ -41,6 +41,12 @@ fs.writeFileSync(
   "export class Notice { constructor(m) { this.message = m; } }\nexport class App {}\nexport class TFile {}\n"
 );
 const { parseEmbedOptions, replaceFencedBlock } = await import(path.join(staging, "embed.js"));
+const { parseDirective } = await import(path.join(staging, "embed.js"));
+// The directive formatter lives with the language helpers, which have no
+// Obsidian dependency.
+const langMod = await import(
+  path.join(buildLibs("embed-lang", ["src/view/modelica-lang.ts"]), "modelica-lang.js")
+);
 
 /* ------------------------------------------------------------------ */
 
@@ -309,4 +315,44 @@ test("options are read from a directive inside the block", () => {
     /registerMarkdownCodeBlockProcessor\(language, \(source, el, ctx\)/.test(main),
     "the processor takes the three arguments Obsidian actually passes"
   );
+});
+
+test("a directive survives being written back to the note", () => {
+  // The block's `//@` line is parsed OUT of the source, so writing back only the
+  // re-serialized Modelica DROPPED it. Editing a block in the studio silently
+  // removed the line that set its simulation span, and the block then inherited
+  // whatever the studio last used.
+  const { formatDirective, withDirective } = langMod;
+
+  assert.equal(formatDirective({ stopTime: 5 }), "//@ time=5");
+  assert.equal(formatDirective({ stopTime: 5, height: 300 }), "//@ time=5 height=300");
+  assert.equal(formatDirective({ stopTime: 2.5, showPlot: true }), "//@ time=2.5 result");
+  assert.equal(formatDirective({ showPlot: false }), "//@ edit");
+  assert.equal(formatDirective({ stopTime: 4, autoSimulate: false }), "//@ time=4 manual");
+  // Nothing set means no line at all, not an empty marker.
+  assert.equal(formatDirective({}), "");
+
+  const body = 'model M "x"\n  Real y;\nend M;';
+  const round = withDirective(body, { stopTime: 5 });
+  assert.equal(round, `//@ time=5\n${body}`, "the directive goes back on the first line");
+  // And the result parses back to the same body and span, which is the property
+  // that matters: a note must survive being read and written repeatedly.
+  const parsed = parseDirective(round);
+  assert.equal(parsed.body, body, "the body is unchanged");
+  assert.equal(parsed.opts.stopTime, 5, "and the span is still declared");
+});
+
+test("a body with no directive is written back with none", () => {
+  const { withDirective } = langMod;
+  const body = "model M\nend M;";
+  assert.equal(withDirective(body, {}), body, "no directive is invented");
+  assert.equal(withDirective(body, { stopTime: 0 }), body, "and zero is not a span");
+});
+
+test("a fractional span is written without floating-point noise", () => {
+  const { formatDirective, withDirective } = langMod;
+  // Heights and spans go through arithmetic, so `2.5000000000000004` reaches
+  // here easily and would be written into the user's note.
+  assert.equal(formatDirective({ stopTime: 2.5000000000000004 }), "//@ time=2.5");
+  assert.equal(withDirective("model M\nend M;", { height: 300.6 }), "//@ height=301\nmodel M\nend M;");
 });

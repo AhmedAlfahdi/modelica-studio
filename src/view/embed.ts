@@ -20,6 +20,7 @@ import { drawPlot, plotThemeFrom, seriesColor, summarize, type SeriesStyle } fro
 import { currentTheme } from "../render/theme";
 import { parseModelica, findClass, toDiagramModel } from "../modelica/parser";
 import { serializeDiagram } from "../modelica/serializer";
+import { DirectiveOptions, withDirective } from "./modelica-lang";
 import { EXAMPLES, findExample } from "../modelica/examples";
 import type { DiagramModel } from "../modelica/types";
 import type { SimResult } from "../omc/backend";
@@ -184,6 +185,8 @@ export class EmbeddedDiagram {
     private readonly writeBack: (source: string) => void
   ) {
     const { opts: fromBlock, body } = parseDirective(source);
+    /** The span the block itself declared, if it declared one. */
+    this.blockStopTime = fromBlock.stopTime;
     this.source = body;
     this.opts = { ...opts, ...fromBlock };
   }
@@ -318,10 +321,42 @@ export class EmbeddedDiagram {
     }
   }
 
+  /**
+   * The span the block's own `//@` line declared, when it declared one.
+   *
+   * Kept so a write-back can re-emit the directive. Without it the line was
+   * lost the first time the block was edited in the studio, and the block then
+   * inherited the studio's current span instead of its own.
+   */
+  private blockStopTime: number | undefined;
+
+  /**
+   * The directive to write back.
+   *
+   * The span is re-emitted when the block declared one OR when it has since
+   * been changed by the host — a user who adjusts the span in the studio
+   * expects the note to follow, and the block's declared value is what records
+   * that it was a deliberate choice rather than a default.
+   */
+  private directiveOptions(): DirectiveOptions {
+    const effective = this.span();
+    const declaredOwn = this.blockStopTime !== undefined;
+    const hostChanged =
+      declaredOwn && this.host.stopTimeFor(this.modelName() ?? "") !== this.blockStopTime;
+    return {
+      stopTime: declaredOwn || hostChanged ? effective : undefined,
+      height: this.opts.height,
+      showPlot: this.opts.showPlot,
+      autoSimulate: this.opts.autoSimulate,
+    };
+  }
+
   /** Re-serialize and write the block back, debounced so a drag is one write. */
   private writeTimer: number | null = null;
   private persist(model: DiagramModel): void {
-    this.source = serializeDiagram(model);
+    // The directive is re-attached here, not at the write-back, so `source` and
+    // what the note receives always agree.
+    this.source = withDirective(serializeDiagram(model), this.directiveOptions());
     if (this.writeTimer !== null) window.clearTimeout(this.writeTimer);
     this.writeTimer = window.setTimeout(() => {
       this.writeTimer = null;

@@ -506,3 +506,33 @@ check, because it teaches people to ignore it, so anything uncertain — a
 component's field, a qualified library path, a name from inside a comment or a
 doc string, a `*` import — is left alone. Nine tests cover the checker and the
 majority assert that it stays **silent**.
+
+---
+
+## The directive that vanished on write-back
+
+**Symptom.** A block in a note used to let its simulation span be set, and then
+stopped letting it.
+
+**Cause.** The `//@ time=5` directive is parsed OUT of a block's source and kept
+as options, because Obsidian does not pass a fence's info string to a plugin and
+the directive has to live inside the block. That part worked. What did not:
+writing an edited block back to the note wrote `serializeDiagram(model)` alone —
+the options were never re-attached to the text.
+
+So the first time a block was edited in the studio, the directive line was
+silently deleted from the note. The block then had no span of its own and
+inherited whatever the studio last used, which is exactly the bug the directive
+was introduced to fix. Note that the block still WORKED — it simulated, and it
+plotted — so nothing looked broken until the span turned out to be wrong, and by
+then the evidence had already been erased from the file.
+
+**Fix.** The directive is rebuilt from the block's own options and re-attached
+before the text is handed to the note, so `source` and what the note receives
+always agree. The block's declared span is remembered separately from the
+resolved one, because "this block declares 5 s" and "5 s is what it happens to
+resolve to" are different facts, and only the first should be written back.
+
+Three tests cover it, including that a written block re-parses to the same body
+and the same span — the property that matters, since a note is read and written
+repeatedly.
