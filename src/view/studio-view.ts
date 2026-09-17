@@ -972,6 +972,10 @@ export class ModelicaStudioView extends ItemView {
       this.finishAiRun(outcome, original, repair);
     } catch (err) {
       const msg = err instanceof AiError ? err.message : String(err);
+      // To the console as well as the status line: a request can fail for a
+      // reason the one-line status cannot carry, and the console is where the
+      // full text can be read and copied.
+      console.error("[Modelica Studio] AI request failed:", err);
       this.plugin.diag(`ai request failed: ${msg}`, "error");
       this.setStatus(`AI request failed. ${msg}`);
       this.setAiProgress(`Failed: ${msg}`);
@@ -1022,6 +1026,9 @@ export class ModelicaStudioView extends ItemView {
     }
     this.lastSimulationError = outcome.attempts[outcome.attempts.length - 1]?.failure ?? null;
 
+    // The reasons are distinct because they need different actions, and calling a
+    // timeout a refusal sends the reader to check their key when the problem is
+    // that the model is slow.
     const why =
       outcome.reason === "cancelled"
         ? "Stopped."
@@ -1030,7 +1037,7 @@ export class ModelicaStudioView extends ItemView {
           : outcome.reason === "no-progress"
             ? `Stopped after ${attempts} attempt${attempts === 1 ? "" : "s"}: no progress.`
             : outcome.reason === "provider-error"
-              ? "The provider refused the request."
+              ? outcome.message
               : "The reply contained no Modelica.";
 
     this.setAiProgress(`${why} ${outcome.message}`);

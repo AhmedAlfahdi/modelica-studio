@@ -531,3 +531,38 @@ test("the default model matches the provider presets", () => {
   const model = /model: "([^"]+)"/.exec(defaults)[1];
   assert.match(preset, new RegExp(`model: "${model}"`), `${model} is a preset model`);
 });
+
+test("a timeout is reported as a timeout, not as a refusal", async () => {
+  // "The provider refused the request" for a deadline sends the reader to check
+  // an API key that was working, when the problem is that the model is slow or
+  // the prompt is long. The two need different actions.
+  const r = await runGenerationLoop({
+    generate: async () => {
+      throw new Error(
+        "deepseek-flash did not reply within 220 s. It may be a slow model, a long prompt, or a provider that is not responding."
+      );
+    },
+    compile: async () => ({ ok: true, failure: "" }),
+  });
+  assert.equal(r.reason, "timed-out", "told apart from a refusal");
+  assert.match(r.message, /did not reply within/, "and the message is carried through");
+});
+
+test("a real refusal is still a provider error", async () => {
+  const r = await runGenerationLoop({
+    generate: async () => {
+      throw new Error("Provider error 401: the API key was rejected.");
+    },
+    compile: async () => ({ ok: true, failure: "" }),
+  });
+  assert.equal(r.reason, "provider-error");
+});
+
+test("timeout detection does not catch an ordinary failure", () => {
+  const { isTimeout } = mod;
+  assert.equal(isTimeout("did not reply within 120 s"), true);
+  assert.equal(isTimeout("connect ETIMEDOUT 1.2.3.4:443"), true);
+  assert.equal(isTimeout("the request timed out"), true);
+  assert.equal(isTimeout("Provider error 401: the API key was rejected."), false);
+  assert.equal(isTimeout("Could not reach https://api.example.com."), false);
+});

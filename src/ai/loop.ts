@@ -45,13 +45,22 @@ export interface LoopLimits {
 
 export const DEFAULT_LIMITS: LoopLimits = { maxAttempts: 5, maxUnchanged: 2 };
 
+/**
+ * The reasons a run can end.
+ *
+ * `timed-out` is separate from `provider-error` because the two need different
+ * actions: a refusal means the key or the URL is wrong, a timeout means the model
+ * is slow or the prompt is long. Reporting a timeout as "the provider refused the
+ * request" sends the reader to check a key that was working.
+ */
 export type StopReason =
   | "compiled"
   | "attempts-exhausted"
   | "no-progress"
   | "cancelled"
   | "no-source"
-  | "provider-error";
+  | "provider-error"
+  | "timed-out";
 
 export interface LoopResult {
   /** The last source produced, whether or not it compiled. */
@@ -114,8 +123,10 @@ export async function runGenerationLoop(
     try {
       source = (await events.generate({ attempt: index, previous })).trim();
     } catch (err) {
-      // A provider error is not something another attempt fixes.
-      return finish(attempts, "provider-error", messageOf(err));
+      // Neither a refusal nor a timeout is fixed by another attempt, and they are
+      // told apart because the reader has to do different things about them.
+      const text = messageOf(err);
+      return finish(attempts, isTimeout(text) ? "timed-out" : "provider-error", text);
     }
 
     if (!source) {
@@ -223,4 +234,15 @@ export function summarise(failure: string): string {
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Whether a failure was a deadline rather than a rejection.
+ *
+ * Matched on the message because the error crosses a boundary that carries text
+ * rather than a type. Getting this wrong only mislabels the reason, which is
+ * still better than calling every failure a refusal.
+ */
+export function isTimeout(text: string): boolean {
+  return /did not reply within|timed out|timeout|ETIMEDOUT/i.test(text);
 }

@@ -20,7 +20,10 @@ const settings = fs.readFileSync(path.join(repoRoot, "src/settings.ts"), "utf8")
 test("models are saved into a folder, not beside the notes", () => {
   // A vault whose root is a mix of notes and compiler source is unreadable, and
   // the source is not a note.
-  assert.match(settings, /modelFolder: "Modelica"/, "the default folder is Modelica");
+  // The defaults live in the pure settings module now, alongside the merge rules
+  // that decide whether they take effect at all.
+  const defaults = fs.readFileSync(path.join(repoRoot, "src/settings-merge.ts"), "utf8");
+  assert.match(defaults, /modelFolder: "Modelica"/, "the default folder is Modelica");
   assert.match(main, /const intended = folder \? `\$\{folder\}\/\$\{this\.model\.name\}\.mo`/);
 });
 

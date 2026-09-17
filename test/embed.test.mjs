@@ -284,7 +284,9 @@ test("each model's plot configuration is stored separately", () => {
   // single shared object meant configuring the model in the studio overwrote
   // every other block's traces, so each was left filtering a result whose
   // variable names it did not contain — and drew nothing.
-  const settings = fs.readFileSync(path.join(repoRoot, "src/settings.ts"), "utf8");
+  // The settings shape and its defaults live in the pure module that also holds
+  // the merge rules, so that is where the shape is asserted.
+  const settings = fs.readFileSync(path.join(repoRoot, "src/settings-merge.ts"), "utf8");
   const studio = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
   const embed = fs.readFileSync(path.join(repoRoot, "src/view/embed.ts"), "utf8");
 

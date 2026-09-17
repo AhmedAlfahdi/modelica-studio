@@ -20,7 +20,14 @@ const { checkModel } = await import(
   path.join(buildLibs("checks-lib", ["src/modelica/checks.ts"]), "checks.js")
 );
 
+/** The declared-name set, which every check takes. */
 const declared = (...names) => new Set(names);
+
+// The settings shape, the defaults and the merge rules are one pure module, so
+// they are tested together and without Obsidian.
+const { DEFAULT_SETTINGS, mergeSettings } = await import(
+  path.join(buildLibs("settings-merge", ["src/settings-merge.ts"]), "settings-merge.js")
+);
 
 test("a name used in an equation but never declared is reported", () => {
   // The exact failure: mass and gravity used in eight places, neither declared.
@@ -270,4 +277,43 @@ test("an equation model is not judged as a diagram", () => {
     firstEquationLine: 5,
   });
   assert.deepEqual(problems, []);
+});
+
+/* ---- stored settings must not erase new defaults ---- */
+
+test("a stored settings group keeps fields it predates", () => {
+  // This is not cosmetic. The stored `ai` object used to REPLACE the default one
+  // wholesale, so every field added to AiConfig after a user's settings were
+  // first written was silently lost. `thinking: "disabled"` never survived a
+  // reload, so every request ran in DeepSeek's high-effort thinking mode --
+  // minutes of reasoning before an answer -- and timed out. The setting was
+  // correct and had no effect.
+  const defaults = { ...DEFAULT_SETTINGS, ai: { ...DEFAULT_SETTINGS.ai, thinking: "disabled", timeoutSeconds: 120 } };
+  // A config written before those fields existed.
+  const stored = { ai: { model: "deepseek-flash", temperature: 0.2, baseUrl: "https://api.deepseek.com/v1" } };
+
+  const merged = mergeSettings(defaults, stored);
+  assert.equal(merged.ai.thinking, "disabled", "the new field survives");
+  assert.equal(merged.ai.timeoutSeconds, 120, "and so does this one");
+  assert.equal(merged.ai.model, "deepseek-flash", "the stored value still wins");
+  assert.equal(merged.ai.temperature, 0.2, "and every other stored value");
+});
+
+test("user data maps replace rather than merge", () => {
+  // modelFiles is a map of the user's own data, not a group of settings: merging
+  // it would make a deleted entry impossible to remove.
+  const defaults = { ...DEFAULT_SETTINGS, modelFiles: {} };
+  const merged = mergeSettings(defaults, { modelFiles: { Tank: "Modelica/Tank.mo" } });
+  assert.deepEqual(merged.modelFiles, { Tank: "Modelica/Tank.mo" });
+  const emptied = mergeSettings(defaults, { modelFiles: {} });
+  assert.deepEqual(emptied.modelFiles, {}, "an emptied map stays empty");
+});
+
+test("nothing stored leaves the defaults untouched", () => {
+  assert.deepEqual(mergeSettings(DEFAULT_SETTINGS, null), DEFAULT_SETTINGS);
+  assert.deepEqual(mergeSettings(DEFAULT_SETTINGS, undefined), DEFAULT_SETTINGS);
+  // And a key explicitly absent is not set to undefined, which would defeat
+  // every `?? default` at the point of use.
+  const merged = mergeSettings(DEFAULT_SETTINGS, { omcPath: undefined });
+  assert.equal(merged.omcPath, DEFAULT_SETTINGS.omcPath);
 });

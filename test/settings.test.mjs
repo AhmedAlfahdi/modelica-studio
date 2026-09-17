@@ -77,7 +77,7 @@ test("the simulation span is per model, not shared", () => {
   // block in every note whose model had no span of its own — a tank that drains
   // over 20 s would be integrated over 4 and its curve would read as straight.
   const main = fs.readFileSync(path.join(repoRoot, "src/main.ts"), "utf8");
-  const settings = fs.readFileSync(path.join(repoRoot, "src/settings.ts"), "utf8");
+  const settings = fs.readFileSync(path.join(repoRoot, "src/settings-merge.ts"), "utf8");
   const embed = fs.readFileSync(path.join(repoRoot, "src/view/embed.ts"), "utf8");
 
   assert.ok(settings.includes("modelStopTimes: Record<string, number>"), "spans are keyed by model");

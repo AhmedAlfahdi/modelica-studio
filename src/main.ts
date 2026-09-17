@@ -28,7 +28,7 @@ import { RunLog } from "./ai/run-log";
 import { AiEnvironment, describeAvailableClasses, describeEnvironment, describeLog } from "./ai/context";
 import { LEGACY_SECRET_NAME, legacyKeyOf, secretNameOf } from "./ai/prompts";
 import { ModelicaStudioView, VIEW_TYPE_MODELICA } from "./view/studio-view";
-import { ModelicaStudioSettingTab, DEFAULT_SETTINGS, type ModelicaStudioSettings } from "./settings";
+import { ModelicaStudioSettingTab, DEFAULT_SETTINGS, type ModelicaStudioSettings , mergeSettings } from "./settings";
 
 export default class ModelicaStudioPlugin extends Plugin {
   settings: ModelicaStudioSettings = { ...DEFAULT_SETTINGS };
@@ -868,7 +868,7 @@ export default class ModelicaStudioPlugin extends Plugin {
       /** The source the model was parsed from, when it came from a file. */
       modelSource?: string;
     } | null;
-    this.settings = { ...DEFAULT_SETTINGS, ...(data ?? {}) };
+    this.settings = mergeSettings(DEFAULT_SETTINGS, data);
     if (data?.model && Array.isArray(data.model.components)) {
       this.model = data.model;
       this.modelSource = typeof data.modelSource === "string" ? data.modelSource : "";
