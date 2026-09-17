@@ -83,9 +83,8 @@ test("code mode asks for a shorter results pane than diagram mode", async () => 
 
 test("there is exactly one handle between the results and the code pane", () => {
   // The code pane is bounded by the results pane above it, so ONE handle divides
-  // them. Adding a second handle for the code pane gave two grips on the same
-  // boundary, dragging in opposite directions, and neither was the one that
-  // mattered.
+  // them. A second handle on the same boundary gave two grips dragging in
+  // opposite directions, and neither was the one that mattered.
   const css = fs.readFileSync(path.join(repoRoot, "styles.css"), "utf8");
   const splitters = [...css.matchAll(/\.modelica-studio-([a-z-]*splitter)\s*\{/g)].map((m) => m[1]);
   assert.deepEqual(
@@ -93,17 +92,31 @@ test("there is exactly one handle between the results and the code pane", () => 
     ["results-splitter", "splitter"],
     `one horizontal handle and one vertical, got ${JSON.stringify(splitters)}`
   );
-  assert.ok(!/code-splitter/.test(css), "no second handle on the same edge");
 
   const src = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
-  // The handle sits between the results pane and the code pane in document order,
-  // which is what puts it on the boundary.
   const splitIdx = src.indexOf("const resultsSplitter = root.createDiv");
   const resultsIdx = src.indexOf("const resultsCol = root.createDiv");
   const codeIdx = src.indexOf("this.buildCodePane(root)");
   assert.ok(splitIdx < resultsIdx && resultsIdx < codeIdx, "handle, then results, then code");
-
-  // Dragging it down shrinks the results pane, which grows the code pane below it.
-  assert.match(src, /startH - \(ev\.clientY - startY\)/, "downward drag shrinks the results pane");
-  assert.ok(!/installCodeResize/.test(src), "and there is no second resizer");
 });
+
+test("the handle resizes the pane it appears to belong to", () => {
+  // Diagram mode: the handle is at the canvas's bottom edge, so dragging down
+  // takes space from the canvas. Code mode: it is at the editor's TOP edge, so
+  // dragging up takes space from the plot and gives it to the editor. One
+  // boundary, described from whichever side is on screen.
+  const src = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  const impl = /private installResultsResize[\s\S]*?\n  \}/.exec(src);
+  assert.ok(impl, "the resize handler is present");
+
+  // Which pane receives the drag is decided by the mode...
+  assert.match(impl[0], /const inCode = \(\) => this\.mode === "code"/);
+  // ...the diagram pane subtracts the delta, the code pane adds its negative,
+  // which is the same sign — so a downward drag always shrinks what is above the
+  // boundary, and the two never fight.
+  assert.match(impl[0], /startH - dy/, "the diagram pane subtracts");
+  assert.match(impl[0], /startH \+ dy \* -1/, "the code editor adds the negated delta");
+  // Double-click restores the default for the mode on screen.
+  assert.match(impl[0], /inCode\(\) \? DEFAULT_CODE_H : DEFAULT_RESULTS_H/);
+});
+

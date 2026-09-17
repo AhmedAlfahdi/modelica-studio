@@ -28,7 +28,14 @@ import type {
 import { serializeDiagram } from "../modelica/serializer";
 import { fuzzyFilter } from "../modelica/fuzzy";
 import { SimulationError } from "../omc/backend";
-import { CODE_RESULTS_H, DEFAULT_RESULTS_H, clampInspectorWidth, clampResultsHeight } from "./panes";
+import {
+  CODE_RESULTS_H,
+  DEFAULT_CODE_H,
+  DEFAULT_RESULTS_H,
+  clampCodeHeight,
+  clampInspectorWidth,
+  clampResultsHeight,
+} from "./panes";
 import { checkModel, ModelProblem } from "../modelica/checks";
 import { createCodeEditor, CodeEditorHandle, Diagnostic } from "./code-editor";
 import { AiError, buildMessages, chat, extractModelica, modelNameOf } from "../ai/client";
@@ -435,8 +442,28 @@ export class ModelicaStudioView extends ItemView {
    */
   private applyModeResultsHeight(isCode: boolean): void {
     if (!this.resultsEl) return;
-    const stored = isCode ? this.plugin.settings.codePlotHeight : this.plugin.settings.plotHeight;
-    const wanted = stored > 0 ? stored : isCode ? CODE_RESULTS_H : DEFAULT_RESULTS_H;
+    if (isCode) {
+      // In code mode the editor's height is authoritative, so the results pane
+      // takes the remainder and needs no height of its own. It is left on
+      // `flex: 0 0 auto` with the small default rather than a stored value, which
+      // would otherwise fight the editor's height for the same boundary.
+      this.resultsEl.style.height = `${this.clampResultsHeight(CODE_RESULTS_H)}px`;
+      if (this.codeHost) {
+        const stored = this.plugin.settings.codeHeight;
+        const wanted = stored > 0 ? stored : DEFAULT_CODE_H;
+        this.codeHost.style.flex = "0 0 auto";
+        this.codeHost.style.height = `${clampCodeHeight(wanted, this.contentEl?.clientHeight ?? 0)}px`;
+      }
+      return;
+    }
+    // Diagram mode: the results pane's height is authoritative and the canvas
+    // takes the remainder, which is what makes dragging it feel right there.
+    if (this.codeHost) {
+      this.codeHost.style.flex = "";
+      this.codeHost.style.height = "";
+    }
+    const stored = this.plugin.settings.plotHeight;
+    const wanted = stored > 0 ? stored : DEFAULT_RESULTS_H;
     this.resultsEl.style.height = `${this.clampResultsHeight(wanted)}px`;
     if (this.bottomTab === "plot") this.drawResults();
   }
@@ -1538,27 +1565,67 @@ export class ModelicaStudioView extends ItemView {
     return clampResultsHeight(wanted, this.contentEl?.clientHeight ?? 0);
   }
 
+  /**
+   * Drive the boundary between the editing area and the results.
+   *
+   * The handle sits at the editing area's BOTTOM edge in diagram mode and at the
+   * code editor's TOP edge in code mode, so it is the same boundary described
+   * from either side — and the pane that grows is the one the handle appears to
+   * belong to. In diagram mode dragging down takes space from the canvas; in code
+   * mode dragging up takes it from the plot and gives it to the editor.
+   *
+   * The code editor's height is therefore authoritative in code mode, and the
+   * results pane's in diagram mode, rather than one pane always driving the other.
+   * It is stored rather than measured because a hidden pane reports zero height,
+   * so the value could not be read back on a later open.
+   */
   private installResultsResize(handle: HTMLElement, pane: HTMLElement): void {
     let startY = 0;
     let startH = 0;
+    const inCode = () => this.mode === "code";
+    const startHeight = () =>
+      inCode()
+        ? this.codeHost?.getBoundingClientRect().height || this.plugin.settings.codeHeight || DEFAULT_CODE_H
+        : pane.getBoundingClientRect().height;
+
     const apply = (h: number) => {
+      if (inCode()) {
+        const next = clampCodeHeight(h, this.contentEl?.clientHeight ?? 0);
+        if (this.codeHost) {
+          this.codeHost.style.flex = "0 0 auto";
+          this.codeHost.style.height = `${next}px`;
+        }
+        this.codeEditor?.revealCaret();
+        return next;
+      }
       const next = this.clampResultsHeight(h);
       pane.style.height = `${next}px`;
       return next;
     };
+
     const onMove = (ev: PointerEvent) => {
-      apply(startH - (ev.clientY - startY));
-      if (this.bottomTab === "plot") this.drawResults();
+      // The drag delta is measured the same way in both modes; only which pane
+      // receives it changes, so a down-drag always shrinks the thing above.
+      const dy = ev.clientY - startY;
+      apply(inCode() ? startH + dy * -1 : startH - dy);
+      if (this.bottomTab === "plot" && !inCode()) this.drawResults();
     };
+
+    const commit = () => {
+      if (inCode()) this.plugin.settings.codeHeight = Math.round(this.codeHost?.getBoundingClientRect().height ?? 0);
+      else this.storeResultsHeight(pane.getBoundingClientRect().height);
+      void this.plugin.saveSettings();
+    };
+
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       handle.removeClass("is-dragging");
-      this.storeResultsHeight(pane.getBoundingClientRect().height);
+      commit();
     };
     handle.addEventListener("pointerdown", (ev) => {
       startY = ev.clientY;
-      startH = pane.getBoundingClientRect().height;
+      startH = startHeight();
       handle.addClass("is-dragging");
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
@@ -1567,9 +1634,9 @@ export class ModelicaStudioView extends ItemView {
     // Double-click restores the default, matching the inspector's splitter —
     // without it a pane dragged to an awkward size has to be dragged back by hand.
     handle.addEventListener("dblclick", () => {
-      apply(this.mode === "code" ? CODE_RESULTS_H : DEFAULT_RESULTS_H);
-      this.storeResultsHeight(pane.getBoundingClientRect().height);
-      if (this.bottomTab === "plot") this.drawResults();
+      apply(inCode() ? DEFAULT_CODE_H : DEFAULT_RESULTS_H);
+      commit();
+      if (this.bottomTab === "plot" && !inCode()) this.drawResults();
     });
   }
 
