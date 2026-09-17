@@ -9,7 +9,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { buildLibs } from "./helpers/build.mjs";
+import fs from "node:fs";
+import { buildLibs, repoRoot } from "./helpers/build.mjs";
 
 const { describeSavedModels, describeRow } = await import(
   path.join(buildLibs("saved-models", ["src/modelica/saved-models.ts"]), "saved-models.js")
@@ -191,4 +192,36 @@ test("adopting is off unless asked for", () => {
   });
   assert.deepEqual(r.adopted, []);
   assert.deepEqual(r.modelFiles, {});
+});
+
+test("the list lives in the studio, not in settings", () => {
+  // It is about the model being worked on and where it lives -- something you
+  // want to see while working, not a preference. Settings kept it behind a scroll
+  // through unrelated panels.
+  const settings = fs.readFileSync(path.join(repoRoot, "src/settings.ts"), "utf8");
+  assert.ok(
+    !/describeSavedModels\(/.test(settings),
+    "settings no longer builds the list"
+  );
+  assert.match(settings, /shown in the studio/, "and points at where it went");
+
+  const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  assert.match(view, /SavedModelsModal\(this\.app, this\.plugin\)\.open\(\)/, "the studio opens it");
+  assert.match(view, /"Model list…"/, "from a named button");
+  assert.match(view, /Click one to open it|click one to open it/i, "and the tooltip says what it is for");
+
+  // A modal, built the way the others are.
+  const modal = fs.readFileSync(path.join(repoRoot, "src/view/saved-models-modal.ts"), "utf8");
+  assert.match(modal, /export class SavedModelsModal extends Modal/);
+  assert.match(modal, /onOpen\(\)/, "it renders on open");
+  // The rows do something rather than only reporting.
+  assert.match(modal, /addClass\("is-openable"\)/, "an existing file is openable");
+  assert.match(modal, /await this\.plugin\.loadModelFromPath\(row\.path\)/, "and opens the model");
+  // A row with no file behind it must NOT be clickable: a click that fails is
+  // worse than a row that plainly does not respond.
+  const render = /private renderRow[\s\S]*?\n  \}/.exec(modal);
+  assert.ok(render, "the row renderer is present");
+  const missingCheck = render[0].indexOf('row.status === "missing"');
+  const openable = render[0].indexOf('addClass("is-openable")');
+  assert.ok(missingCheck > 0 && missingCheck < openable, "the missing case returns before that");
 });

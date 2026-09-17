@@ -1591,3 +1591,37 @@ body.modelica-studio-resizing * {
   margin-top: 8px;
   font-size: 12px;
 }
+
+/* The saved-model dialog. Rows are clickable here, unlike the settings panel
+   this replaced, so they carry a pointer and a hover state. */
+.modelica-studio-saved-modal {
+  --ms-saved-width: 520px;
+}
+.modelica-studio-saved-modal .modelica-studio-saved {
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.modelica-studio-saved-row.is-openable {
+  cursor: pointer;
+}
+.modelica-studio-saved-row.is-openable:hover {
+  background: var(--background-modifier-hover);
+}
+/* The model already in the studio, so the list says where you are. */
+.modelica-studio-saved-row.is-current {
+  background: var(--background-secondary);
+}
+.modelica-studio-saved-row.is-current .modelica-studio-saved-name {
+  font-weight: var(--font-semibold);
+}
+.modelica-studio-saved-current {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 3px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

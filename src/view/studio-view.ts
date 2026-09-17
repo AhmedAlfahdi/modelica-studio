@@ -29,6 +29,7 @@ import { serializeDiagram } from "../modelica/serializer";
 import { fuzzyFilter } from "../modelica/fuzzy";
 import { docUrlFor, libraryVersionFrom } from "../modelica/doclinks";
 import { acceptsFileDrag, droppedVaultFile } from "./drop";
+import { SavedModelsModal } from "./saved-models-modal";
 import { SimulationError } from "../omc/backend";
 import { CODE_RESULTS_H, DEFAULT_RESULTS_H, clampInspectorWidth, clampResultsHeight } from "./panes";
 import { checkModel, ModelProblem } from "../modelica/checks";
@@ -361,6 +362,13 @@ export class ModelicaStudioView extends ItemView {
     );
     addBtn(model, "save", "Save as .mo", "Write the model to a .mo file in the vault", () =>
       void this.saveToNote()
+    );
+    // The list of saved models belongs here rather than in settings: it is about
+    // the model being worked on and where it lives, which is something you want
+    // to see while working. The dialog also opens a model, so it is the way
+    // between them rather than only a report.
+    addBtn(model, "files", "Model list…", "Every model saved in this vault; click one to open it", () =>
+      new SavedModelsModal(this.app, this.plugin).open()
     );
 
     // ---- Run ----

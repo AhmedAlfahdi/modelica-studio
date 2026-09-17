@@ -6,12 +6,10 @@
  * unusual setup rather than to require tuning.
  */
 
-import { App, Notice, PluginSettingTab, SecretComponent, Setting, TFile } from "obsidian";
+import { App, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import type ModelicaStudioPlugin from "./main";
 import { libraryHelpUrl, libraryVersionFrom } from "./modelica/doclinks";
-import { repairModelFiles } from "./modelica/saved-models";
 import { exclusionsFrom, libraryRows } from "./modelica/library-exclusions";
-import { describeRow, describeSavedModels } from "./modelica/saved-models";
 import { SOLVERS, solverDescription, AI_THINKING_LEVELS, MODEL_STYLES, type AiThinking, type ModelStyle, AI_DEFAULTS,
   DEFAULT_TIMEOUT_SECONDS, AI_PROVIDERS, AiConfig, LEGACY_SECRET_NAME, legacyKeyOf } from "./ai/prompts";
 
@@ -547,93 +545,13 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           })
       );
 
-    // A list, not a run-on line. The paragraph this replaced showed name and path
-    // for every model in one sentence, which was unreadable AND hid two faults
-    // behind the same flat shape: a tracked path with no file behind it, and a
-    // model sitting outside the configured folder. Both looked like `A → b.mo`.
-    const vault = this.app.vault;
-    const view = describeSavedModels({
-      modelFolder: this.plugin.settings.modelFolder,
-      modelFiles: this.plugin.settings.modelFiles,
-      exists: (p) => vault.getAbstractFileByPath(p) instanceof TFile,
-      allModelFiles: vault
-        .getFiles()
-        .filter((f) => f.extension === "mo")
-        .map((f) => f.path),
+    containerEl.createDiv({
+      cls: "modelica-studio-muted",
+      text:
+        "Which models are saved, and where, is shown in the studio: open it and " +
+        "choose Model list in the toolbar. It lives there rather than here because " +
+        "it is about the model being worked on, not a preference.",
     });
-
-    if (view.rows.length || view.untracked.length) {
-      containerEl.createEl("h4", { text: "Saved models" });
-      if (view.misplaced || view.missing) {
-        // Worth saying before the list, because the list alone does not make the
-        // consequence obvious: these fix themselves on the next save.
-        const note = containerEl.createDiv({ cls: "modelica-studio-muted" });
-        const parts: string[] = [];
-        if (view.misplaced) parts.push(`${view.misplaced} outside the save folder`);
-        if (view.missing) parts.push(`${view.missing} with no file`);
-        note.setText(
-          `${view.rows.length} tracked; ${parts.join(", ")}. Both are corrected the ` +
-            `next time the model is saved.`
-        );
-      }
-
-      const list = containerEl.createDiv({ cls: "modelica-studio-saved" });
-      for (const row of view.rows) {
-        const line = list.createDiv({ cls: `modelica-studio-saved-row is-${row.status}` });
-        line.createSpan({ cls: "modelica-studio-saved-name", text: row.name });
-        line.createSpan({ cls: "modelica-studio-saved-path", text: describeRow(row, this.plugin.settings.modelFolder) });
-      }
-
-      if (view.untracked.length) {
-        const more = list.createDiv({ cls: "modelica-studio-saved-untracked" });
-        more.setText(
-          `${view.untracked.length} .mo file${view.untracked.length === 1 ? "" : "s"} in the ` +
-            `vault ${view.untracked.length === 1 ? "is" : "are"} not tracked by any model: ` +
-            view.untracked.join(", ")
-        );
-      }
-
-      // A repair rather than hand-editing: a moved file or a changed save folder
-      // leaves every recorded path for it wrong, while the file is perfectly fine.
-      // Resolution is by file name, so the fix needs no guesswork.
-      if (view.misplaced || view.missing || view.untracked.length) {
-        new Setting(containerEl)
-          .setName("Fix the recorded paths")
-          .setDesc(
-            (view.missing
-              ? `${view.missing} record${view.missing === 1 ? " points" : "s point"} at a file that is not there. `
-              : "") +
-              (view.untracked.length
-                ? `${view.untracked.length} .mo file${view.untracked.length === 1 ? " is" : "s are"} in the vault with no model recorded for ${view.untracked.length === 1 ? "it" : "them"}. `
-                : "") +
-              "Matching is by file name, so this only rewrites a record that points at nothing, and only claims a file that no model owns."
-          )
-          .addButton((b) =>
-            b.setButtonText("Fix").onClick(async () => {
-              const files = vault.getFiles().filter((f) => f.extension === "mo");
-              const result = repairModelFiles({
-                modelFolder: this.plugin.settings.modelFolder,
-                modelFiles: this.plugin.settings.modelFiles,
-                allModelFiles: files.map((f) => f.path),
-                exists: (p) => vault.getAbstractFileByPath(p) instanceof TFile,
-                adopt: true,
-              });
-              this.plugin.settings.modelFiles = result.modelFiles;
-              await this.plugin.saveSettings();
-              const parts: string[] = [];
-              if (result.repointed.length) parts.push(`${result.repointed.length} path(s) repointed`);
-              if (result.adopted.length) parts.push(`${result.adopted.length} file(s) claimed`);
-              if (result.stillMissing.length) parts.push(`${result.stillMissing.length} still missing`);
-              new Notice(
-                parts.length
-                  ? `Modelica Studio: ${parts.join(", ")}.`
-                  : "Modelica Studio: every recorded path already matches a file."
-              );
-              this.display();
-            })
-          );
-      }
-    }
 
     containerEl.createEl("h3", { text: "Library" });
     containerEl.createEl("p", {
