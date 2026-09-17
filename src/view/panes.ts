@@ -10,8 +10,17 @@
 /** Smallest useful height for the results pane. */
 export const MIN_RESULTS_H = 160;
 
-/** Default height, restored by double-clicking the grip. */
+/** Default height in diagram mode, where the pane is what you are looking at. */
 export const DEFAULT_RESULTS_H = 300;
+
+/**
+ * Default height in code mode.
+ *
+ * A plot is a reference while editing, not the subject, and the pane sits above
+ * the editor: at 300px it took 38% of a 937px view and left the code about half
+ * the window, which reads as mostly empty space above the text.
+ */
+export const CODE_RESULTS_H = 200;
 
 /** Chrome that must stay visible besides the pane: splitter, status bar, margins. */
 export const RESULTS_CHROME_H = 56;
@@ -44,6 +53,28 @@ export function clampResultsHeight(wanted: number, viewHeight: number): number {
     Math.min(viewHeight * MAX_RESULTS_FRACTION, viewHeight - RESULTS_CHROME_H)
   );
   return Math.round(Math.max(MIN_RESULTS_H, Math.min(wanted, max)));
+}
+
+/** Default height of the code editor. */
+export const DEFAULT_CODE_H = 420;
+/** Smallest useful height for the code editor. */
+export const MIN_CODE_H = 140;
+
+/**
+ * Clamp a requested code-editor height for a view of `viewHeight`.
+ *
+ * The editor is bottom-anchored, so its height decides how far up its own top
+ * edge sits — which is where the grip is. Nothing may take the whole view, or
+ * there would be no results pane left and no way to move the handle back.
+ */
+export function clampCodeHeight(wanted: number, viewHeight: number): number {
+  if (!Number.isFinite(wanted)) return DEFAULT_CODE_H;
+  if (!Number.isFinite(viewHeight) || viewHeight <= 0) {
+    return Math.round(Math.max(MIN_CODE_H, wanted));
+  }
+  // Leave room for the toolbar, the results pane and the status bar.
+  const max = Math.max(MIN_CODE_H, viewHeight - RESULTS_CHROME_H - MIN_RESULTS_H);
+  return Math.round(Math.max(MIN_CODE_H, Math.min(wanted, max)));
 }
 
 /**

@@ -598,6 +598,13 @@ body.modelica-studio-resizing * {
 .modelica-studio-results {
   flex: 0 0 auto;
   height: 300px;
+  /* Border-box, so the height INCLUDES the padding and border. Under the default
+     content-box, `height: 200px` plus 14px of padding and a border, held up by a
+     160px content minimum, rendered as 297px — a height set by the mode was
+     silently ignored. */
+  box-sizing: border-box;
+  /* The floor is on the element, not on its content, so it cannot override a
+     smaller height asked for on purpose. */
   min-height: 160px;
   display: flex;
   flex-direction: column;
@@ -605,6 +612,7 @@ body.modelica-studio-resizing * {
   border-top: 1px solid var(--background-modifier-border);
   background: var(--background-secondary);
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 .modelica-studio-results-splitter {
@@ -1272,4 +1280,36 @@ body.modelica-studio-resizing * {
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--text-normal);
+}
+
+/* Handle on the code editor's top edge. Same grip as the results pane, but on
+   the other pane, so the two drag in opposite directions and each matches the
+   edge it sits on. */
+.modelica-studio-code-splitter {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 2;
+  height: 8px;
+  cursor: row-resize;
+  background: var(--background-modifier-border);
+}
+.modelica-studio-code-splitter::after {
+  content: "";
+  position: absolute;
+  inset: -4px 0;
+}
+.modelica-studio-code-splitter::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 36px;
+  height: 2px;
+  margin: -1px 0 0 -18px;
+  border-radius: 1px;
+  background: var(--text-faint);
+}
+.modelica-studio-code-splitter:hover,
+.modelica-studio-code-splitter.is-dragging {
+  background: var(--interactive-accent);
 }

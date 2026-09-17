@@ -96,10 +96,36 @@ export interface ModelicaStudioSettings {
    */
   debugOverlay: boolean;
 
+  /**
+   * Which mode the studio opens in.
+   *
+   * Remembered because it is a working preference, not a per-session choice:
+   * someone editing an equation model wants code mode every time, and being put
+   * back into an empty diagram on each open reads as the work having been lost.
+   */
+  editorMode: "diagram" | "code";
+
   /** Right-hand inspector width in pixels; 0 means the default. */
   inspectorWidth: number;
-  /** Plot height in pixels; 0 means size to the panel. */
+  /**
+   * Results-pane height in DIAGRAM mode; 0 means the default.
+   *
+   * Per mode rather than shared: the pane sits above the editing area, so one
+   * height cannot suit both. Sized for a plot it left the code editor with about
+   * half the window and the appearance of empty space above the text.
+   */
   plotHeight: number;
+
+  /** Results-pane height in CODE mode; 0 means the default. */
+  codePlotHeight: number;
+
+  /**
+   * Height of the code editor; 0 means the default.
+   *
+   * The editor is bottom-anchored and its grip is on its own top edge, so this is
+   * the height the handle controls.
+   */
+  codeHeight: number;
   /** Shared plot configuration, or null before anything has been chosen. */
   /**
    * Simulation span per model name.
@@ -156,8 +182,11 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   excludedLibraries: "",
   debugLog: false,
   debugOverlay: false,
+  editorMode: "diagram",
   inspectorWidth: 380,
   plotHeight: 0,
+  codePlotHeight: 0,
+  codeHeight: 0,
   modelStopTimes: {},
   charts: {},
   ai: { ...AI_DEFAULTS },
