@@ -779,9 +779,28 @@ export class ModelicaStudioView extends ItemView {
     });
     if (pending) declarations.push(finishDecl(pending));
 
+    // The components, with what the checks need to judge the picture.
+    const connectedPins = new Map<string, string[]>();
+    for (const cn of model.connections) {
+      for (const end of [cn.from, cn.to]) {
+        connectedPins.set(end.component, [...(connectedPins.get(end.component) ?? []), end.port]);
+      }
+    }
+    const components = model.components.map((c) => ({
+      id: c.id,
+      extent: c.placement
+        ? ([...c.placement.extent] as [number, number, number, number])
+        : undefined,
+      connectedPins: connectedPins.get(c.id) ?? [],
+      // A primitive declared inline has no class to look up; a library component
+      // is the thing a diagram is made of.
+      fromLibrary: true,
+    }));
+
     const problems = checkModel({
       declared: starImport ? new Set([...declared, "*"]) : declared,
       declarations,
+      components,
       equations: model.equations ?? [],
       hasComponents: model.components.length > 0,
       library: this.plugin.library,

@@ -215,17 +215,63 @@ const BASE_RULES = `You write Modelica for the Modelica Standard Library (MSL) 4
 - Reply with the Modelica source in a single fenced code block and nothing else.
 - Do not include a "within" clause, and do not include an experiment annotation: the tool that runs this applies its own run settings.
 
-## Prefer equations to components
-Write the physics as EQUATIONS. This is the point of Modelica and it is almost
-always the better answer:
-- An equation model is one block to read, and it always simulates.
-- A model assembled from primitive MSL blocks (Mass, Force, Acceleration,
-  Velocity, Position, Inertia, Torque) is large, easy to get wrong, and needs
-  every block wired with connect(). Eight unconnected blocks stacked on the
-  diagram is a broken model.
-- Use physical components ONLY when the request is about a circuit, a fluid
-  network, or a mechanism whose STRUCTURE is the subject. When you do, every
-  component must be declared, placed and connected.
+## Choose the form by the subject: a diagram where the structure IS the answer
+This tool draws a schematic from the components you declare. A model built from
+library components becomes a picture the reader can inspect, wire by wire, and
+that picture is the main reason to use Modelica at all. So:
+
+**Build a DIAGRAM when the request names a domain whose structure is the point.**
+Any of these means components, not free equations:
+- electrical: circuits, sources, loads, filters, machines, rectifiers, drives
+- fluid: tanks, pipes, orifices, valves, pumps, loops, heat exchangers
+- thermal: capacitances, conductors, walls, radiating surfaces
+- rotational and translational mechanics: a mass on a spring, a gearbox, a
+  drivetrain, a linkage — anything a reader would draw as blocks joined by rods
+- control: a setpoint, a controller, a plant, feedback
+
+**Write EQUATIONS when there is no structure to draw.** A point mass thrown at an
+angle, population growth, a pure transfer function, a state machine's logic: these
+have nothing to wire, and forcing them into components produces a pile of
+primitives. Use equations there — but do NOT reach for them just because a domain
+COULD be written that way. der(h) = v is shorter than a Translational assembly,
+and it is still the wrong answer when the reader asked for a mechanism.
+
+## When you build a diagram
+- Declare a component for every part, using its full MSL path.
+- Give EVERY component a Placement(transformation(extent={{x1,y1},{x2,y2}})),
+  so it lands on the canvas rather than at the origin.
+- **Lay them out.** Place components on a grid about 200 units apart along the
+  signal path, left to right. Two components at the same coordinates are drawn on
+  top of each other, which looks like one block and cannot be wired by hand.
+  A component is 20 units half-width, so extents of {{-10,-10},{10,10}} around
+  each chosen centre are enough.
+- **Connect every pin.** A declared component with no connect is a broken
+  model and an unfinished diagram. If a pin genuinely has nothing to attach to,
+  attach a Ground (electrical) or a Fixed (mechanical).
+- Include the reference the domain needs: Modelica.Electrical.Analog.Basic.Ground
+  for a circuit, an inner Modelica.Fluid.System or inner Modelica.Mechanics.MultiBody.World
+  where the fluid or multibody libraries require one.
+
+## Worked example of the form
+A request for "a resistor divider across 10 V" is answered like this, and not
+with v = i*R equations:
+
+    Modelica.Electrical.Analog.Sources.ConstantVoltage source(V = 10)
+      annotation(Placement(transformation(extent = {{-60, -10}, {-40, 10}})));
+    Modelica.Electrical.Analog.Basic.Resistor r1(R = 100)
+      annotation(Placement(transformation(extent = {{-20, 30}, {0, 50}})));
+    Modelica.Electrical.Analog.Basic.Resistor r2(R = 100)
+      annotation(Placement(transformation(extent = {{20, -10}, {40, 10}})));
+    Modelica.Electrical.Analog.Basic.Ground ground
+      annotation(Placement(transformation(extent = {{-60, -50}, {-40, -30}})));
+  equation
+    connect(source.p, r1.p);
+    connect(r1.n, r2.p);
+    connect(r2.n, source.n);
+    connect(source.n, ground.p);
+
+Every component has a position, every pin is connected, and the result is a
+circuit a reader can see. That is the target.
 
 ## Every name must exist
 - Declare every name you use. A model that uses m or g without a declaration
@@ -263,9 +309,9 @@ scale goes to zero.
 
 ## Check before answering
 - Every name used appears in a declaration.
-- Every declared component appears in the equations or a connect.
-- Every connector is connected.
-- The equation count matches the unknown count.
+- If this is a diagram: every component has a Placement, no two share a position,
+  and every pin appears in a connect.
+- If this is equations: the count matches the unknown count in every branch.
 - No fixed = true on a parameter.`;
 
 export interface GenerateRequest {

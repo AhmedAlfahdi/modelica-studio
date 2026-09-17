@@ -543,3 +543,39 @@ test("the code pane scrolls, and the caret pulls it", () => {
     "and is called after typing, after moving the caret, and after undo"
   );
 });
+
+test("the standing rules are safe inside the template literal", () => {
+  // The rules are one template literal, so a backtick in the prose ends it — and
+  // a `${` starts an interpolation. Both are easy to type in Markdown prose and
+  // both produce a file that will not parse, which is a build failure rather than
+  // a bad answer.
+  const src = fs.readFileSync(path.join(repoRoot, "src/ai/prompts.ts"), "utf8");
+  const start = src.indexOf("const BASE_RULES = `");
+  assert.ok(start >= 0, "the rules are a template literal");
+  // Find the closing backtick: the next one after the opening.
+  const end = src.indexOf("`;", start + 20);
+  const body = src.slice(start + "const BASE_RULES = `".length, end);
+  assert.ok(body.length > 500, `the rules are substantial, got ${body.length} chars`);
+  assert.ok(!body.includes("`"), "no backtick in the rules text");
+  assert.ok(!body.includes("${"), "no interpolation in the rules text");
+});
+
+test("the rules ask for a diagram where the structure is the point", () => {
+  // The AI was told to prefer equations "almost always", which made it avoid the
+  // visual form entirely — the main reason to use Modelica. The prompt now
+  // chooses the form by what was asked for.
+  const src = fs.readFileSync(path.join(repoRoot, "src/ai/prompts.ts"), "utf8");
+  assert.match(src, /Build a DIAGRAM when the request names a domain/, "it asks for a diagram");
+  assert.match(src, /electrical: circuits, sources, loads/, "and says which domains");
+  assert.match(src, /fluid: tanks, pipes, orifices/, "including fluid");
+  assert.match(src, /Write EQUATIONS when there is no structure to draw/, "and keeps equations for the rest");
+  // The things that made the earlier component attempts fail are stated.
+  assert.match(src, /Give EVERY component a .*Placement/, "placement is required");
+  assert.match(src, /Lay them out/, "and so is spacing them");
+  assert.match(src, /Connect every pin/, "and wiring every pin");
+  // The old wording must be gone: it is what caused the behaviour.
+  assert.ok(
+    !/Prefer equations to components/.test(src),
+    "the 'prefer equations' rule is replaced, not left alongside"
+  );
+});

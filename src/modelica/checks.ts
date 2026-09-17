@@ -102,6 +102,24 @@ export interface CheckInput {
   library?: LibraryIndex;
   /** Line number of the first equation, for reporting. */
   firstEquationLine: number;
+  /**
+   * The components the model declares, with their placement.
+   *
+   * A model built from library components is a DIAGRAM, and a diagram has two
+   * failure modes that compile perfectly well and look broken: a part with no
+   * position, which lands at the origin on top of everything else, and a part
+   * with no `connect`, which is a block floating unwired. Both are worth naming
+   * in the editor, where the picture is.
+   */
+  components?: Array<{
+    id: string;
+    /** Position as declared, or undefined when there is no Placement. */
+    extent?: [number, number, number, number];
+    /** Pin names that appear in a `connect`. */
+    connectedPins: string[];
+    /** True for a component placed from the library rather than declared inline. */
+    fromLibrary: boolean;
+  }>;
 }
 
 /**
@@ -163,6 +181,48 @@ export function checkModel(input: CheckInput): ModelProblem[] {
           "Nothing here changes with time: no der(), no time, no when, and no library components. " +
           "OpenModelica will refuse this as having no time-dependent variables.",
       });
+    }
+  }
+
+  /* ---- 2b. a diagram that would not look like one ---- */
+  const parts = (input.components ?? []).filter((c) => c.fromLibrary);
+  if (parts.length >= 2) {
+    // Two components at the same place are drawn as one, and cannot be wired by
+    // hand. Reported once for the pair rather than per component, or a model
+    // where everything sits at the origin produces a wall of identical messages.
+    const byPosition = new Map<string, string[]>();
+    for (const c of parts) {
+      const at = c.extent ? c.extent.join(",") : "origin";
+      byPosition.set(at, [...(byPosition.get(at) ?? []), c.id]);
+    }
+    for (const [at, ids] of byPosition) {
+      if (ids.length < 2) continue;
+      const where = at === "origin" ? "no Placement, so they all land at the origin" : `the same position ${at}`;
+      problems.push({
+        line: input.firstEquationLine,
+        severity: "warning",
+        message:
+          `${ids.length} components have ${where}: ${ids.join(", ")}. ` +
+          `They are drawn on top of each other and cannot be wired by hand. ` +
+          `Space them out with their own transformation extents.`,
+      });
+    }
+
+    // A part with no connect at all is unwired. Ground and Fixed are terminal by
+    // nature — they exist to be the end of a wire — so they are exempt only when
+    // the model has no connects at all, which means it is not a diagram yet.
+    const anyConnection = parts.some((c) => c.connectedPins.length > 0);
+    if (anyConnection) {
+      const loose = parts.filter((c) => c.connectedPins.length === 0).map((c) => c.id);
+      if (loose.length) {
+        problems.push({
+          line: input.firstEquationLine,
+          severity: "warning",
+          message:
+            `${loose.length} component${loose.length === 1 ? "" : "s"} appear in no connect: ${loose.join(", ")}. ` +
+            `Every part of a diagram has to be wired to something, or attach it to a Ground or Fixed.`,
+        });
+      }
     }
   }
 

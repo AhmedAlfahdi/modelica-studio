@@ -188,3 +188,86 @@ test("constant is treated like parameter, and multi-line declarations are seen",
   });
   assert.equal(problems.filter((p) => p.message.includes("fixed")).length, 1);
 });
+
+test("components stacked at the same place are reported", () => {
+  // Two parts at one position are drawn as one block and cannot be wired by
+  // hand, which is what "eight blocks stacked on the diagram" looked like.
+  const problems = checkModel({
+    declared: declared("a", "b"),
+    equations: [],
+    hasComponents: true,
+    firstEquationLine: 8,
+    components: [
+      { id: "a", extent: [0, 0, 20, 20], connectedPins: ["p"], fromLibrary: true },
+      { id: "b", extent: [0, 0, 20, 20], connectedPins: ["p"], fromLibrary: true },
+    ],
+  });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0].message, /same position/);
+  assert.match(problems[0].message, /a, b/);
+});
+
+test("components with no Placement are reported together, not one by one", () => {
+  // A model where nothing was placed produces one message naming them all,
+  // rather than a wall of identical ones.
+  const problems = checkModel({
+    declared: declared("a", "b", "c"),
+    equations: [],
+    hasComponents: true,
+    firstEquationLine: 8,
+    components: [
+      { id: "a", connectedPins: ["p"], fromLibrary: true },
+      { id: "b", connectedPins: ["p"], fromLibrary: true },
+      { id: "c", connectedPins: ["p"], fromLibrary: true },
+    ],
+  });
+  assert.equal(problems.length, 1, "one message");
+  assert.match(problems[0].message, /no Placement/);
+  assert.match(problems[0].message, /a, b, c/);
+});
+
+test("a component in no connect is reported as unwired", () => {
+  const problems = checkModel({
+    declared: declared("a", "b", "stray"),
+    equations: [],
+    hasComponents: true,
+    firstEquationLine: 8,
+    components: [
+      { id: "a", extent: [0, 0, 20, 20], connectedPins: ["p"], fromLibrary: true },
+      { id: "b", extent: [40, 0, 60, 20], connectedPins: ["n"], fromLibrary: true },
+      { id: "stray", extent: [80, 0, 100, 20], connectedPins: [], fromLibrary: true },
+    ],
+  });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0].message, /appear in no connect: stray/);
+});
+
+test("a properly laid out and wired diagram is silent", () => {
+  // The check has to be quiet on exactly what the prompt asks for, or it would
+  // nag about every correct answer.
+  const problems = checkModel({
+    declared: declared("source", "r1", "r2", "ground"),
+    equations: [],
+    hasComponents: true,
+    firstEquationLine: 10,
+    components: [
+      { id: "source", extent: [-60, -10, -40, 10], connectedPins: ["p", "n"], fromLibrary: true },
+      { id: "r1", extent: [-20, 30, 0, 50], connectedPins: ["p", "n"], fromLibrary: true },
+      { id: "r2", extent: [20, -10, 40, 10], connectedPins: ["p", "n"], fromLibrary: true },
+      { id: "ground", extent: [-60, -50, -40, -30], connectedPins: ["p"], fromLibrary: true },
+    ],
+  });
+  assert.deepEqual(problems, [], `expected silence, got ${JSON.stringify(problems)}`);
+});
+
+test("an equation model is not judged as a diagram", () => {
+  // With no library components there is nothing to lay out, so the diagram
+  // checks must not fire.
+  const problems = checkModel({
+    declared: declared("h", "v"),
+    equations: ["der(h) = v;", "der(v) = -9.81;"],
+    hasComponents: false,
+    firstEquationLine: 5,
+  });
+  assert.deepEqual(problems, []);
+});

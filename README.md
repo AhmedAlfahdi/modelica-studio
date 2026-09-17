@@ -43,6 +43,10 @@ discrepancy was settled — is in
   thing to want. The plugin does not take the click away.
 - **Optional AI assistance.** With your own API key, describe a model in words
   and have it written into the editor, or ask for a compile error to be fixed.
+  The form follows the request: a circuit, a fluid network, a mechanism or a
+  control loop comes back as **wired components you can see on the canvas**, and
+  only a subject with no structure to draw — a projectile, a transfer function —
+  comes back as equations.
 - **Inline results in notes.** A fenced `modelica` block renders a live diagram
   and simulates when the note opens.
 - **Worked examples.** 30 models across electrical, mechanical, fluid, thermal,
