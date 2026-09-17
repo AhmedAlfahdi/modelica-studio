@@ -300,6 +300,14 @@ Any of these means components, not free equations:
   drivetrain, a linkage — anything a reader would draw as blocks joined by rods
 - control: a setpoint, a controller, a plant, feedback
 
+**Do NOT assemble a pile of loose primitive blocks.** Modelica.Blocks.Sources and
+the bare Force, Mass and Velocity blocks are not a diagram. A drag model is not
+"a Mass, two Forces and an Area" -- that is five unconnected symbols that compile
+and mean nothing. If the request is a point mass with forces on it, write the
+equations: m*der(v) = F_thrust - F_drag. Two tests before choosing: would a reader
+learn anything from seeing these blocks laid out, and does every one of them have
+a wire? If the answer to either is no, use equations.
+
 **Write EQUATIONS when there is no structure to draw.** A point mass thrown at an
 angle, population growth, a pure transfer function, a state machine's logic: these
 have nothing to wire, and forcing them into components produces a pile of
@@ -322,6 +330,16 @@ and it is still the wrong answer when the reader asked for a mechanism.
 - Include the reference the domain needs: Modelica.Electrical.Analog.Basic.Ground
   for a circuit, an inner Modelica.Fluid.System or inner Modelica.Mechanics.MultiBody.World
   where the fluid or multibody libraries require one.
+
+## Document the model
+- A comment on the model itself: one line saying what it represents.
+- A comment on every declaration saying what the quantity IS, with its unit where
+  it has one. Write Real v "Speed along the flight path, m/s"; and not Real v;
+- Spell names out. F_drag, air_density, wing_area, flight_speed -- not Fd, rho, A,
+  v. A short name saves the writer a moment and costs every reader afterwards, and
+  these are read by people learning the model.
+- A comment before each group of equations saying what the group establishes, such
+  as: Newton along the flight path, thrust forward and drag back.
 
 ## Worked example of the form
 A request for "a resistor divider across 10 V" is answered like this, and not
@@ -390,7 +408,9 @@ scale goes to zero.
 ## Check before answering
 - Every name used appears in a declaration.
 - If this is a diagram: every component has a Placement, no two share a position,
-  and every pin appears in a connect.
+  and EVERY component appears in a connect. A block with no wire is not a model.
+- Every declaration carries a comment saying what it is and its unit, and names are
+  spelled out rather than abbreviated to one or two letters.
 - If this is equations: the count matches the unknown count in every branch.
 - No fixed = true on a parameter.`;
 

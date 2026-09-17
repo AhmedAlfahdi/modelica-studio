@@ -544,22 +544,23 @@ test("the code pane scrolls, and the caret pulls it", () => {
   );
 });
 
-test("the standing rules are safe inside the template literal", () => {
-  // The rules are one template literal, so a backtick in the prose ends it — and
-  // a `${` starts an interpolation. Both are easy to type in Markdown prose and
-  // both produce a file that will not parse, which is a build failure rather than
-  // a bad answer.
+test("the prompt literals are safe, and the rules are substantial", () => {
+  // The prompts are template literals, so a backtick in the prose ends one, and a
+  // `${` starts an interpolation. Both are easy to type in Markdown and both are
+  // build failures rather than bad answers -- and the backtick has caused this
+  // twice now.
   const src = fs.readFileSync(path.join(repoRoot, "src/ai/prompts.ts"), "utf8");
-  const start = src.indexOf("const BASE_RULES = `");
-  assert.ok(start >= 0, "the rules are a template literal");
-  // Find the closing backtick: the next one after the opening.
-  const end = src.indexOf("`;", start + 20);
-  const body = src.slice(start + "const BASE_RULES = `".length, end);
-  assert.ok(body.length > 500, `the rules are substantial, got ${body.length} chars`);
-  assert.ok(!body.includes("`"), "no backtick in the rules text");
-  assert.ok(!body.includes("${"), "no interpolation in the rules text");
-});
+  const rules = /const BASE_RULES = `([\s\S]*?)`;/.exec(src);
+  assert.ok(rules, "the standing rules are a template literal");
+  assert.ok(rules[1].length > 4000, `the rules are substantial, got ${rules[1].length} chars`);
+  assert.ok(!rules[1].includes("`"), "no backtick inside the rules text");
+  assert.ok(!rules[1].includes("${"), "and no interpolation");
 
+  // The style rule is the other block of prose sent to the model.
+  const style = /export function styleRule[\s\S]*?\n\}/.exec(src);
+  assert.ok(style, "styleRule is present");
+  assert.ok(!style[0].includes("${"), "no interpolation in the style rule");
+});
 test("the rules ask for a diagram where the structure is the point", () => {
   // The AI was told to prefer equations "almost always", which made it avoid the
   // visual form entirely — the main reason to use Modelica. The prompt now

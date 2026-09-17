@@ -146,9 +146,12 @@ export async function generateModel(request: GenerationRequest): Promise<Generat
 
         if (!outcome.ok) return { ok: false, failure: formatDiagnostics(outcome.diagnostics) };
 
-        // Compiling is not the same as being simulatable.
-        const staticProblem = describeStaticModel(source, outcome.diagnostics);
-        return staticProblem ? { ok: false, failure: staticProblem } : { ok: true, failure: "" };
+        // Compiling is not the same as being usable. Two things build perfectly
+        // and are still not what was asked for, and both are checked here so a
+        // repair attempt hears about them instead of the run reporting success.
+        const problem =
+          describeStaticModel(source, outcome.diagnostics) ?? describeLooseDiagram(source);
+        return problem ? { ok: false, failure: problem } : { ok: true, failure: "" };
       },
 
       onProgress: request.onProgress,
@@ -213,3 +216,49 @@ function failureText(attempt: Attempt): string {
 }
 
 export { summarise };
+
+/**
+ * Detect a diagram whose components are not wired to each other.
+ *
+ * Eight library components with no `connect` between them compile and simulate:
+ * the physics is whatever their defaults happen to be, and nothing links the
+ * blocks. It looks like a schematic and is not one -- a `Mass`, two `Force`
+ * blocks, an `Area` and a `Velocity` sitting unconnected, presented as a drag
+ * model.
+ *
+ * Reported as a failure so the repair attempt is told, rather than the run
+ * reporting success on something that draws a picture of nothing.
+ */
+export function describeLooseDiagram(source: string): string | null {
+  const body = stripComments(source);
+  // Only a model built from library components can be a loose diagram.
+  const declared = [...body.matchAll(/^\s*(?:redeclare\s+)?(Modelica\.[\w.]+)\s+(\w+)/gm)];
+  if (declared.length < 2) return null;
+
+  const connected = new Set<string>();
+  // Every name inside connect(...), which captures both ends of each pair.
+  for (const call of body.matchAll(/connect\s*\(([^)]*)\)/g)) {
+    for (const name of call[1].matchAll(/\b([A-Za-z_]\w*)\s*\./g)) connected.add(name[1]);
+  }
+
+  const loose = declared.map((m) => m[2]).filter((name) => !connected.has(name));
+  if (loose.length === 0) return null;
+
+  // One loose component among several that are wired is a small omission; all of
+  // them loose is the model not being a diagram at all, and the two want
+  // different answers.
+  const allLoose = loose.length === declared.length;
+  return allLoose
+    ? `None of the ${declared.length} components are connected to each other: ${loose.join(", ")}. ` +
+        `A schematic whose blocks are not wired together is not a model of anything -- ` +
+        `either add the connect() statements that join them, or write the physics as ` +
+        `equations, where there is nothing to wire.`
+    : `${loose.length} component${loose.length === 1 ? " is" : "s are"} connected to nothing: ` +
+        `${loose.join(", ")}. Every declared component must appear in a connect(), ` +
+        `or be removed.`;
+}
+
+/** Source with comments removed, so a commented-out connect is not counted. */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+}

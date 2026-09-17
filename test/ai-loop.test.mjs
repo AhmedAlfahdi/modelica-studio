@@ -682,3 +682,56 @@ test("without a switchStyle the loop stays on one approach", async () => {
   assert.equal(r.reason, "attempts-exhausted");
   assert.deepEqual([...new Set(styles)], ["visual"], "one approach throughout");
 });
+
+/* ---- the output has to be a model, not a picture of one ---- */
+
+test("a diagram whose blocks are not wired is rejected, not reported as success", async () => {
+  // Eight library components with no connect between them COMPILE and simulate:
+  // the physics is whatever their defaults happen to be. That is not a drag model,
+  // and reporting success on it is how a pile of loose blocks reached the canvas.
+  const reported = [
+    'model Drag "Drag force on an airplane"',
+    "  Modelica.Mechanics.Translational.Sources.Force Fthrust;",
+    "  Modelica.Mechanics.Translational.Sources.Force Fdrag;",
+    "  Modelica.Mechanics.Translational.Components.Mass m;",
+    "  Modelica.Blocks.Sources.Constant Area;",
+    "equation",
+    "end Drag;",
+  ].join("\n");
+  const wired = [
+    'model Drag "Drag force on an airplane"',
+    "  Modelica.Mechanics.Translational.Sources.Force Fthrust;",
+    "  Modelica.Mechanics.Translational.Components.Mass m;",
+    "equation",
+    "  connect(Fthrust.flange, m.flange_a);",
+    "end Drag;",
+  ].join("\n");
+
+  const { describeLooseDiagram } = await import(
+    path.join(buildLibs("ai-loose", ["src/ai/generate.ts"]), "generate.js")
+  );
+  const problem = describeLooseDiagram(reported);
+  assert.ok(problem, "the reported model is rejected");
+  // The wording is "are connected to each other" -- the negation is in "None of
+  // the N", so a regex demanding the literal "not" finds nothing.
+  assert.match(problem, /None of the \d+ components are connected to each other/, "and says what is wrong");
+  assert.match(problem, /Fthrust/, "naming the blocks");
+  // The repair is told what to do, including the alternative that avoids wiring.
+  assert.match(problem, /equations/, "and offers the form that needs no wiring");
+
+  // An equation model has nothing to wire, so it is not judged.
+  assert.equal(describeLooseDiagram("model B\n  Real x;\nequation\n  der(x) = -x;\nend B;"), null);
+});
+
+test("the prompt asks for documentation and spelled-out names", () => {
+  // The model that came back was undocumented and abbreviated: `m`, `A`, `v0`,
+  // `Fdrag`. A short name saves the writer a moment and costs every reader, and
+  // these are read by people learning the model.
+  const src = fs.readFileSync(path.join(repoRoot, "src/ai/prompts.ts"), "utf8");
+  assert.match(src, /## Document the model/, "there is a section for it");
+  assert.match(src, /comment on every declaration saying what the quantity IS/, "declarations are documented");
+  assert.match(src, /Spell names out/, "names are spelled out");
+  assert.match(src, /air_density/, "with an example of the difference");
+  // And the choice that produced the loose blocks is called out.
+  assert.match(src, /Do NOT assemble a pile of loose primitive blocks/, "loose primitives are named");
+});
