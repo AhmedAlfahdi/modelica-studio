@@ -1431,3 +1431,54 @@ body.modelica-studio-resizing * {
   color: var(--text-faint);
   font-size: 11px;
 }
+
+/* Libraries in use, as checkboxes.
+   A text area asked for qualified names by hand and gave no sign of what was
+   available; the ordinary case -- "I do not use Fluid" -- was the awkward one. */
+.modelica-studio-library-list {
+  margin: 6px 0 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  overflow: hidden;
+  /* Two columns on a wide settings pane, one when there is no room. The list is
+     fourteen entries, which is a lot of scrolling in a single column. */
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+.modelica-studio-library-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  font-size: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.modelica-studio-library-row label {
+  cursor: pointer;
+  color: var(--text-normal);
+}
+.modelica-studio-library-row.is-excluded label {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+.modelica-studio-library-note {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.modelica-studio-library-advanced {
+  margin: 2px 0 12px;
+  font-size: 12px;
+}
+.modelica-studio-library-advanced > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  user-select: none;
+}
+.modelica-studio-library-text {
+  width: 100%;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  margin-top: 4px;
+}

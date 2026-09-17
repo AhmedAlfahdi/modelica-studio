@@ -209,6 +209,8 @@ export default class ModelicaStudioPlugin extends Plugin {
 
   backend: SimulationBackend | null = null;
   private omc: OmcInstallation | null = null;
+  /** The settings tab, kept so it can re-render when the index becomes known. */
+  private settingsTab: ModelicaStudioSettingTab | null = null;
   /** Print every diagnostic to the console, not only the ones the setting allows. */
   verbose = false;
 
@@ -536,7 +538,10 @@ export default class ModelicaStudioPlugin extends Plugin {
       },
     });
 
-    this.addSettingTab(new ModelicaStudioSettingTab(this));
+    // Kept, so the tab can be told when the library index arrives: it lists the
+    // libraries, and can be open before they are known.
+    this.settingsTab = new ModelicaStudioSettingTab(this);
+    this.addSettingTab(this.settingsTab);
 
     // Detect OpenModelica in the background so startup stays fast, and so the
     // index build (which is slower still) is not competing with it.
@@ -731,6 +736,9 @@ export default class ModelicaStudioPlugin extends Plugin {
         for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_MODELICA)) {
           if (leaf.view instanceof ModelicaStudioView) leaf.view.onLibraryReady();
         }
+        // The settings tab lists the libraries, and can be open before the index
+        // exists. Without this it kept saying "no libraries indexed yet".
+        this.settingsTab?.onLibraryReady();
       })
       .catch(() => {
         this.libraryPromise = null;

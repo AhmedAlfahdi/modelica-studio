@@ -9,6 +9,7 @@
 import { App, PluginSettingTab, SecretComponent, Setting, TFile } from "obsidian";
 import type ModelicaStudioPlugin from "./main";
 import { libraryHelpUrl, libraryVersionFrom } from "./modelica/doclinks";
+import { exclusionsFrom, libraryRows } from "./modelica/library-exclusions";
 import { describeRow, describeSavedModels } from "./modelica/saved-models";
 import { SOLVERS, AI_THINKING_LEVELS, MODEL_STYLES, type AiThinking, type ModelStyle, AI_DEFAULTS,
   DEFAULT_TIMEOUT_SECONDS, AI_PROVIDERS, AiConfig, LEGACY_SECRET_NAME, legacyKeyOf } from "./ai/prompts";
@@ -21,6 +22,22 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
   constructor(plugin: ModelicaStudioPlugin) {
     super(plugin.app as App, plugin);
     this.plugin = plugin;
+  }
+
+  /**
+   * The library list to draw, or null while the index is still being built.
+   *
+   * The index takes a couple of seconds on a cold start, and the settings tab can
+   * be opened before it finishes. Recording that here lets the plugin re-render
+   * this tab when the index arrives, so the list is not left saying "no libraries
+   * indexed yet" for the rest of the session.
+   */
+  private packagesReady: string[] | null = null;
+
+  /** Re-render if the tab is open and the library list has just become known. */
+  onLibraryReady(): void {
+    if (!this.containerEl.isShown?.()) return;
+    if (this.packagesReady === null) this.display();
   }
 
   display(): void {
@@ -585,30 +602,93 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         "project from scrolling past all of them.",
     });
 
+    // Checkboxes for the libraries that were actually found. The ordinary case is
+    // "I do not use Fluid", and a text area made that the awkward one: it required
+    // typing a qualified name by hand and gave no sign of what was available.
     new Setting(containerEl)
-      .setName("Excluded libraries")
+      .setName("Libraries in use")
       .setDesc(
-        "One qualified name per line, e.g. Modelica.Fluid. Lines starting with # " +
-          "are ignored. Matched on segment boundaries, so Modelica.Electrical " +
-          "does not also exclude Modelica.ElectricalExtra."
-      )
-      .addTextArea((t) => {
-        t.setPlaceholder("Modelica.Fluid\nModelica.Media")
-          .setValue(this.plugin.settings.excludedLibraries)
-          .onChange(async (v) => {
-            this.plugin.settings.excludedLibraries = v;
-            await this.plugin.saveSettings();
-            // Re-applying is cheap: the index clears its caches only when the
-            // list actually changed.
-            this.plugin.applyExclusions();
-            this.plugin.getView()?.refreshLibrary();
-          });
-        t.inputEl.rows = 4;
-        t.inputEl.style.width = "100%";
-      });
+        "Untick a library to leave it out of the palette, search and completion. " +
+          "Only libraries found on this machine are listed."
+      );
 
-    const known = containerEl.createDiv({ cls: "modelica-studio-muted" });
-    known.setText("Libraries found on this machine: " + (this.plugin.library.packages().join(", ") || "none indexed yet"));
+    const rowsHost = containerEl.createDiv({ cls: "modelica-studio-library-list" });
+    const packages = this.plugin.library.packages();
+    this.packagesReady = packages.length ? packages : null;
+
+    const apply = async () => {
+      await this.plugin.saveSettings();
+      // Re-applying is cheap: the index clears its caches only when the list
+      // actually changed.
+      this.plugin.applyExclusions();
+      this.plugin.getView()?.refreshLibrary();
+    };
+
+    const renderRows = () => {
+      rowsHost.empty();
+      const rows = libraryRows(packages, this.plugin.settings.excludedLibraries);
+      if (!rows.length) {
+        rowsHost.createDiv({
+          cls: "modelica-studio-muted",
+          text: "No libraries indexed yet. The list appears once the index is built.",
+        });
+        return;
+      }
+      for (const row of rows) {
+        const line = rowsHost.createDiv({
+          cls: `modelica-studio-library-row${row.excluded ? " is-excluded" : ""}`,
+        });
+        const box = line.createEl("input", { type: "checkbox" });
+        box.checked = !row.excluded;
+        box.id = `mst-lib-${row.name.replace(/\W/g, "-")}`;
+        const label = line.createEl("label", { text: row.label });
+        label.htmlFor = box.id;
+        label.setAttribute("title", row.name);
+        if (row.excludedBy) {
+          // The case a text area could not show at all: this library is out
+          // because something above it is, so ticking it here alone does nothing.
+          line.createSpan({ cls: "modelica-studio-library-note", text: `excluded by ${row.excludedBy}` });
+        }
+        box.addEventListener("change", async () => {
+          const next = libraryRows(packages, this.plugin.settings.excludedLibraries).map((r) => ({
+            name: r.name,
+            excluded: r.name === row.name ? !box.checked : r.excluded,
+          }));
+          this.plugin.settings.excludedLibraries = exclusionsFrom(
+            next,
+            this.plugin.settings.excludedLibraries
+          );
+          await apply();
+          // Re-rendered because one tick can change another row's reason: with
+          // `Modelica` excluded, ticking `Modelica.Fluid` changes its note.
+          renderRows();
+          area.value = this.plugin.settings.excludedLibraries;
+        });
+      }
+    };
+
+    renderRows();
+
+    // Kept, and folded away, for the entries no checkbox can express: the text
+    // area also accepts a sub-library such as Modelica.Fluid.Vessels.
+    const advanced = containerEl.createEl("details", { cls: "modelica-studio-library-advanced" });
+    advanced.createEl("summary", { text: "Exclude part of a library instead" });
+    advanced.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "One qualified name per line, for entries a checkbox cannot express. Lines " +
+          "starting with # are ignored. Matched on segment boundaries, so " +
+          "Modelica.Electrical does not also exclude Modelica.ElectricalExtra. " +
+          "Ticking a library above writes its name here.",
+    });
+    const area = advanced.createEl("textarea", { cls: "modelica-studio-library-text" });
+    area.rows = 4;
+    area.value = this.plugin.settings.excludedLibraries;
+    area.addEventListener("change", async () => {
+      this.plugin.settings.excludedLibraries = area.value;
+      await apply();
+      renderRows();
+    });
 
     containerEl.createEl("h3", { text: "Performance" });
     containerEl.createEl("p", {
