@@ -1,0 +1,109 @@
+{
+  "$comment": "Measured baselines for the AI generator, one entry per model. Append rather than overwrite: a new run of the same model is a new entry, and the comparison between entries is the point.",
+  "method": {
+    "harness": "modelicaStudio.bench() — src/ai/benchmark.ts, run inside Obsidian so the API key stays in the keychain",
+    "prompts": 8,
+    "styles": ["visual", "equations"],
+    "runsPerCell": 1,
+    "order": "alternating per prompt, so neither style is measured only early or only late",
+    "notes": [
+      "The plan is recorded before each run as {model, settings.ai} under 'config'.",
+      "One sample per cell. Enough to detect a large effect (a style that reliably fails, a defect that fires 2 times in 8); NOT enough to rank the styles on latency.",
+      "Per-run seconds include every attempt and any fallback, not one model call."
+    ]
+  },
+  "runs": [
+    {
+      "id": "deepseek-flash-4.1-2026-09-17-a",
+      "model": "deepseek-flash",
+      "provider": "DeepSeek (V4.1-Flash)",
+      "date": "2026-09-17",
+      "label": "before the equations fix",
+      "config": {
+        "thinking": "off",
+        "style": "visual",
+        "timeoutSeconds": 220,
+        "temperature": 0.2
+      },
+      "codeState": "visual-first with an equations fallback; wiring check and loose-primitive guidance in the prompts; class list still supplied to BOTH styles",
+      "summary": {
+        "visual": { "ok": 6, "of": 8, "diagrams": 6, "fullyWired": 6, "medianAttempts": 1, "medianSeconds": 114.1 },
+        "equations": { "ok": 7, "of": 8, "diagrams": 2, "fullyWired": 2, "medianAttempts": 1.5, "medianSeconds": 45.4 }
+      },
+      "observations": [
+        "Visual produced a fully wired diagram in 6 of 8 runs, across every domain including fluid and multibody — the two that had been predicted to fail.",
+        "Both visual failures were TIMEOUTS with zero attempts: the model never replied. Neither reached the compiler.",
+        "Equations compiled 7 of 8 but produced a DIAGRAM twice, once badly enough to fail structurally (4 components, 0 wired). The instruction and the class list disagreed and the list won.",
+        "Timings were confounded by run order: this run used all-visual-then-equations per prompt, and the early prompts were slow in BOTH styles (divider 77s and 212s; spring and heating 7-26s in both). The apparent 2.5x visual slowdown is not evidence.",
+        "Two prompts (pendulum/equations, tank/visual) exhausted attempts rather than timing out."
+      ],
+      "rows": [
+        { "id": "divider", "domain": "electrical", "style": "visual", "ok": true, "attempts": 1, "fellBack": false, "components": 4, "wired": 4, "seconds": 77 },
+        { "id": "divider", "domain": "electrical", "style": "equations", "ok": true, "attempts": 1, "fellBack": false, "components": 4, "wired": 4, "seconds": 212.1 },
+        { "id": "rc", "domain": "electrical", "style": "visual", "ok": true, "attempts": 1, "fellBack": false, "components": 4, "wired": 4, "seconds": 128.7 },
+        { "id": "rc", "domain": "electrical", "style": "equations", "ok": true, "attempts": 2, "fellBack": false, "components": 4, "wired": 4, "seconds": 107.6 },
+        { "id": "spring", "domain": "mechanical", "style": "visual", "ok": false, "attempts": 0, "fellBack": false, "components": 0, "wired": 0, "seconds": 220, "note": "timed out, never replied" },
+        { "id": "spring", "domain": "mechanical", "style": "equations", "ok": true, "attempts": 1, "fellBack": false, "components": 0, "wired": 0, "seconds": 6.9 },
+        { "id": "heating", "domain": "thermal", "style": "visual", "ok": true, "attempts": 1, "fellBack": false, "components": 4, "wired": 4, "seconds": 26 },
+        { "id": "heating", "domain": "thermal", "style": "equations", "ok": true, "attempts": 2, "fellBack": false, "components": 0, "wired": 0, "seconds": 16.3 },
+        { "id": "tank", "domain": "fluid", "style": "visual", "ok": true, "attempts": 1, "fellBack": false, "components": 3, "wired": 3, "seconds": 146.1 },
+        { "id": "tank", "domain": "fluid", "style": "equations", "ok": true, "attempts": 1, "fellBack": false, "components": 0, "wired": 0, "seconds": 40.7 },
+        { "id": "valve", "domain": "fluid", "style": "visual", "ok": false, "attempts": 0, "fellBack": false, "components": 0, "wired": 0, "seconds": 220, "note": "timed out, never replied" },
+        { "id": "valve", "domain": "fluid", "style": "equations", "ok": true, "attempts": 3, "fellBack": false, "components": 0, "wired": 0, "seconds": 75.5 },
+        { "id": "pendulum", "domain": "multibody", "style": "visual", "ok": true, "attempts": 1, "fellBack": false, "components": 2, "wired": 2, "seconds": 99.5 },
+        { "id": "pendulum", "domain": "multibody", "style": "equations", "ok": false, "attempts": 4, "fellBack": false, "components": 0, "wired": 4, "seconds": 50.1, "note": "no-progress: the same error came back 3 times" },
+        { "id": "control", "domain": "control", "style": "visual", "ok": true, "attempts": 2, "fellBack": false, "components": 3, "wired": 3, "seconds": 33.6 },
+        { "id": "control", "domain": "control", "style": "equations", "ok": true, "attempts": 1, "fellBack": false, "components": 0, "wired": 0, "seconds": 17.7 }
+      ]
+    },
+    {
+      "id": "deepseek-flash-4.1-2026-09-17-b",
+      "model": "deepseek-flash",
+      "provider": "DeepSeek (V4.1-Flash)",
+      "date": "2026-09-17",
+      "label": "after the equations fix",
+      "config": {
+        "thinking": "off",
+        "style": "visual",
+        "timeoutSeconds": 300,
+        "temperature": 0.2
+      },
+      "codeState": "class list WITHHELD from an equations request; describeStyleViolation rejects an assembly returned for an equations request; deadline raised to 300s; benchmark order alternated",
+      "summary": {
+        "visual": { "ok": 8, "of": 8, "diagrams": 7, "fullyWired": 7, "medianAttempts": 1, "medianSeconds": 58.8 },
+        "equations": { "ok": 8, "of": 8, "diagrams": 0, "fullyWired": 0, "medianAttempts": 1, "medianSeconds": 17.05 }
+      },
+      "observations": [
+        "8 of 8 in both styles, every domain. The visual failures in run (a) were deadline artefacts, not a fragility of the form: at 300s both finished, valve at 278s — just under the old 220s-plus ceiling that used to kill it.",
+        "Equations produced ZERO diagrams, down from two. Withholding the class list removed the disagreement between the instruction and the menu; that was the real defect.",
+        "The fallback fired once (tank/visual): 4 attempts, ended as equations, 582.9s. The mechanism did its job on the one genuinely hard case.",
+        "Per-request latency is high and variable: 5s to 278s within the same style. Per-run seconds are additive over attempts, which is why the fallback run reaches ~10 minutes.",
+        "The remaining sample is still one per cell, so the styles cannot be ranked on speed from this."
+      ],
+      "rows": [
+        { "id": "divider", "domain": "electrical", "style": "visual", "ok": true, "attempts": 2, "fellBack": false, "components": 4, "wired": 4, "seconds": 139.1 },
+        { "id": "divider", "domain": "electrical", "style": "equations", "ok": true, "attempts": 3, "fellBack": false, "components": 0, "wired": 0, "seconds": 55.1 },
+        { "id": "rc", "domain": "electrical", "style": "equations", "ok": true, "attempts": 1, "fellBack": false, "components": 0, "wired": 0, "seconds": 5 },
+        { "id": "rc", "domain": "electrical", "style": "visual", "ok": true, "attempts": 1, "fellBack": false, "components": 4, "wired": 4, "seconds": 27.7 },
+        { "id": "spring", "domain": "mechanical", "style": "visual", "ok": true, "attempts": 1, "fellBack": false, "components": 5, "wired": 5, "seconds": 55.3 },
+        { "id": "spring", "domain": "mechanical", "style": "equations", "ok": true, "attempts": 1, "fellBack": false, "components": 0, "wired": 0, "seconds": 5 },
+        { "id": "heating", "domain": "thermal", "style": "equations", "ok": true, "attempts": 1, "fellBack": false, "components": 0, "wired": 0, "seconds": 8.1 },
+        { "id": "heating", "domain": "thermal", "style": "visual", "ok": true, "attempts": 1, "fellBack": false, "components": 5, "wired": 5, "seconds": 62.3 },
+        { "id": "tank", "domain": "fluid", "style": "visual", "ok": true, "attempts": 4, "fellBack": true, "components": 0, "wired": 0, "seconds": 582.9, "note": "the diagram did not converge; the fallback produced equations" },
+        { "id": "tank", "domain": "fluid", "style": "equations", "ok": true, "attempts": 1, "fellBack": false, "components": 0, "wired": 0, "seconds": 60.2 },
+        { "id": "valve", "domain": "fluid", "style": "equations", "ok": true, "attempts": 1, "fellBack": false, "components": 0, "wired": 0, "seconds": 19.4 },
+        { "id": "valve", "domain": "fluid", "style": "visual", "ok": true, "attempts": 1, "fellBack": false, "components": 4, "wired": 4, "seconds": 278.3 },
+        { "id": "pendulum", "domain": "multibody", "style": "visual", "ok": true, "attempts": 1, "fellBack": false, "components": 2, "wired": 2, "seconds": 71.7 },
+        { "id": "pendulum", "domain": "multibody", "style": "equations", "ok": true, "attempts": 1, "fellBack": false, "components": 0, "wired": 0, "seconds": 9.5 },
+        { "id": "control", "domain": "control", "style": "equations", "ok": true, "attempts": 1, "fellBack": false, "components": 0, "wired": 0, "seconds": 14.4 },
+        { "id": "control", "domain": "control", "style": "visual", "ok": true, "attempts": 1, "fellBack": false, "components": 4, "wired": 4, "seconds": 26.1 }
+      ]
+    }
+  ],
+  "untested": [
+    { "provider": "OpenAI", "models": ["gpt-5.6-terra", "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.4-mini", "gpt-5.1"] },
+    { "provider": "OpenRouter", "models": ["deepseek/deepseek-v4.1-flash", "anthropic/claude-sonnet-4.5", "google/gemini-3.7-flash", "x-ai/grok-4.6"] },
+    { "provider": "Groq", "models": ["preset marked partial"] },
+    { "provider": "Ollama / llama.cpp", "models": ["any local model"] }
+  ]
+}

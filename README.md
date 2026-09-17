@@ -238,6 +238,21 @@ a reload and can be read from outside the app. The console needs no setting:
 errors and warnings always print there, because a failure nobody can see is the
 one that gets reported as "nothing happened".
 
+## What is known about the AI
+
+One model has been measured, not assumed: see
+[`docs/ai-baseline.md`](docs/ai-baseline.md) for the method, the results, and
+what they do **not** establish. In short, for `deepseek-flash`:
+
+- diagram-first works — 8/8 compiled, 7 as fully wired diagrams across electrical,
+  mechanical, thermal, fluid, multibody and control;
+- the equations fallback earned itself, on one run out of eight;
+- a hard request can take several minutes, because the repair loop is additive.
+
+**No OpenAI model has been tested.** If you run one, `modelicaStudio.bench()` in
+the developer console measures it, and the result belongs in
+`docs/ai-baseline.json` as a new entry.
+
 ## Beta status
 
 Experimental, and it wants more testing. Specifically:
