@@ -168,11 +168,13 @@ export class ModelicaStudioView extends ItemView {
     // Results get their own pane across the window rather than a slot inside the
     // inspector. In a 380px column a plot is unreadable, and the legend covers
     // half the traces; spanning the window is what makes it legible.
-    // The handle comes BEFORE the pane in the DOM. Flex lays out in document
-    // order, so appending it after put it below the pane it is meant to sit on
-    // top of.
-    const resultsSplitter = root.createDiv({ cls: "modelica-studio-results-splitter" });
     const resultsCol = root.createDiv({ cls: "modelica-studio-results" });
+    // The handle goes AFTER the results pane so it renders on that pane's BOTTOM
+    // edge — the line where the results end and the editing area begins, which is
+    // where a divider between the two belongs. Before the pane it sat on the
+    // pane's top edge instead, above the tab strip, which read as a bar floating
+    // over the plot rather than as the boundary it controls.
+    const resultsSplitter = root.createDiv({ cls: "modelica-studio-results-splitter" });
     // Restore the height the user dragged it to, so the choice survives a
     // reload rather than resetting to the default every time.
     if (this.storedResultsHeight() > 0) {

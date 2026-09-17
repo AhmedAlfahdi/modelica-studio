@@ -94,10 +94,14 @@ test("there is exactly one handle between the results and the code pane", () => 
   );
 
   const src = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
-  const splitIdx = src.indexOf("const resultsSplitter = root.createDiv");
+  // The handle renders on the pane's BOTTOM edge, which is the line between the
+  // results and the editing area — so it comes AFTER the results pane in document
+  // order. Before the pane it sat on the pane's top edge, above the tab strip.
   const resultsIdx = src.indexOf("const resultsCol = root.createDiv");
+  const splitIdx = src.indexOf("const resultsSplitter = root.createDiv");
   const codeIdx = src.indexOf("this.buildCodePane(root)");
-  assert.ok(splitIdx < resultsIdx && resultsIdx < codeIdx, "handle, then results, then code");
+  assert.ok(resultsIdx < splitIdx, "the handle follows the pane it bounds");
+  assert.ok(splitIdx < codeIdx, "and precedes the editing area it divides from");
 });
 
 test("the grip follows the pointer", () => {
