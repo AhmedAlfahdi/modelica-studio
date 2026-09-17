@@ -77,8 +77,24 @@ export function libraryHelpUrl(libraryVersion = "4.1.0"): string {
  */
 export function libraryVersionFrom(names: string[] | undefined): string {
   for (const name of names ?? []) {
-    const match = /^Modelica\s+([0-9][0-9A-Za-z.+-]*)/.exec(name.trim());
-    if (match) return match[1];
+    const match = /^Modelica\s+([0-9]+\.[0-9]+(?:\.[0-9]+)?)/.exec(name.trim());
+    if (!match) continue;
+    // Only versions doc.modelica.org actually publishes a tree for. The
+    // installed directory is often named with build metadata -- the local copy is
+    // `Modelica 4.1.0+maint.om` -- and that suffix is not part of any published
+    // tree name: linking to it gives a 404. Verified 404 against the live site.
+    if (PUBLISHED_VERSIONS.has(match[1])) return match[1];
   }
+  // Nothing matched a published tree. The version this plugin is developed
+  // against is a better answer than a link that 404s.
   return "4.1.0";
 }
+
+/**
+ * The library versions doc.modelica.org publishes a help tree for.
+ *
+ * Checked against the site rather than assumed: an unpublished version in the
+ * path produces a 404, and a link that 404s is worse than a link to the current
+ * release.
+ */
+export const PUBLISHED_VERSIONS = new Set(["4.1.0", "4.0.0", "3.2.3"]);

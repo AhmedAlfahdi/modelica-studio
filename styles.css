@@ -1337,16 +1337,48 @@ body.modelica-studio-resizing * {
   align-items: center;
   gap: 5px;
 }
+/* Help link.
+   `--text-faint` is a real Obsidian variable but it is close to the background in
+   the default dark theme, and a 14px glyph at that contrast is easy to miss
+   entirely. `--text-muted` is the app's own secondary text colour, so the icon
+   reads at the same weight as the class name beside it and brightens on hover. */
 .modelica-studio-help {
   display: inline-flex;
   align-items: center;
-  color: var(--text-faint);
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--text-muted);
   cursor: pointer;
+  border-radius: 3px;
+  padding: 1px;
 }
 .modelica-studio-help:hover {
   color: var(--text-accent);
+  background: var(--background-modifier-hover);
 }
 .modelica-studio-help svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* The same affordance on a palette row, so a class can be looked up before it is
+   placed. Kept dim until the row is pointed at, or every row would carry an icon
+   competing with its name. */
+.modelica-studio-palette-help {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: 6px;
+  color: var(--text-faint);
+  opacity: 0.55;
+  cursor: pointer;
+}
+.modelica-studio-palette-item:hover .modelica-studio-palette-help {
+  opacity: 1;
+  color: var(--text-accent);
+}
+.modelica-studio-palette-help svg {
   width: 14px;
   height: 14px;
 }

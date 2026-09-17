@@ -303,6 +303,28 @@ export default class ModelicaStudioPlugin extends Plugin {
         this.verbose = on;
         return `Modelica Studio: verbose ${on ? "on" : "off"}`;
       },
+      probeHelp: () => {
+        const anchor = document.querySelector(".modelica-studio-help") as HTMLElement | null;
+        const row = document.querySelector(".modelica-studio-classrow") as HTMLElement | null;
+        const svg = anchor?.querySelector("svg") ?? null;
+        return {
+          classRowFound: !!row,
+          classRowText: row?.textContent ?? null,
+          anchorFound: !!anchor,
+          href: anchor?.getAttribute("href") ?? null,
+          svgFound: !!svg,
+          rect: anchor
+            ? (() => {
+                const r = anchor.getBoundingClientRect();
+                return `${Math.round(r.width)}x${Math.round(r.height)} at ${Math.round(r.left)},${Math.round(r.top)}`;
+              })()
+            : null,
+          svgFill: svg ? getComputedStyle(svg).fill : null,
+          svgStroke: svg ? getComputedStyle(svg).stroke : null,
+          anchorColor: anchor ? getComputedStyle(anchor).color : null,
+          libraryRootNames: this.libraryRootNames(),
+        };
+      },
       help: () =>
         [
           "modelicaStudio.state()      what the plugin holds",

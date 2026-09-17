@@ -63,7 +63,8 @@ test("the version comes from the installed library, not a constant", () => {
   // match the ones in the palette.
   assert.equal(libraryVersionFrom(["Modelica 4.1.0"]), "4.1.0");
   assert.equal(libraryVersionFrom(["Modelica 4.0.0", "ModelicaServices 4.1.0"]), "4.0.0");
-  assert.equal(libraryVersionFrom(["Modelica 3.2.3+maint.om"]), "3.2.3+maint.om");
+  // Build metadata is stripped: no published tree carries it.
+  assert.equal(libraryVersionFrom(["Modelica 3.2.3+maint.om"]), "3.2.3");
   // Nothing to read: the current release is a better guess than nothing.
   assert.equal(libraryVersionFrom([]), "4.1.0");
   assert.equal(libraryVersionFrom(undefined), "4.1.0");
@@ -80,4 +81,22 @@ test("the library entry page is its own URL", () => {
     libraryHelpUrl("4.1.0"),
     "https://doc.modelica.org/Modelica%204.1.0/Resources/helpDymola/Modelica.html"
   );
+});
+
+test("the version is normalised to a tree the site publishes", () => {
+  // The installed directory is often named with build metadata -- the local copy
+  // is "Modelica 4.1.0+maint.om" -- and passing that through produced
+  // /Modelica%204.1.0%2Bmaint.om/..., which is a 404. Checked against the live
+  // site. A link that 404s is worse than a link to the current release.
+  assert.equal(libraryVersionFrom(["Modelica 4.1.0+maint.om"]), "4.1.0");
+  assert.equal(libraryVersionFrom(["Modelica 4.1.0"]), "4.1.0");
+  assert.equal(libraryVersionFrom(["Modelica 3.2.3+maint.om"]), "3.2.3");
+  assert.equal(libraryVersionFrom(["Modelica 4.0.0"]), "4.0.0");
+  // A version with no published tree falls back rather than 404ing.
+  assert.equal(libraryVersionFrom(["Modelica 9.9.9"]), "4.1.0");
+  assert.equal(libraryVersionFrom(["Modelica 2.2.2"]), "4.1.0");
+  // And the URL it feeds contains no build metadata.
+  const url = docUrlFor("Modelica.Mechanics.Rotational.Sources.Torque", libraryVersionFrom(["Modelica 4.1.0+maint.om"]));
+  assert.ok(!/%2B|\+maint/.test(url), `no build metadata in ${url}`);
+  assert.match(url, /Modelica%204\.1\.0\//);
 });

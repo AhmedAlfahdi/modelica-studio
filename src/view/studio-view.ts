@@ -1293,6 +1293,26 @@ export class ModelicaStudioView extends ItemView {
       label.setText(item.shortName);
     }
 
+    // A way to read about the class BEFORE placing it. The palette is where a
+    // class is chosen, so it is where someone wonders what it does; the inspector
+    // only helps after the choice has been made.
+    const docUrl = docUrlFor(item.name, libraryVersionFrom(this.plugin.libraryRootNames()));
+    if (docUrl) {
+      const help = btn.createEl("a", { cls: "modelica-studio-palette-help", href: docUrl });
+      setIcon(help, "help-circle");
+      help.title = `Open the Modelica documentation for ${item.name}`;
+      help.setAttribute("aria-label", `Documentation for ${item.name}`);
+      help.addEventListener("click", (ev) => {
+        // Otherwise the click would also place the component, and the anchor
+        // would navigate the Obsidian window.
+        ev.preventDefault();
+        ev.stopPropagation();
+        openInBrowser(docUrl);
+      });
+      // And a drag starting on the icon should not place anything either.
+      help.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+    }
+
     btn.addEventListener("dragstart", (ev) => {
       ev.dataTransfer?.setData("text/modelica-class", item.name);
       ev.dataTransfer?.setData("text/plain", item.name);
