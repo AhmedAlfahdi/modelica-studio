@@ -43,6 +43,8 @@ fs.writeFileSync(
     "export class App {}\n" +
     // TFile is used at run time -- the saved-models list tests each tracked path
     // with `instanceof TFile` -- so it must be a real class here, not a type.
+    // Notice is called by the saved-models repair button.
+    "export class Notice { constructor(message) { this.message = message; } }\n" +
     "export class TFile { constructor(path) { this.path = path; this.extension = (path.split('.').pop() || ''); } }\n" +
     // The settings tab builds a SecretComponent, so the stub must export it or
     // the module fails to instantiate at import time.

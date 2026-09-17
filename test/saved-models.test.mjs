@@ -101,3 +101,94 @@ test("the list is sorted by name and tolerates a messy vault", () => {
   // stray space in the setting does not mark every model misplaced.
   assert.ok(view.rows.every((r) => r.status === "ok"), "folder comparison is normalised");
 });
+
+/* ---- repairing stale records ---- */
+
+const { repairModelFiles } = await import(
+  path.join(buildLibs("saved-models-repair", ["src/modelica/saved-models.ts"]), "saved-models.js")
+);
+
+test("a stale path is repointed at the file that exists", () => {
+  // The reported state: five records pointing at vault-root paths with no files,
+  // while the files themselves sit in Modelica/. The plugin copes -- a save looks
+  // the file up again -- but the settings report a vault full of missing models
+  // and each one is only corrected when it happens to be saved.
+  const r = repairModelFiles({
+    modelFolder: "Modelica",
+    modelFiles: { Electrical: "Electrical.mo", Fluid: "Modelica/Fluid.mo" },
+    allModelFiles: ["Modelica/Electrical.mo", "Modelica/Fluid.mo"],
+    exists: (p) => p === "Modelica/Fluid.mo",
+  });
+  assert.deepEqual(r.modelFiles, { Electrical: "Modelica/Electrical.mo", Fluid: "Modelica/Fluid.mo" });
+  assert.deepEqual(r.repointed, [{ name: "Electrical", from: "Electrical.mo", to: "Modelica/Electrical.mo" }]);
+  assert.deepEqual(r.stillMissing, []);
+});
+
+test("a record that is still correct is left exactly as it is", () => {
+  // A model deliberately saved outside the folder must not be dragged into it by
+  // a repair. Only a record that points at NOTHING is rewritten.
+  const r = repairModelFiles({
+    modelFolder: "Modelica",
+    modelFiles: { Elsewhere: "notes/Elsewhere.mo" },
+    allModelFiles: ["notes/Elsewhere.mo", "Modelica/Elsewhere.mo"],
+    exists: (p) => p === "notes/Elsewhere.mo",
+  });
+  assert.deepEqual(r.modelFiles, { Elsewhere: "notes/Elsewhere.mo" });
+  assert.equal(r.repointed.length, 0);
+});
+
+test("the configured folder wins when a file exists in two places", () => {
+  // Resolution is by file name, so a duplicate needs a rule rather than the
+  // filesystem's listing order.
+  const r = repairModelFiles({
+    modelFolder: "Modelica",
+    modelFiles: { Tank: "Tank.mo" },
+    allModelFiles: ["Tank.mo", "Modelica/Tank.mo"],
+    exists: () => false,
+  });
+  assert.equal(r.modelFiles.Tank, "Modelica/Tank.mo");
+});
+
+test("a model with no file anywhere is reported, not invented", () => {
+  const r = repairModelFiles({
+    modelFolder: "Modelica",
+    modelFiles: { Ghost: "Ghost.mo" },
+    allModelFiles: ["Modelica/Other.mo"],
+    exists: () => false,
+  });
+  assert.deepEqual(r.stillMissing, ["Ghost"]);
+  assert.equal(r.modelFiles.Ghost, "Ghost.mo", "the record is kept so a save still has somewhere to go");
+});
+
+test("adopting claims the files no model owns", () => {
+  // Eleven .mo files in the vault, seven tracked: the other four are models the
+  // plugin has lost track of, and their own name is the only sensible key.
+  const r = repairModelFiles({
+    modelFolder: "Modelica",
+    modelFiles: { Electrical: "Modelica/Electrical.mo" },
+    allModelFiles: [
+      "Modelica/Electrical.mo",
+      "Modelica/DampedBounce.mo",
+      "Modelica/Thermal.mo",
+      "AirplaneDrag.mo",
+    ],
+    exists: (p) => p === "Modelica/Electrical.mo",
+    adopt: true,
+  });
+  assert.deepEqual(r.adopted.map((a) => a.name), ["DampedBounce", "Thermal", "AirplaneDrag"]);
+  assert.equal(r.modelFiles.DampedBounce, "Modelica/DampedBounce.mo");
+  // A file whose name is already a model does not create a second entry.
+  assert.equal(Object.keys(r.modelFiles).filter((k) => k === "Electrical").length, 1);
+});
+
+test("adopting is off unless asked for", () => {
+  // An unclaimed file may be deliberate -- a scratch model, or one kept by hand.
+  const r = repairModelFiles({
+    modelFolder: "Modelica",
+    modelFiles: {},
+    allModelFiles: ["Modelica/Spare.mo"],
+    exists: () => false,
+  });
+  assert.deepEqual(r.adopted, []);
+  assert.deepEqual(r.modelFiles, {});
+});

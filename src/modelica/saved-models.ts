@@ -102,3 +102,93 @@ export function describeRow(row: SavedModelRow, modelFolder: string): string {
   }
   return where;
 }
+
+export interface RepairResult {
+  /** The mapping to store. */
+  modelFiles: Record<string, string>;
+  /** Models whose recorded path was stale and now points at a real file. */
+  repointed: Array<{ name: string; from: string; to: string }>;
+  /** Files that exist but no model claimed, now adopted under their own name. */
+  adopted: Array<{ name: string; path: string }>;
+  /** Tracked models with no matching file anywhere in the vault. */
+  stillMissing: string[];
+}
+
+/**
+ * Bring the tracked paths back in line with what is actually in the vault.
+ *
+ * Stale records are easy to create and awkward to fix by hand: move a file
+ * between folders, or change the save folder, and every path recorded for it is
+ * wrong while the file itself is perfectly fine. The plugin already copes — a
+ * save looks the file up again — but the settings then report a vault full of
+ * missing models, and each one is only corrected when it happens to be saved.
+ *
+ * Resolution is by file name, which is what makes it a repair rather than a
+ * guess: a model named `Tank` and a file `Tank.mo` are the same thing, wherever
+ * the file has ended up.
+ *
+ * `preferred` is the configured folder, so a file that exists in two places is
+ * resolved to the one the settings point at rather than to whichever the
+ * filesystem listed first.
+ */
+export function repairModelFiles(opts: {
+  modelFolder: string;
+  modelFiles: Record<string, string>;
+  /** Every `.mo` path in the vault. */
+  allModelFiles: string[];
+  exists: (path: string) => boolean;
+  /** Adopt files no model claims. Off by default: an unclaimed file may be deliberate. */
+  adopt?: boolean;
+}): RepairResult {
+  const folder = opts.modelFolder.trim().replace(/^\/+|\/+$/g, "");
+  const all = opts.allModelFiles.map((p) => p.replace(/^\/+/, ""));
+  const basename = (p: string) => p.slice(p.lastIndexOf("/") + 1);
+
+  /** The best file for a model name: the configured folder first, then anywhere. */
+  const find = (name: string): string | undefined => {
+    const wanted = `${name}.mo`;
+    const candidates = all.filter((p) => basename(p) === wanted);
+    if (!candidates.length) return undefined;
+    const at = folder ? candidates.find((p) => p === `${folder}/${wanted}`) : candidates.find((p) => !p.includes("/"));
+    return at ?? candidates.sort()[0];
+  };
+
+  const modelFiles: Record<string, string> = {};
+  const repointed: RepairResult["repointed"] = [];
+  const stillMissing: string[] = [];
+
+  for (const [name, recorded] of Object.entries(opts.modelFiles)) {
+    const clean = recorded.trim().replace(/^\/+/, "");
+    if (clean && opts.exists(clean)) {
+      // Still where it says it is. Kept as recorded, because a model deliberately
+      // saved elsewhere must not be dragged into the folder by a repair.
+      modelFiles[name] = clean;
+      continue;
+    }
+    const found = find(name);
+    if (found) {
+      modelFiles[name] = found;
+      repointed.push({ name, from: clean || "(unrecorded)", to: found });
+    } else {
+      stillMissing.push(name);
+      if (clean) modelFiles[name] = clean;
+    }
+  }
+
+  const adopted: RepairResult["adopted"] = [];
+  if (opts.adopt) {
+    const claimed = new Set(Object.values(modelFiles));
+    for (const path of all) {
+      if (claimed.has(path)) continue;
+      const name = basename(path).replace(/\.mo$/i, "");
+      // A file whose name is already tracked belongs to that model; a repair must
+      // not create a second entry for one file.
+      if (modelFiles[name]) continue;
+      modelFiles[name] = path;
+      claimed.add(path);
+      adopted.push({ name, path });
+    }
+  }
+
+  return { modelFiles, repointed, adopted, stillMissing };
+}

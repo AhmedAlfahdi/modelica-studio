@@ -6,9 +6,10 @@
  * unusual setup rather than to require tuning.
  */
 
-import { App, PluginSettingTab, SecretComponent, Setting, TFile } from "obsidian";
+import { App, Notice, PluginSettingTab, SecretComponent, Setting, TFile } from "obsidian";
 import type ModelicaStudioPlugin from "./main";
 import { libraryHelpUrl, libraryVersionFrom } from "./modelica/doclinks";
+import { repairModelFiles } from "./modelica/saved-models";
 import { exclusionsFrom, libraryRows } from "./modelica/library-exclusions";
 import { describeRow, describeSavedModels } from "./modelica/saved-models";
 import { SOLVERS, solverDescription, AI_THINKING_LEVELS, MODEL_STYLES, type AiThinking, type ModelStyle, AI_DEFAULTS,
@@ -590,6 +591,47 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
             `vault ${view.untracked.length === 1 ? "is" : "are"} not tracked by any model: ` +
             view.untracked.join(", ")
         );
+      }
+
+      // A repair rather than hand-editing: a moved file or a changed save folder
+      // leaves every recorded path for it wrong, while the file is perfectly fine.
+      // Resolution is by file name, so the fix needs no guesswork.
+      if (view.misplaced || view.missing || view.untracked.length) {
+        new Setting(containerEl)
+          .setName("Fix the recorded paths")
+          .setDesc(
+            (view.missing
+              ? `${view.missing} record${view.missing === 1 ? " points" : "s point"} at a file that is not there. `
+              : "") +
+              (view.untracked.length
+                ? `${view.untracked.length} .mo file${view.untracked.length === 1 ? " is" : "s are"} in the vault with no model recorded for ${view.untracked.length === 1 ? "it" : "them"}. `
+                : "") +
+              "Matching is by file name, so this only rewrites a record that points at nothing, and only claims a file that no model owns."
+          )
+          .addButton((b) =>
+            b.setButtonText("Fix").onClick(async () => {
+              const files = vault.getFiles().filter((f) => f.extension === "mo");
+              const result = repairModelFiles({
+                modelFolder: this.plugin.settings.modelFolder,
+                modelFiles: this.plugin.settings.modelFiles,
+                allModelFiles: files.map((f) => f.path),
+                exists: (p) => vault.getAbstractFileByPath(p) instanceof TFile,
+                adopt: true,
+              });
+              this.plugin.settings.modelFiles = result.modelFiles;
+              await this.plugin.saveSettings();
+              const parts: string[] = [];
+              if (result.repointed.length) parts.push(`${result.repointed.length} path(s) repointed`);
+              if (result.adopted.length) parts.push(`${result.adopted.length} file(s) claimed`);
+              if (result.stillMissing.length) parts.push(`${result.stillMissing.length} still missing`);
+              new Notice(
+                parts.length
+                  ? `Modelica Studio: ${parts.join(", ")}.`
+                  : "Modelica Studio: every recorded path already matches a file."
+              );
+              this.display();
+            })
+          );
       }
     }
 
