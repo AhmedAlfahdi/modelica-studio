@@ -167,3 +167,34 @@ test("the documented performance figures are internally consistent", () => {
   assert.match(table[0], /Ryzen 5 2600X/, "the machine is named");
   assert.match(table[0], /OpenModelica/, "and the toolchain");
 });
+
+test("the settings tab and the README quote the same performance figures", () => {
+  // These have drifted twice already: the README said 970 ms / 1.9 s / 4.6 s
+  // while docs/design.md said the same stale numbers, and the settings tab kept
+  // a third copy. A number with two homes ends up with two values, so every
+  // figure the settings tab quotes must appear in the README's table.
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+  const perf = readme.slice(readme.indexOf("## Performance"), readme.indexOf("### Measuring it yourself"));
+  assert.ok(perf.length > 500, "the README has a performance section");
+
+  const settings = fs.readFileSync(path.join(repoRoot, "src/settings.ts"), "utf8");
+  const block = /createEl\("h3", \{ text: "Performance" \}\)([\s\S]*?)\n  \}/.exec(settings);
+  assert.ok(block, "the settings tab has one too");
+
+  const quoted = [...block[1].matchAll(/metric\(\w+, "([^"]+)", "([^"]+)"/g)].map((m) => ({
+    label: m[1],
+    value: m[2].replace(/\\u2013/g, "\u2013"),
+  }));
+  assert.ok(quoted.length >= 6, `every metric is read, got ${quoted.length}`);
+
+  for (const { label, value } of quoted) {
+    // The leading number, so `0.3–0.5 s` and `18–36 ms` are checked by their
+    // first figure rather than needing an exact string match on a range.
+    const lead = /[\d.]+/.exec(value)?.[0];
+    assert.ok(lead, `${label} quotes a number`);
+    assert.ok(
+      perf.includes(lead),
+      `the settings tab says "${label}: ${value}" and the README does not mention ${lead}`
+    );
+  }
+});

@@ -1515,3 +1515,79 @@ body.modelica-studio-resizing * {
   justify-content: flex-start;
   margin-top: 6px;
 }
+
+/* Settings metrics.
+   A three-column grid rather than a sentence: the operation, the time, and what
+   the time means. Colour carries the only distinction a reader acts on -- whether
+   the cost is paid once or on every edit -- using Obsidian's own semantic
+   variables, which follow the theme rather than being fixed hex values. */
+.modelica-studio-metric-group {
+  margin: 14px 0 4px;
+  font-size: 11px;
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.modelica-studio-metric-group:first-of-type {
+  margin-top: 10px;
+}
+.modelica-studio-metrics {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.modelica-studio-metric {
+  display: grid;
+  /* Fixed columns for the label and the value so the eye can run down each, and
+     the remainder for the note. */
+  grid-template-columns: minmax(0, 1fr) 5.5em minmax(0, 1.15fr);
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 10px;
+  border-left: 3px solid transparent;
+  font-size: 12px;
+}
+.modelica-studio-metric + .modelica-studio-metric {
+  border-top: 1px solid var(--background-modifier-border);
+}
+.modelica-studio-metric-label {
+  color: var(--text-normal);
+  min-width: 0;
+}
+.modelica-studio-metric-value {
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  font-weight: var(--font-semibold);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.modelica-studio-metric-note {
+  color: var(--text-muted);
+  font-size: 11px;
+  min-width: 0;
+}
+/* The colour is the message: green is imperceptible, orange is worth configuring,
+   grey is paid once and then forgotten. */
+.modelica-studio-metric.is-fast {
+  border-left-color: var(--color-green);
+}
+.modelica-studio-metric.is-fast .modelica-studio-metric-value {
+  color: var(--color-green);
+}
+.modelica-studio-metric.is-slow {
+  border-left-color: var(--color-orange);
+}
+.modelica-studio-metric.is-slow .modelica-studio-metric-value {
+  color: var(--color-orange);
+}
+.modelica-studio-metric.is-once {
+  border-left-color: var(--text-faint);
+}
+.modelica-studio-metric.is-once .modelica-studio-metric-value {
+  color: var(--text-muted);
+}
+.modelica-studio-metric-footer {
+  margin-top: 8px;
+  font-size: 12px;
+}

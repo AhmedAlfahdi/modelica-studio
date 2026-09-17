@@ -694,11 +694,47 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       cls: "modelica-studio-muted",
       text:
-        "Translation dominates the cost of an edit (roughly 1.9 s with parallel " +
-        "codegen, 4.6 s without), while re-running an already-translated model " +
-        "with changed parameters takes about 20 ms. The plugin therefore only " +
-        "recompiles when the model's structure changes, and reuses the compiled " +
-        "model when only parameter values differ.",
+        "Measured on the development machine with the current build. The pattern " +
+          "matters more than the exact figures: translation is the expensive step, " +
+          "and everything after it is effectively free.",
+    });
+
+    /** A row of the performance table: what, how long, and what to make of it. */
+    const metric = (
+      parent: HTMLElement,
+      label: string,
+      value: string,
+      note: string,
+      tone: "fast" | "slow" | "once"
+    ) => {
+      const row = parent.createDiv({ cls: `modelica-studio-metric is-${tone}` });
+      row.createSpan({ cls: "modelica-studio-metric-label", text: label });
+      row.createSpan({ cls: "modelica-studio-metric-value", text: value });
+      row.createSpan({ cls: "modelica-studio-metric-note", text: note });
+    };
+
+    // Grouped by WHEN the cost is paid, because that is the distinction a user
+    // acts on: the top group is worth configuring for, the bottom group is why
+    // the studio feels immediate while you drag a value.
+    containerEl.createDiv({ cls: "modelica-studio-metric-group", text: "Once, or when the structure changes" });
+    const slow = containerEl.createDiv({ cls: "modelica-studio-metrics" });
+    metric(slow, "Parse the Modelica library", "2.4 s", "First launch after an install or upgrade", "slow");
+    metric(slow, "Load the library index", "0.3\u20130.5 s", "Every later launch, from a 28 MB cache", "once");
+    metric(slow, "Compile a 4-component circuit", "1.4 s", "With 8 parallel codegen jobs", "slow");
+    metric(slow, "The same compile, 1 job", "4.1 s", "Why Parallel compile jobs matters", "slow");
+
+    containerEl.createDiv({ cls: "modelica-studio-metric-group", text: "Every edit \u2014 imperceptible by design" });
+    const fast = containerEl.createDiv({ cls: "modelica-studio-metrics" });
+    metric(fast, "Change a parameter and re-run", "~30 ms", "A run-time override, not a rebuild", "fast");
+    metric(fast, "Simulate an already-built model", "18\u201336 ms", "The compiled binary is reused", "fast");
+    metric(fast, "Re-open a model that has been built", "0 ms", "Recognised by fingerprint", "fast");
+
+    containerEl.createDiv({
+      cls: "modelica-studio-muted modelica-studio-metric-footer",
+      text:
+        "Only a structural change \u2014 adding a component, rewiring, editing an " +
+          "equation \u2014 pays for a rebuild. That is why the studio answers immediately " +
+          "while you drag a value or switch between models.",
     });
   }
 }
