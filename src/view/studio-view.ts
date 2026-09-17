@@ -28,14 +28,7 @@ import type {
 import { serializeDiagram } from "../modelica/serializer";
 import { fuzzyFilter } from "../modelica/fuzzy";
 import { SimulationError } from "../omc/backend";
-import {
-  CODE_RESULTS_H,
-  DEFAULT_CODE_H,
-  DEFAULT_RESULTS_H,
-  clampCodeHeight,
-  clampInspectorWidth,
-  clampResultsHeight,
-} from "./panes";
+import { CODE_RESULTS_H, DEFAULT_RESULTS_H, clampInspectorWidth, clampResultsHeight } from "./panes";
 import { checkModel, ModelProblem } from "../modelica/checks";
 import { createCodeEditor, CodeEditorHandle, Diagnostic } from "./code-editor";
 import { AiError, buildMessages, chat, extractModelica, modelNameOf } from "../ai/client";
@@ -52,8 +45,6 @@ export class ModelicaStudioView extends ItemView {
   private inspectorEl!: HTMLElement;
   /** The run-log pane and its text, sharing the bottom area with the plot. */
   private logHost: HTMLElement | null = null;
-  /** Handle on the code editor's top edge. */
-  private codeSplitter: HTMLElement | null = null;
   private logText: HTMLElement | null = null;
   private inspectorCol!: HTMLElement;
   private splitterEl!: HTMLElement;
@@ -323,17 +314,9 @@ export class ModelicaStudioView extends ItemView {
    * the first switch stutter, and the pane is cheap when it is empty.
    */
   private buildCodePane(root: HTMLElement): void {
-    // The handle for the code pane sits ABOVE it, so the grip is on the code
-    // editor's own top edge. It used to be the results splitter, which is below
-    // the pane above — so dragging a handle that looks like it belongs to the
-    // editor resized the plot instead.
-    this.codeSplitter = root.createDiv({ cls: "modelica-studio-code-splitter" });
-    this.codeSplitter.style.display = "none";
-
     const host = root.createDiv({ cls: "modelica-studio-code" });
     host.style.display = "none";
     this.codeHost = host;
-    this.installCodeResize(this.codeSplitter, host);
 
     // Its own toolbar: the diagram's zoom, rotate and delete buttons mean
     // nothing here, and leaving them visible would be a lie about what they do.
@@ -427,14 +410,12 @@ export class ModelicaStudioView extends ItemView {
     const isCode = mode === "code";
     if (this.bodyEl) this.bodyEl.style.display = isCode ? "none" : "";
     if (this.codeHost) this.codeHost.style.display = isCode ? "" : "none";
-    if (this.codeSplitter) this.codeSplitter.style.display = isCode ? "" : "none";
     for (const [id, b] of Object.entries(this.modeButtons)) {
       b.toggleClass("is-active", id === mode);
     }
     // The diagram-only actions belong to the diagram.
     this.setDiagramActionsEnabled(!isCode);
     this.applyModeResultsHeight(isCode);
-    this.applyCodePaneHeight(isCode);
     if (isCode) {
       this.codeEditor?.focus();
       this.validateCode();
@@ -460,75 +441,17 @@ export class ModelicaStudioView extends ItemView {
     if (this.bottomTab === "plot") this.drawResults();
   }
 
-  /**
-   * Give the code editor its stored height, or the default.
-   *
-   * Applied on entering code mode because the pane has no height of its own until
-   * then, and a pane left at its default after a previous session reads as the
-   * resize having been forgotten.
-   */
-  private applyCodePaneHeight(isCode: boolean): void {
-    if (!this.codeHost) return;
-    if (!isCode) return;
-    const stored = this.plugin.settings.codeHeight;
-    const wanted = stored > 0 ? stored : DEFAULT_CODE_H;
-    this.codeHost.style.flex = "0 0 auto";
-    this.codeHost.style.height = `${clampCodeHeight(wanted, this.contentEl?.clientHeight ?? 0)}px`;
-  }
-
-  /**
-   * Drag the code editor's top edge.
-   *
-   * The pane is bottom-anchored, so dragging the edge UP makes the editor taller.
-   * That is the natural direction for a handle on a pane's top edge and it is the
-   * opposite of the results pane's, which hangs from its own top edge — the two
-   * grips move in opposite directions and each matches where it sits.
-   */
-  private installCodeResize(handle: HTMLElement, pane: HTMLElement): void {
-    let startY = 0;
-    let startH = 0;
-    const apply = (h: number) => {
-      const clamped = clampCodeHeight(h, this.contentEl?.clientHeight ?? 0);
-      pane.style.height = `${clamped}px`;
-      pane.style.flex = "0 0 auto";
-      this.codeEditor?.revealCaret();
-      return clamped;
-    };
-    const onMove = (ev: PointerEvent) => apply(startH + (startY - ev.clientY));
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      handle.removeClass("is-dragging");
-      this.plugin.settings.codeHeight = Math.round(pane.getBoundingClientRect().height);
-      void this.plugin.saveSettings();
-    };
-    handle.addEventListener("pointerdown", (ev) => {
-      startY = ev.clientY;
-      startH = pane.getBoundingClientRect().height;
-      handle.addClass("is-dragging");
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
-      ev.preventDefault();
-    });
-    // Double-click restores the default, matching the other two handles.
-    handle.addEventListener("dblclick", () => {
-      const h = apply(DEFAULT_CODE_H);
-      this.plugin.settings.codeHeight = h;
-      void this.plugin.saveSettings();
-    });
-  }
-
-  /** The stored height for the mode currently on screen. */
-  private storedResultsHeight(): number {
-    return this.mode === "code" ? this.plugin.settings.codePlotHeight : this.plugin.settings.plotHeight;
-  }
-
   /** Remember a height the user dragged, against the current mode. */
   private storeResultsHeight(px: number): void {
     const value = Math.round(px);
     if (this.mode === "code") this.plugin.settings.codePlotHeight = value;
     else this.plugin.settings.plotHeight = value;
     void this.plugin.saveSettings();
+  }
+
+  /** The stored results height for the mode currently on screen. */
+  private storedResultsHeight(): number {
+    return this.mode === "code" ? this.plugin.settings.codePlotHeight : this.plugin.settings.plotHeight;
   }
 
   /**
@@ -2527,7 +2450,6 @@ export class ModelicaStudioView extends ItemView {
         " inspector=" + box(q(".modelica-studio-inspector")) +
         " resultsSplit=" + box(q(".modelica-studio-results-splitter")) +
         " results=" + box(q(".modelica-studio-results")) +
-        " codeSplit=" + box(q(".modelica-studio-code-splitter")) +
         " code=" + box(q(".modelica-studio-code")) +
         " status=" + box(q(".modelica-studio-status")) +
         " mode=" + this.mode +

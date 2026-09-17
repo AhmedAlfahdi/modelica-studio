@@ -119,13 +119,6 @@ export interface ModelicaStudioSettings {
   /** Results-pane height in CODE mode; 0 means the default. */
   codePlotHeight: number;
 
-  /**
-   * Height of the code editor; 0 means the default.
-   *
-   * The editor is bottom-anchored and its grip is on its own top edge, so this is
-   * the height the handle controls.
-   */
-  codeHeight: number;
   /** Shared plot configuration, or null before anything has been chosen. */
   /**
    * Simulation span per model name.
@@ -186,7 +179,6 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   inspectorWidth: 380,
   plotHeight: 0,
   codePlotHeight: 0,
-  codeHeight: 0,
   modelStopTimes: {},
   charts: {},
   ai: { ...AI_DEFAULTS },

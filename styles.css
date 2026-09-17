@@ -1282,34 +1282,3 @@ body.modelica-studio-resizing * {
   color: var(--text-normal);
 }
 
-/* Handle on the code editor's top edge. Same grip as the results pane, but on
-   the other pane, so the two drag in opposite directions and each matches the
-   edge it sits on. */
-.modelica-studio-code-splitter {
-  flex: 0 0 auto;
-  position: relative;
-  z-index: 2;
-  height: 8px;
-  cursor: row-resize;
-  background: var(--background-modifier-border);
-}
-.modelica-studio-code-splitter::after {
-  content: "";
-  position: absolute;
-  inset: -4px 0;
-}
-.modelica-studio-code-splitter::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 36px;
-  height: 2px;
-  margin: -1px 0 0 -18px;
-  border-radius: 1px;
-  background: var(--text-faint);
-}
-.modelica-studio-code-splitter:hover,
-.modelica-studio-code-splitter.is-dragging {
-  background: var(--interactive-accent);
-}

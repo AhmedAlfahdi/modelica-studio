@@ -55,28 +55,6 @@ export function clampResultsHeight(wanted: number, viewHeight: number): number {
   return Math.round(Math.max(MIN_RESULTS_H, Math.min(wanted, max)));
 }
 
-/** Default height of the code editor. */
-export const DEFAULT_CODE_H = 420;
-/** Smallest useful height for the code editor. */
-export const MIN_CODE_H = 140;
-
-/**
- * Clamp a requested code-editor height for a view of `viewHeight`.
- *
- * The editor is bottom-anchored, so its height decides how far up its own top
- * edge sits — which is where the grip is. Nothing may take the whole view, or
- * there would be no results pane left and no way to move the handle back.
- */
-export function clampCodeHeight(wanted: number, viewHeight: number): number {
-  if (!Number.isFinite(wanted)) return DEFAULT_CODE_H;
-  if (!Number.isFinite(viewHeight) || viewHeight <= 0) {
-    return Math.round(Math.max(MIN_CODE_H, wanted));
-  }
-  // Leave room for the toolbar, the results pane and the status bar.
-  const max = Math.max(MIN_CODE_H, viewHeight - RESULTS_CHROME_H - MIN_RESULTS_H);
-  return Math.round(Math.max(MIN_CODE_H, Math.min(wanted, max)));
-}
-
 /**
  * Clamp the inspector's width for a given view width.
  *
