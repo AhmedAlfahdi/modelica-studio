@@ -81,3 +81,68 @@ test("the vault root is not written to when a folder is configured", () => {
   const paths = [...save.matchAll(/create\((\w+)/g)].map((m) => m[1]);
   assert.deepEqual(paths, ["intended"], "there is exactly one destination");
 });
+
+/* ---- how a saved model is opened ---- */
+
+test("a .mo file can be opened four ways, and the default is left alone", () => {
+  // The question was which opening gesture to support. All of them, because they
+  // suit different moments -- but the OS default must not be taken away: a `.mo`
+  // file IS source, and reading it as text is a legitimate thing to want.
+  const src = fs.readFileSync(path.join(repoRoot, "src/main.ts"), "utf8");
+  const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+
+  // 1. The file explorer's context menu, which is where "open this with" lives.
+  assert.match(src, /workspace\.on\("file-menu"/, "a context-menu item");
+  assert.match(src, /setTitle\("Open in Modelica Studio"\)/, "named for what it does");
+  // Only for .mo: the item must not appear on a note.
+  assert.match(src, /file\.extension !== "mo"\) return/, "and only on .mo files");
+
+  // 2. The command palette.
+  assert.match(src, /id: "new-model-from-note"/, "a command exists");
+  assert.match(src, /Open the active \.mo file in Modelica Studio/, "named for a file, not a note");
+
+  // 3. Dragging onto the canvas or the code pane.
+  assert.match(view, /droppedVaultFile/, "a dropped file is recognised");
+  assert.match(view, /loadModelFromPath/, "and opened");
+  assert.ok(
+    (view.match(/droppedVaultFile\(ev\)/g) ?? []).length >= 3,
+    "both surfaces handle a drop"
+  );
+
+  // 4. It is NOT registered as the handler for the extension, so clicking a file
+  //    still opens the text. Taking that over would be the surprising choice.
+  assert.ok(
+    !/registerExtensions\(\[[^\]]*"mo"/.test(src),
+    "the extension is not hijacked"
+  );
+});
+
+test("a drop tells a palette class from a file", () => {
+  // Both arrive as a drop on the same surface, so the handler must distinguish
+  // them or dragging a class would try to open a file called "Resistor".
+  const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  const fn = /export function droppedVaultFile[\s\S]*?\n\}/.exec(view);
+  assert.ok(fn, "the helper is present");
+  assert.match(fn[0], /endsWith\("\.mo"\)/, "only a .mo path counts as a file");
+  assert.match(fn[0], /text\/vnd\.obsidian\.file/, "the explorer's own drag type is checked first");
+});
+
+test("opening a file remembers where it came from", () => {
+  // Otherwise Save writes a second copy under the class name and the vault fills
+  // with two files for one model -- the same fault as saving to the root.
+  const src = fs.readFileSync(path.join(repoRoot, "src/main.ts"), "utf8");
+  const load = /async loadModelFromFile[\s\S]*?\n  \}/.exec(src);
+  assert.ok(load, "the loader is present");
+  assert.match(load[0], /this\.settings\.modelFiles\[withComponents\.name\] = file\.path/, "the path is recorded");
+  assert.match(load[0], /this\.modelSource = text/, "and the source, so a re-parse round-trips");
+});
+
+test("opening by path checks the file exists before reading it", () => {
+  // A drop can carry a stale path, and reading a missing file throws.
+  const src = fs.readFileSync(path.join(repoRoot, "src/main.ts"), "utf8");
+  const byPath = /async loadModelFromPath[\s\S]*?\n  \}/.exec(src);
+  assert.ok(byPath, "the path loader is present");
+  assert.match(byPath[0], /instanceof TFile/, "it resolves the path first");
+  assert.match(byPath[0], /was not found in the vault/, "and says so when it cannot");
+  assert.match(byPath[0], /await this\.activateView\(\)/, "and brings the studio forward");
+});

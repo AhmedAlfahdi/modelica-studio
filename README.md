@@ -34,6 +34,13 @@ discrepancy was settled — is in
   into a `Modelica/` folder at the vault root by default — they are source for a
   compiler, not notes, and a vault whose root mixes the two is unreadable. The
   folder is a setting, and is created on the first save.
+
+  A saved model opens **four ways**: right-click it in the file explorer →
+  *Open in Modelica Studio*; drag it onto the canvas or the code pane; run
+  *Open the active .mo file in Modelica Studio* from the command palette; or
+  click it and read the source as text. That last one is deliberately still the
+  default — the file *is* source, and reading it in an editor is a reasonable
+  thing to want. The plugin does not take the click away.
 - **Optional AI assistance.** With your own API key, describe a model in words
   and have it written into the editor, or ask for a compile error to be fixed.
 - **Inline results in notes.** A fenced `modelica` block renders a live diagram

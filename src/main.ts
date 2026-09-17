@@ -307,9 +307,24 @@ export default class ModelicaStudioPlugin extends Plugin {
       },
     });
 
+    // A `.mo` file opens as plain text by default, which is the right default:
+    // the source is the thing, and it is readable. The studio is offered as a
+    // second way in rather than taking the click away.
+    this.registerEvent(
+      this.app.workspace.on("file-menu", (menu, file) => {
+        if (!(file instanceof TFile) || file.extension !== "mo") return;
+        menu.addItem((item) =>
+          item
+            .setTitle("Open in Modelica Studio")
+            .setIcon("circuit-board")
+            .onClick(() => void this.loadModelFromFile(file))
+        );
+      })
+    );
+
     this.addCommand({
       id: "new-model-from-note",
-      name: "Load model from active note",
+      name: "Open the active .mo file in Modelica Studio",
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         if (!file || file.extension !== "mo") return false;
@@ -788,6 +803,20 @@ export default class ModelicaStudioPlugin extends Plugin {
 
   /* ---------------- model I/O ---------------- */
 
+  /**
+   * Open a model by vault path, for the places that have a path rather than a
+   * file: a drop carries `Modelica/Tank.mo`, not the object.
+   */
+  async loadModelFromPath(path: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) {
+      new Notice(`Modelica: ${path} was not found in the vault.`);
+      return;
+    }
+    await this.activateView();
+    await this.loadModelFromFile(file);
+  }
+
   async loadModelFromFile(file: TFile): Promise<void> {
     const text = await this.app.vault.read(file);
     let classes;
@@ -805,9 +834,14 @@ export default class ModelicaStudioPlugin extends Plugin {
     const withComponents = classes.find((c) => c.components.length > 0) ?? classes[0];
     await this.ensureLibrary();
     this.model = toDiagramModel(withComponents, (n) => this.library.describe(n));
+    this.modelSource = text;
+    // Remember the file it came from, so Save writes back to it instead of
+    // creating a second copy under the class name.
+    this.settings.modelFiles[withComponents.name] = file.path;
+    await this.saveSettings();
     await this.persist();
     this.getView()?.loadModelIntoEditor();
-    new Notice(`Loaded ${withComponents.name} from ${file.name}.`);
+    new Notice(`Loaded ${withComponents.name} from ${file.path}.`);
   }
 
   /**

@@ -449,6 +449,19 @@ export class ModelicaStudioView extends ItemView {
     const host = root.createDiv({ cls: "modelica-studio-code" });
     host.style.display = "none";
     this.codeHost = host;
+    // Dragging a `.mo` onto the code pane opens it too: it is the surface where
+    // source is edited, so it is where someone would expect to drop source.
+    host.addEventListener("dragover", (ev) => {
+      if (!droppedVaultFile(ev)) return;
+      ev.preventDefault();
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
+    });
+    host.addEventListener("drop", (ev) => {
+      const path = droppedVaultFile(ev);
+      if (!path) return;
+      ev.preventDefault();
+      void this.plugin.loadModelFromPath(path);
+    });
 
     // Its own toolbar: the diagram's zoom, rotate and delete buttons mean
     // nothing here, and leaving them visible would be a lie about what they do.
@@ -1273,6 +1286,14 @@ export class ModelicaStudioView extends ItemView {
     });
     host.addEventListener("drop", (ev) => {
       ev.preventDefault();
+      // A file from the explorer opens; a class from the palette is placed. The
+      // two are told apart by what the drag carries, because both arrive as a
+      // drop on the same surface.
+      const dropped = droppedVaultFile(ev);
+      if (dropped) {
+        void this.plugin.loadModelFromPath(dropped);
+        return;
+      }
       const className =
         ev.dataTransfer?.getData("text/modelica-class") ||
         ev.dataTransfer?.getData("text/plain");
@@ -3041,4 +3062,22 @@ export function describeToolbar(buttons: Record<string, HTMLButtonElement | unde
   return Object.entries(buttons)
     .map(([name, b]) => `${name}=${b ? (b.disabled ? "off" : "on") : "missing"}`)
     .join(" ");
+}
+
+/**
+ * The vault path of a file being dragged, or null when it is something else.
+ *
+ * Obsidian carries a drag from the file explorer in its own data type. Checking
+ * for it is what lets one drop handler serve two purposes: a palette class is
+ * placed on the canvas, a `.mo` file is opened, and neither is mistaken for the
+ * other.
+ */
+export function droppedVaultFile(ev: DragEvent): string | null {
+  const dt = ev.dataTransfer;
+  if (!dt) return null;
+  // `text/plain` is the fallback, but it also carries a palette class name, so
+  // only a path that looks like the configured folder qualifies.
+  const path = dt.getData("text/vnd.obsidian.file") || dt.getData("text/plain");
+  if (!path || !path.endsWith(".mo")) return null;
+  return path;
 }
