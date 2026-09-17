@@ -26,7 +26,8 @@ import { findExample } from "./modelica/examples";
 import { AiError, chat, listModels } from "./ai/client";
 import { RunLog } from "./ai/run-log";
 import { AiEnvironment, describeAvailableClasses, describeEnvironment, describeLog } from "./ai/context";
-import { LEGACY_SECRET_NAME, legacyKeyOf, secretNameOf } from "./ai/prompts";
+import { LEGACY_SECRET_NAME, buildMessages, legacyKeyOf, secretNameOf } from "./ai/prompts";
+import { BENCH_PROMPTS, formatBenchmark, runBenchmark } from "./ai/benchmark";
 import { ModelicaStudioView, VIEW_TYPE_MODELICA } from "./view/studio-view";
 import { ModelicaStudioSettingTab, DEFAULT_SETTINGS, type ModelicaStudioSettings , mergeSettings, migrateSettings } from "./settings";
 
@@ -302,6 +303,58 @@ export default class ModelicaStudioPlugin extends Plugin {
       setVerbose: (on: boolean) => {
         this.verbose = on;
         return `Modelica Studio: verbose ${on ? "on" : "off"}`;
+      },
+      /**
+       * Measure the two forms against each other.
+       *
+       * Lives on the plugin because the API key is in the keychain and the
+       * compiler is a backend this object already holds -- neither is reachable
+       * from outside the app, and the key must not leave it.
+       *
+       *   await modelicaStudio.benchmark()                     // all prompts, both styles
+       *   await modelicaStudio.benchmark({ styles: ["visual"] })
+       *   await modelicaStudio.benchmark({ only: ["divider", "tank"] })
+       */
+      benchmark: async (options?: { styles?: Array<"visual" | "equations">; only?: string[] }) => {
+        if (!this.backend) return "No OpenModelica backend, so nothing can be compiled.";
+        const library = await this.ensureLibrary();
+        const prompts = options?.only?.length
+          ? BENCH_PROMPTS.filter((p) => options.only!.includes(p.id))
+          : BENCH_PROMPTS;
+        const environment = describeEnvironment(this.aiEnvironment());
+        const available = describeAvailableClasses(library, "modelica", 24);
+        console.log(`[Modelica Studio] benchmark: ${prompts.length} prompt(s), ${(options?.styles ?? ["visual", "equations"]).length} style(s)`);
+        const results = await runBenchmark({
+          config: this.settings.ai,
+          backend: this.backend,
+          environment,
+          getKey: () => this.aiKey(),
+          settings: {
+            startTime: this.settings.startTime,
+            stopTime: this.stopTime(),
+            numberOfIntervals: this.settings.numberOfIntervals,
+            tolerance: this.settings.tolerance,
+            solver: this.settings.solver,
+          },
+          prompts,
+          styles: options?.styles,
+          buildMessages: (prompt, current, failure, style) =>
+            buildMessages({
+              prompt,
+              current,
+              diagnostics: failure || undefined,
+              library: this.library,
+              systemPrompt: this.settings.ai.systemPrompt,
+              environment,
+              availableClasses: available,
+              style,
+            }),
+          send: (messages) => chat(this.settings.ai, messages, () => this.aiKey()),
+          onProgress: (line) => console.log(`[Modelica Studio] ${line}`),
+        });
+        const table = formatBenchmark(results);
+        console.log(table);
+        return table;
       },
       probeHelp: () => {
         const anchor = document.querySelector(".modelica-studio-help") as HTMLElement | null;

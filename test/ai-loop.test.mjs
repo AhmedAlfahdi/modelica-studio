@@ -735,3 +735,73 @@ test("the prompt asks for documentation and spelled-out names", () => {
   // And the choice that produced the loose blocks is called out.
   assert.match(src, /Do NOT assemble a pile of loose primitive blocks/, "loose primitives are named");
 });
+
+/* ---- the benchmark's own arithmetic ---- */
+
+const bench = await import(
+  path.join(buildLibs("ai-bench", ["src/ai/benchmark.ts"]), "benchmark.js")
+);
+const { describeShape, summariseBenchmark, formatBenchmark, BENCH_PROMPTS } = bench;
+
+test("the shape of a result is read from the source", () => {
+  // The table's "shape" column is the difference between "compiled" and "compiled
+  // into an actual diagram", which is the whole point of measuring.
+  const wired = [
+    "model A",
+    "  Modelica.Electrical.Analog.Basic.Resistor r1;",
+    "  Modelica.Electrical.Analog.Basic.Resistor r2;",
+    "equation",
+    "  connect(r1.n, r2.p);",
+    "end A;",
+  ].join("\n");
+  assert.deepEqual(describeShape(wired), { components: 2, wired: 2 });
+
+  const loose = wired.replace("  connect(r1.n, r2.p);\n", "");
+  assert.deepEqual(describeShape(loose), { components: 2, wired: 0 }, "declared but unwired");
+
+  const equations = "model B\n  Real x;\nequation\n  der(x) = -x;\nend B;";
+  assert.deepEqual(describeShape(equations), { components: 0, wired: 0 }, "no components at all");
+
+  // A commented-out connect is not wiring.
+  const commented = wired.replace("connect(r1.n, r2.p);", "// connect(r1.n, r2.p);");
+  assert.equal(describeShape(commented).wired, 0);
+});
+
+test("the summary answers the question that was asked", () => {
+  // Per style AND per domain: the decision is which form suits which domain, so a
+  // single overall number would not answer it.
+  const rows = [
+    { id: "divider", domain: "electrical", style: "visual", ok: true, reason: "compiled", attempts: 1, fellBack: false, isDiagram: true, components: 4, wired: 4, seconds: 10, note: "" },
+    { id: "divider", domain: "electrical", style: "equations", ok: true, reason: "compiled", attempts: 1, fellBack: false, isDiagram: false, components: 0, wired: 0, seconds: 8, note: "" },
+    { id: "tank", domain: "fluid", style: "visual", ok: false, reason: "attempts-exhausted", attempts: 2, fellBack: true, isDiagram: false, components: 0, wired: 0, seconds: 40, note: "no inner System" },
+    { id: "tank", domain: "fluid", style: "equations", ok: true, reason: "compiled", attempts: 1, fellBack: false, isDiagram: false, components: 0, wired: 0, seconds: 9, note: "" },
+  ];
+  const text = summariseBenchmark(rows);
+  assert.match(text, /visual: 1\/2 compiled/, "per style");
+  assert.match(text, /equations: 2\/2 compiled/);
+  assert.match(text, /electrical: 2\/2 compiled/, "per domain");
+  assert.match(text, /fluid: 1\/2 compiled/);
+  // A run that fell back is not evidence for the style it started with.
+  assert.match(text, /without falling back/);
+  const table = formatBenchmark(rows);
+  assert.match(table, /prompt\s+domain\s+style/, "there is a header");
+  assert.match(table, /4\/4 wired/, "and the wiring column");
+  assert.equal(formatBenchmark([]), "(no results)", "an empty run says so");
+});
+
+test("the prompts span both families the decision turns on", () => {
+  // The measurement is only useful if it covers the domains in question: those
+  // whose components have few pins and obvious wiring, and those whose components
+  // carry requirements a class list cannot convey.
+  const domains = new Set(BENCH_PROMPTS.map((p) => p.domain));
+  for (const robust of ["electrical", "mechanical", "thermal"]) {
+    assert.ok(domains.has(robust), `${robust} is covered`);
+  }
+  for (const fragile of ["fluid", "multibody", "control"]) {
+    assert.ok(domains.has(fragile), `${fragile} is covered`);
+  }
+  assert.ok(BENCH_PROMPTS.length >= 8, `enough prompts to mean something, got ${BENCH_PROMPTS.length}`);
+  for (const p of BENCH_PROMPTS) {
+    assert.ok(p.prompt.length > 20, `"${p.id}" reads like something a person would type`);
+  }
+});
