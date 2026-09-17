@@ -252,7 +252,11 @@ export class ModelicaStudioView extends ItemView {
     // A model of only variables — `BouncingBall`, a pure equation model — is
     // genuinely without a schematic, so it is not replaced.
     const declaredVariables = this.plugin.model.variables?.length ?? 0;
-    if (this.plugin.model.components.length === 0 && declaredVariables === 0) {
+    if (
+      !this.freshModel &&
+      this.plugin.model.components.length === 0 &&
+      declaredVariables === 0
+    ) {
       this.loadExample(EXAMPLES[0].name);
     }
   }
@@ -540,6 +544,11 @@ export class ModelicaStudioView extends ItemView {
   private aiProgressEl: HTMLElement | null = null;
   /** Set by the Stop button; the loop polls it between steps. */
   private aiCancel = false;
+  /**
+   * True when the model on screen was just created, so an empty canvas is what
+   * the user asked for rather than a dead end to seed.
+   */
+  private freshModel = false;
   private aiFixBtn: HTMLButtonElement | null = null;
   private aiBusy = false;
 
@@ -2341,6 +2350,7 @@ export class ModelicaStudioView extends ItemView {
   /* ---------------- model plumbing ---------------- */
 
   private onModelChanged(_m: DiagramModel): void {
+    this.freshModel = false;
     this.renderInspector();
     this.updateToolbarState();
     void this.plugin.persist();
@@ -2405,9 +2415,28 @@ export class ModelicaStudioView extends ItemView {
     this.editor?.requestDraw();
   }
 
+  /**
+   * Show the plugin's current model in both places it is displayed.
+   *
+   * Both, deliberately. Code mode is a view of the same model, so setting only
+   * the diagram left the previous model's source on screen — asking for a new
+   * model emptied the canvas while the old code sat in the editor, and the two
+   * disagreed about what was being edited.
+   */
   loadModelIntoEditor(): void {
+    // The user asked for this model, so the canvas is meant to be empty. Without
+    // this the seeding below replaced a brand-new model with an example the
+    // moment it was created, and New looked like it did nothing.
+    this.freshModel = true;
     this.editor?.setModel(this.plugin.model);
+    // Anything derived from the previous model goes with it: a result would plot
+    // traces that no longer match the source.
+    this.result = null;
+    this.lastSimulationError = null;
+    this.clearCodeProblem();
+    if (this.codeEditor) this.codeEditor.setValue(serializeDiagram(this.plugin.model));
     this.installDropTarget();
+    this.renderInspector();
   }
 
   /**

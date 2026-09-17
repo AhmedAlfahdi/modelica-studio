@@ -55,8 +55,12 @@ export interface ModelicaStudioSettings {
   paletteRoots: string[];
 
   /**
-   * Vault folder that models are saved into, relative to the vault root. Empty
-   * means the root itself. Created on first save if it does not exist.
+   * Vault folder that models are saved into, relative to the vault root.
+   *
+   * Defaults to `Modelica` so a vault does not end up with `.mo` files scattered
+   * among its notes: they are source for a compiler, not notes, and mixing them
+   * made the vault root unreadable. Empty means the vault root, for anyone who
+   * wants that.
    */
   modelFolder: string;
 
@@ -171,7 +175,7 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   tolerance: 1e-6,
   solver: "",
   paletteRoots: [],
-  modelFolder: "",
+  modelFolder: "Modelica",
   modelFiles: {},
   excludedLibraries: "",
   debugLog: false,
@@ -596,10 +600,13 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Save folder")
-      .setDesc("Vault folder for new models. Empty saves to the vault root. Created on first save.")
+      .setDesc(
+        "Vault folder for saved models. Created on first save. Leave empty to save " +
+          "beside your notes instead."
+      )
       .addText((t) =>
         t
-          .setPlaceholder("models")
+          .setPlaceholder("Modelica")
           .setValue(this.plugin.settings.modelFolder)
           .onChange(async (v) => {
             this.plugin.settings.modelFolder = v.trim();

@@ -30,8 +30,10 @@ discrepancy was settled — is in
 - **Diagram and code modes.** The same model, either built by dragging or edited
   as Modelica source with syntax highlighting, completion from the library, and
   inline diagnostics. Long models scroll, and the caret keeps itself in view.
-- **Models as files.** Create a model, save it as `.mo` source anywhere in the
-  vault, with the folder set in Settings.
+- **Models as files.** Create a model and save it as `.mo` source. Models go
+  into a `Modelica/` folder at the vault root by default — they are source for a
+  compiler, not notes, and a vault whose root mixes the two is unreadable. The
+  folder is a setting, and is created on the first save.
 - **Optional AI assistance.** With your own API key, describe a model in words
   and have it written into the editor, or ask for a compile error to be fixed.
 - **Inline results in notes.** A fenced `modelica` block renders a live diagram

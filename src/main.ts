@@ -830,42 +830,47 @@ export default class ModelicaStudioPlugin extends Plugin {
   async saveModelToNote(): Promise<{ path: string; created: boolean }> {
     const source = serializeDiagram(this.model);
     const folder = this.settings.modelFolder.trim().replace(/^\/+|\/+$/g, "");
-
     if (folder) await this.ensureFolder(folder);
 
-    // Prefer the remembered path; fall back to the conventional one.
-    const remembered = this.settings.modelFiles[this.model.name];
-    let target = remembered && remembered.trim() ? remembered.trim() : "";
-    if (!target) {
-      target = folder ? `${folder}/${this.model.name}.mo` : `${this.model.name}.mo`;
-    } else if (folder && !target.includes("/")) {
-      // A model saved at the root before a folder was configured moves into it.
-      target = `${folder}/${target}`;
-    }
+    /**
+     * Where a model belongs: the configured folder, named after the class.
+     *
+     * This is the intended home, not necessarily the current one. A model saved
+     * before a folder was configured sits at the root, and re-saving it should
+     * put it where it belongs rather than leave a copy in each place.
+     */
+    const intended = folder ? `${folder}/${this.model.name}.mo` : `${this.model.name}.mo`;
 
-    const existing = this.app.vault.getAbstractFileByPath(target);
-    if (existing instanceof TFile) {
-      await this.app.vault.modify(existing, source);
-      this.settings.modelFiles[this.model.name] = target;
+    /**
+     * Where it is now, if it is anywhere.
+     *
+     * The remembered path wins when the model has not been renamed and the
+     * target still matches the current setting — that is the common case of
+     * saving the same file again. Anything else means the file should move.
+     */
+    const remembered = (this.settings.modelFiles[this.model.name] ?? "").trim();
+    const summary = { path: intended, created: false };
+    const here =
+      remembered && remembered === intended
+        ? remembered
+        : this.app.vault.getAbstractFileByPath(intended) instanceof TFile
+          ? intended
+          : remembered && this.app.vault.getAbstractFileByPath(remembered) instanceof TFile
+            ? remembered
+            : "";
+
+    if (here) {
+      const file = this.app.vault.getAbstractFileByPath(here) as TFile;
+      await this.app.vault.modify(file, source);
+      this.settings.modelFiles[this.model.name] = here;
       await this.saveSettings();
-      return { path: target, created: false };
+      return { path: here, created: false };
     }
 
-    // The file may be there under the conventional name but not yet remembered:
-    // overwrite rather than create a duplicate.
-    const conventional = folder ? `${folder}/${this.model.name}.mo` : `${this.model.name}.mo`;
-    const atConventional = this.app.vault.getAbstractFileByPath(conventional);
-    if (atConventional instanceof TFile) {
-      await this.app.vault.modify(atConventional, source);
-      this.settings.modelFiles[this.model.name] = conventional;
-      await this.saveSettings();
-      return { path: conventional, created: false };
-    }
-
-    await this.app.vault.create(target, source);
-    this.settings.modelFiles[this.model.name] = target;
+    await this.app.vault.create(intended, source);
+    this.settings.modelFiles[this.model.name] = intended;
     await this.saveSettings();
-    return { path: target, created: true };
+    return { path: intended, created: true };
   }
 
   /** Create a vault folder, and any parents, if it is not already there. */
