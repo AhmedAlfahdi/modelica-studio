@@ -106,7 +106,7 @@ export function describeEnvironment(env: AiEnvironment): string {
 export function describeAvailableClasses(
   library: LibraryIndex | undefined,
   request: string,
-  limit = 40
+  limit = 28
 ): string {
   if (!library || library.size === 0) {
     return "## Available classes\n- The library index is still being built, so no class list is available. Use only well-known Modelica Standard Library names.";
@@ -118,19 +118,44 @@ export function describeAvailableClasses(
     .filter((w) => w.length >= 3);
 
   const seen = new Set<string>();
-  for (const word of words) {
-    for (const def of library.listPlaceable(word, 12)) {
+  /** A class worth putting in a model, as opposed to one that is a model. */
+  const usable = (name: string) =>
+    !/\.Examples?\.|\.Utilities\.|\.Internal\.|\.Interfaces?\./.test(name);
+
+  // The library the request is about comes first, and it is looked up from a
+  // domain word rather than by substring: "hydraulic" and Modelica.Fluid share no
+  // text at all, so a name search alone offered signal-sampler blocks for a
+  // hydraulic circuit. Searching inside the right package first is what puts
+  // Pump, Valve and Cylinder in front of the model that needs them.
+  const packages = packagesForRequest(words);
+  for (const pkg of packages) {
+    for (const word of meaningfulWords(words)) {
+      for (const def of library.listPlaceable(`${pkg}.${word}`, 8)) {
+        if (seen.size >= limit) break;
+        if (!def.name.startsWith(pkg) || !usable(def.name) || library.isExcluded(def.name)) continue;
+        seen.add(def.name);
+      }
+    }
+    if (seen.size >= 12) break;
+  }
+
+  // Then a plain name search, for the components that are not under a domain
+  // package: a resistor, an integrator, a mass.
+  for (const word of meaningfulWords(words)) {
+    for (const def of library.listPlaceable(word, 10)) {
       if (seen.size >= limit) break;
-      if (library.isExcluded(def.name)) continue;
+      if (!usable(def.name) || library.isExcluded(def.name)) continue;
       seen.add(def.name);
     }
   }
+
   // Nothing matched: a general sample is still more useful than nothing, because
   // it shows the shape of the namespaces.
   if (seen.size < 8) {
     for (const def of library.listPlaceable("", limit)) {
       if (seen.size >= limit) break;
       if (library.isExcluded(def.name)) continue;
+      if (!usable(def.name)) continue;
       seen.add(def.name);
     }
   }
@@ -148,7 +173,108 @@ export function describeAvailableClasses(
   for (const [pkg, names] of byPackage) {
     out.push(`- ${pkg}: ${names.join(", ")}`);
   }
+  const detail = describeParameters(library, seen, 16, 12);
+  if (detail) out.push("", detail);
   return out.join("\n");
+}
+
+/**
+ * Library packages the request is about, most specific first.
+ *
+ * A map rather than a substring search because the domain word and the package
+ * name share no text: someone asking for a hydraulic circuit is asking about
+ * Modelica.Fluid, and no amount of matching "hydraulic" against class names finds
+ * it. The words here are the ones a person actually writes.
+ */
+const DOMAIN_PACKAGES: Array<[RegExp, string[]]> = [
+  [/hydraul|pneumat|fluid|liquid|pipe|valve|pump|tank|reservoir|orifice/, ["Modelica.Fluid"]],
+  [/circuit|electric|voltage|current|resistor|capacitor|inductor|motor|generator|battery|diode|transistor/, ["Modelica.Electrical.Analog", "Modelica.Electrical.Machines"]],
+  [/thermal|heat|temperature|cooling|radiat|furnace/, ["Modelica.Thermal.HeatTransfer", "Modelica.Thermal.FluidHeatFlow"]],
+  [/mechani|mass|spring|damper|pendulum|gear|shaft|torque|inertia|linkage|robot/, ["Modelica.Mechanics.Rotational", "Modelica.Mechanics.Translational", "Modelica.Mechanics.MultiBody"]],
+  [/control|controller|pid|feedback|setpoint|regulat/, ["Modelica.Blocks.Continuous", "Modelica.Blocks.Math", "Modelica.Blocks.Sources"]],
+  [/magnetic|magnet|flux|coil/, ["Modelica.Magnetic"]],
+];
+
+/** The packages a request points at, in the order they should be searched. */
+export function packagesForRequest(words: string[]): string[] {
+  const text = words.join(" ");
+  const out: string[] = [];
+  for (const [pattern, packages] of DOMAIN_PACKAGES) {
+    if (pattern.test(text)) out.push(...packages);
+  }
+  return [...new Set(out)];
+}
+
+/**
+ * The words worth searching for.
+ *
+ * English glue matches almost any class name by substring — "with" finds
+ * HoldWithDAeffects — and the result is a brief full of irrelevant blocks. Only
+ * words long enough to be a term, and not one of the words every request
+ * contains, are used.
+ */
+const STOP_WORDS = new Set([
+  "the", "and", "with", "for", "that", "this", "from", "into", "using", "use",
+  "model", "modelica", "simulate", "simulation", "please", "want", "need",
+  "make", "create", "build", "which", "when", "then", "than", "over", "under",
+  "some", "each", "have", "give", "show", "like", "would", "should",
+]);
+
+export function meaningfulWords(words: string[] | string): string[] {
+  const list = typeof words === "string" ? words.split(/[^A-Za-z]+/) : words;
+  return list.map((w) => w.toLowerCase()).filter((w) => w.length >= 4 && !STOP_WORDS.has(w));
+}
+
+/**
+ * The parameters of the matching classes, so a component can be configured
+ * without guessing.
+ *
+ * A list of class names is not enough to USE a class. A model asked for a
+ * hydraulic circuit set `V_flow_nominal` on a Pump, which does not have that
+ * parameter, and the compiler's answer was the first the model heard about it.
+ * Knowing which names exist turns a compile-and-repair round into a correct
+ * answer, and the repaired model is the expensive path.
+ *
+ * Bounded on purpose: names and defaults only, for a handful of classes. The
+ * whole MSL would be hundreds of thousands of tokens, and most of it is
+ * irrelevant to any one request.
+ */
+export function describeParameters(
+  library: LibraryIndex | undefined,
+  names: Set<string>,
+  maxClasses = 10,
+  maxEach = 14
+): string {
+  if (!library || names.size === 0) return "";
+  const rows: string[] = [];
+
+  for (const name of names) {
+    if (rows.length >= maxClasses) break;
+    // An index without `describe` has no parameter data, which is a thinner
+    // brief rather than a failure.
+    const def = typeof library.describe === "function" ? library.describe(name) : undefined;
+    // Only the classes with something to configure: a port or a constant is not
+    // worth a line.
+    const params = (def?.parameters ?? []).filter((p) => !p.name.includes("."));
+    if (params.length === 0) continue;
+
+    const shown = params.slice(0, maxEach).map((p) => {
+      const bits = [p.type, p.name].filter(Boolean).join(" ");
+      const init = p.defaultValue !== undefined ? ` = ${p.defaultValue}` : "";
+      return `${bits}${init}`;
+    });
+    const more = params.length > shown.length ? `, …${params.length - shown.length} more` : "";
+    rows.push(`- ${name}(${shown.join("; ")}${more})`);
+  }
+
+  if (rows.length === 0) return "";
+  return [
+    "### Parameters of the classes above",
+    "Set a parameter ONLY by a name listed here. A name that is not listed does",
+    "not exist on that class, and setting it fails to compile — leave it out and",
+    "let the default apply.",
+    ...rows,
+  ].join("\n");
 }
 
 /**

@@ -145,3 +145,39 @@ test("no failures means no section at all", () => {
   assert.equal(describeLog([]), "", "nothing is added to a prompt that has no failures");
   assert.equal(describeLog([{ at: "t", model: "A", ok: true, detail: "" }]), "");
 });
+
+/* ---- the class brief must be usable, not just accurate ---- */
+
+const { packagesForRequest, meaningfulWords } = await import(
+  path.join(
+    buildLibs("ai-context2", ["src/ai/context.ts"]),
+    "context.js"
+  )
+);
+
+test("a domain word maps to the library it is about", () => {
+  // "hydraulic" and Modelica.Fluid share no text, so a name search cannot find
+  // it: a request for a hydraulic circuit was answered with signal-sampler blocks
+  // because those were what the words matched.
+  assert.ok(packagesForRequest(["hydraulic", "circuit", "pump"]).includes("Modelica.Fluid"));
+  assert.ok(packagesForRequest(["electrical", "circuit"]).includes("Modelica.Electrical.Analog"));
+  assert.ok(packagesForRequest(["thermal", "heat"]).includes("Modelica.Thermal.HeatTransfer"));
+  assert.ok(packagesForRequest(["mass", "spring", "damper"]).includes("Modelica.Mechanics.Translational"));
+  assert.ok(packagesForRequest(["pid", "controller"]).includes("Modelica.Blocks.Continuous"));
+  // A request about nothing in particular maps to nothing rather than guessing.
+  assert.deepEqual(packagesForRequest(["something", "unusual"]), []);
+});
+
+test("English glue is not searched for", () => {
+  // "with" matches HoldWithDAeffects by substring, and a brief full of signal
+  // samplers for a hydraulic request is worse than a short one.
+  const words = meaningfulWords("a hydraulic circuit with a pump and the relief valve");
+  assert.ok(!words.includes("with"), "'with' is dropped");
+  assert.ok(!words.includes("the"), "'the' is dropped");
+  assert.ok(!words.includes("and"), "'and' is dropped");
+  assert.ok(words.includes("hydraulic"), "the domain word is kept");
+  assert.ok(words.includes("pump"), "the noun is kept");
+  // Three letters is a length filter, not a stop list: it has to exclude glue
+  // like "for" without dropping real three-letter terms.
+  assert.ok(meaningfulWords(["valve"]).includes("valve"));
+});

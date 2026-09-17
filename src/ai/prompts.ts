@@ -305,6 +305,15 @@ with v = i*R equations:
 Every component has a position, every pin is connected, and the result is a
 circuit a reader can see. That is the target.
 
+## Every name and every parameter must exist
+The brief lists the classes available here, and for the ones that matter, the
+parameters each one actually has. Use those names. A parameter that is not in
+that list does not exist on that class: setting it fails to compile with
+"Modified element X not found in class Y", which costs a whole repair round.
+When in doubt, leave the parameter out and let the default apply — an
+unconfigured component that compiles is worth more than a configured one that
+does not.
+
 ## Every name must exist
 - Declare every name you use. A model that uses m or g without a declaration
   fails to compile: "Variable m not found in scope".
