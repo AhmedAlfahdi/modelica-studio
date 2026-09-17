@@ -805,3 +805,79 @@ test("the prompts span both families the decision turns on", () => {
     assert.ok(p.prompt.length > 20, `"${p.id}" reads like something a person would type`);
   }
 });
+
+/* ---- the form that was asked for is the form that is checked ---- */
+
+test("a diagram returned for an equations request is sent back", async () => {
+  // Measured failing: asked for equations, the model assembled components anyway
+  // in 2 runs out of 8, and one then failed structurally with four unconnected
+  // blocks. The instruction and the class list disagreed and the list won.
+  const { describeStyleViolation } = await import(
+    path.join(buildLibs("ai-style", ["src/ai/generate.ts"]), "generate.js")
+  );
+  const diagram = [
+    "model A",
+    "  Modelica.Electrical.Analog.Basic.Resistor r1;",
+    "  Modelica.Electrical.Analog.Basic.Resistor r2;",
+    "equation",
+    "  connect(r1.n, r2.p);",
+    "  connect(r2.n, r1.p);",
+    "end A;",
+  ].join("\n");
+
+  const problem = describeStyleViolation(diagram, "equations");
+  assert.ok(problem, "the assembly is rejected");
+  assert.match(problem, /asked for as EQUATIONS/, "and says why");
+  assert.match(problem, /2 library components/, "counting what it found");
+  assert.match(problem, /no connect\(\)/, "and says what to do instead");
+
+  // A library component inside an equation model is fine: a constant or a medium
+  // is not a diagram.
+  assert.equal(
+    describeStyleViolation(
+      "model C\n  parameter Real g = Modelica.Constants.g_n;\n  Real v;\nequation\n  der(v) = -g;\nend C;",
+      "equations"
+    ),
+    null,
+    "one reference is not an assembly"
+  );
+  assert.equal(describeStyleViolation("model B\n  Real x;\nequation\n  der(x) = -x;\nend B;", "equations"), null);
+  // And a diagram asked for as a diagram is not a violation.
+  assert.equal(describeStyleViolation(diagram, "visual"), null);
+});
+
+test("an equations request is not offered a component list", () => {
+  // The prompt and the menu disagreed, and the menu won. Withholding it removes
+  // the temptation rather than relying on the instruction being obeyed.
+  const src = fs.readFileSync(path.join(repoRoot, "src/ai/prompts.ts"), "utf8");
+  const branch = /if \(req\.style === "equations"\)[\s\S]*?\} else if \(req\.availableClasses/.exec(src);
+  assert.ok(branch, "the equations branch exists and takes precedence");
+  assert.match(branch[0], /No component list is provided, deliberately/, "it says why there is none");
+  assert.ok(
+    !/parts\.push\(req\.availableClasses/.test(branch[0]),
+    "and the list is not pushed"
+  );
+  assert.match(branch[0], /write the equation it would have contributed/, "offering the equation instead");
+});
+
+test("the reply deadline is set above the observed range", () => {
+  // Two of eight benchmark runs never replied inside 220 s. A diagram is worth
+  // waiting for, so the ceiling sits above what was measured rather than at it.
+  const src = fs.readFileSync(path.join(repoRoot, "src/ai/prompts.ts"), "utf8");
+  const value = /DEFAULT_TIMEOUT_SECONDS = (\d+)/.exec(src);
+  assert.ok(value, "the default is declared");
+  assert.ok(Number(value[1]) > 220, `above the observed 220 s, got ${value[1]}`);
+});
+
+test("the two styles are not measured one after the other", () => {
+  // The first benchmark ran every visual prompt before its equations twin, and the
+  // timings showed the provider drifting: early runs were slow in BOTH styles.
+  // With one sample per cell that made the styles look different when only the
+  // clock was. Alternating puts each style at both ends of the run.
+  const src = fs.readFileSync(path.join(repoRoot, "src/ai/benchmark.ts"), "utf8");
+  assert.match(src, /const order = i % 2 === 0 \? styles : \[\.\.\.styles\]\.reverse\(\)/, "the order flips per prompt");
+  assert.match(src, /for \(const style of order\)/, "and is what the loop uses");
+  // The number of prompts decides which style goes first, and it is exported so
+  // the reason for the alternation is checkable rather than folklore.
+  assert.ok(BENCH_PROMPTS.length >= 2, "more than one prompt, or alternating means nothing");
+});

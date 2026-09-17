@@ -111,8 +111,16 @@ export async function runBenchmark(opts: BenchOptions): Promise<BenchResult[]> {
   const styles = opts.styles ?? (["visual", "equations"] as const);
   const results: BenchResult[] = [];
 
-  for (const item of prompts) {
-    for (const style of styles) {
+  // Alternated, and the starting style flipped per prompt.
+  //
+  // The first benchmark ran every visual prompt before its equations twin, and
+  // the timings showed the provider drifting: the early runs were slow in BOTH
+  // styles. With one sample per cell that made the styles look different when
+  // only the clock was. Alternating puts each style at both ends of the run.
+  for (let i = 0; i < prompts.length; i++) {
+    const item = prompts[i];
+    const order = i % 2 === 0 ? styles : [...styles].reverse();
+    for (const style of order) {
       if (opts.isCancelled?.()) return results;
       opts.onProgress?.(`${item.id} / ${style} — asking…`);
       const started = Date.now();

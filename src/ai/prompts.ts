@@ -108,8 +108,17 @@ export interface AiConfig {
   timeoutSeconds?: number;
 }
 
-/** Default wait for a reply. A long model in thinking mode can genuinely take a while. */
-export const DEFAULT_TIMEOUT_SECONDS = 120;
+/**
+ * Default wait for a reply.
+ *
+ * Measured: a diagram run can take one to two minutes for a single answer, and
+ * two of eight benchmark runs never replied inside 220 s at all. A diagram is
+ * worth waiting for -- it is the thing that makes Modelica worth using, and the
+ * wiring check means a fast wrong answer is not a saving -- so the ceiling is set
+ * above the observed range rather than at the edge of it. Raise it further in
+ * settings for a slow local model.
+ */
+export const DEFAULT_TIMEOUT_SECONDS = 300;
 
 export const AI_DEFAULTS: AiConfig = {
   secretName: "",
@@ -459,7 +468,20 @@ export function buildMessages(req: GenerateRequest): ChatMessage[] {
   // every answer, not part of the request being made.
   if (req.environment?.trim()) parts.push(req.environment.trim());
 
-  if (req.availableClasses?.trim()) {
+  // The class list is a menu of components, and offering it while asking for
+  // equations is what made the model assemble a diagram anyway -- in 2 of 8
+  // measured runs, once badly enough to fail structurally. The prompt and the
+  // menu disagreed, and the menu won.
+  if (req.style === "equations") {
+    parts.push(
+      "## No component list is provided, deliberately\n" +
+        "This answer is to be written as equations, so no library class list is\n" +
+        "included: there is nothing to assemble and no component to configure. Use\n" +
+        "only the types built into the language -- Real, Integer, Boolean, parameter,\n" +
+        "der(), time, sin/cos/exp/sqrt and the like. If you find yourself wanting a\n" +
+        "component, write the equation it would have contributed."
+    );
+  } else if (req.availableClasses?.trim()) {
     parts.push(req.availableClasses.trim());
   } else {
     const names = relevantClasses(req.library, req.prompt);

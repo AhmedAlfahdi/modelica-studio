@@ -91,6 +91,14 @@ export async function generateModel(request: GenerationRequest): Promise<Generat
   let diagnostics: CompileDiagnostic[] = [];
   let modelName: string | undefined;
   const initial = request.config.style ?? "visual";
+  /**
+   * The style the source being compiled was asked for.
+   *
+   * `compile` is only given the source, so it cannot know which form was
+   * requested; the style is recorded as each answer arrives, which is the answer
+   * about to be compiled.
+   */
+  let askedFor: ModelStyle = initial;
 
   const result = await runGenerationLoop(
     {
@@ -109,6 +117,7 @@ export async function generateModel(request: GenerationRequest): Promise<Generat
         return "equations";
       },
       generate: async ({ attempt, previous, style }) => {
+        askedFor = (style as ModelStyle) || initial;
         const messages = request.buildMessages(
           request.prompt,
           request.current,
@@ -150,7 +159,9 @@ export async function generateModel(request: GenerationRequest): Promise<Generat
         // and are still not what was asked for, and both are checked here so a
         // repair attempt hears about them instead of the run reporting success.
         const problem =
-          describeStaticModel(source, outcome.diagnostics) ?? describeLooseDiagram(source);
+          describeStaticModel(source, outcome.diagnostics) ??
+          describeLooseDiagram(source) ??
+          describeStyleViolation(source, askedFor);
         return problem ? { ok: false, failure: problem } : { ok: true, failure: "" };
       },
 
@@ -261,4 +272,31 @@ export function describeLooseDiagram(source: string): string | null {
 /** Source with comments removed, so a commented-out connect is not counted. */
 function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+}
+
+/**
+ * Detect an answer that ignored the form it was asked for.
+ *
+ * Measured: asked for equations, the model assembled components anyway in 2 runs
+ * out of 8, and one of those then failed structurally -- four components, none
+ * wired. The instruction and the class list disagreed and the class list won,
+ * which is now fixed upstream; this is the check that catches a relapse.
+ *
+ * A library component inside an otherwise-equation model is fine -- a `Modelica.
+ * Constants` reference or a medium is not a diagram. Something is only a diagram
+ * when it has several components AND wires between them.
+ */
+export function describeStyleViolation(source: string, style: ModelStyle): string | null {
+  if (style !== "equations") return null;
+  const components = [...source.matchAll(/^\s*(?:redeclare\s+)?Modelica\.[\w.]+\s+\w+/gm)].length;
+  const connects = (source.match(/\bconnect\s*\(/g) ?? []).length;
+
+  // Two of each is the point at which it is unmistakably an assembly.
+  if (components < 2 || connects < 2) return null;
+  return (
+    `This answer was asked for as EQUATIONS but came back as an assembly of ${components} ` +
+    `library components and ${connects} connections. Rewrite it as equations: no ` +
+    `components, no connect(), no Placement. Declare the quantities you need and write ` +
+    `one equation per unknown.`
+  );
 }

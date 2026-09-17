@@ -315,6 +315,21 @@ export default class ModelicaStudioPlugin extends Plugin {
        *   await modelicaStudio.benchmark({ styles: ["visual"] })
        *   await modelicaStudio.benchmark({ only: ["divider", "tank"] })
        */
+      /**
+       * Run the measurement without typing `await`.
+       *
+       * DevTools refuses a pasted `await ...` until it is unlocked, and the guide
+       * for that is a paragraph of security text. A short name with no `await` is
+       * typeable from memory, and results print as they arrive rather than at the
+       * end, so nothing has to be kept on screen.
+       */
+      bench: (options?: { styles?: Array<"visual" | "equations">; only?: string[] }) => {
+        const handle = (window as unknown as { modelicaStudio: Record<string, unknown> }).modelicaStudio;
+        void (handle.benchmark as (o?: unknown) => Promise<string>)(options).then((table) => {
+          console.log(table);
+        });
+        return "Running… results print here as they finish.";
+      },
       benchmark: async (options?: { styles?: Array<"visual" | "equations">; only?: string[] }) => {
         if (!this.backend) return "No OpenModelica backend, so nothing can be compiled.";
         const library = await this.ensureLibrary();
