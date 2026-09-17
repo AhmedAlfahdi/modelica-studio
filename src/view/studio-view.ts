@@ -31,7 +31,8 @@ import { SimulationError } from "../omc/backend";
 import { CODE_RESULTS_H, DEFAULT_RESULTS_H, clampInspectorWidth, clampResultsHeight } from "./panes";
 import { checkModel, ModelProblem } from "../modelica/checks";
 import { createCodeEditor, CodeEditorHandle, Diagnostic } from "./code-editor";
-import { AiError, buildMessages, chat, extractModelica, modelNameOf } from "../ai/client";
+import { AiError, buildMessages, chat } from "../ai/client";
+import { GenerationOutcome, generateModel } from "../ai/generate";
 import type { SimResult, SimSeries } from "../omc/backend";
 
 export const VIEW_TYPE_MODELICA = "modelica-studio-view";
@@ -471,6 +472,8 @@ export class ModelicaStudioView extends ItemView {
     // The AI request row, hidden until asked for.
     const aiRow = host.createDiv({ cls: "modelica-studio-ai" });
     aiRow.style.display = "none";
+    aiRow.setAttribute("role", "group");
+    aiRow.setAttribute("aria-label", "Generate a model with AI");
     this.aiRow = aiRow;
 
     const input = aiRow.createEl("input", {
@@ -478,6 +481,7 @@ export class ModelicaStudioView extends ItemView {
       attr: {
         type: "text",
         placeholder: "e.g. a tank draining through an orifice, 2 m of water",
+        "aria-label": "Describe the model you want",
       },
     });
     this.aiInput = input;
@@ -490,22 +494,40 @@ export class ModelicaStudioView extends ItemView {
     });
 
     const go = aiRow.createEl("button", { cls: "modelica-studio-btn mod-cta" });
-    setIcon(go, "send");
+    setIcon(go, "sparkles");
     go.createSpan({ text: "Generate" });
+    go.title =
+      "Write a model from the description, then compile it and repair it until it builds";
     go.addEventListener("click", () => void this.runAiRequest());
     this.aiGoBtn = go;
 
     const fix = aiRow.createEl("button", { cls: "modelica-studio-btn" });
     setIcon(fix, "wrench");
     fix.createSpan({ text: "Fix errors" });
-    fix.title = "Ask the model to repair the current source using the compiler messages";
+    fix.title =
+      "Repair the current model, using the last simulation's output or the run log";
     fix.addEventListener("click", () => void this.runAiRequest(true));
     this.aiFixBtn = fix;
 
-    aiRow.createDiv({
-      cls: "modelica-studio-ai-note",
-      text: "Generated code is unverified. Simulate it before trusting it.",
+    // Shown only while a run is in flight. The loop can take minutes, so it must
+    // be visible that something is happening and stoppable when it is not wanted.
+    const stop = aiRow.createEl("button", { cls: "modelica-studio-btn" });
+    setIcon(stop, "square");
+    stop.createSpan({ text: "Stop" });
+    stop.title = "Stop the run after the current step";
+    stop.style.display = "none";
+    stop.addEventListener("click", () => {
+      this.aiCancel = true;
+      stop.setAttribute("disabled", "true");
+      this.setAiProgress("Stopping after the current step…");
     });
+    this.aiStopBtn = stop;
+
+    const progress = aiRow.createDiv({ cls: "modelica-studio-ai-progress" });
+    progress.style.display = "none";
+    progress.setAttribute("role", "status");
+    progress.setAttribute("aria-live", "polite");
+    this.aiProgressEl = progress;
 
     this.codeStatusEl = bar.createDiv({ cls: "modelica-studio-code-status" });
   }
@@ -514,6 +536,10 @@ export class ModelicaStudioView extends ItemView {
   private codeStatusEl: HTMLElement | null = null;
   private aiInput: HTMLInputElement | null = null;
   private aiGoBtn: HTMLButtonElement | null = null;
+  private aiStopBtn: HTMLButtonElement | null = null;
+  private aiProgressEl: HTMLElement | null = null;
+  /** Set by the Stop button; the loop polls it between steps. */
+  private aiCancel = false;
   private aiFixBtn: HTMLButtonElement | null = null;
   private aiBusy = false;
 
@@ -793,6 +819,17 @@ export class ModelicaStudioView extends ItemView {
    * The request carries the current source and any compiler output, because a
    * model asked to fix code it cannot see is guessing.
    */
+  /**
+   * Ask for a model, then compile and repair it until it builds.
+   *
+   * The whole thing runs in the background with no further input: the user
+   * describes what they want and watches. What they see is the attempt number and
+   * the fault being repaired, because a loop that takes two minutes with no
+   * output is indistinguishable from one that has hung.
+   *
+   * It ends when the model compiles, when the model stops making progress, or
+   * when the attempt ceiling is reached — and it says which.
+   */
   private async runAiRequest(repair = false): Promise<void> {
     if (this.aiBusy) return;
     const cfg = this.plugin.settings.ai;
@@ -800,57 +837,152 @@ export class ModelicaStudioView extends ItemView {
       this.setStatus(
         "No AI key available. Choose or create a secret in the plugin settings under AI assistance."
       );
+      this.toggleAiRow(true);
+      return;
+    }
+    if (!this.plugin.backend) {
+      this.setStatus("OpenModelica was not found, so a generated model could not be checked.");
       return;
     }
 
     const prompt = repair
       ? "The model below does not compile. Fix it, keeping what it is trying to do."
-      : this.aiInput?.value.trim() ?? "";
+      : (this.aiInput?.value.trim() ?? "");
     if (!prompt) {
       this.setStatus("Describe the model you want first.");
+      this.aiInput?.focus();
       return;
     }
 
+    const original = this.codeEditor?.getValue() ?? "";
+    const failure = repair ? this.fullFailureText() : "";
+
     this.aiBusy = true;
+    this.aiCancel = false;
     this.aiGoBtn?.setAttribute("disabled", "true");
     this.aiFixBtn?.setAttribute("disabled", "true");
-    this.setStatus(`Asking ${cfg.model}…`);
+    if (this.aiStopBtn) this.aiStopBtn.style.display = "";
+    // A previous model is worth keeping: a run that produces nothing must leave
+    // the editor as it was, not empty.
+    this.setAiProgress("Asking " + cfg.model + "…");
 
     try {
-      const messages = buildMessages({
+      const outcome = await generateModel({
         prompt,
-        current: this.codeEditor?.getValue(),
-        diagnostics: repair ? this.fullFailureText() : "",
-        library: this.plugin.library,
-        systemPrompt: cfg.systemPrompt,
-        // The standing brief: what this machine has, how a run is configured,
-        // and what has already failed. Without it the model writes for a machine
-        // it cannot see.
         environment: this.plugin.aiContext(prompt),
+        current: original,
+        getKey: () => this.plugin.aiKey(),
+        config: cfg,
+        backend: this.plugin.backend,
+        settings: {
+          startTime: this.plugin.settings.startTime,
+          stopTime: this.plugin.stopTime(),
+          numberOfIntervals: this.plugin.settings.numberOfIntervals,
+          tolerance: this.plugin.settings.tolerance,
+          solver: this.plugin.settings.solver,
+        },
+        send: (messages) => chat(cfg, messages, () => this.plugin.aiKey()),
+        buildMessages: (p, current, failureText) =>
+          buildMessages({
+            prompt: p,
+            current,
+            // The generated source is repaired against the compiler's own words,
+            // and the standard brief is attached to every attempt so a repair is
+            // made with the same knowledge as the first draft.
+            diagnostics: failureText || undefined,
+            library: this.plugin.library,
+            systemPrompt: cfg.systemPrompt,
+            environment: this.plugin.aiContext(p),
+          }),
+        onProgress: (event) => {
+          if (event.phase === "compiling") {
+            this.setAiProgress(`Attempt ${event.attempt}: compiling…`);
+          } else if (event.phase === "repairing") {
+            this.setAiProgress(
+              `Attempt ${event.attempt}: repairing${event.detail ? ` — ${event.detail}` : ""}`
+            );
+          } else {
+            this.setAiProgress(`Attempt ${event.attempt}: asking ${cfg.model}…`);
+          }
+        },
+        isCancelled: () => this.aiCancel,
       });
-      const reply = await chat(cfg, messages, () => this.plugin.aiKey());
-      const source = extractModelica(reply);
-      if (!source) {
-        this.setStatus("The model replied without any Modelica source. Nothing was changed.");
-        return;
-      }
-      const name = modelNameOf(source);
-      this.codeEditor?.setValue(source);
-      this.applyCodeToDiagram(false);
-      this.setStatus(
-        `AI wrote ${name ? `"${name}"` : "a model"} (${source.split("\n").length} lines). Simulate it to check it works.`
-      );
-      if (!repair && this.aiInput) this.aiInput.value = "";
+
+      this.finishAiRun(outcome, original, repair);
     } catch (err) {
       const msg = err instanceof AiError ? err.message : String(err);
       this.setStatus(`AI request failed. ${msg}`);
+      this.setAiProgress(`Failed: ${msg}`);
     } finally {
       this.aiBusy = false;
       this.aiGoBtn?.removeAttribute("disabled");
       this.aiFixBtn?.removeAttribute("disabled");
+      if (this.aiStopBtn) {
+        this.aiStopBtn.style.display = "none";
+        this.aiStopBtn.removeAttribute("disabled");
+      }
+      this.aiCancel = false;
     }
   }
 
+  /**
+   * Report how a run ended, and put the result where it can be seen.
+   *
+   * A run that produced nothing usable restores what was in the editor: leaving
+   * a broken model in place would be worse than leaving the previous one, and the
+   * previous one is what the user still has.
+   */
+  private finishAiRun(outcome: GenerationOutcome, original: string, repair: boolean): void {
+    const attempts = outcome.attempts.length;
+    const name = outcome.modelName;
+
+    if (outcome.ok) {
+      this.codeEditor?.setValue(outcome.source);
+      this.applyCodeToDiagram(false);
+      this.lastSimulationError = null;
+      if (!repair && this.aiInput) this.aiInput.value = "";
+      const lines = outcome.source.split("\n").length;
+      this.setAiProgress(
+        `${outcome.message} ${name ? `"${name}"` : "The model"} is ${lines} lines; running it now.`
+      );
+      this.setStatus(`AI wrote ${name ? `"${name}"` : "a model"}. ${outcome.message}`);
+      // The model compiled, so run it: the point of generating it is to see it.
+      void this.runSimulation();
+      return;
+    }
+
+    // Nothing usable. The last attempt is kept in the editor so the failure can
+    // be read, but only when it is different from what was there.
+    if (outcome.source && outcome.source !== original) {
+      this.codeEditor?.setValue(outcome.source);
+      this.applyCodeToDiagram(false);
+    }
+    this.lastSimulationError = outcome.attempts[outcome.attempts.length - 1]?.failure ?? null;
+
+    const why =
+      outcome.reason === "cancelled"
+        ? "Stopped."
+        : outcome.reason === "attempts-exhausted"
+          ? `Gave up after ${attempts} attempts.`
+          : outcome.reason === "no-progress"
+            ? `Stopped after ${attempts} attempt${attempts === 1 ? "" : "s"}: no progress.`
+            : outcome.reason === "provider-error"
+              ? "The provider refused the request."
+              : "The reply contained no Modelica.";
+
+    this.setAiProgress(`${why} ${outcome.message}`);
+    this.setStatus(`AI: ${why} See the Run log for the compiler output.`);
+    new Notice(`Modelica AI: ${why}`, 8000);
+  }
+
+  /** Write a line into the AI row, and show a stop button while running. */
+  private setAiProgress(text: string): void {
+    if (!this.aiProgressEl) return;
+    this.aiProgressEl.style.display = "";
+    this.aiProgressEl.setText(text);
+  }
+
+  /** Compiler output from the last failed simulation, used to repair source. */
   /** Compiler output from the last failed simulation, used to repair source. */
   private lastSimulationError: string | null = null;
 

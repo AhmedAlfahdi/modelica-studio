@@ -1312,3 +1312,15 @@ body.modelica-studio-resizing * {
   background: var(--interactive-accent);
   color: var(--text-on-accent);
 }
+
+/* AI request row: the progress line shares the row and must be able to shrink,
+   so a long compiler message does not push the buttons off the edge. */
+.modelica-studio-ai-progress {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

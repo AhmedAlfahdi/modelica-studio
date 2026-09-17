@@ -135,7 +135,26 @@ Optional, off until an API key is entered.
    bad key, so the plugin fetches the list rather than shipping a stale one.
 
 In the studio, switch to **Code** and press **AI**. Describe the model you want
-and it is written into the editor.
+and it is written, compiled and **repaired until it builds** — without further
+input:
+
+1. The request goes to the provider with the brief above attached.
+2. The reply is **compiled** with OpenModelica.
+3. If it fails, the compiler's own output — with its line and column numbers —
+   goes back to the provider as the next request.
+4. Steps 2 and 3 repeat until it compiles.
+
+The loop stops when the model compiles, when the model returns the same source
+twice, when the same error comes back twice (compared after stripping build
+paths and timings, which differ on every attempt), when a provider error
+occurs, or at five attempts. A model that compiles but has nothing that changes
+with time counts as a **failure**, because OpenModelica builds it and then
+refuses to simulate it.
+
+Each step is reported as it happens — the attempt number, and the fault being
+repaired — and **Stop** ends the run after the current step. Nothing is written
+to the editor until a model compiles, so a run that produces nothing leaves your
+model as it was.
 
 **The Run log** tab keeps every simulation of the session: the model, the
 parameters and run settings used, the timings, and on failure OpenModelica's
