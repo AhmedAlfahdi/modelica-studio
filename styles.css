@@ -396,6 +396,12 @@
   color: var(--text-muted);
 }
 
+/* Keyboard cursor in the examples menu, matching the palette's hover state so
+   arrow-key navigation is visible without a pointer. */
+.modelica-studio-examples-item.is-active {
+  background: var(--background-modifier-hover);
+}
+
 .modelica-studio-examples-item {
   padding: 6px 8px;
   border-radius: 4px;
@@ -1282,3 +1288,27 @@ body.modelica-studio-resizing * {
   color: var(--text-normal);
 }
 
+
+/* Toolbar groups.
+   Fifteen buttons in one flat row stopped being scannable, so they are grouped
+   by what they act on. The group is also the unit that shows and hides with the
+   mode, which is why the border lives here rather than between buttons. */
+.modelica-studio-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 7px;
+  margin-right: 7px;
+  border-right: 1px solid var(--background-modifier-border);
+}
+.modelica-studio-btn-group:last-of-type {
+  border-right: 0;
+  margin-right: 0;
+  padding-right: 0;
+}
+
+/* The mode switch is a pair of toggles, so it reads as one control. */
+.modelica-studio-mode[aria-pressed="true"] {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}

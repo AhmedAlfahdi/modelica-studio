@@ -9,7 +9,7 @@
  * an escape hatch when a construct has no diagram form.
  */
 
-import { ItemView, Notice, WorkspaceLeaf, setIcon } from "obsidian";
+import { ItemView, Notice, Platform, WorkspaceLeaf, setIcon } from "obsidian";
 import type ModelicaStudioPlugin from "../main";
 import { SchematicEditor } from "./editor";
 import { drawPlot, plotThemeFrom, seriesColor, summarize, type SeriesStyle } from "./plot";
@@ -144,7 +144,15 @@ export class ModelicaStudioView extends ItemView {
     const paletteCol = body.createDiv({ cls: "modelica-studio-col modelica-studio-palette" });
     const search = paletteCol.createEl("input", {
       cls: "modelica-studio-search",
-      attr: { type: "text", placeholder: "Search components…" },
+      attr: {
+        type: "search",
+        placeholder: "Search components…",
+        // A placeholder is not a label: it vanishes once anything is typed, and
+        // a screen reader may not announce it at all.
+        "aria-label": "Search the component library",
+        spellcheck: "false",
+        autocomplete: "off",
+      },
     });
     search.addEventListener("input", () => {
       this.filterText = search.value;
@@ -162,6 +170,8 @@ export class ModelicaStudioView extends ItemView {
     const rightCol = body.createDiv({ cls: "modelica-studio-col modelica-studio-inspector" });
     this.inspectorCol = rightCol;
     this.inspectorTabsEl = rightCol.createDiv({ cls: "modelica-studio-tabs" });
+    this.inspectorTabsEl.setAttribute("role", "tablist");
+    this.inspectorTabsEl.setAttribute("aria-label", "Inspector");
     this.inspectorEl = rightCol.createDiv({ cls: "modelica-studio-inspector-body" });
     this.installSplitter(splitter, rightCol);
 
@@ -255,56 +265,171 @@ export class ModelicaStudioView extends ItemView {
 
   /* ---------------- toolbar ---------------- */
 
+  /**
+   * The toolbar.
+   *
+   * Organised in labelled groups rather than one run of fifteen buttons: at that
+   * length a flat row stops being scannable, and grouping is what tells a reader
+   * that Undo and Paste belong together and Zoom does not. Groups are also the
+   * unit that shows and hides with the mode, because a button that does nothing
+   * in the current mode is worse than an absent one.
+   *
+   * Naming rules applied throughout: sentence case, a verb first where the action
+   * is one ("Zoom in", not "Zoom"), an ellipsis on anything that opens a dialog
+   * or a menu, and a tooltip that says what the action does rather than repeating
+   * the label.
+   */
   private buildToolbar(bar: HTMLElement): void {
-    const addBtn = (icon: string, label: string, onClick: () => void, cls = "") => {
-      const b = bar.createEl("button", { cls: `modelica-studio-btn ${cls}`.trim() });
+    /** Platform-correct modifier, so a shortcut reads the way the OS writes it. */
+    const mod = Platform.isMacOS ? "⌘" : "Ctrl";
+
+    const addBtn = (
+      parent: HTMLElement,
+      icon: string,
+      label: string,
+      hint: string,
+      onClick: () => void,
+      cls = ""
+    ) => {
+      const b = parent.createEl("button", { cls: `modelica-studio-btn ${cls}`.trim() });
       setIcon(b, icon);
       b.createSpan({ text: label });
-      b.title = label;
+      b.title = hint;
+      // The label is the accessible name already; the tooltip is for the pointer.
+      b.setAttribute("aria-label", label);
       b.addEventListener("click", onClick);
       return b;
     };
 
-    // The mode switch leads the toolbar: it changes what the rest of the bar
-    // acts on, so it belongs before the actions rather than among them.
+    const addGroup = (parent: HTMLElement, name: string, scope: "both" | "diagram") => {
+      const g = parent.createDiv({ cls: "modelica-studio-btn-group" });
+      g.dataset.scope = scope;
+      g.setAttribute("role", "group");
+      g.setAttribute("aria-label", name);
+      return g;
+    };
+
+    // ---- the mode switch leads, because it decides what the rest acts on ----
     const modeGroup = bar.createDiv({ cls: "modelica-studio-modes" });
+    modeGroup.setAttribute("role", "group");
+    modeGroup.setAttribute("aria-label", "Editor mode");
     const addMode = (id: "diagram" | "code", icon: string, label: string, hint: string) => {
       const b = modeGroup.createEl("button", { cls: "modelica-studio-btn modelica-studio-mode" });
       setIcon(b, icon);
       b.createSpan({ text: label });
       b.title = hint;
+      b.setAttribute("aria-label", `${label} mode`);
+      // A pair of mutually exclusive views is what `aria-pressed` describes, and
+      // it is also what makes the active one announce itself.
+      b.setAttribute("aria-pressed", "false");
       b.addEventListener("click", () => this.setMode(id));
       this.modeButtons[id] = b;
       return b;
     };
     addMode("diagram", "shapes", "Diagram", "Build the model by dragging components");
-    addMode("code", "code", "Code", "Edit the Modelica source directly, with completion and AI");
-    bar.createDiv({ cls: "modelica-studio-mode-sep" });
+    addMode("code", "code", "Code", "Edit the Modelica source with completion and AI");
 
-    const examplesBtn = addBtn("library", "Examples", () => this.showExamplePicker(examplesBtn));
-    addBtn("play", "Simulate", () => void this.runSimulation(), "mod-cta");
+    // ---- Model: what is being edited, and saving it ----
+    const model = addGroup(bar, "Model", "both");
+    const examplesBtn = addBtn(
+      model,
+      "library",
+      "Examples…",
+      "Open the list of built-in example models",
+      () => this.showExamplePicker(examplesBtn)
+    );
+    addBtn(model, "file-plus", "New…", "Start an empty model, discarding the current one", () =>
+      void this.plugin.promptNewModel()
+    );
+    addBtn(model, "save", "Save as .mo", "Write the model to a .mo file in the vault", () =>
+      void this.saveToNote()
+    );
 
-    this.btnUndo = addBtn("undo-2", "Undo", () => this.editor?.undo());
-    this.btnRedo = addBtn("redo-2", "Redo", () => this.editor?.redo());
+    // ---- Run ----
+    const run = addGroup(bar, "Run", "both");
+    addBtn(
+      run,
+      "play",
+      "Simulate",
+      `Compile and run the model (${mod}+Enter)`,
+      () => void this.runSimulation(),
+      "mod-cta"
+    );
+    addBtn(
+      run,
+      "refresh-cw",
+      "Rebuild",
+      "Discard the compiled model, so the next simulation compiles again",
+      () => {
+        this.plugin.invalidateBuild();
+        this.setStatus("Build cache cleared; the next simulation will recompile.");
+      }
+    );
 
-    this.btnCopy = addBtn("copy", "Copy", () => this.editor?.copy());
-    this.btnPaste = addBtn("clipboard-paste", "Paste", () => void this.editor?.paste());
+    // ---- Edit: diagram only. The code editor has its own toolbar, and hiding
+    // these is more honest than showing buttons that would do nothing.
+    const edit = addGroup(bar, "Edit", "diagram");
+    this.btnUndo = addBtn(edit, "undo-2", "Undo", `Undo (${mod}+Z)`, () => this.editor?.undo());
+    this.btnRedo = addBtn(edit, "redo-2", "Redo", `Redo (${mod}+Shift+Z)`, () => this.editor?.redo());
+    this.btnCopy = addBtn(edit, "copy", "Copy", `Copy the selection (${mod}+C)`, () => this.editor?.copy());
+    this.btnPaste = addBtn(
+      edit,
+      "clipboard-paste",
+      "Paste",
+      `Paste (${mod}+V)`,
+      () => void this.editor?.paste()
+    );
+    this.btnDelete = addBtn(
+      edit,
+      "trash",
+      "Delete",
+      "Delete the selected components (Del or Backspace)",
+      () => this.editor?.deleteSelection()
+    );
+    this.btnRotate = addBtn(
+      edit,
+      "rotate-cw",
+      "Rotate",
+      "Turn the selection a quarter turn clockwise (R, or Shift+R anticlockwise)",
+      () => this.editor?.rotateSelection(90)
+    );
 
-    addBtn("zoom-in", "Zoom in", () => this.editor?.zoomBy(1.25));
-    addBtn("zoom-out", "Zoom out", () => this.editor?.zoomBy(0.8));
-    addBtn("maximize", "Fit", () => this.editor?.scheduleFit());
-    this.btnRotate = addBtn("rotate-cw", "Rotate", () => this.editor?.rotateSelection(90));
-    this.btnDelete = addBtn("trash", "Delete", () => this.editor?.deleteSelection());
-    addBtn("refresh-cw", "Rebuild", () => {
-      this.plugin.invalidateBuild();
-      this.setStatus("Build cache cleared; the next simulation will recompile.");
-    });
-    addBtn("file-plus", "New", () => void this.plugin.promptNewModel());
-    addBtn("save", "Save", () => void this.saveToNote());
-    // Diagnostic: report the exact geometry the editor is using. Shown only
-    // when the debug overlay is enabled in settings.
-    this.geometryBtn = addBtn("ruler", "Geometry", () => this.showGeometry());
+    // ---- View: diagram only ----
+    const view = addGroup(bar, "View", "diagram");
+    addBtn(view, "zoom-in", "Zoom in", "Zoom in", () => this.editor?.zoomBy(1.25));
+    addBtn(view, "zoom-out", "Zoom out", "Zoom out", () => this.editor?.zoomBy(0.8));
+    addBtn(view, "maximize", "Fit to view", `Fit the whole diagram in the canvas (${mod}+0)`, () =>
+      this.editor?.scheduleFit()
+    );
+
+    // Diagnostic: report the geometry the editor is using. Shown only when the
+    // debug overlay is enabled in settings.
+    this.geometryBtn = addBtn(
+      bar,
+      "ruler",
+      "Geometry",
+      "Report the editor's exact geometry as text",
+      () => this.showGeometry()
+    );
     this.applyDebugOverlay();
+
+    // Buttons start disabled until there is a selection to act on, rather than
+    // appearing live and doing nothing when pressed.
+    this.updateToolbarState();
+    window.setTimeout(() => this.reportToolbar(), 700);
+  }
+
+  /** Show or hide each toolbar group for the mode, and mark the active mode. */
+  private syncToolbarToMode(): void {
+    const isCode = this.mode === "code";
+    for (const group of Array.from(this.contentEl.querySelectorAll<HTMLElement>(".modelica-studio-btn-group"))) {
+      const diagramOnly = group.dataset.scope === "diagram";
+      group.style.display = diagramOnly && isCode ? "none" : "";
+    }
+    for (const [id, b] of Object.entries(this.modeButtons)) {
+      b.toggleClass("is-active", id === this.mode);
+      b.setAttribute("aria-pressed", id === this.mode ? "true" : "false");
+    }
   }
 
   /* ---------------- code mode ---------------- */
@@ -412,11 +537,7 @@ export class ModelicaStudioView extends ItemView {
     const isCode = mode === "code";
     if (this.bodyEl) this.bodyEl.style.display = isCode ? "none" : "";
     if (this.codeHost) this.codeHost.style.display = isCode ? "" : "none";
-    for (const [id, b] of Object.entries(this.modeButtons)) {
-      b.toggleClass("is-active", id === mode);
-    }
-    // The diagram-only actions belong to the diagram.
-    this.setDiagramActionsEnabled(!isCode);
+    this.syncToolbarToMode();
     this.applyModeResultsHeight(isCode);
     if (isCode) {
       this.codeEditor?.focus();
@@ -465,26 +586,6 @@ export class ModelicaStudioView extends ItemView {
   /** The stored results height for the mode currently on screen. */
   private storedResultsHeight(): number {
     return this.mode === "code" ? this.plugin.settings.codePlotHeight : this.plugin.settings.plotHeight;
-  }
-
-  /**
-   * Hide the actions that only make sense on the diagram.
-   *
-   * Rather than tracking each button, everything in the toolbar after the mode
-   * group is diagram-specific, which is exactly why the switch sits first.
-   */
-  private setDiagramActionsEnabled(enabled: boolean): void {
-    const bar = this.modeButtons["diagram"]?.parentElement?.parentElement;
-    if (!bar) return;
-    let seenSep = false;
-    for (const child of Array.from(bar.children) as HTMLElement[]) {
-      if (child.classList.contains("modelica-studio-mode-sep")) {
-        seenSep = true;
-        continue;
-      }
-      if (!seenSep) continue;
-      child.style.display = enabled ? "" : "none";
-    }
   }
 
   /** Serialize the diagram into the editor. */
@@ -1069,13 +1170,17 @@ export class ModelicaStudioView extends ItemView {
     if (tabs) {
       tabs.empty();
       for (const [id, label] of [
-        ["component", "Component"],
-        ["results", "Results"],
+        ["component", "Selection"],
+        ["results", "Traces"],
       ] as const) {
         const b = tabs.createEl("button", {
           cls: `modelica-studio-tab${this.inspectorTab === id ? " is-active" : ""}`,
           text: label,
         });
+        // `aria-selected` is what announces which tab is showing; the class only
+        // changes its colour.
+        b.setAttribute("role", "tab");
+        b.setAttribute("aria-selected", this.inspectorTab === id ? "true" : "false");
         b.addEventListener("click", () => {
           this.inspectorTab = id;
           this.renderInspector();
@@ -1205,6 +1310,7 @@ export class ModelicaStudioView extends ItemView {
     }
     for (const [id, b] of Object.entries(this.bottomTabEls ?? {})) {
       b.toggleClass("is-active", id === this.bottomTab);
+      b.setAttribute("aria-selected", id === this.bottomTab ? "true" : "false");
     }
     if (showPlot) this.drawResults();
   }
@@ -1314,7 +1420,7 @@ export class ModelicaStudioView extends ItemView {
 
     const head = parent.createDiv({ cls: "modelica-studio-series-head" });
     head.createSpan({ text: `Traces (${selected.length} of ${this.result.series.length})` });
-    const all = head.createEl("button", { cls: "modelica-studio-btn", text: "Clear" });
+    const all = head.createEl("button", { cls: "modelica-studio-btn", text: "Clear traces" });
     all.addEventListener("click", () => {
       for (const s of this.result!.series) {
         (this.seriesStyles[s.name] ??= {
@@ -1408,6 +1514,8 @@ export class ModelicaStudioView extends ItemView {
     if (!this.bottomBarEl) {
       const bar = el.createDiv({ cls: "modelica-studio-plotbar" });
       const tabs = bar.createDiv({ cls: "modelica-studio-tabs" });
+      tabs.setAttribute("role", "tablist");
+      tabs.setAttribute("aria-label", "Results");
       this.bottomTabEls = {};
       for (const [id, label] of [
         ["plot", "Plot"],
@@ -1415,6 +1523,8 @@ export class ModelicaStudioView extends ItemView {
         ["log", "Run log"],
       ] as const) {
         const b = tabs.createEl("button", { cls: "modelica-studio-tab", text: label });
+        b.setAttribute("role", "tab");
+        b.setAttribute("aria-selected", "false");
         b.addEventListener("click", () => {
           if (id === "source") {
             // Code mode is the source, so the tab switches to it rather than
@@ -1454,14 +1564,14 @@ export class ModelicaStudioView extends ItemView {
       });
       const copyBtn = logBar.createEl("button", { cls: "modelica-studio-btn" });
       setIcon(copyBtn, "clipboard-copy");
-      copyBtn.createSpan({ text: "Copy" });
+      copyBtn.createSpan({ text: "Copy log" });
       copyBtn.addEventListener("click", () => {
         void navigator.clipboard.writeText(this.plugin.runLog.toText());
         new Notice("Run log copied.");
       });
       const clearBtn = logBar.createEl("button", { cls: "modelica-studio-btn" });
       setIcon(clearBtn, "trash");
-      clearBtn.createSpan({ text: "Clear" });
+      clearBtn.createSpan({ text: "Clear log" });
       clearBtn.addEventListener("click", () => {
         this.plugin.runLog.clear();
         this.renderRunLog();
@@ -1520,7 +1630,7 @@ export class ModelicaStudioView extends ItemView {
       !this.result
         ? el.createDiv({
             cls: "modelica-studio-empty",
-            text: "Run a simulation to see traces, or open the Source tab to read the model.",
+            text: `Press Simulate to run the model; its traces appear here. Use the Code tab to read or edit the source.`,
           })
         : null;
 
@@ -2115,6 +2225,22 @@ export class ModelicaStudioView extends ItemView {
     this.updateToolbarState();
   }
 
+  /** Log the toolbar's enabled state, so it can be checked without clicking. */
+  private reportToolbar(): void {
+    this.plugin.diag(
+      "toolbar: " +
+        describeToolbar({
+          undo: this.btnUndo,
+          redo: this.btnRedo,
+          copy: this.btnCopy,
+          paste: this.btnPaste,
+          delete: this.btnDelete,
+          rotate: this.btnRotate,
+        }) +
+        ` mode=${this.mode}`
+    );
+  }
+
   /** Enable or disable toolbar actions for the current selection. */
   private updateToolbarState(): void {
     const sel = this.editor?.selectedIds ?? [];
@@ -2202,10 +2328,19 @@ export class ModelicaStudioView extends ItemView {
     const existing = this.contentEl.querySelector(".modelica-studio-examples-menu");
     if (existing) {
       existing.remove();
+      anchor.setAttribute("aria-expanded", "false");
       return;
     }
     const menu = this.contentEl.createDiv({ cls: "modelica-studio-examples-menu" });
+    // A menu, so a screen reader announces it as one and the arrow keys are
+    // expected to work inside it.
+    menu.setAttribute("role", "menu");
+    menu.setAttribute("aria-label", "Example models");
+    menu.tabIndex = -1;
+    anchor.setAttribute("aria-haspopup", "menu");
+    anchor.setAttribute("aria-expanded", "true");
     menu.createDiv({ cls: "modelica-studio-examples-title", text: "Example models" });
+    const items: HTMLElement[] = [];
 
     // Grouped by domain: with several examples per domain a flat list makes the
     // set look arbitrary, and the domain is what a user is usually choosing by.
@@ -2224,6 +2359,9 @@ export class ModelicaStudioView extends ItemView {
       menu.createDiv({ cls: "modelica-studio-examples-group", text: domain });
       for (const ex of list) {
         const item = menu.createDiv({ cls: "modelica-studio-examples-item" });
+        item.setAttribute("role", "menuitem");
+        item.tabIndex = -1;
+        items.push(item);
         item.createDiv({ cls: "modelica-studio-examples-name", text: ex.name });
         // The domain prefix is already the group heading.
         const detail = ex.description.includes(":")
@@ -2236,14 +2374,65 @@ export class ModelicaStudioView extends ItemView {
         });
       }
     }
-    // Dismiss on an outside click.
+    /**
+     * Close the menu and hand the keyboard back to the button that opened it.
+     *
+     * Anything that disappears must be dismissible from the keyboard and must
+     * return focus where it came from, or a keyboard user is left with focus on
+     * an element that no longer exists.
+     */
+    const close = () => {
+      menu.remove();
+      anchor.setAttribute("aria-expanded", "false");
+      document.removeEventListener("pointerdown", onDown, true);
+      document.removeEventListener("keydown", onKey, true);
+    };
+
     const onDown = (ev: MouseEvent) => {
-      if (!menu.contains(ev.target as Node) && ev.target !== anchor) {
-        menu.remove();
-        document.removeEventListener("pointerdown", onDown, true);
+      if (!menu.contains(ev.target as Node) && ev.target !== anchor) close();
+    };
+
+    /** Arrow keys move between examples, Enter loads one, Escape closes. */
+    let active = -1;
+    const highlight = (next: number) => {
+      if (!items.length) return;
+      active = (next + items.length) % items.length;
+      items.forEach((el, i) => el.toggleClass("is-active", i === active));
+      items[active]?.scrollIntoView({ block: "nearest" });
+    };
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        close();
+        anchor.focus();
+        return;
+      }
+      if (ev.key === "ArrowDown") {
+        ev.preventDefault();
+        highlight(active + 1);
+        return;
+      }
+      if (ev.key === "ArrowUp") {
+        ev.preventDefault();
+        highlight(active - 1);
+        return;
+      }
+      if (ev.key === "Enter" && active >= 0) {
+        ev.preventDefault();
+        const chosen = items[active];
+        close();
+        chosen.click();
       }
     };
-    setTimeout(() => document.addEventListener("pointerdown", onDown, true), 0);
+
+    setTimeout(() => {
+      document.addEventListener("pointerdown", onDown, true);
+      document.addEventListener("keydown", onKey, true);
+      // Focus the first item so the arrow keys work without a click first.
+      highlight(0);
+      menu.focus();
+    }, 0);
   }
 
   /**
@@ -2684,4 +2873,11 @@ function finishDecl(pending: { parts: string[]; line: number }): {
   const text = pending.parts.join(" ");
   const m = /(?:^|\s)([A-Za-z_]\w*)\s*(\(|;)/.exec(text.replace(/^\s*[A-Za-z_][\w.]*\s+/, ""));
   return { name: m?.[1] ?? "?", text, line: pending.line };
+}
+
+/** Report which toolbar actions are enabled, for the debug log. */
+export function describeToolbar(buttons: Record<string, HTMLButtonElement | undefined>): string {
+  return Object.entries(buttons)
+    .map(([name, b]) => `${name}=${b ? (b.disabled ? "off" : "on") : "missing"}`)
+    .join(" ");
 }

@@ -894,10 +894,20 @@ export default class ModelicaStudioPlugin extends Plugin {
    * same string and OpenModelica cannot compile the difference.
    */
   async promptNewModel(): Promise<void> {
+    // Replacing a model that has content is destructive, so it says so. An empty
+    // canvas has nothing to lose and needs no warning.
+    const hasContent =
+      this.model.components.length > 0 ||
+      this.model.connections.length > 0 ||
+      (this.model.equations?.length ?? 0) > 0;
     const name = await promptForText(this.app, {
-      title: "New Modelica model",
+      title: hasContent ? "Replace the current model" : "New Modelica model",
       placeholder: "ModelName",
       initial: "MyModel",
+      confirmLabel: hasContent ? "Replace" : "Create",
+      warning: hasContent
+        ? `This replaces "${this.model.name}" in the studio. Save it as a .mo file first if you want to keep it.`
+        : undefined,
       validate: (value) => {
         const v = value.trim();
         if (!v) return "A name is required.";
@@ -1037,6 +1047,16 @@ function promptForText(
     placeholder?: string;
     initial?: string;
     validate?: (value: string) => string | null;
+    /**
+     * A consequence to state before the user commits.
+     *
+     * Shown as a warning above the field. A prompt that replaces the current
+     * model silently makes the replacement a surprise; saying so first is what
+     * makes the action deliberate.
+     */
+    warning?: string;
+    /** Label of the confirming button; "Create" suits creation, "Replace" does not. */
+    confirmLabel?: string;
   }
 ): Promise<string | null> {
   return new Promise((resolve) => {
@@ -1051,6 +1071,9 @@ function promptForText(
       resolve(value);
     };
 
+    if (opts.warning) {
+      modal.contentEl.createDiv({ cls: "modelica-studio-warn", text: opts.warning });
+    }
     const input = modal.contentEl.createEl("input", {
       cls: "modelica-studio-prompt-input",
       attr: { type: "text", placeholder: opts.placeholder ?? "" },
@@ -1082,7 +1105,7 @@ function promptForText(
     });
 
     const buttons = modal.contentEl.createDiv({ cls: "modelica-studio-prompt-buttons" });
-    const ok = buttons.createEl("button", { cls: "mod-cta", text: "Create" });
+    const ok = buttons.createEl("button", { cls: "mod-cta", text: opts.confirmLabel ?? "Create" });
     ok.addEventListener("click", submit);
     const cancel = buttons.createEl("button", { text: "Cancel" });
     cancel.addEventListener("click", () => finish(null));
