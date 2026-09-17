@@ -10,7 +10,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { buildLibs } from "./helpers/build.mjs";
+import fs from "node:fs";
+import { buildLibs, repoRoot } from "./helpers/build.mjs";
 
 const omcLib = buildLibs("ai-loop-omc", ["src/omc/backend.ts", "src/omc/locate.ts"]);
 const { OmcBackend } = await import(path.join(omcLib, "backend.js"));
@@ -454,4 +455,79 @@ test("a model that builds but cannot run is sent back for repair", { skip: !HAS_
   assert.equal(r.attempts.length, 2);
   assert.match(rec.calls[1].failure, /nothing that changes with time/, "it says what is missing");
   backend.dispose();
+});
+
+/* ---- the request itself: the deadline and the thinking switch ---- */
+
+// The deadline helper is pure, so it is tested directly rather than through the
+// HTTP client, which imports Obsidian and cannot load here.
+const { withTimeout } = await import(
+  path.join(buildLibs("ai-deadline", ["src/ai/deadline.ts"]), "deadline.js")
+);
+
+test("a request that never answers fails instead of hanging", async () => {
+  // `requestUrl` takes no AbortSignal and applies no timeout, so a request that
+  // never answers waited forever: the UI sat on "asking…" with a Stop button that
+  // could not interrupt it, which is what "it looks stuck" was.
+  const never = new Promise(() => {});
+  const started = Date.now();
+  await assert.rejects(
+    () => withTimeout(never, 60, () => new Error("timed out")),
+    /timed out/
+  );
+  assert.ok(Date.now() - started < 2000, "it gave up at its deadline, not later");
+});
+
+test("a request that answers in time is returned untouched", async () => {
+  const value = await withTimeout(Promise.resolve("model A\nend A;"), 5000, () => new Error("late"));
+  assert.equal(value, "model A\nend A;");
+});
+
+test("the timer is cleared, so nothing fires after the fact", async () => {
+  // A live timer keeps the process awake and would reject a promise that has
+  // already settled, which surfaces as an unhandled rejection.
+  await withTimeout(Promise.resolve(1), 20, () => new Error("late"));
+  await new Promise((r) => setTimeout(r, 60));
+  assert.ok(true, "no unhandled rejection and nothing left running");
+});
+
+test("a rejection from the request is passed through, not replaced", async () => {
+  // A connection refused must read as a connection problem, not as a timeout.
+  await assert.rejects(
+    () => withTimeout(Promise.reject(new Error("ECONNREFUSED")), 5000, () => new Error("timed out")),
+    /ECONNREFUSED/
+  );
+});
+
+test("a cancellation during the wait is noticed", async () => {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 30);
+  await assert.rejects(
+    () => withTimeout(new Promise(() => {}), 10_000, () => new Error("timed out"), controller.signal),
+    /Cancelled/
+  );
+});
+
+test("thinking is disabled by default, because it is mostly latency here", () => {
+  // DeepSeek V4 reasons at "high" effort before answering unless told not to,
+  // which is a minute of waiting for a task the compiler checks a second later.
+  // It also silently disables `temperature`: the provider accepts it and ignores
+  // it, so the setting appeared to work and did nothing.
+  const src = fs.readFileSync(path.join(repoRoot, "src/ai/prompts.ts"), "utf8");
+  assert.match(src, /thinking: "disabled"/, "the default disables it");
+  assert.match(src, /type: ThinkingMode|thinking\?: ThinkingMode/, "and it is configurable");
+  const client = fs.readFileSync(path.join(repoRoot, "src/ai/client.ts"), "utf8");
+  assert.match(client, /body\.thinking = \{ type: "disabled" \}/, "the request carries the switch");
+  // And a deadline is always applied.
+  assert.match(client, /timeoutSeconds \?\? DEFAULT_TIMEOUT_SECONDS/, "the deadline has a default");
+});
+
+test("the default model matches the provider presets", () => {
+  // The defaults had drifted to a model the presets no longer list, so a user who
+  // never opened the provider picker was configured for a name nothing offered.
+  const src = fs.readFileSync(path.join(repoRoot, "src/ai/prompts.ts"), "utf8");
+  const defaults = /export const AI_DEFAULTS[\s\S]*?\n\};/.exec(src)[0];
+  const preset = /label: "OpenAI"[\s\S]*?verified/.exec(src)[0];
+  const model = /model: "([^"]+)"/.exec(defaults)[1];
+  assert.match(preset, new RegExp(`model: "${model}"`), `${model} is a preset model`);
 });

@@ -34,6 +34,7 @@ import { checkModel, ModelProblem } from "../modelica/checks";
 import { createCodeEditor, CodeEditorHandle, Diagnostic } from "./code-editor";
 import { AiError, buildMessages, chat } from "../ai/client";
 import { GenerationOutcome, generateModel } from "../ai/generate";
+import { DEFAULT_TIMEOUT_SECONDS } from "../ai/prompts";
 import type { SimResult, SimSeries } from "../omc/backend";
 
 export const VIEW_TYPE_MODELICA = "modelica-studio-view";
@@ -561,6 +562,12 @@ export class ModelicaStudioView extends ItemView {
   private aiProgressEl: HTMLElement | null = null;
   /** Set by the Stop button; the loop polls it between steps. */
   private aiCancel = false;
+  /** Ticks the elapsed time while a request is in flight. */
+  private aiTimer: number | null = null;
+  /** When the current AI run started, for the elapsed display. */
+  private aiStartedAt = 0;
+  /** The step being shown, kept so the elapsed clock can re-render it. */
+  private aiPhase = "";
   /**
    * True when the model on screen was just created, so an empty canvas is what
    * the user asked for rather than a dead end to seed.
@@ -910,6 +917,11 @@ export class ModelicaStudioView extends ItemView {
     // A previous model is worth keeping: a run that produces nothing must leave
     // the editor as it was, not empty.
     this.setAiProgress("Asking " + cfg.model + "…");
+    // A request can legitimately take a minute, and "asking…" alone is
+    // indistinguishable from a hang. A clock that keeps moving is the cheapest
+    // honest signal that something is still happening.
+    this.aiStartedAt = Date.now();
+    this.aiTimer = window.setInterval(() => this.tickAiProgress(cfg.model), 1000);
 
     try {
       const outcome = await generateModel({
@@ -940,14 +952,17 @@ export class ModelicaStudioView extends ItemView {
             environment: this.plugin.aiContext(p),
           }),
         onProgress: (event) => {
-          if (event.phase === "compiling") {
-            this.setAiProgress(`Attempt ${event.attempt}: compiling…`);
-          } else if (event.phase === "repairing") {
-            this.setAiProgress(
-              `Attempt ${event.attempt}: repairing${event.detail ? ` — ${event.detail}` : ""}`
-            );
-          } else {
-            this.setAiProgress(`Attempt ${event.attempt}: asking ${cfg.model}…`);
+          this.aiPhase =
+            event.phase === "compiling"
+              ? `Attempt ${event.attempt}: compiling`
+              : event.phase === "repairing"
+                ? `Attempt ${event.attempt}: repairing${event.detail ? ` — ${event.detail}` : ""}`
+                : `Attempt ${event.attempt}: asking ${cfg.model}`;
+          // Compiling and repairing are quick, so the clock restarts per phase
+          // and the number always describes the step on screen.
+          if (event.phase !== "asking") {
+            this.aiStartedAt = Date.now();
+            this.setAiProgress(`${this.aiPhase}…`);
           }
         },
         isCancelled: () => this.aiCancel,
@@ -960,6 +975,7 @@ export class ModelicaStudioView extends ItemView {
       this.setStatus(`AI request failed. ${msg}`);
       this.setAiProgress(`Failed: ${msg}`);
     } finally {
+      this.stopAiTimer();
       this.aiBusy = false;
       this.aiGoBtn?.removeAttribute("disabled");
       this.aiFixBtn?.removeAttribute("disabled");
@@ -1021,11 +1037,34 @@ export class ModelicaStudioView extends ItemView {
     new Notice(`Modelica AI: ${why}`, 8000);
   }
 
+  /**
+   * Show that time is passing, and for how long.
+   *
+   * The label is kept and only the elapsed part is replaced, so a phase change
+   * does not fight the clock.
+   */
+  private tickAiProgress(model: string): void {
+    if (!this.aiProgressEl) return;
+    const seconds = Math.round((Date.now() - this.aiStartedAt) / 1000);
+    const base = this.aiPhase || `Asking ${model}`;
+    const limit = this.plugin.settings.ai.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
+    const left = Math.max(0, limit - seconds);
+    this.aiProgressEl.setText(`${base} — ${seconds}s (gives up at ${limit}s, ${left}s left)`);
+  }
+
+  private stopAiTimer(): void {
+    if (this.aiTimer !== null) {
+      window.clearInterval(this.aiTimer);
+      this.aiTimer = null;
+    }
+  }
+
   /** Write a line into the AI row, and show a stop button while running. */
   private setAiProgress(text: string): void {
     if (!this.aiProgressEl) return;
     this.aiProgressEl.style.display = "";
     this.aiProgressEl.setText(text);
+    this.aiPhase ||= text;
   }
 
   /** Compiler output from the last failed simulation, used to repair source. */

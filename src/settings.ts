@@ -8,7 +8,8 @@
 
 import { App, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import type ModelicaStudioPlugin from "./main";
-import { AI_DEFAULTS, AI_PROVIDERS, AiConfig, LEGACY_SECRET_NAME, legacyKeyOf } from "./ai/prompts";
+import { AI_DEFAULTS,
+  DEFAULT_TIMEOUT_SECONDS, AI_PROVIDERS, AiConfig, LEGACY_SECRET_NAME, legacyKeyOf } from "./ai/prompts";
 
 /**
  * How the result plot is configured: which traces, and over what range.
@@ -552,6 +553,38 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           .setDynamicTooltip()
           .onChange(async (v) => {
             this.plugin.settings.ai.temperature = v;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Skip the model's reasoning pass")
+      .setDesc(
+        "DeepSeek V4 thinks at high effort before answering unless told not to. That is " +
+          "mostly waiting for a task a compiler checks anyway, and it silently disables " +
+          "Temperature. Leave this on unless you want the extra reasoning."
+      )
+      .addToggle((t) =>
+        t.setValue((this.plugin.settings.ai.thinking ?? "disabled") === "disabled").onChange(async (v) => {
+          this.plugin.settings.ai.thinking = v ? "disabled" : "default";
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Reply timeout")
+      .setDesc(
+        "Seconds to wait for a reply before giving up. Without a deadline a request " +
+          "that never answers waits forever. Raise it for a slow local model."
+      )
+      .addText((t) =>
+        t
+          .setPlaceholder(String(DEFAULT_TIMEOUT_SECONDS))
+          .setValue(String(this.plugin.settings.ai.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS))
+          .onChange(async (raw) => {
+            const n = Number(raw);
+            this.plugin.settings.ai.timeoutSeconds =
+              Number.isFinite(n) && n >= 5 ? Math.round(n) : DEFAULT_TIMEOUT_SECONDS;
             await this.plugin.saveSettings();
           })
       );

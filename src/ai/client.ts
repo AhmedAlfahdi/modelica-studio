@@ -12,7 +12,8 @@
  */
 
 import { requestUrl } from "obsidian";
-import { aiReady, secretNameOf } from "./prompts";
+import { DEFAULT_TIMEOUT_SECONDS, aiReady, secretNameOf } from "./prompts";
+import { withTimeout } from "./deadline";
 import type { AiConfig, ChatMessage } from "./prompts";
 
 export * from "./prompts";
@@ -59,21 +60,44 @@ export async function chat(
     );
   }
 
+  const body: Record<string, unknown> = {
+    model: cfg.model.trim(),
+    temperature: cfg.temperature,
+    messages,
+  };
+  // DeepSeek reasons at high effort by default, which is a long wait for a task
+  // the compiler checks anyway -- and it silently disables `temperature`. Sending
+  // the switch explicitly is the difference between seconds and minutes.
+  if (cfg.thinking === "disabled") body.thinking = { type: "disabled" };
+
+  const timeoutMs = Math.max(5, cfg.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS) * 1000;
   let response;
   try {
-    response = await requestUrl({
-      url: endpoint(cfg.baseUrl),
-      method: "POST",
-      contentType: "application/json",
-      headers: { Authorization: `Bearer ${apiKey!.trim()}` },
-      body: JSON.stringify({
-        model: cfg.model.trim(),
-        temperature: cfg.temperature,
-        messages,
+    response = await withTimeout(
+      requestUrl({
+        url: endpoint(cfg.baseUrl),
+        method: "POST",
+        contentType: "application/json",
+        headers: { Authorization: `Bearer ${apiKey!.trim()}` },
+        body: JSON.stringify(body),
+        throw: false,
       }),
-      throw: false,
-    });
+      timeoutMs,
+      () => {
+        // The request cannot be aborted -- Obsidian's helper takes no signal --
+        // so the timer makes it FAIL rather than hang. The abandoned request
+        // finishes into nothing.
+        const seconds = Math.round(timeoutMs / 1000);
+        return new AiError(
+          `${cfg.model} did not reply within ${seconds} s. It may be a slow model, a ` +
+            `long prompt, or a provider that is not responding. Raise the timeout in ` +
+            `settings, or choose a faster model.`
+        );
+      },
+      signal
+    );
   } catch (err) {
+    if (err instanceof AiError) throw err;
     // Network-level failure: no response at all.
     throw new AiError(
       `Could not reach ${cfg.baseUrl}. Check the URL and your connection. (${String(err)})`
@@ -183,3 +207,4 @@ function extractContent(parsed: unknown): string {
   }
   return "";
 }
+

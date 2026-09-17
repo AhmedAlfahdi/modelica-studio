@@ -7,6 +7,21 @@
 
 import type { LibraryIndex } from "../modelica/library";
 
+/**
+ * Whether to let a DeepSeek model reason before answering.
+ *
+ * DeepSeek V4 enables thinking mode by default at "high" effort, which means the
+ * model writes a long chain of thought BEFORE its answer. For writing a Modelica
+ * model that is mostly latency: the extra reasoning buys little on a task whose
+ * correctness is checked by a compiler a second later, and it is the difference
+ * between a reply in seconds and one in minutes. It also silently disables
+ * `temperature`, which the provider accepts and ignores.
+ *
+ * Left as a setting because it is the user's call, and because other providers
+ * either ignore the parameter or do not have it.
+ */
+export type ThinkingMode = "default" | "disabled";
+
 export interface AiConfig {
   /**
    * Name of the secret holding the API key, as stored in Obsidian's own
@@ -43,14 +58,31 @@ export interface AiConfig {
    * what went stale when `deepseek-chat` was retired.
    */
   models?: string[];
+  /**
+   * Whether to disable the provider's reasoning pass. "default" leaves the
+   * provider alone, which for DeepSeek means high-effort thinking.
+   */
+  thinking?: ThinkingMode;
+  /**
+   * How long to wait for a reply, in seconds. A request that hangs with no
+   * deadline hangs forever.
+   */
+  timeoutSeconds?: number;
 }
+
+/** Default wait for a reply. A long model in thinking mode can genuinely take a while. */
+export const DEFAULT_TIMEOUT_SECONDS = 120;
 
 export const AI_DEFAULTS: AiConfig = {
   secretName: "",
   baseUrl: "https://api.openai.com/v1",
-  model: "gpt-4o-mini",
+  model: "gpt-5.6-terra",
   temperature: 0.2,
   systemPrompt: "",
+  // DeepSeek reasons at high effort unless told not to, which is mostly waiting
+  // for a job the compiler checks anyway.
+  thinking: "disabled",
+  timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
 };
 
 /** Providers worth offering by name, so the URL does not have to be recalled. */
