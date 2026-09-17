@@ -59,17 +59,149 @@ export const AI_THINKING_LEVELS: Array<{ id: AiThinking; label: string; hint: st
  * `rungekutta`), and an unknown solver produces a WARNING, exit code 0 and a
  * result file full of NaN -- a run that looks successful and contains nothing.
  */
-export const SOLVERS: Array<{ id: string; label: string; hint: string }> = [
-  { id: "", label: "OpenModelica default", hint: "dassl — a safe choice unless you have a reason." },
-  { id: "dassl", label: "dassl", hint: "BDF, implicit, adaptive order 1-5. The default, and the right one for stiff systems — fast modes that force a small step." },
-  { id: "ida", label: "ida (SUNDIALS)", hint: "BDF, implicit, sparse. Like dassl but scales better on large systems; also does sensitivity analysis." },
-  { id: "cvode", label: "cvode (SUNDIALS)", hint: "BDF or Adams-Moulton, adaptive order 1-12. Measured the most accurate of the six here on a stiff problem (error 1e-16 against 8e-8 for dassl)." },
-  { id: "gbode", label: "gbode", hint: "A family of Runge-Kutta methods, implicit or explicit, order 1-14, with optional multi-rate integration. The general-purpose alternative." },
-  { id: "euler", label: "euler", hint: "Explicit, fixed step, order 1. For teaching and for seeing what a bad solver looks like; not for real work." },
-  { id: "rungekutta", label: "rungekutta", hint: "Classical Runge-Kutta, explicit, fixed step, order 4. Fine for smooth non-stiff models, unstable on stiff ones. Note: the name is rungekutta, NOT rungekutta4." },
-  { id: "symSolver", label: "symSolver", hint: "Symbolic inline solver (order 1). Needs the compiler flag --symSolver, which this plugin does not pass, so it will not work here." },
-  { id: "qss", label: "qss", hint: "Quantised-state solver, marked experimental in OpenModelica. Expect rough edges." },
+/**
+ * A solver, with what it is and what it is for.
+ *
+ * Structured rather than a sentence, because the properties genuinely are a list:
+ * method, order, step control, stiffness. A paragraph made a reader pick them out
+ * of prose, and two of the fields — whether it is implicit, and what order it
+ * runs at — are what decide whether it will work on a given model.
+ */
+export interface SolverInfo {
+  /** The name passed to the compiled model, or "" for OpenModelica's default. */
+  id: string;
+  /** Label in the dropdown; the dropdown shows this and nothing else. */
+  label: string;
+  /** One line saying what it is. */
+  summary: string;
+  /** The properties, one per line. */
+  points: string[];
+  /** When it is the right choice. */
+  use: string;
+}
+
+export const SOLVERS: SolverInfo[] = [
+  {
+    id: "",
+    label: "OpenModelica default",
+    summary: "Whatever the runtime prefers — currently dassl.",
+    points: ["dassl — BDF, implicit, order 1–5", "Nothing is passed to the model"],
+    use: "The safe choice. Leave it here unless you have a reason.",
+  },
+  {
+    id: "dassl",
+    label: "dassl",
+    summary: "The default. A BDF method for stiff systems.",
+    points: [
+      "BDF, implicit — stable on stiff systems",
+      "Adaptive order 1–5, variable step",
+      "Dense linear solver",
+      "Handles events",
+    ],
+    use: "Stiff models: a fast transient next to a slow one.",
+  },
+  {
+    id: "ida",
+    label: "ida (SUNDIALS)",
+    summary: "BDF like dassl, built for larger systems.",
+    points: [
+      "BDF, implicit, order 1–5",
+      "SPARSE linear solver — scales better as the system grows",
+      "Variable step, handles events",
+      "Also does sensitivity analysis",
+    ],
+    use: "Large models, where the sparse solver is the difference.",
+  },
+  {
+    id: "cvode",
+    label: "cvode (SUNDIALS)",
+    summary: "The most accurate of those measured here.",
+    points: [
+      "BDF or Adams-Moulton, implicit",
+      "Adaptive order 1–12 — the widest range",
+      "Dense solver, variable step, handles events",
+      "Measured error 1.1e-16 on a stiff problem, against 8e-8 for dassl",
+    ],
+    use: "When accuracy matters more than the last few milliseconds.",
+  },
+  {
+    id: "gbode",
+    label: "gbode",
+    summary: "A family of Runge-Kutta methods rather than one.",
+    points: [
+      "Implicit or explicit, order 1–14",
+      "Fixed or variable step",
+      "Optional multi-rate integration — slow and fast parts stepped separately",
+      "Warns that numerical Jacobians without colouring are unsupported",
+    ],
+    use: "Trying a non-BDF method, or a model with two very different timescales.",
+  },
+  {
+    id: "euler",
+    label: "euler",
+    summary: "The simplest integrator there is.",
+    points: ["Explicit, fixed step", "Order 1 — error falls only linearly with step size", "No step-size control"],
+    use: "Teaching, and seeing what a poor solver looks like. Not for real work.",
+  },
+  {
+    id: "rungekutta",
+    label: "rungekutta",
+    summary: "The classical fourth-order Runge-Kutta.",
+    points: [
+      "Explicit, fixed step",
+      "Order 4 — a good accuracy/effort balance",
+      "Unstable on stiff systems: the step size is limited by stability, not accuracy",
+    ],
+    use: "Smooth non-stiff models. Note the name: rungekutta, NOT rungekutta4.",
+  },
+  {
+    id: "symSolver",
+    label: "symSolver",
+    summary: "A symbolic inline solver. Will not work here.",
+    points: [
+      "Fixed step",
+      "Order 1",
+      "Needs the compiler flag --symSolver, which this plugin does not pass",
+    ],
+    use: "Nothing in this plugin — listed so the name is not a mystery.",
+  },
+  {
+    id: "qss",
+    label: "qss",
+    summary: "A quantised-state solver.",
+    points: ["Marked experimental in OpenModelica", "Different formulation from the rest: state changes are quantised"],
+    use: "Experimentation. Expect rough edges.",
+  },
 ];
+
+/**
+ * Render a solver's description as a fragment: a summary, bullets, and a use.
+ *
+ * A fragment rather than a string because `Setting.setDesc` accepts one, which is
+ * what keeps all of this INSIDE the setting's own block — the hint used to be
+ * appended after it and floated loose below.
+ */
+export function solverDescription(solver: SolverInfo): DocumentFragment {
+  const frag = document.createDocumentFragment();
+  const summary = document.createElement("div");
+  summary.setText(solver.summary);
+  frag.appendChild(summary);
+
+  const list = document.createElement("ul");
+  list.addClass("modelica-studio-solver-points");
+  for (const point of solver.points) {
+    const li = document.createElement("li");
+    li.setText(point);
+    list.appendChild(li);
+  }
+  frag.appendChild(list);
+
+  const use = document.createElement("div");
+  use.addClass("modelica-studio-solver-use");
+  use.setText(solver.use);
+  frag.appendChild(use);
+  return frag;
+}
 
 export const MODEL_STYLES: Array<{ id: ModelStyle; label: string; hint: string }> = [
   {

@@ -402,14 +402,30 @@ test("the solver setting offers only names the runtime has", () => {
   // Two things had gone wrong: `rungekutta4` was recommended and does not exist,
   // and the free-text field gave no way to tell a real name from an invented one.
   const src = fs.readFileSync(path.join(repoRoot, "src/ai/prompts.ts"), "utf8");
-  const solvers = [...src.matchAll(/\{ id: "([^"]*)", label: "([^"]+)"/g)].map((m) => m[1]);
-  assert.ok(solvers.includes(""), "the default is offered");
-  assert.ok(solvers.includes("cvode"), "and the measured-best one");
-  assert.ok(!solvers.includes("rungekutta4"), "the non-existent name is gone");
-  assert.ok(solvers.includes("rungekutta"), "the real one is there");
-  assert.match(src, /the name is rungekutta, NOT rungekutta4/, "and the trap is called out");
+  const block = /export const SOLVERS: SolverInfo\[\] = \[([\s\S]*?)\n\];/.exec(src);
+  assert.ok(block, "the solver list is a typed array");
+  const entries = [...block[1].matchAll(/\{\s*id: "([^"]*)"[\s\S]*?label: "([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(entries.includes(""), "the default is offered");
+  assert.ok(entries.includes("cvode"), "and the measured-best one");
+  assert.ok(!entries.includes("rungekutta4"), "the non-existent name is gone");
+  assert.ok(entries.includes("rungekutta"), "the real one is there");
 
-  // Every entry must carry a hint, since the dropdown shows one per choice.
-  const entries = [...src.matchAll(/\{ id: "([^"]*)", label: "([^"]+)", hint: "([^"]+)"/g)];
-  assert.equal(entries.length, solvers.length, "every solver has a hint");
+  // Every solver must carry all four parts, since the description renders them
+  // together: a missing `points` would draw an empty list.
+  const typed = /export interface SolverInfo \{[\s\S]*?\n\}/.exec(src)[0];
+  for (const field of ["id", "label", "summary", "points", "use"]) {
+    assert.match(typed, new RegExp(`\\b${field}\\b`), `SolverInfo declares ${field}`);
+  }
+  const bodies = [...block[1].matchAll(/\{\s*id: "[^"]*"[\s\S]*?\n  \},/g)];
+  assert.equal(bodies.length, entries.length, "every entry is parsed as a block");
+  for (const body of bodies) {
+    assert.match(body[0], /summary: "/, "with a summary");
+    assert.match(body[0], /points: \[/, "a list of points");
+    assert.match(body[0], /use: "/, "and when to use it");
+  }
+  // The trap is called out where the user sees it: on the solver's own entry.
+  const rungekutta = /id: "rungekutta",[\s\S]*?use: "([^"]+)"/.exec(src);
+  assert.ok(rungekutta, "the rungekutta entry is present");
+  assert.match(rungekutta[1], /NOT rungekutta4/, "and its note names the trap");
 });
+

@@ -1482,3 +1482,36 @@ body.modelica-studio-resizing * {
   font-size: 12px;
   margin-top: 4px;
 }
+
+/* A solver's properties, inside the setting's description.
+   These were a paragraph appended after the block; as a list they sit under the
+   dropdown that chose the solver, which is where they are read. */
+.modelica-studio-solver-points {
+  margin: 5px 0 4px;
+  padding-left: 18px;
+  list-style: disc;
+}
+.modelica-studio-solver-points > li {
+  margin: 1px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.modelica-studio-solver-use {
+  margin-top: 5px;
+  color: var(--text-normal);
+  font-size: 12px;
+}
+/* The description holds a list, so it needs room to wrap under the label rather
+   than being squeezed into the narrow column Obsidian gives a one-line desc. */
+.setting-item:has(.modelica-studio-solver-points) {
+  flex-direction: column;
+  align-items: stretch;
+}
+.setting-item:has(.modelica-studio-solver-points) .setting-item-info {
+  margin-right: 0;
+}
+.setting-item:has(.modelica-studio-solver-points) .setting-item-control {
+  justify-content: flex-start;
+  margin-top: 6px;
+}

@@ -11,7 +11,7 @@ import type ModelicaStudioPlugin from "./main";
 import { libraryHelpUrl, libraryVersionFrom } from "./modelica/doclinks";
 import { exclusionsFrom, libraryRows } from "./modelica/library-exclusions";
 import { describeRow, describeSavedModels } from "./modelica/saved-models";
-import { SOLVERS, AI_THINKING_LEVELS, MODEL_STYLES, type AiThinking, type ModelStyle, AI_DEFAULTS,
+import { SOLVERS, solverDescription, AI_THINKING_LEVELS, MODEL_STYLES, type AiThinking, type ModelStyle, AI_DEFAULTS,
   DEFAULT_TIMEOUT_SECONDS, AI_PROVIDERS, AiConfig, LEGACY_SECRET_NAME, legacyKeyOf } from "./ai/prompts";
 
 
@@ -168,31 +168,31 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
-      .setName("Solver")
-      .setDesc(
-        "The integrator the compiled model uses. The list is what this OpenModelica " +
-          "runtime offers — it names its own solvers when given one it does not " +
-          "recognise, which is where these come from."
-      )
-      .addDropdown((d) => {
-        for (const solver of SOLVERS) d.addOption(solver.id, solver.label);
-        // A stored value the list does not carry is kept rather than silently
-        // reset: it may be a name from a different OpenModelica version, and
-        // discarding it would change a setting the user chose.
-        const stored = this.plugin.settings.solver.trim();
-        if (!SOLVERS.some((s) => s.id === stored)) d.addOption(stored, `${stored} (unverified)`);
-        d.setValue(stored);
-        const hint = containerEl.createDiv({ cls: "modelica-studio-muted" });
-        const show = (id: string) =>
-          hint.setText(SOLVERS.find((s) => s.id === id)?.hint ?? "Not a solver this runtime lists.");
-        show(stored);
-        d.onChange(async (v) => {
-          this.plugin.settings.solver = v;
-          show(v);
-          await this.plugin.saveSettings();
-        });
+    // Everything about the chosen solver lives INSIDE this setting's block. The
+    // description used to be one line and the detail was appended to the container
+    // afterwards, so it floated loose below the block it belonged to.
+    const solverSetting = new Setting(containerEl).setName("Solver");
+    const showSolver = (id: string) => {
+      const solver = SOLVERS.find((s) => s.id === id);
+      solverSetting.setDesc(
+        solver ? solverDescription(solver) : "Not a solver this runtime lists."
+      );
+    };
+    solverSetting.addDropdown((d) => {
+      for (const solver of SOLVERS) d.addOption(solver.id, solver.label);
+      // A stored value the list does not carry is kept rather than silently
+      // reset: it may be a name from a different OpenModelica version, and
+      // discarding it would change a setting the user chose.
+      const stored = this.plugin.settings.solver.trim();
+      if (!SOLVERS.some((s) => s.id === stored)) d.addOption(stored, `${stored} (unverified)`);
+      d.setValue(stored);
+      showSolver(stored);
+      d.onChange(async (v) => {
+        this.plugin.settings.solver = v;
+        showSolver(v);
+        await this.plugin.saveSettings();
       });
+    });
 
     new Setting(containerEl)
       .setName("Write diagnostic log")
