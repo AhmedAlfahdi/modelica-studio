@@ -87,6 +87,10 @@ const obsidianStub = {
     addSettingTab() {}
     registerView() {}
     registerMarkdownCodeBlockProcessor() {}
+    /** Hook a workspace event; the plugin uses this for the file menu. */
+    registerEvent() {
+      return {};
+    }
     /** Register a teardown callback; the plugin uses this for its inline embeds. */
     register(fn) {
       this._teardowns ??= [];
@@ -174,6 +178,7 @@ test("bundle instantiates and its lifecycle runs", { skip: !HAS_BUNDLE }, async 
   instance.addRibbonIcon = () => {};
   instance.addSettingTab = () => {};
   instance.registerView = (type, factory) => views.push({ type, factory });
+  instance.registerEvent = () => ({});
   instance.loadData = async () => null;
   instance.saveData = async () => {};
 
@@ -213,6 +218,10 @@ test("each model keeps its own simulation span", { skip: !HAS_BUNDLE }, async ()
   instance.addRibbonIcon = () => {};
   instance.addSettingTab = () => {};
   instance.registerView = () => {};
+  instance.registerEvent = () => ({});
+  // Part of the Plugin API the plugin uses to hook the file menu, so a mock
+  // without it makes onload throw rather than test anything.
+  instance.registerEvent = () => ({});
   instance.loadData = async () => null;
   instance.saveData = async () => {};
   await instance.onload();

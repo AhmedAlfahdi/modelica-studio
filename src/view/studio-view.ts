@@ -27,6 +27,7 @@ import type {
 } from "../modelica/types";
 import { serializeDiagram } from "../modelica/serializer";
 import { fuzzyFilter } from "../modelica/fuzzy";
+import { acceptsFileDrag, droppedVaultFile } from "./drop";
 import { SimulationError } from "../omc/backend";
 import { CODE_RESULTS_H, DEFAULT_RESULTS_H, clampInspectorWidth, clampResultsHeight } from "./panes";
 import { checkModel, ModelProblem } from "../modelica/checks";
@@ -452,12 +453,15 @@ export class ModelicaStudioView extends ItemView {
     // Dragging a `.mo` onto the code pane opens it too: it is the surface where
     // source is edited, so it is where someone would expect to drop source.
     host.addEventListener("dragover", (ev) => {
-      if (!droppedVaultFile(ev)) return;
+      // By TYPE, not by content: the data is unreadable here, and without
+      // preventDefault the browser refuses the drop and `drop` never fires —
+      // which is why dragging a file onto this pane did nothing at all.
+      if (!acceptsFileDrag(ev.dataTransfer?.types ?? [], ev.dataTransfer?.files.length ?? 0)) return;
       ev.preventDefault();
       if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
     });
     host.addEventListener("drop", (ev) => {
-      const path = droppedVaultFile(ev);
+      const path = droppedVaultFile((t) => ev.dataTransfer?.getData(t) ?? "");
       if (!path) return;
       ev.preventDefault();
       void this.plugin.loadModelFromPath(path);
@@ -933,6 +937,7 @@ export class ModelicaStudioView extends ItemView {
       this.finishAiRun(outcome, original, repair);
     } catch (err) {
       const msg = err instanceof AiError ? err.message : String(err);
+      this.plugin.diag(`ai request failed: ${msg}`, "error");
       this.setStatus(`AI request failed. ${msg}`);
       this.setAiProgress(`Failed: ${msg}`);
     } finally {
@@ -1281,6 +1286,8 @@ export class ModelicaStudioView extends ItemView {
     host.dataset.dropBound = "1";
 
     host.addEventListener("dragover", (ev) => {
+      // Accept both a palette class and a file, decided by type; the palette
+      // drag carries its own type and the data is unreadable at this point.
       ev.preventDefault();
       if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
     });
@@ -1289,7 +1296,7 @@ export class ModelicaStudioView extends ItemView {
       // A file from the explorer opens; a class from the palette is placed. The
       // two are told apart by what the drag carries, because both arrive as a
       // drop on the same surface.
-      const dropped = droppedVaultFile(ev);
+      const dropped = droppedVaultFile((t) => ev.dataTransfer?.getData(t) ?? "");
       if (dropped) {
         void this.plugin.loadModelFromPath(dropped);
         return;
@@ -2821,6 +2828,7 @@ export class ModelicaStudioView extends ItemView {
       const detail = describeFailure(err);
       const msg = err instanceof Error ? err.message : String(err);
       this.setStatus("Simulation failed.");
+      this.plugin.diag(`simulation failed: ${firstLine(msg)}`, "error");
       // The WHOLE output is kept, not its first line. OpenModelica's first line
       // is usually a file path or "Internal error"; the line naming the fault
       // comes later, and a repair request built from the first line was asking
@@ -3064,20 +3072,4 @@ export function describeToolbar(buttons: Record<string, HTMLButtonElement | unde
     .join(" ");
 }
 
-/**
- * The vault path of a file being dragged, or null when it is something else.
- *
- * Obsidian carries a drag from the file explorer in its own data type. Checking
- * for it is what lets one drop handler serve two purposes: a palette class is
- * placed on the canvas, a `.mo` file is opened, and neither is mistaken for the
- * other.
- */
-export function droppedVaultFile(ev: DragEvent): string | null {
-  const dt = ev.dataTransfer;
-  if (!dt) return null;
-  // `text/plain` is the fallback, but it also carries a palette class name, so
-  // only a path that looks like the configured folder qualifies.
-  const path = dt.getData("text/vnd.obsidian.file") || dt.getData("text/plain");
-  if (!path || !path.endsWith(".mo")) return null;
-  return path;
-}
+

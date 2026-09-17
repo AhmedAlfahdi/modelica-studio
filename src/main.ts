@@ -208,18 +208,44 @@ export default class ModelicaStudioPlugin extends Plugin {
 
   backend: SimulationBackend | null = null;
   private omc: OmcInstallation | null = null;
+  /** Print every diagnostic to the console, not only the ones the setting allows. */
+  verbose = false;
 
 
   /**
-   * Opt-in diagnostic log.
+   * Diagnostics, to the developer console AND to a file.
    *
-   * Obsidian's renderer console is not reachable from outside the app, so when
-   * `debugLog` is enabled the plugin appends structured lines to a file in the
-   * vault. This is how the plugin's startup and simulation path can be verified
-   * without a debugger attached.
+   * The console is the point. Obsidian's developer console is where anyone
+   * debugs a plugin — Ctrl+Shift+I, watch it live — and this wrote only to a file
+   * in the vault, so nothing appeared there at all. A plugin that is silent in
+   * the console is a plugin you cannot debug.
+   *
+   * The file remains, and remains opt-in, because it survives a reload and can be
+   * read from outside the app; the console is live but scrolls away.
+   *
+   * Levels exist so the console is usable. `error` and `warn` always print: a
+   * failure the user cannot see is the one they will report as "nothing
+   * happened". `info` prints when the debug setting is on. `debug` additionally
+   * needs the console's own verbose toggle, because a hundred geometry lines
+   * between two useful ones is not debugging.
    */
-  diag(message: string): void {
-    if (!this.settings.debugLog) return;
+  diag(message: string, level: "debug" | "info" | "warn" | "error" = "debug"): void {
+    if (level === "error" || level === "warn") {
+      const out = level === "error" ? console.error : console.warn;
+      out(`[Modelica Studio] ${message}`);
+      this.appendDiagnosticLog(`[${level}] ${message}`);
+      return;
+    }
+    if (!this.settings.debugLog) {
+      // Nothing to print and nothing to write; return before doing either.
+      return;
+    }
+    if (level === "info" || this.verbose) console.log(`[Modelica Studio] ${message}`);
+    this.appendDiagnosticLog(message);
+  }
+
+  /** Write one line to the vault's diagnostic file, when logging is enabled. */
+  private appendDiagnosticLog(message: string): void {
     try {
       const adapter = this.app.vault.adapter as { getBasePath?: () => string };
       const base = adapter.getBasePath?.();
@@ -233,12 +259,99 @@ export default class ModelicaStudioPlugin extends Plugin {
     }
   }
 
+  /**
+   * Everything worth inspecting, in one object.
+   *
+   * Assigning this to `window.modelicaStudio` turns the developer console from a
+   * log tail into a prompt: the plugin's state is a graph of settings, a parsed
+   * model, an index of several thousand classes and a live view, and reading it
+   * out of log lines is guesswork. From the console:
+   *
+   *   modelicaStudio.state()          // what the plugin currently holds
+   *   modelicaStudio.settings         // the stored settings
+   *   modelicaStudio.model            // the parsed diagram
+   *   modelicaStudio.source()         // the model as Modelica
+   *   modelicaStudio.view             // the open studio view, if any
+   *   modelicaStudio.library.size     // how many classes were indexed
+   *   modelicaStudio.runLog.toText()  // every simulation this session
+   *   modelicaStudio.verbose = true   // and then every diag line prints
+   */
+  debugHandle(): Record<string, unknown> {
+    return {
+      plugin: this,
+      get settings() {
+        return (this as unknown as { plugin: ModelicaStudioPlugin }).plugin.settings;
+      },
+      get model() {
+        return (this as unknown as { plugin: ModelicaStudioPlugin }).plugin.model;
+      },
+      get view() {
+        return (this as unknown as { plugin: ModelicaStudioPlugin }).plugin.getView();
+      },
+      get library() {
+        return (this as unknown as { plugin: ModelicaStudioPlugin }).plugin.library;
+      },
+      get backend() {
+        return (this as unknown as { plugin: ModelicaStudioPlugin }).plugin.backend;
+      },
+      get runLog() {
+        return (this as unknown as { plugin: ModelicaStudioPlugin }).plugin.runLog;
+      },
+      source: () => serializeDiagram(this.model),
+      state: () => this.describeState(),
+      setVerbose: (on: boolean) => {
+        this.verbose = on;
+        return `Modelica Studio: verbose ${on ? "on" : "off"}`;
+      },
+      help: () =>
+        [
+          "modelicaStudio.state()      what the plugin holds",
+          "modelicaStudio.settings     stored settings",
+          "modelicaStudio.model        the parsed diagram",
+          "modelicaStudio.source()     the model as Modelica",
+          "modelicaStudio.view         the open studio view",
+          "modelicaStudio.library      the class index",
+          "modelicaStudio.runLog       every simulation this session",
+          "modelicaStudio.setVerbose(true)   print every diagnostic",
+        ].join("\n"),
+    };
+  }
+
+  /** A one-screen summary of what the plugin is holding, for the console. */
+  describeState(): Record<string, unknown> {
+    const view = this.getView();
+    return {
+      model: {
+        name: this.model.name,
+        components: this.model.components.length,
+        connections: this.model.connections.length,
+        equations: this.model.equations?.length ?? 0,
+      },
+      stopTime: this.stopTime(),
+      savedAs: this.settings.modelFiles[this.model.name] ?? null,
+      saveFolder: this.settings.modelFolder || "(vault root)",
+      library: { ready: this.libraryReady, classes: this.library.size },
+      openModelica: this.omc ? `${this.omc.version ?? "?"} at ${this.omc.omcPath}` : "not found",
+      backend: this.backend ? "ready" : "none",
+      studioOpen: view ? view.getViewType() : null,
+      simulations: this.runLog.size,
+      debugLog: this.settings.debugLog,
+      verboseConsole: this.verbose,
+    };
+  }
+
   async onload(): Promise<void> {
     await this.loadSettings();
     // Move an old plaintext key into the keychain before anything can use it.
     await this.migrateLegacyAiKey();
     this.diag("ai: " + describeSecretPresence(this.app, secretNameOf(this.settings.ai)));
-    this.diag(`onload start; omcPath="${this.settings.omcPath}" jobs=${this.settings.jobs}`);
+    // Exposed before anything can fail, so a plugin that fails to load is still
+    // inspectable from the console rather than silent.
+    (window as unknown as { modelicaStudio?: unknown }).modelicaStudio = this.debugHandle();
+    console.log(
+      "[Modelica Studio] loaded. Type modelicaStudio.help() in this console for what you can inspect."
+    );
+    this.diag(`onload start; omcPath="${this.settings.omcPath}" jobs=${this.settings.jobs}`, "info");
 
     this.register(() => {
       for (const embed of this.embeds.values()) embed.destroy();
@@ -489,6 +602,7 @@ export default class ModelicaStudioPlugin extends Plugin {
         (fromCache ? " (cached)" : " (parsed)")
     );
     if (loadedRoots.length === 0) {
+      this.diag("no Modelica libraries found; the palette will be empty", "error");
       new Notice(
         "Modelica Studio: no Modelica libraries were found. " +
           "Set a library path in Settings → Modelica Studio.",

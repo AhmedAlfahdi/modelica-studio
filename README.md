@@ -200,6 +200,28 @@ answer. The request includes the current source and a shortlist of library
 classes relevant to your description, so the model composes real MSL classes
 instead of inventing names.
 
+## Debugging
+
+The plugin logs to Obsidian's **developer console** (Ctrl+Shift+I) as well as to
+`.modelica-studio.log` in the vault. It also publishes a handle for inspecting its
+state live:
+
+```js
+modelicaStudio.help()        // what you can inspect
+modelicaStudio.state()       // model, span, save path, toolchain, run count
+modelicaStudio.source()      // the model as Modelica
+modelicaStudio.model         // the parsed diagram
+modelicaStudio.settings      // stored settings
+modelicaStudio.library       // the class index
+modelicaStudio.runLog        // every simulation this session
+modelicaStudio.setVerbose(true)   // print every diagnostic line
+```
+
+The log file is opt-in (**Write diagnostic log** in settings) because it survives
+a reload and can be read from outside the app. The console needs no setting:
+errors and warnings always print there, because a failure nobody can see is the
+one that gets reported as "nothing happened".
+
 ## Beta status
 
 Experimental, and it wants more testing. Specifically:

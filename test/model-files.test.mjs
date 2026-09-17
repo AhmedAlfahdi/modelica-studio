@@ -11,7 +11,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { repoRoot } from "./helpers/build.mjs";
+import { buildLibs, repoRoot } from "./helpers/build.mjs";
 
 const main = fs.readFileSync(path.join(repoRoot, "src/main.ts"), "utf8");
 const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
@@ -104,9 +104,14 @@ test("a .mo file can be opened four ways, and the default is left alone", () => 
   // 3. Dragging onto the canvas or the code pane.
   assert.match(view, /droppedVaultFile/, "a dropped file is recognised");
   assert.match(view, /loadModelFromPath/, "and opened");
+  // Both surfaces resolve a drop, and both decide acceptance by type.
   assert.ok(
-    (view.match(/droppedVaultFile\(ev\)/g) ?? []).length >= 3,
-    "both surfaces handle a drop"
+    (view.match(/droppedVaultFile\(\(t\)/g) ?? []).length >= 2,
+    "both surfaces resolve a drop"
+  );
+  assert.ok(
+    (view.match(/acceptsFileDrag\(/g) ?? []).length >= 1,
+    "and accept it by type during dragover"
   );
 
   // 4. It is NOT registered as the handler for the extension, so clicking a file
@@ -121,10 +126,18 @@ test("a drop tells a palette class from a file", () => {
   // Both arrive as a drop on the same surface, so the handler must distinguish
   // them or dragging a class would try to open a file called "Resistor".
   const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
-  const fn = /export function droppedVaultFile[\s\S]*?\n\}/.exec(view);
+  const fn = /export function droppedVaultFile[\s\S]*?\n\}/.exec(
+    fs.readFileSync(path.join(repoRoot, "src/view/drop.ts"), "utf8")
+  );
   assert.ok(fn, "the helper is present");
-  assert.match(fn[0], /endsWith\("\.mo"\)/, "only a .mo path counts as a file");
+  assert.match(fn[0], /vaultPathFrom\(raw\)/, "it resolves whatever the drag carried");
   assert.match(fn[0], /text\/vnd\.obsidian\.file/, "the explorer's own drag type is checked first");
+  // And the resolver is what rejects a class name, since the two arrive the same way.
+  const resolve = /export function vaultPathFrom[\s\S]*?\n\}/.exec(
+    fs.readFileSync(path.join(repoRoot, "src/view/drop.ts"), "utf8")
+  );
+  assert.ok(resolve, "the resolver is present");
+  assert.match(resolve[0], /endsWith\("\.mo"\)/, "only a .mo path counts as a file");
 });
 
 test("opening a file remembers where it came from", () => {
@@ -145,4 +158,60 @@ test("opening by path checks the file exists before reading it", () => {
   assert.match(byPath[0], /instanceof TFile/, "it resolves the path first");
   assert.match(byPath[0], /was not found in the vault/, "and says so when it cannot");
   assert.match(byPath[0], /await this\.activateView\(\)/, "and brings the studio forward");
+});
+
+/* ---- what a drag actually carries ---- */
+
+// The drop helpers are pure, so they are tested directly rather than through a
+// DOM stub.
+const viewMod = await import(
+  path.join(buildLibs("drop-lib", ["src/view/drop.ts"]), "drop.js")
+);
+
+test("a drag is accepted by TYPE, because the data is unreadable during dragover", () => {
+  // `dragover` must call preventDefault or the browser refuses the drop and
+  // `drop` never fires, and the browser hides the data until the drop is
+  // accepted — so acceptance cannot be decided by content. Deciding by content
+  // is why dragging a file onto the code pane did nothing at all.
+  const src = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  const drop = fs.readFileSync(path.join(repoRoot, "src/view/drop.ts"), "utf8");
+  const fn = /export function acceptsFileDrag[\s\S]*?\n\}/.exec(drop);
+  assert.ok(fn, "the type check exists");
+  assert.match(fn[0], /types\.includes\("text\/vnd\.obsidian\.file"\)/, "the explorer's type");
+  assert.match(fn[0], /fileCount > 0/, "and real files from outside the app");
+  assert.ok(!/read\(|getData/.test(fn[0]), "and it does NOT read data, which is unavailable");
+  // The dragover handler uses it.
+  assert.match(src, /acceptsFileDrag\(ev\.dataTransfer\?\.types/, "dragover consults it");
+});
+
+test("an obsidian:// link is resolved to a vault path", async () => {
+  // A drag from the file explorer produced `obsidian://open?vault=…&file=Modelica%2FTank.mo`,
+  // and the plugin reported that VERBATIM as "not found in the vault".
+  assert.ok(viewMod, "the view module builds");
+  const { vaultPathFrom } = viewMod;
+  assert.equal(
+    vaultPathFrom("obsidian://open?vault=modelica-vault&file=Modelica%2FInclinedPlaneFriction.mo"),
+    "Modelica/InclinedPlaneFriction.mo",
+    "encoded, with the vault parameter ignored"
+  );
+  assert.equal(vaultPathFrom("Modelica/Tank.mo"), "Modelica/Tank.mo", "a bare path");
+  assert.equal(vaultPathFrom("Modelica%2FTank.mo"), "Modelica/Tank.mo", "an encoded path");
+  assert.equal(vaultPathFrom("/Modelica/Tank.mo"), "Modelica/Tank.mo", "a leading slash is dropped");
+  assert.equal(
+    vaultPathFrom("file:///home/para/modelica-vault/Modelica/Tank.mo"),
+    "Modelica/Tank.mo",
+    "a file URL, reduced to the vault-relative part"
+  );
+  // Not a model file.
+  assert.equal(vaultPathFrom("Resistor"), null, "a palette class is not a path");
+  assert.equal(vaultPathFrom("notes/readme.md"), null, "nor is another kind of file");
+  assert.equal(vaultPathFrom("obsidian://open?vault=v&file=notes%2Fx.md"), null);
+  assert.equal(vaultPathFrom(""), null);
+});
+
+test("a stray percent sign does not throw", async () => {
+  // A filename containing `%` is not an encoding error worth breaking a drop for.
+  assert.ok(viewMod);
+  assert.equal(viewMod.vaultPathFrom("Modelica/100%25.mo"), "Modelica/100%.mo");
+  assert.doesNotThrow(() => viewMod.vaultPathFrom("Modelica/100%.mo"));
 });
