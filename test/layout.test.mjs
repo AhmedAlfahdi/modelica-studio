@@ -100,31 +100,49 @@ test("there is exactly one handle between the results and the code pane", () => 
   assert.ok(splitIdx < resultsIdx && resultsIdx < codeIdx, "handle, then results, then code");
 });
 
-test("the handle moves the boundary, and the editor fills the remainder", () => {
-  // Two faults lived here. The pane that received the drag depended on the mode,
-  // so the same gesture moved different things; and the code pane was given a
-  // height of its own, so on a tall window it stopped filling and left dead space
-  // below the editor while the drag appeared to shuffle a fixed block about.
+test("the grip follows the pointer", () => {
+  // Three faults lived here. The grip moved AWAY from the mouse -- dragging down
+  // moved it up -- because the arithmetic shrank the pane above it. The pane that
+  // received the drag depended on the mode, so one gesture moved different things.
+  // And the code pane had a height of its own, so on a tall window it stopped
+  // filling and left dead space below the editor.
   //
-  // The rule now: the results pane owns the height in BOTH modes and the editing
-  // area takes what is left, so the drag means one thing everywhere — down shrinks
-  // what is above the boundary — and in code mode that grows the editor below it.
+  // The rule: the grip follows the pointer, the results pane owns the height in
+  // both modes, and the editing area takes the remainder. Which pane grows then
+  // follows from where the grip is, and every handle in the view moves the same
+  // way the mouse does.
   const src = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
   const impl = /private installResultsResize[\s\S]*?\n  \}/.exec(src);
   assert.ok(impl, "the resize handler is present");
 
-  // One arithmetic, no mode-dependent branch inside it.
-  assert.match(impl[0], /apply\(startH - \(ev\.clientY - startY\)\)/, "the results pane takes the delta");
-  assert.ok(!/startH \+/.test(impl[0]), "and there is no second, opposite formula");
+  // The boundary moves WITH the pointer: the delta is added, not subtracted.
+  assert.match(impl[0], /apply\(startH \+ \(ev\.clientY - startY\)\)/, "down lowers the boundary");
+  assert.ok(!/startH - \(ev\.clientY/.test(impl[0]), "and never moves against it");
+
+  // No mode-dependent second formula.
+  assert.ok(!/startH \* -1/.test(impl[0]), "one arithmetic for both modes");
 
   // The editing area is never given a height of its own.
   const mode = /private applyModeResultsHeight[\s\S]*?\n  \}/.exec(src);
   assert.ok(mode, "the mode handler is present");
   assert.match(mode[0], /codeHost\.style\.flex = ""/, "the editor is allowed to grow");
   assert.match(mode[0], /codeHost\.style\.height = ""/, "and carries no height of its own");
-  assert.ok(
-    !/codeHost\.style\.height = `\$\{/.test(mode[0]),
-    "a fixed height on the editor is what left the dead space"
-  );
+});
+
+test("every handle in the view moves with the pointer", () => {
+  // A handle that moves against the mouse is the bug being fixed, so no handle
+  // may subtract an un-negated delta.
+  const src = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  const splitters = [...src.matchAll(/private install\w*Splitter[\s\S]*?\n  \}/g)].map((m) => m[0]);
+  splitters.push(/private installResultsResize[\s\S]*?\n  \}/.exec(src)[0]);
+  assert.ok(splitters.length >= 2, `found ${splitters.length} handle implementations`);
+  for (const impl of splitters) {
+    // The inspector's is on the pane's left edge, so it subtracts an X delta:
+    // dragging left must widen it. That is still "towards the pointer" in the
+    // axis that pane grows along.
+    const addY = /startH \+ \(ev\.clientY/.test(impl);
+    const subX = /startW - \(ev\.clientX/.test(impl);
+    assert.ok(addY || subX, "each handle moves consistently with its edge");
+  }
 });
 

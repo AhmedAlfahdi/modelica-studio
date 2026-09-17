@@ -1575,6 +1575,21 @@ export class ModelicaStudioView extends ItemView {
    * above the boundary — and in code mode that is the same movement as growing
    * the editor below it.
    */
+  /**
+   * Drag the boundary between the editing area and the results.
+   *
+   * The grip FOLLOWS the pointer. That is the property that was missing: dragging
+   * DOWN used to move the grip UP, because the arithmetic shrank the pane the
+   * grip sits above. Nothing about a handle should move away from the mouse.
+   *
+   * Following the pointer settles which pane grows, too. The grip is on the code
+   * editor's top edge in code mode, so pulling it down lowers that edge and the
+   * editor gives way to the plot; pushing it up does the reverse. In diagram mode
+   * the grip is at the canvas's bottom edge, so pulling it down grows the plot.
+   *
+   * The results pane owns the height in both modes and the editing area takes
+   * whatever is left, so the editor can never be left with dead space below it.
+   */
   private installResultsResize(handle: HTMLElement, pane: HTMLElement): void {
     let startY = 0;
     let startH = 0;
@@ -1590,7 +1605,8 @@ export class ModelicaStudioView extends ItemView {
     };
 
     const onMove = (ev: PointerEvent) => {
-      apply(startH - (ev.clientY - startY));
+      // Dragging down lowers the boundary, so the pane above the grip grows.
+      apply(startH + (ev.clientY - startY));
     };
 
     const commit = () => this.storeResultsHeight(pane.getBoundingClientRect().height);
