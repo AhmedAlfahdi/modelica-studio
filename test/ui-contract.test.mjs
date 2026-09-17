@@ -198,3 +198,57 @@ test("a routine run reports no warnings", () => {
   assert.match(fn[0], /structured\[1\] === "ASSERT"/, "and LOG_ASSERT always does");
   assert.ok(!/LOG_\(ASSERT\|ERROR\|STDOUT\)/.test(fn[0]), "LOG_STDOUT is no longer treated as a warning");
 });
+
+test("no tooltip simply repeats its own label", () => {
+  // A tooltip that says "Zoom in" on a button labelled "Zoom in" tells the reader
+  // nothing they cannot already see, and reads as a bug. Every tooltip is checked
+  // against the label of the control it belongs to.
+  /** label, hint pairs from the toolbar and code-toolbar factories. */
+  const pairs = [];
+  for (const m of view.matchAll(/addBtn\(\s*\w+,\s*"[^"]+",\s*"([^"]+)",\s*\n?\s*(?:`([^`]+)`|"([^"]+)")/g)) {
+    pairs.push([m[1], m[2] ?? m[3]]);
+  }
+  for (const m of view.matchAll(/mk\("([^"]+)",\s*"([^"]+)",\s*(?:`([^`]+)`|"([^"]+)")/g)) {
+    pairs.push([m[2], m[3] ?? m[4]]);
+  }
+  assert.ok(pairs.length >= 16, `found ${pairs.length} labelled controls`);
+
+  for (const [label, hint] of pairs) {
+    if (!hint) continue;
+    assert.notEqual(
+      label.trim().toLowerCase(),
+      hint.trim().toLowerCase(),
+      `"${label}" has a tooltip that only repeats it`
+    );
+    // Nor a tooltip that is just the label with a full stop or key appended.
+    const bare = hint.replace(/[.。]$/, "").trim();
+    assert.notEqual(bare.toLowerCase(), label.trim().toLowerCase(), `"${label}" tooltip repeats it`);
+  }
+});
+
+test("a nested control does not steal the tooltip it sits inside", () => {
+  // A browser shows the NEAREST ancestor's title, so a child title REPLACES the
+  // parent's rather than adding to it. The palette row's tooltip carries the class
+  // name and its description; giving the help icon its own title threw both away
+  // for anyone hovering the icon -- which is where the pointer lands when reaching
+  // for help.
+  const palette = /const help = btn\.createEl\("a", \{ cls: "modelica-studio-palette-help"[\s\S]{0,700}?help\.setAttribute\("aria-label"[^\n]*\n/.exec(view);
+  assert.ok(palette, "the palette help icon is present");
+  assert.ok(
+    !/help\.title\s*=/.test(palette[0]),
+    "the palette icon must not set a title, or it hides the row's"
+  );
+  // It still needs an accessible name, since it has no visible text.
+  assert.match(palette[0], /aria-label/, "but it is still labelled for a screen reader");
+  // And the row keeps its own tooltip.
+  assert.match(view, /btn\.setAttr\("title", `\$\{item\.name\}\\n\$\{item\.comment/, "the row still has one");
+});
+
+test("the inspector help icon keeps a title, because nothing above it has one", () => {
+  // The opposite case: in the inspector the class name is plain text with no
+  // tooltip, so the icon is the only thing that can explain itself.
+  const inspector = /const help = classRow\.createEl\("a"[\s\S]{0,700}?help\.setAttribute\("aria-label"[^\n]*\n/.exec(view);
+  assert.ok(inspector, "the inspector help icon is present");
+  assert.match(inspector[0], /help\.title =/, "it explains itself");
+  assert.match(inspector[0], /aria-label/, "and is labelled");
+});

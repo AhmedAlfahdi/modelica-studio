@@ -404,8 +404,14 @@ export class ModelicaStudioView extends ItemView {
 
     // ---- View: diagram only ----
     const view = addGroup(bar, "View", "diagram");
-    addBtn(view, "zoom-in", "Zoom in", "Zoom in", () => this.editor?.zoomBy(1.25));
-    addBtn(view, "zoom-out", "Zoom out", "Zoom out", () => this.editor?.zoomBy(0.8));
+    // The wheel zooms about the pointer with no modifier, so the tooltip says
+    // scroll rather than inventing a chord for it.
+    addBtn(view, "zoom-in", "Zoom in", "Enlarge the diagram, or scroll up over the canvas", () =>
+      this.editor?.zoomBy(1.25)
+    );
+    addBtn(view, "zoom-out", "Zoom out", "Shrink the diagram, or scroll down over the canvas", () =>
+      this.editor?.zoomBy(0.8)
+    );
     addBtn(view, "maximize", "Fit to view", `Fit the whole diagram in the canvas (${mod}+0)`, () =>
       this.editor?.scheduleFit()
     );
@@ -1300,8 +1306,9 @@ export class ModelicaStudioView extends ItemView {
     if (docUrl) {
       const help = btn.createEl("a", { cls: "modelica-studio-palette-help", href: docUrl });
       setIcon(help, "help-circle");
-      help.title = `Open the Modelica documentation for ${item.name}`;
-      help.setAttribute("aria-label", `Documentation for ${item.name}`);
+      // Deliberately NO title: the row's own tooltip carries the class name and
+      // its description, and a nested title would replace it with less.
+      help.setAttribute("aria-label", `Open the documentation for ${item.name}`);
       help.addEventListener("click", (ev) => {
         // Otherwise the click would also place the component, and the anchor
         // would navigate the Obsidian window.
