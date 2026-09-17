@@ -347,3 +347,43 @@ test("a control with no visible text still has an accessible name", () => {
   assert.ok(inspector, "the inspector help icon is labelled");
   assert.ok(!/help\.title\s*=/.test(inspector[0]), "and does not also set a title");
 });
+
+test("help lives in the studio, and lists shortcuts that exist", () => {
+  // The reference links were a settings panel, which is the wrong place for
+  // something reached for while working. The shortcuts belong nowhere else at
+  // all: they are the least discoverable part of any editor.
+  const settings = fs.readFileSync(path.join(repoRoot, "src/settings.ts"), "utf8");
+  assert.ok(!/createEl\("h3", \{ text: "Help" \}\)/.test(settings), "settings no longer has the section");
+  assert.match(settings, /choose Help in the toolbar/, "and points at where it went");
+
+  const studio = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  assert.match(studio, /"Help",/, "the studio has a Help button");
+  assert.match(studio, /new HelpModal\(this\.app, this\.plugin\)\.open\(\)/, "which opens the dialog");
+
+  const help = fs.readFileSync(path.join(repoRoot, "src/view/help-modal.ts"), "utf8");
+  // Every documented shortcut must be a key the code actually handles. A help
+  // page listing a key that does nothing is worse than no help page.
+  const editor = fs.readFileSync(path.join(repoRoot, "src/view/editor.ts"), "utf8");
+  const code = fs.readFileSync(path.join(repoRoot, "src/view/code-editor.ts"), "utf8");
+  const handlers = editor + "\n" + code;
+
+  // The bare-letter and arrow shortcuts, named in the table.
+  for (const [keys, pattern] of [
+    ["Arrow keys", /case "Arrow(Up|Down|Left|Right)":/],
+    ["Tab", /case "Tab":/],
+    ["Escape", /case "Escape":/],
+    ["Delete", /case "Delete":/],
+    ["R", /case "r":/i],
+  ]) {
+    assert.ok(pattern.test(handlers), `${keys} is documented and must exist in a handler`);
+  }
+  // And the modifier ones, by their letter.
+  for (const letter of ["z", "a", "c", "v", "x", "d", "0"]) {
+    const re = new RegExp(String.raw`ev\.key(\.toLowerCase\(\))? === "` + letter + `"`, "i");
+    assert.ok(re.test(handlers), `${letter} is documented and must exist in a handler`);
+  }
+  assert.match(help, /DIAGRAM_SHORTCUTS/, "the diagram list is exported");
+  assert.match(help, /CODE_SHORTCUTS/, "and the code one");
+  // The table must not claim a shortcut the editor does not have.
+  assert.ok(!/rungekutta4|Ctrl\+Shift\+P/.test(help), "no invented shortcuts");
+});

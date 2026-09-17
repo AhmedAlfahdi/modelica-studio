@@ -8,7 +8,6 @@
 
 import { App, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import type ModelicaStudioPlugin from "./main";
-import { libraryHelpUrl, libraryVersionFrom } from "./modelica/doclinks";
 import { exclusionsFrom, libraryRows } from "./modelica/library-exclusions";
 import { SOLVERS, solverDescription, AI_THINKING_LEVELS, MODEL_STYLES, type AiThinking, type ModelStyle, AI_DEFAULTS,
   DEFAULT_TIMEOUT_SECONDS, AI_PROVIDERS, AiConfig, LEGACY_SECRET_NAME, legacyKeyOf } from "./ai/prompts";
@@ -501,24 +500,12 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         })
       );
 
-    containerEl.createEl("h3", { text: "Help" });
-    containerEl.createEl("p", {
+    containerEl.createDiv({
       cls: "modelica-studio-muted",
       text:
-        "The Modelica Standard Library reference. Every class in the palette has " +
-        "a help icon beside its name in the inspector that opens its own page.",
+        "Reference links, what this installation is, and the keyboard shortcuts are " +
+        "in the studio: open it and choose Help in the toolbar.",
     });
-    new Setting(containerEl)
-      .setName("Modelica library documentation")
-      .setDesc("Opens the reference for the installed library version, in your browser.")
-      .addButton((b) =>
-        b.setButtonText("Open").onClick(() => {
-          // The version follows the installed library, since a tree for a version
-          // that is not here documents classes that do not match the palette.
-          const version = libraryVersionFrom(this.plugin.libraryRootNames());
-          window.open(libraryHelpUrl(version), "_blank", "noopener");
-        })
-      );
 
     containerEl.createEl("h3", { text: "Models" });
     containerEl.createEl("p", {

@@ -30,6 +30,7 @@ import { fuzzyFilter } from "../modelica/fuzzy";
 import { docUrlFor, libraryVersionFrom } from "../modelica/doclinks";
 import { acceptsFileDrag, droppedVaultFile } from "./drop";
 import { SavedModelsModal } from "./saved-models-modal";
+import { HelpModal } from "./help-modal";
 import { SimulationError } from "../omc/backend";
 import { CODE_RESULTS_H, DEFAULT_RESULTS_H, clampInspectorWidth, clampResultsHeight } from "./panes";
 import { checkModel, ModelProblem } from "../modelica/checks";
@@ -369,6 +370,11 @@ export class ModelicaStudioView extends ItemView {
     // between them rather than only a report.
     addBtn(model, "files", "Model list…", "Every model saved in this vault; click one to open it", () =>
       new SavedModelsModal(this.app, this.plugin).open()
+    );
+    // Help sits at the end, after the actions: it is where you look when the
+    // others have not answered the question.
+    addBtn(bar, "help-circle", "Help", "What this installation is, the documentation, and the keyboard shortcuts", () =>
+      new HelpModal(this.app, this.plugin).open()
     );
 
     // ---- Run ----

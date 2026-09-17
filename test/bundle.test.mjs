@@ -103,6 +103,37 @@ const obsidianStub = {
       this.contentEl = {};
     }
   },
+  // The help dialog reads this at module scope to label the modifier key.
+  Platform: { isMacOS: false, isMobile: false },
+  // Modal is extended by the saved-models and help dialogs, so the stub needs a
+  // real base class -- an undefined export fails as "class extends value
+  // undefined", which reads as a plugin error rather than a missing stub.
+  Modal: class Modal {
+    constructor(app) {
+      this.app = app;
+      // A chainable element stub. The dialogs are only constructed here, not
+      // opened, but a stub that throws on the first missing method turns a
+      // missing test double into what looks like a plugin failure.
+      const el = () => {
+        const e = {
+          style: {},
+          classList: { add() {}, remove() {}, toggle() {} },
+          empty() {},
+          addClass() {},
+          setText() {},
+          setAttribute() {},
+          appendChild() {},
+          addEventListener() {},
+        };
+        for (const m of ["createEl", "createDiv", "createSpan", "createEl"]) e[m] = () => el();
+        return e;
+      };
+      this.titleEl = el();
+      this.contentEl = el();
+    }
+    open() {}
+    close() {}
+  },
   PluginSettingTab: class PluginSettingTab {
     constructor(app, plugin) {
       this.app = app;

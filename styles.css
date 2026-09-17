@@ -1625,3 +1625,67 @@ body.modelica-studio-resizing * {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+/* Help dialog: facts, links, and the shortcut tables. */
+.modelica-studio-help-modal h4 {
+  margin: 16px 0 6px;
+}
+.modelica-studio-help-modal h4:first-of-type {
+  margin-top: 0;
+}
+.modelica-studio-help-facts {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.modelica-studio-help-fact {
+  display: grid;
+  grid-template-columns: 10em minmax(0, 1fr);
+  gap: 4px 10px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+.modelica-studio-help-fact + .modelica-studio-help-fact {
+  border-top: 1px solid var(--background-modifier-border);
+}
+.modelica-studio-help-fact-label {
+  color: var(--text-muted);
+}
+.modelica-studio-help-fact-value {
+  color: var(--text-normal);
+  font-family: var(--font-monospace);
+}
+.modelica-studio-help-fact-note {
+  grid-column: 2;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.modelica-studio-help-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+/* Keys and their meaning, in two columns so the eye can run down the list. */
+.modelica-studio-keys {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 2px 14px;
+  font-size: 12px;
+}
+.modelica-studio-key-row {
+  display: contents;
+}
+.modelica-studio-key-combo {
+  color: var(--text-normal);
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.modelica-studio-key-what {
+  color: var(--text-muted);
+}
+.modelica-studio-help-about {
+  font-size: 12px;
+  padding-bottom: 4px;
+}
