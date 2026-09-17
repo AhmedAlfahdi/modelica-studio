@@ -28,6 +28,7 @@ import type {
 import { serializeDiagram } from "../modelica/serializer";
 import { fuzzyFilter } from "../modelica/fuzzy";
 import { SimulationError } from "../omc/backend";
+import { DEFAULT_RESULTS_H, clampInspectorWidth, clampResultsHeight } from "./panes";
 import { checkModel, ModelProblem } from "../modelica/checks";
 import { createCodeEditor, CodeEditorHandle, Diagnostic } from "./code-editor";
 import { AiError, buildMessages, chat, extractModelica, modelNameOf } from "../ai/client";
@@ -175,7 +176,9 @@ export class ModelicaStudioView extends ItemView {
     // Restore the height the user dragged it to, so the choice survives a
     // reload rather than resetting to the default every time.
     if (this.plugin.settings.plotHeight > 0) {
-      resultsCol.style.height = `${this.plugin.settings.plotHeight}px`;
+      // Clamped on restore as well: a height stored before the maximum existed,
+      // or on a larger window, would otherwise come back out of range.
+      resultsCol.style.height = `${this.clampResultsHeight(this.plugin.settings.plotHeight)}px`;
     }
     this.resultsEl = resultsCol;
     this.resultsResize = resultsSplitter;
@@ -1479,12 +1482,32 @@ export class ModelicaStudioView extends ItemView {
    * The pane is one region holding both tabs, so resizing it resizes whichever
    * is showing — the plot canvas and the source both fill it.
    */
+  /**
+   * Clamp a requested results height to what the view can actually give.
+   *
+   * There was a minimum but NO maximum, so the pane could be dragged until it
+   * filled the window — which pushed the grip towards the top of the screen,
+   * because the grip sits on the pane's top edge. The handle then reads as being
+   * "at the top" instead of at the bottom of the editing area it divides.
+   *
+   * Both ends of the range are derived from the live geometry rather than from
+   * constants, because a small window, a large interface scale or a docked side
+   * panel can each leave far less room than a fixed maximum assumes.
+   */
+  private clampResultsHeight(wanted: number): number {
+    return clampResultsHeight(wanted, this.contentEl?.clientHeight ?? 0);
+  }
+
   private installResultsResize(handle: HTMLElement, pane: HTMLElement): void {
     let startY = 0;
     let startH = 0;
-    const onMove = (ev: PointerEvent) => {
-      const next = Math.max(MIN_RESULTS_H, startH - (ev.clientY - startY));
+    const apply = (h: number) => {
+      const next = this.clampResultsHeight(h);
       pane.style.height = `${next}px`;
+      return next;
+    };
+    const onMove = (ev: PointerEvent) => {
+      apply(startH - (ev.clientY - startY));
       if (this.bottomTab === "plot") this.drawResults();
     };
     const onUp = () => {
@@ -1501,6 +1524,14 @@ export class ModelicaStudioView extends ItemView {
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
       ev.preventDefault();
+    });
+    // Double-click restores the default, matching the inspector's splitter —
+    // without it a pane dragged to an awkward size has to be dragged back by hand.
+    handle.addEventListener("dblclick", () => {
+      apply(DEFAULT_RESULTS_H);
+      this.plugin.settings.plotHeight = Math.round(pane.getBoundingClientRect().height);
+      if (this.bottomTab === "plot") this.drawResults();
+      void this.plugin.saveSettings();
     });
   }
 
@@ -2124,7 +2155,7 @@ export class ModelicaStudioView extends ItemView {
   private installSplitter(splitter: HTMLElement, col: HTMLElement): void {
     const root = this.contentEl;
     const apply = (w: number) => {
-      const clamped = Math.max(MIN_INSPECTOR_W, Math.min(w, Math.max(MIN_INSPECTOR_W, root.clientWidth - 260)));
+      const clamped = clampInspectorWidth(w, root.clientWidth);
       root.style.setProperty("--ms-inspector-width", `${clamped}px`);
       return clamped;
     };
@@ -2430,11 +2461,9 @@ export class ModelicaStudioView extends ItemView {
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
 
-const MIN_INSPECTOR_W = 260;
 const DEFAULT_INSPECTOR_W = 380;
 
 /** Smallest height the results pane can be dragged to, in pixels. */
-const MIN_RESULTS_H = 160;
 
 /** Components listed per package before the user narrows the search. */
 const SEARCH_LIMIT = 200;
