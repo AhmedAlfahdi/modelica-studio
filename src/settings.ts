@@ -8,6 +8,7 @@
 
 import { App, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import type ModelicaStudioPlugin from "./main";
+import { libraryHelpUrl, libraryVersionFrom } from "./modelica/doclinks";
 import { AI_DEFAULTS,
   DEFAULT_TIMEOUT_SECONDS, AI_PROVIDERS, AiConfig, LEGACY_SECRET_NAME, legacyKeyOf } from "./ai/prompts";
 
@@ -619,6 +620,25 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           resultBox.setText(result.text);
           resultBox.toggleClass("is-ok", result.ok);
           resultBox.toggleClass("is-bad", !result.ok);
+        })
+      );
+
+    containerEl.createEl("h3", { text: "Help" });
+    containerEl.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "The Modelica Standard Library reference. Every class in the palette has " +
+        "a help icon beside its name in the inspector that opens its own page.",
+    });
+    new Setting(containerEl)
+      .setName("Modelica library documentation")
+      .setDesc("Opens the reference for the installed library version, in your browser.")
+      .addButton((b) =>
+        b.setButtonText("Open").onClick(() => {
+          // The version follows the installed library, since a tree for a version
+          // that is not here documents classes that do not match the palette.
+          const version = libraryVersionFrom(this.plugin.libraryRootNames());
+          window.open(libraryHelpUrl(version), "_blank", "noopener");
         })
       );
 

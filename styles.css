@@ -1329,3 +1329,24 @@ body.modelica-studio-resizing * {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Help link beside a class name. Sized and coloured to read as a secondary
+   affordance: it sits next to the class, not as a button competing with it. */
+.modelica-studio-classrow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.modelica-studio-help {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.modelica-studio-help:hover {
+  color: var(--text-accent);
+}
+.modelica-studio-help svg {
+  width: 14px;
+  height: 14px;
+}

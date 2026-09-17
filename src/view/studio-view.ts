@@ -27,6 +27,7 @@ import type {
 } from "../modelica/types";
 import { serializeDiagram } from "../modelica/serializer";
 import { fuzzyFilter } from "../modelica/fuzzy";
+import { docUrlFor, libraryVersionFrom } from "../modelica/doclinks";
 import { acceptsFileDrag, droppedVaultFile } from "./drop";
 import { SimulationError } from "../omc/backend";
 import { CODE_RESULTS_H, DEFAULT_RESULTS_H, clampInspectorWidth, clampResultsHeight } from "./panes";
@@ -1452,7 +1453,25 @@ export class ModelicaStudioView extends ItemView {
 
     const head = parent.createDiv({ cls: "modelica-studio-inspector-head" });
     head.createEl("strong", { text: inst.id });
-    head.createDiv({ cls: "modelica-studio-muted", text: inst.className });
+    const classRow = head.createDiv({ cls: "modelica-studio-classrow" });
+    classRow.createSpan({ cls: "modelica-studio-muted", text: inst.className });
+    // The class name is the thing a reader wants to look up, so the link to its
+    // documentation sits on it rather than in a menu.
+    const url = docUrlFor(inst.className, libraryVersionFrom(this.plugin.libraryRootNames()));
+    if (url) {
+      const help = classRow.createEl("a", { cls: "modelica-studio-help", href: url });
+      setIcon(help, "help-circle");
+      help.title = `Open the Modelica documentation for ${inst.className}`;
+      help.setAttribute("aria-label", `Documentation for ${inst.className}`);
+      // A plain click on the anchor would navigate the Obsidian window away from
+      // the app. `window.open` in Electron can open a chrome-less popup instead
+      // of the browser, so the click is redirected to a synthetic anchor, which
+      // goes through the same path a real external link does.
+      help.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        openInBrowser(url);
+      });
+    }
 
     const nameRow = parent.createDiv({ cls: "modelica-studio-field" });
     nameRow.createEl("label", { text: "Instance name" });
@@ -3141,3 +3160,21 @@ export function describeToolbar(buttons: Record<string, HTMLButtonElement | unde
 }
 
 
+
+/**
+ * Open a URL in the user's browser rather than the Obsidian window.
+ *
+ * A plain click on an anchor would navigate the app window away from the studio.
+ * A synthetic anchor with `target="_blank"` is how the app treats an external
+ * link, and it reaches the browser; a bare `window.open` can produce a
+ * chrome-less Electron popup instead.
+ */
+export function openInBrowser(url: string): void {
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
