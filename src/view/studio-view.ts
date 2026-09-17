@@ -175,7 +175,9 @@ export class ModelicaStudioView extends ItemView {
     this.inspectorCol = rightCol;
     this.inspectorTabsEl = rightCol.createDiv({ cls: "modelica-studio-tabs" });
     this.inspectorTabsEl.setAttribute("role", "tablist");
-    this.inspectorTabsEl.setAttribute("aria-label", "Inspector");
+    // Named for a screen reader, but not a tooltip: a tab strip's label would
+    // otherwise appear over every tab in it.
+    noLabelTooltip(this.inspectorTabsEl, "Inspector");
     this.inspectorEl = rightCol.createDiv({ cls: "modelica-studio-inspector-body" });
     this.installSplitter(splitter, rightCol);
 
@@ -305,7 +307,10 @@ export class ModelicaStudioView extends ItemView {
       // renders one from it, and having both attributes showed two tooltips in
       // two different styles.
       b.createSpan({ text: label });
-      b.title = hint;
+      // `aria-label` is the ONLY attribute Obsidian renders a tooltip from -- its
+      // handler reads `aria-label` and never `title`. Setting `title` as well drew
+      // the browser's native tooltip on top of Obsidian's, which is the overlap.
+      b.setAttribute("aria-label", hint);
       b.addEventListener("click", onClick);
       return b;
     };
@@ -314,21 +319,24 @@ export class ModelicaStudioView extends ItemView {
       const g = parent.createDiv({ cls: "modelica-studio-btn-group" });
       g.dataset.scope = scope;
       g.setAttribute("role", "group");
-      g.setAttribute("aria-label", name);
+      noLabelTooltip(g, name);
       return g;
     };
 
     // ---- the mode switch leads, because it decides what the rest acts on ----
     const modeGroup = bar.createDiv({ cls: "modelica-studio-modes" });
     modeGroup.setAttribute("role", "group");
-    modeGroup.setAttribute("aria-label", "Editor mode");
+    // "Editor mode" appeared as a second tooltip over the Diagram and Code
+    // buttons, because the tooltip handler is delegated on `[aria-label]` and
+    // fired for the group when the pointer crossed a button inside it.
+    noLabelTooltip(modeGroup, "Editor mode");
     const addMode = (id: "diagram" | "code", icon: string, label: string, hint: string) => {
       const b = modeGroup.createEl("button", { cls: "modelica-studio-btn modelica-studio-mode" });
       setIcon(b, icon);
       // Same as the toolbar: the text is the accessible name, and a second
       // attribute would render a second tooltip.
       b.createSpan({ text: label });
-      b.title = hint;
+      b.setAttribute("aria-label", hint);
       // A pair of mutually exclusive views is what `aria-pressed` describes, and
       // it is also what makes the active one announce itself.
       b.setAttribute("aria-pressed", "false");
@@ -486,7 +494,10 @@ export class ModelicaStudioView extends ItemView {
       const b = bar.createEl("button", { cls: "modelica-studio-btn" });
       setIcon(b, icon);
       b.createSpan({ text: label });
-      b.title = hint;
+      // `aria-label` is the ONLY attribute Obsidian renders a tooltip from -- its
+      // handler reads `aria-label` and never `title`. Setting `title` as well drew
+      // the browser's native tooltip on top of Obsidian's, which is the overlap.
+      b.setAttribute("aria-label", hint);
       b.addEventListener("click", onClick);
       return b;
     };
@@ -504,7 +515,7 @@ export class ModelicaStudioView extends ItemView {
     const aiRow = host.createDiv({ cls: "modelica-studio-ai" });
     aiRow.style.display = "none";
     aiRow.setAttribute("role", "group");
-    aiRow.setAttribute("aria-label", "Generate a model with AI");
+    noLabelTooltip(aiRow, "Generate a model with AI");
     this.aiRow = aiRow;
 
     const input = aiRow.createEl("input", {
@@ -527,16 +538,20 @@ export class ModelicaStudioView extends ItemView {
     const go = aiRow.createEl("button", { cls: "modelica-studio-btn mod-cta" });
     setIcon(go, "sparkles");
     go.createSpan({ text: "Generate" });
-    go.title =
-      "Write a model from the description, then compile it and repair it until it builds";
+    go.setAttribute(
+      "aria-label",
+      "Write a model from the description, then compile it and repair it until it builds"
+    );
     go.addEventListener("click", () => void this.runAiRequest());
     this.aiGoBtn = go;
 
     const fix = aiRow.createEl("button", { cls: "modelica-studio-btn" });
     setIcon(fix, "wrench");
     fix.createSpan({ text: "Fix errors" });
-    fix.title =
-      "Repair the current model, using the last simulation's output or the run log";
+    fix.setAttribute(
+      "aria-label",
+      "Repair the current model, using the last simulation's output or the run log"
+    );
     fix.addEventListener("click", () => void this.runAiRequest(true));
     this.aiFixBtn = fix;
 
@@ -545,7 +560,7 @@ export class ModelicaStudioView extends ItemView {
     const stop = aiRow.createEl("button", { cls: "modelica-studio-btn" });
     setIcon(stop, "square");
     stop.createSpan({ text: "Stop" });
-    stop.title = "Stop the run after the current step";
+    stop.setAttribute("aria-label", "Stop the run after the current step");
     stop.style.display = "none";
     stop.addEventListener("click", () => {
       this.aiCancel = true;
@@ -1284,7 +1299,9 @@ export class ModelicaStudioView extends ItemView {
   ): void {
     const btn = list.createDiv({ cls: "modelica-studio-palette-item" });
     btn.draggable = true;
-    btn.setAttr("title", `${item.name}\n${item.comment ?? ""}`.trim());
+    // The row's tooltip: the class name and what it is. `aria-label` rather than
+    // `title`, so it is Obsidian's tooltip and not the browser's.
+    btn.setAttribute("aria-label", `${item.name}${item.comment ? ` — ${item.comment}` : ""}`);
 
     const thumb = btn.createEl("canvas", { cls: "modelica-studio-palette-thumb" });
     thumb.width = THUMB_SIZE;
@@ -1623,7 +1640,7 @@ export class ModelicaStudioView extends ItemView {
       ? `${p.name.replace(/\.start$/, "")} (initial)`
       : p.name + (p.unit ? ` (${p.unit})` : "");
     const el = row.createEl("label", { text: label });
-    if (p.comment) el.setAttr("title", p.comment);
+    if (p.comment) el.setAttribute("aria-label", p.comment);
     const input = row.createEl("input", {
       type: "text",
       value: inst.params[p.name] ?? p.defaultValue ?? "",
@@ -1809,7 +1826,7 @@ export class ModelicaStudioView extends ItemView {
       const bar = el.createDiv({ cls: "modelica-studio-plotbar" });
       const tabs = bar.createDiv({ cls: "modelica-studio-tabs" });
       tabs.setAttribute("role", "tablist");
-      tabs.setAttribute("aria-label", "Results");
+      noLabelTooltip(tabs, "Results");
       this.bottomTabEls = {};
       for (const [id, label] of [
         ["plot", "Plot"],
@@ -1846,7 +1863,7 @@ export class ModelicaStudioView extends ItemView {
       const toAi = logBar.createEl("button", { cls: "modelica-studio-btn" });
       setIcon(toAi, "sparkles");
       toAi.createSpan({ text: "Send to AI" });
-      toAi.title = "Ask the model to fix the failure, sending it the full compiler output";
+      toAi.setAttribute("aria-label", "Ask the model to fix the failure, sending it the full compiler output");
       toAi.addEventListener("click", () => {
         // The whole point of the log: the model gets the compiler's own words,
         // not a paraphrase, and the editor is switched to code mode so the fix
@@ -2649,7 +2666,7 @@ export class ModelicaStudioView extends ItemView {
     // A menu, so a screen reader announces it as one and the arrow keys are
     // expected to work inside it.
     menu.setAttribute("role", "menu");
-    menu.setAttribute("aria-label", "Example models");
+    noLabelTooltip(menu, "Example models");
     menu.tabIndex = -1;
     anchor.setAttribute("aria-haspopup", "menu");
     anchor.setAttribute("aria-expanded", "true");
@@ -3215,4 +3232,18 @@ export function openInBrowser(url: string): void {
   document.body.appendChild(a);
   a.click();
   a.remove();
+}
+
+/**
+ * Give an element an accessible name that never becomes a tooltip.
+ *
+ * Obsidian attaches tooltips by delegation on `[aria-label]`, so any container
+ * carrying a label pops one up whenever the pointer crosses its children — the
+ * mode group's "Editor mode" appeared over the Diagram and Code buttons for
+ * exactly that reason. A group still needs its name for a screen reader, so the
+ * label stays and the tooltip is switched off with the flag Obsidian checks.
+ */
+export function noLabelTooltip(el: HTMLElement, name: string): void {
+  el.setAttribute("aria-label", name);
+  el.style.setProperty("--no-tooltip", "true");
 }

@@ -130,8 +130,8 @@ test("the block shows its result and keeps the diagram one button away", async (
   // formatting would fail on a reformat rather than on a behaviour change.
   assert.match(
     source,
-    /setAttr\(\s*"title",\s*visible\s*\?[^)]*\)/,
-    "the tooltip states the action"
+    /setAttr\(\s*"aria-label",\s*visible\s*\?[^)]*\)/,
+    "the tooltip states the action, as aria-label"
   );
   // "Only one tooltip attribute per control" is asserted generally in
   // ui-contract.test.mjs, which strips comments before checking. Repeating it

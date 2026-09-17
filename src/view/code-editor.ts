@@ -159,8 +159,12 @@ export function createCodeEditor(
     const parts: string[] = [];
     for (let i = 1; i <= lineCount(); i++) {
       const d = byLine.get(i);
+      // The tooltip is the ONLY place this message appears, so it has to stay --
+      // but as `aria-label`, which is what Obsidian builds a tooltip from and
+      // what a screen reader reads. `role="img"` gives the span an accessible
+      // name; without a role, `aria-label` on a bare span is not exposed.
       const mark = d
-        ? `<span class="mst-code-mark is-${d.severity}" title="${escapeAttr(d.message)}"></span>`
+        ? `<span class="mst-code-mark is-${d.severity}" role="img" aria-label="${escapeAttr(d.message)}"></span>`
         : "";
       parts.push(`<div class="mst-code-ln${d ? " has-" + d.severity : ""}">${i}${mark}</div>`);
     }

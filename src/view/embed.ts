@@ -385,7 +385,7 @@ export class EmbeddedDiagram {
     // second tooltip in Obsidian's own style, on top of the browser's.
     if (this.plotButtonBtn) {
       this.plotButtonBtn.setAttr(
-        "title",
+        "aria-label",
         visible ? "Show the schematic instead of the plot" : "Show the result plot instead of the schematic"
       );
     }

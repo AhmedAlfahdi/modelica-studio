@@ -241,7 +241,11 @@ test("a nested control does not steal the tooltip it sits inside", () => {
   // It still needs an accessible name, since it has no visible text.
   assert.match(palette[0], /aria-label/, "but it is still labelled for a screen reader");
   // And the row keeps its own tooltip.
-  assert.match(view, /btn\.setAttr\("title", `\$\{item\.name\}\\n\$\{item\.comment/, "the row still has one");
+  assert.match(
+    view,
+    /btn\.setAttribute\("aria-label", `\$\{item\.name\}/,
+    "the row still has one"
+  );
 });
 
 test("a help icon with no visible text carries exactly one attribute", () => {
@@ -253,6 +257,41 @@ test("a help icon with no visible text carries exactly one attribute", () => {
   assert.ok(!/help\.title\s*=/.test(inspector[0]), "and does not also set a title");
 });
 
+
+test("tooltips come from ONE mechanism, not two", () => {
+  // Two renderers: Obsidian builds its own tooltip from `aria-label` --
+  // its handler reads `aria-label` and never `title`, verified in the app bundle
+  // -- while `title` draws the BROWSER's native tooltip. Using both showed two
+  // tooltips at slightly different offsets, which is the overlap reported.
+  for (const rel of ["src/view/studio-view.ts", "src/view/embed.ts"]) {
+    const text = fs.readFileSync(path.join(repoRoot, rel), "utf8");
+    const code = text
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    assert.ok(
+      !/\.title\s*=/.test(code) && !/setAttr\("title"/.test(code),
+      `${rel} still sets a title, which draws a second tooltip`
+    );
+  }
+});
+
+test("a group or container does not raise a tooltip for its children", () => {
+  // The tooltip handler is delegated on `[aria-label]`, so a container's label
+  // popped up whenever the pointer crossed any control inside it: the mode
+  // group's "Editor mode" appeared over the Diagram and Code buttons.
+  assert.match(view, /export function noLabelTooltip/, "there is a helper for it");
+  const helper = /export function noLabelTooltip[\s\S]*?\n\}/.exec(view);
+  assert.ok(helper, "the helper is present");
+  assert.match(helper[0], /--no-tooltip/, "it uses the flag Obsidian checks");
+  assert.match(helper[0], /aria-label/, "and still names the group for a screen reader");
+  // Every labelled container goes through it.
+  for (const container of ["modeGroup", "this.inspectorTabsEl", "tabs", "menu", "aiRow"]) {
+    assert.ok(
+      new RegExp(`noLabelTooltip\\(${container.replace(".", "\\.")}`).test(view),
+      `${container} should suppress its own tooltip`
+    );
+  }
+});
 
 test("no control carries two tooltip attributes at once", () => {
   // `title` renders the BROWSER's native tooltip; a label attribute renders
@@ -279,29 +318,23 @@ test("no control carries two tooltip attributes at once", () => {
   }
 });
 
-test("a toolbar button relies on its visible label, not a second attribute", () => {
-  // The buttons in the screenshot each carried an aria-label identical to their
-  // text, which Obsidian renders as a styled tooltip on top of the native one.
-  // Comments are stripped first: the rule is about code, and a comment explaining
-  // the rule must not read as a violation of it.
+test("a toolbar button's label is real text, and its tooltip is one attribute", () => {
+  // The label lives in a child span rather than on the button, so the button has
+  // an accessible name from its own text and the icon can sit beside it. The
+  // tooltip is `aria-label` and nothing else: Obsidian builds its tooltip from
+  // that, and a `title` as well would draw the browser's on top of it.
   const code = view
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
   const addBtn = /const addBtn = \([\s\S]*?\n    \};/.exec(code);
   assert.ok(addBtn, "the toolbar button factory is present");
-  assert.match(addBtn[0], /b\.createSpan\(\{ text: label \}\)/, "it creates a visible label");
-  assert.match(addBtn[0], /b\.title = hint/, "and a tooltip");
-  assert.ok(
-    !/aria-label/.test(addBtn[0]),
-    "but not an aria-label as well, which would render a second tooltip"
-  );
-  // The label is inside a span rather than on the button, so the button still has
-  // an accessible name from its own text.
-  assert.match(addBtn[0], /createSpan/, "the text is a real child element");
-  // Same for the mode buttons.
+  assert.match(addBtn[0], /b\.createSpan\(\{ text: label \}\)/, "the label is a child element");
+  assert.match(addBtn[0], /b\.setAttribute\("aria-label", hint\)/, "and the tooltip is aria-label");
+  assert.ok(!/\.title\s*=/.test(addBtn[0]), "with no title beside it");
+
   const addMode = /const addMode = \([\s\S]*?\n    \};/.exec(code);
   assert.ok(addMode, "the mode button factory is present");
-  assert.ok(!/aria-label/.test(addMode[0]), "the mode buttons have no aria-label either");
+  assert.match(addMode[0], /b\.setAttribute\("aria-label", hint\)/, "same for the mode buttons");
 });
 
 test("a control with no visible text still has an accessible name", () => {
