@@ -381,6 +381,32 @@ sub-libraries that many models never touch:
 A shorter palette is easier to search, and a shorter list in the AI's brief is
 less to choose wrongly from.
 
+### Choosing a solver
+
+Leave it on **OpenModelica default** unless you have a reason. The list is what
+this runtime offers, read from the runtime itself:
+
+| Solver | What it is | Use it when |
+|---|---|---|
+| `dassl` | BDF, implicit, adaptive order 1–5 | the default; right for stiff systems |
+| `ida` | SUNDIALS BDF, implicit, sparse | large systems, where the sparse solver scales better |
+| `cvode` | SUNDIALS BDF or Adams–Moulton, order 1–12 | you want accuracy — measured **1e-16** against 8e-8 for `dassl` on a stiff problem |
+| `gbode` | a family of Runge–Kutta methods, order 1–14, implicit or explicit | you want to try a non-BDF method, or multi-rate integration |
+| `euler` | explicit, fixed step, order 1 | teaching, and seeing what a bad solver looks like |
+| `rungekutta` | classical explicit RK, fixed step, order 4 | smooth non-stiff models; unstable on stiff ones |
+| `symSolver`, `qss` | symbolic inline; quantised-state | experimental — `symSolver` needs a compiler flag this plugin does not pass |
+
+**A stiff system** is one where something changes far faster than the interval you
+care about — a fast electrical transient next to a slow thermal one. Explicit
+methods take tiny steps to stay stable there; implicit ones like `dassl` and
+`cvode` do not.
+
+One caution worth knowing: **an unrecognised solver name is not an error to
+OpenModelica.** It warns, exits successfully, and writes a result file full of
+NaN. The name is `rungekutta`, not `rungekutta4` — and this plugin recommended the
+wrong one until it was measured. The plugin now reports an all-NaN result as a
+failure naming the solver, rather than showing an empty plot.
+
 ### Measuring it yourself
 
 `modelicaStudio.state()` reports the toolchain, the index size and the settings in

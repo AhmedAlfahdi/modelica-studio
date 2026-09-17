@@ -377,12 +377,21 @@ export class OmcBackend implements SimulationBackend {
     const csv = fs.readFileSync(csvPath, "utf8");
     const { header, rows } = parseOmcCsv(csv);
 
-    return csvToResult(header, rows, {
+    // An unrecognised solver name is not an error to OpenModelica: it warns,
+    // continues, and writes a result file full of NaN. `rungekutta4` does that --
+    // the name is `rungekutta`. A run whose every value is NaN is a failure, and
+    // saying so is the difference between a user checking their solver and a user
+    // believing an empty plot.
+    const result = csvToResult(header, rows, {
       compileMs: compiled.compileMs,
       simulateMs,
       reusedBinary: compiled.compileMs === 0,
       warnings,
     });
+    const unusable = describeUnusableResult(result, opts.solver);
+    if (unusable) throw new SimulationError(unusable, []);
+    return result;
+
   }
 
   /** Force the next simulate() to recompile. */
@@ -615,3 +624,50 @@ export function availableBackends(): BackendInfo[] {
     },
   ];
 }
+
+/**
+ * Whether a run produced nothing usable, and why.
+ *
+ * An unrecognised solver name is not an error to OpenModelica: it prints a
+ * warning, exits 0, and writes a result file whose values are all NaN.
+ * `rungekutta4` does exactly that — the name is `rungekutta`, and it was
+ * recommended by this plugin's own settings until it was measured.
+ *
+ * A NaN result is reported as a failure naming the solver, because the
+ * alternative is a successful-looking run and an empty plot.
+ */
+export function describeUnusableResult(result: SimResult, solver?: string): string | null {
+  const values = result.series.flatMap((s) => s.values);
+  // `every` on an empty list is true, so an empty result is caught here too.
+  const finite = values.filter((v) => Number.isFinite(v)).length;
+  if (finite > 0) return null;
+
+  const named = solver ? `"${solver}"` : "the default solver";
+  const known = SOLVER_NAMES.has(solver ?? "dassl");
+  // Two different problems with the same symptom. A solver this runtime does not
+  // know is a typo, and saying so points at the fix; a known solver returning
+  // nothing is a model or settings problem.
+  return known
+    ? `The simulation produced no usable values: every result is NaN. ` +
+        `The solver ${named} returned nothing, which usually means the model could ` +
+        `not be integrated at these settings — try a smaller step, a looser ` +
+        `tolerance, or a different solver.`
+    : `The simulation produced no usable values: every result is NaN. ` +
+        `OpenModelica does not recognise the solver ${named}, and rather than fail ` +
+        `it warns and writes NaN. Check the spelling in settings — the Runge-Kutta ` +
+        `solver is called "rungekutta", not "rungekutta4".`;
+}
+
+/** The solver names this runtime lists. Kept here so the message can tell a typo from a failure. */
+const SOLVER_NAMES = new Set([
+  "dassl",
+  "ida",
+  "cvode",
+  "gbode",
+  "euler",
+  "rungekutta",
+  "symSolver",
+  "symSolverSsc",
+  "qss",
+  "optimization",
+]);

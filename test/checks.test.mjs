@@ -14,7 +14,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { buildLibs } from "./helpers/build.mjs";
+import fs from "node:fs";
+import { buildLibs, repoRoot } from "./helpers/build.mjs";
 
 const { checkModel } = await import(
   path.join(buildLibs("checks-lib", ["src/modelica/checks.ts"]), "checks.js")
@@ -333,4 +334,82 @@ test("an old setting value is brought forward, not left inert", () => {
   // And a config predating the style choice asks for a diagram.
   assert.equal(migrateSettings({ ...base, ai: { ...base.ai, style: undefined } }).ai.style, "visual");
   assert.equal(migrateSettings({ ...base, ai: { ...base.ai, style: "equations" } }).ai.style, "equations");
+});
+
+/* ---- solver names, and the silent failure they cause ---- */
+
+const { describeUnusableResult } = await import(
+  path.join(buildLibs("omc-unusable", ["src/omc/backend.ts"]), "backend.js")
+);
+
+test("a NaN result is a failure, not a successful run", () => {
+  // An unrecognised solver name is not an error to OpenModelica: it warns, exits
+  // 0, and writes a result file full of NaN. `rungekutta4` does exactly that --
+  // the real name is `rungekutta` -- and this plugin's own settings recommended
+  // it until it was measured.
+  const nan = {
+    time: [0, 1],
+    series: [{ name: "y", values: [NaN, NaN] }],
+    compileMs: 0,
+    simulateMs: 0,
+    reusedBinary: true,
+    warnings: [],
+  };
+  const problem = describeUnusableResult(nan, "rungekutta4");
+  assert.ok(problem, "it is rejected");
+  assert.match(problem, /does not recognise the solver/, "as a typo");
+  assert.match(problem, /rungekutta", not "rungekutta4"/, "naming the fix");
+});
+
+test("a known solver returning nothing is a different message", () => {
+  // Same symptom, different cause: the spelling is fine, so the advice must not
+  // be "check the spelling".
+  const nan = {
+    time: [0, 1],
+    series: [{ name: "y", values: [NaN] }],
+    compileMs: 0,
+    simulateMs: 0,
+    reusedBinary: true,
+    warnings: [],
+  };
+  const problem = describeUnusableResult(nan, "dassl");
+  assert.ok(problem);
+  assert.ok(!/does not recognise/.test(problem), "not called a typo");
+  assert.match(problem, /could not be integrated/, "and points at the model instead");
+});
+
+test("a good result passes and an empty one does not", () => {
+  const good = {
+    time: [0, 1],
+    series: [{ name: "y", values: [1, 0.54] }],
+    compileMs: 0,
+    simulateMs: 0,
+    reusedBinary: true,
+    warnings: [],
+  };
+  assert.equal(describeUnusableResult(good, "dassl"), null);
+  // No series at all: `every` on an empty list is true, so a mis-written check
+  // would call this a success.
+  const empty = { ...good, series: [] };
+  assert.ok(describeUnusableResult(empty, "dassl"), "an empty result is not a success");
+  // A single finite value among NaNs is still a usable run.
+  const partial = { ...good, series: [{ name: "y", values: [NaN, 1] }] };
+  assert.equal(describeUnusableResult(partial, "dassl"), null);
+});
+
+test("the solver setting offers only names the runtime has", () => {
+  // The list is the runtime's own, read by asking it for a name it does not know.
+  // Two things had gone wrong: `rungekutta4` was recommended and does not exist,
+  // and the free-text field gave no way to tell a real name from an invented one.
+  const src = fs.readFileSync(path.join(repoRoot, "src/ai/prompts.ts"), "utf8");
+  const solvers = [...src.matchAll(/\{ id: "([^"]*)", label: "([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(solvers.includes(""), "the default is offered");
+  assert.ok(solvers.includes("cvode"), "and the measured-best one");
+  assert.ok(!solvers.includes("rungekutta4"), "the non-existent name is gone");
+  assert.ok(solvers.includes("rungekutta"), "the real one is there");
+  assert.match(src, /the name is rungekutta, NOT rungekutta4/, "and the trap is called out");
+
+  // Every entry must carry a hint, since the dropdown shows one per choice.
+  const entries = [...src.matchAll(/\{ id: "([^"]*)", label: "([^"]+)", hint: "([^"]+)"/g)];
+  assert.equal(entries.length, solvers.length, "every solver has a hint");
 });

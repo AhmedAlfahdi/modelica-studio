@@ -9,7 +9,7 @@
 import { App, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import type ModelicaStudioPlugin from "./main";
 import { libraryHelpUrl, libraryVersionFrom } from "./modelica/doclinks";
-import { AI_THINKING_LEVELS, MODEL_STYLES, type AiThinking, type ModelStyle, AI_DEFAULTS,
+import { SOLVERS, AI_THINKING_LEVELS, MODEL_STYLES, type AiThinking, type ModelStyle, AI_DEFAULTS,
   DEFAULT_TIMEOUT_SECONDS, AI_PROVIDERS, AiConfig, LEGACY_SECRET_NAME, legacyKeyOf } from "./ai/prompts";
 
 
@@ -153,18 +153,28 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Solver")
       .setDesc(
-        "Leave empty for OpenModelica's default (dassl). Other useful values: " +
-          "ida, cvode, euler, rungekutta4, gbode."
+        "The integrator the compiled model uses. The list is what this OpenModelica " +
+          "runtime offers — it names its own solvers when given one it does not " +
+          "recognise, which is where these come from."
       )
-      .addText((t) =>
-        t
-          .setPlaceholder("dassl")
-          .setValue(this.plugin.settings.solver)
-          .onChange(async (v) => {
-            this.plugin.settings.solver = v.trim();
-            await this.plugin.saveSettings();
-          })
-      );
+      .addDropdown((d) => {
+        for (const solver of SOLVERS) d.addOption(solver.id, solver.label);
+        // A stored value the list does not carry is kept rather than silently
+        // reset: it may be a name from a different OpenModelica version, and
+        // discarding it would change a setting the user chose.
+        const stored = this.plugin.settings.solver.trim();
+        if (!SOLVERS.some((s) => s.id === stored)) d.addOption(stored, `${stored} (unverified)`);
+        d.setValue(stored);
+        const hint = containerEl.createDiv({ cls: "modelica-studio-muted" });
+        const show = (id: string) =>
+          hint.setText(SOLVERS.find((s) => s.id === id)?.hint ?? "Not a solver this runtime lists.");
+        show(stored);
+        d.onChange(async (v) => {
+          this.plugin.settings.solver = v;
+          show(v);
+          await this.plugin.saveSettings();
+        });
+      });
 
     new Setting(containerEl)
       .setName("Write diagnostic log")

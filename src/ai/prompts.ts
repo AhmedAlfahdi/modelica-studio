@@ -48,6 +48,29 @@ export const AI_THINKING_LEVELS: Array<{ id: AiThinking; label: string; hint: st
   { id: "max", label: "Max", hint: "Most reasoning. Slowest; worth trying when attempts keep failing." },
 ];
 
+/**
+ * The solvers this OpenModelica runtime actually offers.
+ *
+ * Read from the runtime itself, which lists them when given a name it does not
+ * recognise -- the authoritative source, and the reason this list is short: the
+ * compiled model is what chooses a solver, and it knows its own set.
+ *
+ * Getting this wrong is silent. `rungekutta4` does not exist (the name is
+ * `rungekutta`), and an unknown solver produces a WARNING, exit code 0 and a
+ * result file full of NaN -- a run that looks successful and contains nothing.
+ */
+export const SOLVERS: Array<{ id: string; label: string; hint: string }> = [
+  { id: "", label: "OpenModelica default", hint: "dassl — a safe choice unless you have a reason." },
+  { id: "dassl", label: "dassl", hint: "BDF, implicit, adaptive order 1-5. The default, and the right one for stiff systems — fast modes that force a small step." },
+  { id: "ida", label: "ida (SUNDIALS)", hint: "BDF, implicit, sparse. Like dassl but scales better on large systems; also does sensitivity analysis." },
+  { id: "cvode", label: "cvode (SUNDIALS)", hint: "BDF or Adams-Moulton, adaptive order 1-12. Measured the most accurate of the six here on a stiff problem (error 1e-16 against 8e-8 for dassl)." },
+  { id: "gbode", label: "gbode", hint: "A family of Runge-Kutta methods, implicit or explicit, order 1-14, with optional multi-rate integration. The general-purpose alternative." },
+  { id: "euler", label: "euler", hint: "Explicit, fixed step, order 1. For teaching and for seeing what a bad solver looks like; not for real work." },
+  { id: "rungekutta", label: "rungekutta", hint: "Classical Runge-Kutta, explicit, fixed step, order 4. Fine for smooth non-stiff models, unstable on stiff ones. Note: the name is rungekutta, NOT rungekutta4." },
+  { id: "symSolver", label: "symSolver", hint: "Symbolic inline solver (order 1). Needs the compiler flag --symSolver, which this plugin does not pass, so it will not work here." },
+  { id: "qss", label: "qss", hint: "Quantised-state solver, marked experimental in OpenModelica. Expect rough edges." },
+];
+
 export const MODEL_STYLES: Array<{ id: ModelStyle; label: string; hint: string }> = [
   {
     id: "visual",
