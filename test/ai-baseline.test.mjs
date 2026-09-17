@@ -120,3 +120,50 @@ test("the document does not overstate one sample", () => {
   assert.match(doc, /One sample per cell/, "the sample size is stated");
   assert.match(doc, /not usable/, "and the confounded run-A timings are marked as such");
 });
+
+test("the documented performance figures are internally consistent", () => {
+  // The tables cannot be verified automatically, but a table that contradicts
+  // itself can be caught. The jobs table must fall monotonically: more parallel
+  // codegen cannot be slower, and if it ever reads that way the measurement is
+  // wrong rather than the machine.
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+  const table = /## Performance[\s\S]*?### Measuring it yourself/.exec(readme);
+  assert.ok(table, "there is a performance section");
+
+  // Cells are read loosely: the first saving is an em dash and the last is bold,
+  // so a strict pattern silently matched two rows out of four and the test passed
+  // its length check for the wrong reason.
+  const jobs = [...table[0].matchAll(/^\|\s*(\d+)\s*\|\s*([\d.]+)\s*s\s*\|\s*([^|]*)\|/gm)]
+    .map((m) => {
+      const cell = m[3].replace(/[*\s]/g, "");
+      return {
+        jobs: Number(m[1]),
+        seconds: Number(m[2]),
+        saving: cell.includes("%") ? Number(cell.replace("%", "")) : null,
+      };
+    });
+  assert.ok(jobs.length >= 4, `found ${jobs.length} job rows`);
+  for (let i = 1; i < jobs.length; i++) {
+    assert.ok(
+      jobs[i].seconds < jobs[i - 1].seconds,
+      `jobs=${jobs[i].jobs} (${jobs[i].seconds}s) should beat jobs=${jobs[i - 1].jobs} (${jobs[i - 1].seconds}s)`
+    );
+    assert.ok(jobs[i].jobs > jobs[i - 1].jobs, "the job counts ascend");
+  }
+
+  // Every percentage must match the times on its own row, or the table claims a
+  // saving the numbers beside it do not support.
+  const base = jobs[0].seconds;
+  for (const row of jobs.slice(1)) {
+    if (row.saving === null) continue;
+    const actual = Math.round((1 - row.seconds / base) * 100);
+    assert.ok(
+      Math.abs(actual - row.saving) <= 1,
+      `jobs=${row.jobs} claims ${row.saving}% but the times give ${actual}%`
+    );
+  }
+
+  // And the section must state the machine, or the numbers mean nothing.
+  assert.match(table[0], /Ryzen 5 2600X/, "the machine is named");
+  assert.match(table[0], /OpenModelica/, "and the toolchain");
+});

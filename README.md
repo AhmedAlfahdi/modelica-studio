@@ -312,17 +312,85 @@ that were built, found unverifiable, and abandoned.
 
 ## Performance
 
-Measured on a Ryzen 5 2600X with OpenModelica 1.27, for a small MSL circuit:
+Measured on the development machine — **Ryzen 5 2600X, 12 threads, 15 GB, NVMe,
+OpenModelica 1.27.0, Modelica 4.1.0** — for a small MSL circuit. Every number below
+is a wall-clock measurement, not an estimate.
 
-| Stage | Measured |
+The one thing worth knowing: **the first launch after installing or upgrading the
+library costs about 2.4 s, and nothing else is slow.** Editing and re-running is
+milliseconds.
+
+### Startup
+
+| Stage | Measured | When |
+|---|---|---|
+| Parse the whole MSL into the class index | **2.4 s** | first launch after install/upgrade |
+| Load the index from its cache | **0.3–0.5 s** | every launch after that |
+| Cache file | 28.4 MB | written beside the plugin's data |
+
+6577 classes are parsed out of 148 MB of library source. The palette is built
+while this happens rather than before it, so the index cost is not a delay in
+opening the studio — it is why the palette fills in a moment late on a cold start.
+
+### Editing and running
+
+| Action | Measured | Why |
+|---|---|---|
+| Simulate with the binary already built | **18–36 ms** | the compiled model is reused |
+| Change a parameter and re-run | **~30 ms** | applied as a run-time override, not a rebuild |
+| Building the identical source again | **0 ms** | the fingerprint matches and the binary is reused |
+| First build, small equation model | **0.6 s** | translate, generate C, compile, link |
+| First build, 4-component MSL circuit | **1.5 s** | library classes bring their own equations |
+
+The 30 ms row is why parameters are applied as run-time overrides rather than by
+regenerating code, and why editing a value and re-simulating is immediate. Only a
+structural change — adding a component, rewiring, editing an equation — pays for a
+rebuild. Details in [`docs/design.md`](docs/design.md).
+
+An edit that only changes a value, a start attribute or a run setting stays on the
+fast path. So does switching between models that have both been built once.
+
+### What the settings are worth
+
+**Parallel compile jobs** is the setting that matters, and it is worth measuring
+rather than guessing. Same 4-component circuit, cold cache, on the 12-thread CPU:
+
+| `jobs` | First build | Saving |
+|---|---|---|
+| 1 | 4.07 s | — |
+| 2 | 2.47 s | 39% |
+| 4 | 1.75 s | 57% |
+| 8 | 1.43 s | **65%** |
+
+Each measured with an empty build cache and a freshly constructed backend, and
+reproduced twice — the first attempt at this table compared contaminated figures,
+since a backend remembers what it has already built and answered in 0 ms.
+
+The default is one less than the core count. Raising it past the physical core
+count does little, because code generation is CPU-bound.
+
+**Excluded libraries** does not affect the timings above — the whole library is
+still parsed — but it decides how much the studio has to offer. Excluding four
+sub-libraries that many models never touch:
+
+| | Classes |
 |---|---|
-| Load the Modelica Standard Library | ~970 ms, once per session |
-| Compile a model | ~1.9 s with `-n=8` parallel codegen, ~4.6 s without |
-| Re-run with changed parameters | **~20 ms**, reusing the compiled binary |
+| Everything indexed | 6577 |
+| After excluding `Magnetic`, `Clocked`, `ComplexBlocks`, `StateGraph` | 1714 placeable |
 
-The last row is why parameters are applied as run-time overrides rather than by
-recompiling, and why an edit re-simulates immediately. Details in
-[`docs/design.md`](docs/design.md).
+A shorter palette is easier to search, and a shorter list in the AI's brief is
+less to choose wrongly from.
+
+### Measuring it yourself
+
+`modelicaStudio.state()` reports the toolchain, the index size and the settings in
+force. The AI timings in [`docs/ai-baseline.md`](docs/ai-baseline.md) are measured
+the same way: by running the thing and writing down what happened.
+
+A different machine will differ, most in the compile column — that stage is
+CPU-bound and parallel, so core count moves it more than anything else. If a
+simulation feels slow, check `jobs` first, then whether the model is rebuilding
+when it should not be.
 
 ## Repository layout
 

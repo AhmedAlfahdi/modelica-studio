@@ -4,23 +4,38 @@ The long-form reasoning behind the implementation, kept from development.
 
 ## Why it is built this way
 
-Everything here follows from one measurement. On a Ryzen 5 2600X with
-OpenModelica 1.27, for a small Modelica Standard Library circuit:
+Everything here follows from one measurement: **translation dominates the cost of
+an edit, and simulation is nearly free.**
+
+Re-measured on the development machine (Ryzen 5 2600X, 12 threads, OpenModelica
+1.27.0, Modelica 4.1.0) for a 4-component MSL circuit:
 
 | Stage | Measured |
 |---|---|
-| Load the Modelica Standard Library | ~970 ms (once per session) |
-| Compile a model (frontend → backend → C → link) | ~1.9 s with `-n=8`, **~4.6 s without** |
-| Run the compiled model with changed parameters | **~20 ms** |
+| Parse the Modelica Standard Library | 2.4 s cold, 0.3–0.5 s from cache |
+| Compile a model (frontend → backend → C → link) | ~1.5 s with `-n=8` |
+| The same compile with `-n=1` | ~3.9 s |
+| Run the compiled model with changed parameters | ~30 ms |
 
-Translation is ~98% of the cost of an edit; simulation is nearly free. So the
-plugin is built to **never recompile when only a parameter value changed**:
+The absolute figures have moved since the original measurement (`~1.9 s` with
+`-n=8`, `~4.6 s` without, `~970 ms` library load) because both the build cache and
+the library index have changed since. **What has not moved is the ratio**, which is
+what the design rests on: parallel codegen is worth roughly 2.5–2.6×, and a
+parameter change is three orders of magnitude cheaper than a rebuild.
+
+So the plugin is built to **never recompile when only a parameter value changed**:
 
 - Parameters are sent to the compiled model with OpenModelica's `-override`, so
-  moving a value costs ~20 ms instead of ~1.9 s.
-- A structural fingerprint of the model decides whether a rebuild is needed.
+  moving a value costs ~30 ms instead of ~1.5 s.
+- A structural fingerprint of the model decides whether a rebuild is needed;
+  identical source costs 0 ms.
 - `-n` is always passed explicitly, because OpenModelica's default of 1 is
-  ~2.4× slower than necessary and nothing in the UI would reveal that.
+  ~2.5× slower than necessary and nothing in the UI would reveal that.
+- The library index is written to a 28 MB cache, so the 2.4 s parse is paid once
+  per library version rather than on every launch.
+
+The current figures live in the [README](../README.md#performance), measured with
+the same method — run the thing and write down what happened.
 
 ## Install
 
@@ -310,9 +325,10 @@ the reason.
   uses Node filesystem APIs, neither of which exists on mobile.
 - **Sandboxed Obsidian (Flatpak/Snap) cannot drive a host OpenModelica**, for
   the C-library reason above. Use the AppImage or a native package.
-- **Structural edits cost ~1.9 s.** Adding or removing a component requires a
-  real recompile; that is inherent to how OpenModelica works. Only the
-  in-process path above would change it.
+- **Structural edits cost ~1.5 s.** Adding or removing a component requires a real
+  recompile; that is inherent to how OpenModelica works, and it is where the
+  parallel-codegen setting earns its keep. Only an in-process path would change
+  it.
 - **An array-valued connector is shown as a single pin.** MSL declares fluid
   ports as `Interfaces.FluidPorts_b ports[nPorts]`; the editor places one pin
   rather than one per element, and cannot change `nPorts` in the inspector. A
