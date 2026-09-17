@@ -41,6 +41,9 @@ fs.writeFileSync(
   "export class PluginSettingTab { constructor(app, plugin) { this.app = app; this.plugin = plugin; } }\n" +
     "export class Setting { constructor() {} }\n" +
     "export class App {}\n" +
+    // TFile is used at run time -- the saved-models list tests each tracked path
+    // with `instanceof TFile` -- so it must be a real class here, not a type.
+    "export class TFile { constructor(path) { this.path = path; this.extension = (path.split('.').pop() || ''); } }\n" +
     // The settings tab builds a SecretComponent, so the stub must export it or
     // the module fails to instantiate at import time.
     "export class SecretComponent { constructor(app, el) { this.app = app; this.el = el; } " +

@@ -1382,3 +1382,52 @@ body.modelica-studio-resizing * {
   width: 14px;
   height: 14px;
 }
+
+/* Saved models, as a list rather than a sentence. One row per model, the name
+   first so the column scans, and the status carried by a colour on the left edge
+   rather than by words repeated on every line. */
+.modelica-studio-saved {
+  margin: 6px 0 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.modelica-studio-saved-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 10px;
+  border-left: 3px solid transparent;
+  font-size: 12px;
+}
+.modelica-studio-saved-row + .modelica-studio-saved-row {
+  border-top: 1px solid var(--background-modifier-border);
+}
+.modelica-studio-saved-name {
+  flex: 0 0 34%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-normal);
+}
+.modelica-studio-saved-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+/* A problem earns a colour; an unremarkable row stays quiet. */
+.modelica-studio-saved-row.is-missing {
+  border-left-color: var(--text-error);
+}
+.modelica-studio-saved-row.is-misplaced {
+  border-left-color: var(--text-warning);
+}
+.modelica-studio-saved-untracked {
+  padding: 6px 10px;
+  border-top: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-faint);
+  font-size: 11px;
+}
