@@ -1213,13 +1213,18 @@ body.modelica-studio-resizing * {
 /* A warning that must be read: used where the plugin is declining to do
    something for the user's own good, such as refusing to keep an API key in
    plain text. */
+/* A consequence being stated, not an error that has happened.
+   This used --background-modifier-error-hover, which is a strong solid crimson in
+   the default theme, and --text-normal on top of it: the dialog looked like a
+   failure and the text was hard to read. A filled block also shouts louder than
+   the decision warrants -- replacing a model in the studio is routine. */
 .modelica-studio-warn {
-  margin: 6px 0;
+  margin: 4px 0 8px;
   padding: 8px 10px;
   border-radius: 5px;
-  border: 1px solid var(--background-modifier-error);
-  background: var(--background-modifier-error-hover);
-  color: var(--text-normal);
+  border-left: 3px solid var(--text-warning);
+  background: var(--background-secondary);
+  color: var(--text-muted);
   font-size: 12px;
   line-height: 1.45;
 }

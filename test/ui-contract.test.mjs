@@ -117,11 +117,31 @@ test("text inputs have an accessible name, not only a placeholder", () => {
   assert.match(palette[0], /aria-label/, "and carries a label");
 });
 
-test("a destructive action states its consequence before asking", () => {
-  // Replacing the model in the studio used to happen without a word.
-  assert.match(main, /Replace the current model/, "New says it replaces");
-  assert.match(main, /confirmLabel/, "and the confirming button is not labelled Create");
-  assert.match(main, /warning/, "the consequence is passed to the prompt");
+test("a destructive action states its consequence and offers to prevent it", () => {
+  // Replacing the model in the studio used to happen without a word. Telling the
+  // user to "save it first" and offering only Replace and Cancel was not enough:
+  // it asks them to cancel, save by hand and start again. The dialog now does it.
+  assert.match(main, /The studio holds/, "New states what it replaces");
+  assert.match(main, /confirmLabel/, "the confirming button is not labelled Create");
+  assert.match(main, /alternativeLabel/, "and a keeping option is offered");
+  assert.match(main, /Save and replace/, "named for what it does");
+  // Choosing it must actually save, before anything is replaced.
+  const flow = /answer\.action === "alternative"[\s\S]*?await this\.newModel/.exec(main);
+  assert.ok(flow, "the alternative path is present and precedes the replacement");
+  assert.match(flow[0], /await this\.saveModelToNote\(\)/, "it saves");
+  // And a failed save must NOT go on to replace, or the warning would be a lie.
+  assert.match(flow[0], /Could not save[\s\S]*?return;/, "a failed save stops the replacement");
+});
+
+test("stating a consequence is not styled as an error", () => {
+  // The block used the error background, which is a strong solid crimson, with
+  // --text-normal on top: it looked like a failure and read badly.
+  const warn = /(?:^|\n)\.modelica-studio-warn\s*\{[^}]*\}/.exec(css);
+  assert.ok(warn, "the rule is present");
+  assert.ok(!/background-modifier-error/.test(warn[0]), "no error background");
+  assert.match(warn[0], /--text-warning/, "a warning accent instead");
+  assert.match(warn[0], /--background-secondary/, "on a quiet surface");
+  assert.match(warn[0], /--text-muted/, "with readable text");
 });
 
 test("status text does not point at controls that no longer exist", () => {

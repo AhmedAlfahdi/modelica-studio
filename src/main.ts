@@ -1053,13 +1053,19 @@ export default class ModelicaStudioPlugin extends Plugin {
       this.model.components.length > 0 ||
       this.model.connections.length > 0 ||
       (this.model.equations?.length ?? 0) > 0;
-    const name = await promptForText(this.app, {
-      title: hasContent ? "Replace the current model" : "New Modelica model",
+    // The current model's file, if it has one, so "Save and replace" can write to
+    // it rather than asking the user to invent a name.
+    const currentName = this.model.name;
+    const answer = await promptForText(this.app, {
+      // Still a creation dialog: the name being asked for is the new model's.
+      title: "New Modelica model",
       placeholder: "ModelName",
       initial: "MyModel",
       confirmLabel: hasContent ? "Replace" : "Create",
+      alternativeLabel: hasContent ? "Save and replace" : undefined,
       warning: hasContent
-        ? `This replaces "${this.model.name}" in the studio. Save it as a .mo file first if you want to keep it.`
+        ? `The studio holds "${currentName}". Naming a new model replaces it here; ` +
+          `its file, if it has one, is not touched.`
         : undefined,
       validate: (value) => {
         const v = value.trim();
@@ -1071,10 +1077,30 @@ export default class ModelicaStudioPlugin extends Plugin {
         return null;
       },
     });
-    if (!name) return;
+    if (!answer) return;
+    const name = answer.value.trim();
+
+    // "Save and replace" means what it says: the model being replaced is written
+    // to a file first, under its OWN name, so nothing is lost and no extra step
+    // is asked of the user.
+    if (answer.action === "alternative" && hasContent) {
+      try {
+        const saved = await this.saveModelToNote();
+        new Notice(`Saved ${currentName} to ${saved.path}.`);
+      } catch (err) {
+        // The save failed, so replacing now WOULD lose the model. Stop rather
+        // than proceed on a promise that was not kept.
+        new Notice(
+          `Could not save "${currentName}", so it was not replaced. ${String(err)}`,
+          10000
+        );
+        return;
+      }
+    }
+
     // A new model is a new file, so no remembered path may carry over.
     delete this.settings.modelFiles[name];
-    await this.newModel(name.trim());
+    await this.newModel(name);
     await this.activateView();
   }
 
@@ -1193,6 +1219,14 @@ export function describeSecretPresence(app: App, name: string): string {
  * and `Modal`. This is the smallest modal that does the job, with validation
  * shown inline so a bad name is refused before it becomes a file.
  */
+/** Which button the user chose in a prompt. */
+export type PromptAction = "confirm" | "alternative";
+
+export interface PromptResult {
+  value: string;
+  action: PromptAction;
+}
+
 function promptForText(
   app: App,
   opts: {
@@ -1210,18 +1244,26 @@ function promptForText(
     warning?: string;
     /** Label of the confirming button; "Create" suits creation, "Replace" does not. */
     confirmLabel?: string;
+    /**
+     * A second confirming action that keeps what is being replaced.
+     *
+     * A dialog that says "save this first" and offers only Replace and Cancel is
+     * asking the user to cancel, save by hand, and start again — a warning about
+     * a loss it could have prevented in one click.
+     */
+    alternativeLabel?: string;
   }
-): Promise<string | null> {
+): Promise<PromptResult | null> {
   return new Promise((resolve) => {
     const modal = new Modal(app);
     modal.titleEl.setText(opts.title);
     let settled = false;
 
-    const finish = (value: string | null) => {
+    const finish = (value: string | null, action: PromptAction = "confirm") => {
       if (settled) return;
       settled = true;
       modal.close();
-      resolve(value);
+      resolve(value === null ? null : { value, action });
     };
 
     if (opts.warning) {
@@ -1235,7 +1277,7 @@ function promptForText(
     const problem = modal.contentEl.createDiv({ cls: "modelica-studio-warn" });
     problem.style.display = "none";
 
-    const submit = () => {
+    const submit = (action: PromptAction = "confirm") => {
       const value = input.value.trim();
       const error = opts.validate?.(value) ?? null;
       if (error) {
@@ -1259,7 +1301,13 @@ function promptForText(
 
     const buttons = modal.contentEl.createDiv({ cls: "modelica-studio-prompt-buttons" });
     const ok = buttons.createEl("button", { cls: "mod-cta", text: opts.confirmLabel ?? "Create" });
-    ok.addEventListener("click", submit);
+    ok.addEventListener("click", () => submit());
+    // The safe option sits beside the destructive one, so keeping the current
+    // model costs a click rather than a retry.
+    if (opts.alternativeLabel) {
+      const alt = buttons.createEl("button", { text: opts.alternativeLabel });
+      alt.addEventListener("click", () => submit("alternative"));
+    }
     const cancel = buttons.createEl("button", { text: "Cancel" });
     cancel.addEventListener("click", () => finish(null));
 
