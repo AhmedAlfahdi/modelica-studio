@@ -100,23 +100,31 @@ test("there is exactly one handle between the results and the code pane", () => 
   assert.ok(splitIdx < resultsIdx && resultsIdx < codeIdx, "handle, then results, then code");
 });
 
-test("the handle resizes the pane it appears to belong to", () => {
-  // Diagram mode: the handle is at the canvas's bottom edge, so dragging down
-  // takes space from the canvas. Code mode: it is at the editor's TOP edge, so
-  // dragging up takes space from the plot and gives it to the editor. One
-  // boundary, described from whichever side is on screen.
+test("the handle moves the boundary, and the editor fills the remainder", () => {
+  // Two faults lived here. The pane that received the drag depended on the mode,
+  // so the same gesture moved different things; and the code pane was given a
+  // height of its own, so on a tall window it stopped filling and left dead space
+  // below the editor while the drag appeared to shuffle a fixed block about.
+  //
+  // The rule now: the results pane owns the height in BOTH modes and the editing
+  // area takes what is left, so the drag means one thing everywhere — down shrinks
+  // what is above the boundary — and in code mode that grows the editor below it.
   const src = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
   const impl = /private installResultsResize[\s\S]*?\n  \}/.exec(src);
   assert.ok(impl, "the resize handler is present");
 
-  // Which pane receives the drag is decided by the mode...
-  assert.match(impl[0], /const inCode = \(\) => this\.mode === "code"/);
-  // ...the diagram pane subtracts the delta, the code pane adds its negative,
-  // which is the same sign — so a downward drag always shrinks what is above the
-  // boundary, and the two never fight.
-  assert.match(impl[0], /startH - dy/, "the diagram pane subtracts");
-  assert.match(impl[0], /startH \+ dy \* -1/, "the code editor adds the negated delta");
-  // Double-click restores the default for the mode on screen.
-  assert.match(impl[0], /inCode\(\) \? DEFAULT_CODE_H : DEFAULT_RESULTS_H/);
+  // One arithmetic, no mode-dependent branch inside it.
+  assert.match(impl[0], /apply\(startH - \(ev\.clientY - startY\)\)/, "the results pane takes the delta");
+  assert.ok(!/startH \+/.test(impl[0]), "and there is no second, opposite formula");
+
+  // The editing area is never given a height of its own.
+  const mode = /private applyModeResultsHeight[\s\S]*?\n  \}/.exec(src);
+  assert.ok(mode, "the mode handler is present");
+  assert.match(mode[0], /codeHost\.style\.flex = ""/, "the editor is allowed to grow");
+  assert.match(mode[0], /codeHost\.style\.height = ""/, "and carries no height of its own");
+  assert.ok(
+    !/codeHost\.style\.height = `\$\{/.test(mode[0]),
+    "a fixed height on the editor is what left the dead space"
+  );
 });
 

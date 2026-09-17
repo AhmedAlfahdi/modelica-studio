@@ -119,15 +119,6 @@ export interface ModelicaStudioSettings {
   /** Results-pane height in CODE mode; 0 means the default. */
   codePlotHeight: number;
 
-  /**
-   * Height of the code editor; 0 means the default.
-   *
-   * The handle sits on the editor's own top edge, so this is what it controls:
-   * dragging up makes the editor taller, which is the direction a grip on a top
-   * edge is expected to move. Stored rather than derived because the height
-   * cannot be read back from the element while the pane is hidden.
-   */
-  codeHeight: number;
 
   /** Shared plot configuration, or null before anything has been chosen. */
   /**
@@ -189,7 +180,6 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   inspectorWidth: 380,
   plotHeight: 0,
   codePlotHeight: 0,
-  codeHeight: 0,
   modelStopTimes: {},
   charts: {},
   ai: { ...AI_DEFAULTS },
