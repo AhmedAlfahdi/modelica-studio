@@ -301,10 +301,11 @@ export class ModelicaStudioView extends ItemView {
     ) => {
       const b = parent.createEl("button", { cls: `modelica-studio-btn ${cls}`.trim() });
       setIcon(b, icon);
+      // The visible label IS the accessible name, so no aria-label: Obsidian
+      // renders one from it, and having both attributes showed two tooltips in
+      // two different styles.
       b.createSpan({ text: label });
       b.title = hint;
-      // The label is the accessible name already; the tooltip is for the pointer.
-      b.setAttribute("aria-label", label);
       b.addEventListener("click", onClick);
       return b;
     };
@@ -324,9 +325,10 @@ export class ModelicaStudioView extends ItemView {
     const addMode = (id: "diagram" | "code", icon: string, label: string, hint: string) => {
       const b = modeGroup.createEl("button", { cls: "modelica-studio-btn modelica-studio-mode" });
       setIcon(b, icon);
+      // Same as the toolbar: the text is the accessible name, and a second
+      // attribute would render a second tooltip.
       b.createSpan({ text: label });
       b.title = hint;
-      b.setAttribute("aria-label", `${label} mode`);
       // A pair of mutually exclusive views is what `aria-pressed` describes, and
       // it is also what makes the active one announce itself.
       b.setAttribute("aria-pressed", "false");
@@ -1495,8 +1497,10 @@ export class ModelicaStudioView extends ItemView {
     if (url) {
       const help = classRow.createEl("a", { cls: "modelica-studio-help", href: url });
       setIcon(help, "help-circle");
-      help.title = `Open the Modelica documentation for ${inst.className}`;
-      help.setAttribute("aria-label", `Documentation for ${inst.className}`);
+      // No visible text, so the accessible name has to be given. Only one of the
+      // two attributes: carrying both showed a native tooltip and a styled one at
+      // the same time.
+      help.setAttribute("aria-label", `Open the documentation for ${inst.className}`);
       // A plain click on the anchor would navigate the Obsidian window away from
       // the app. `window.open` in Electron can open a chrome-less popup instead
       // of the browser, so the click is redirected to a synthetic anchor, which

@@ -166,8 +166,8 @@ export class EmbeddedDiagram {
   private plotHost: HTMLElement | null = null;
   /** Label of the plot toggle, so its wording can change with the state. */
   private plotButton: { setText(text: string): void } | null = null;
-  /** The button element itself, for its tooltip. */
   private plotButtonBtn: HTMLButtonElement | null = null;
+  /** The button element itself, for its tooltip. */
   /** Axis range adopted from the shared configuration. */
   private chartView: { xMin?: number; xMax?: number; yMin?: number; yMax?: number } = {};
   /** The parameter values the current result was produced with. */
@@ -380,10 +380,14 @@ export class EmbeddedDiagram {
     // button blank until it had been pressed once.
     const visible = this.opts.showPlot;
     if (this.plotButton) this.plotButton.setText(visible ? "Switch to diagram" : "Switch to plot");
+    // A tooltip that says what happens to the pane, not a repeat of the button.
+    // Only one attribute: the aria-label that used to sit here as well rendered a
+    // second tooltip in Obsidian's own style, on top of the browser's.
     if (this.plotButtonBtn) {
-      const hint = visible ? "Switch to diagram" : "Switch to plot";
-      this.plotButtonBtn.setAttr("aria-label", hint);
-      this.plotButtonBtn.setAttr("title", hint);
+      this.plotButtonBtn.setAttr(
+        "title",
+        visible ? "Show the schematic instead of the plot" : "Show the result plot instead of the schematic"
+      );
     }
 
     const host = this.plotHost;

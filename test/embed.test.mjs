@@ -126,7 +126,16 @@ test("the block shows its result and keeps the diagram one button away", async (
     "the misleading label is no longer set on the button"
   );
   // The tooltip carries the full sentence, since the label stays short.
-  assert.match(source, /setAttr\("title", hint\)/, "the tooltip states the action");
+  // Matched across whitespace: the call is wrapped over lines, and pinning the
+  // formatting would fail on a reformat rather than on a behaviour change.
+  assert.match(
+    source,
+    /setAttr\(\s*"title",\s*visible\s*\?[^)]*\)/,
+    "the tooltip states the action"
+  );
+  // "Only one tooltip attribute per control" is asserted generally in
+  // ui-contract.test.mjs, which strips comments before checking. Repeating it
+  // here by matching raw text only found the word in the comment explaining it.
   assert.match(source, /openDiagram\?\.\(this\.source\)/, "and passes the model to it");
 
   // The plot is the default view, and the block simulates without being asked.

@@ -244,11 +244,73 @@ test("a nested control does not steal the tooltip it sits inside", () => {
   assert.match(view, /btn\.setAttr\("title", `\$\{item\.name\}\\n\$\{item\.comment/, "the row still has one");
 });
 
-test("the inspector help icon keeps a title, because nothing above it has one", () => {
-  // The opposite case: in the inspector the class name is plain text with no
-  // tooltip, so the icon is the only thing that can explain itself.
-  const inspector = /const help = classRow\.createEl\("a"[\s\S]{0,700}?help\.setAttribute\("aria-label"[^\n]*\n/.exec(view);
-  assert.ok(inspector, "the inspector help icon is present");
-  assert.match(inspector[0], /help\.title =/, "it explains itself");
-  assert.match(inspector[0], /aria-label/, "and is labelled");
+test("a help icon with no visible text carries exactly one attribute", () => {
+  // The inspector has no tooltip above it, so the icon must explain itself -- but
+  // with ONE attribute. Carrying both showed a native tooltip and a styled one at
+  // once.
+  const inspector = /const help = classRow\.createEl\("a"[\s\S]{0,600}?aria-label[^\n]*\n/.exec(view);
+  assert.ok(inspector, "it is labelled for a screen reader");
+  assert.ok(!/help\.title\s*=/.test(inspector[0]), "and does not also set a title");
+});
+
+
+test("no control carries two tooltip attributes at once", () => {
+  // `title` renders the BROWSER's native tooltip; a label attribute renders
+  // Obsidian's own styled one. An element carrying both shows two tooltips in two
+  // different styles, which is what was reported on the toolbar buttons.
+  //
+  // The rule: a control with visible text needs NEITHER (the text is the
+  // accessible name and the tooltip comes from the label if wanted); a control
+  // without visible text gets exactly ONE of them.
+  const files = ["src/view/studio-view.ts", "src/view/embed.ts", "src/settings.ts"];
+  for (const rel of files) {
+    const text = fs.readFileSync(path.join(repoRoot, rel), "utf8");
+    const lines = text.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      if (!/aria-label/.test(lines[i])) continue;
+      // The same target must not also be given a title nearby.
+      const target = /(\w+)\.(?:setAttribute|setAttr)\("aria-label"/.exec(lines[i]);
+      const name = target?.[1];
+      if (!name) continue;
+      const window = lines.slice(Math.max(0, i - 14), i + 4).join("\n");
+      const setsTitle = new RegExp(`\\b${name}\\.title\\s*=|\\b${name}\\.setAttr\\("title"`).test(window);
+      assert.ok(!setsTitle, `${rel}:${i + 1} sets both aria-label and title on "${name}"`);
+    }
+  }
+});
+
+test("a toolbar button relies on its visible label, not a second attribute", () => {
+  // The buttons in the screenshot each carried an aria-label identical to their
+  // text, which Obsidian renders as a styled tooltip on top of the native one.
+  // Comments are stripped first: the rule is about code, and a comment explaining
+  // the rule must not read as a violation of it.
+  const code = view
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  const addBtn = /const addBtn = \([\s\S]*?\n    \};/.exec(code);
+  assert.ok(addBtn, "the toolbar button factory is present");
+  assert.match(addBtn[0], /b\.createSpan\(\{ text: label \}\)/, "it creates a visible label");
+  assert.match(addBtn[0], /b\.title = hint/, "and a tooltip");
+  assert.ok(
+    !/aria-label/.test(addBtn[0]),
+    "but not an aria-label as well, which would render a second tooltip"
+  );
+  // The label is inside a span rather than on the button, so the button still has
+  // an accessible name from its own text.
+  assert.match(addBtn[0], /createSpan/, "the text is a real child element");
+  // Same for the mode buttons.
+  const addMode = /const addMode = \([\s\S]*?\n    \};/.exec(code);
+  assert.ok(addMode, "the mode button factory is present");
+  assert.ok(!/aria-label/.test(addMode[0]), "the mode buttons have no aria-label either");
+});
+
+test("a control with no visible text still has an accessible name", () => {
+  // The opposite case: nothing to read, so one attribute is required -- and
+  // exactly one.
+  const palette = /const help = btn\.createEl\("a"[\s\S]{0,600}?aria-label[^\n]*\n/.exec(view);
+  assert.ok(palette, "the palette help icon is labelled");
+  assert.ok(!/help\.title\s*=/.test(palette[0]), "and does not also set a title");
+  const inspector = /const help = classRow\.createEl\("a"[\s\S]{0,600}?aria-label[^\n]*\n/.exec(view);
+  assert.ok(inspector, "the inspector help icon is labelled");
+  assert.ok(!/help\.title\s*=/.test(inspector[0]), "and does not also set a title");
 });
