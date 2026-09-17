@@ -151,3 +151,30 @@ test("the group separator is styled, so grouping is visible", () => {
   assert.match(group[0], /border-right/, "groups are divided");
   assert.match(group[0], /display:\s*flex/, "and laid out in a row");
 });
+
+test("checking a trace does not move it", () => {
+  // Checked traces used to be moved to the top, which moved the row out from
+  // under the pointer at the moment of the click, so the next click landed on a
+  // different trace. A list that rearranges itself as you use it is worse than
+  // one you have to scroll.
+  const src = view;
+  const list = /const list = parent\.createDiv\(\{ cls: "modelica-studio-series" \}\)[\s\S]*?for \(const s of ordered/.exec(src);
+  assert.ok(list, "the trace list is found");
+  assert.match(list[0], /this\.result\.series\.filter\(matching\)/, "the order is the simulation's");
+  assert.ok(!/\bselected\.filter\(matching\)/.test(list[0]), "checked traces are not hoisted");
+  assert.ok(!/\.\.\.rest\.filter/.test(list[0]), "and there is no second, reordered list");
+});
+
+test("a routine run reports no warnings", () => {
+  // The filter matched LOG_STDOUT, which carries ordinary output, so a good run
+  // reported "The initialization finished successfully" as a warning — five of
+  // them on one run, in yellow, about nothing.
+  const backend = fs.readFileSync(path.join(repoRoot, "src/omc/backend.ts"), "utf8");
+  const fn = /export function collectRunWarnings[\s\S]*?\n\}/.exec(backend);
+  assert.ok(fn, "the collector is present");
+  // Severity decides, not which stream the line arrived on.
+  assert.match(fn[0], /structured\[2\]\.toLowerCase\(\)/, "the severity field is read");
+  assert.match(fn[0], /severity === "warning" \|\| severity === "error"/, "only warning and error count");
+  assert.match(fn[0], /structured\[1\] === "ASSERT"/, "and LOG_ASSERT always does");
+  assert.ok(!/LOG_\(ASSERT\|ERROR\|STDOUT\)/.test(fn[0]), "LOG_STDOUT is no longer treated as a warning");
+});

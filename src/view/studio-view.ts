@@ -1582,10 +1582,19 @@ export class ModelicaStudioView extends ItemView {
       }
     }
 
-    // Traces that are drawn come first, so the selected few are never pushed
-    // out of sight by the many.
+    /**
+     * The traces, in simulation order and never reordered.
+     *
+     * Checked traces used to be moved to the top, on the reasoning that the
+     * selected few should not be pushed out of sight by the many. In practice it
+     * moved the row out from under the pointer at the moment of the click, so
+     * the next click landed on a different trace: a list that rearranges itself
+     * as you use it is worse than one you have to scroll.
+     *
+     * The count in the header says how many are drawn, and the filter box finds
+     * a variable by name, so neither needs the order to change.
+     */
     const selected = this.result.series.filter((s) => this.seriesStyles[s.name]?.visible);
-    const rest = this.result.series.filter((s) => !this.seriesStyles[s.name]?.visible);
 
     const head = parent.createDiv({ cls: "modelica-studio-series-head" });
     head.createSpan({ text: `Traces (${selected.length} of ${this.result.series.length})` });
@@ -1623,7 +1632,8 @@ export class ModelicaStudioView extends ItemView {
     const list = parent.createDiv({ cls: "modelica-studio-series" });
     const needle = this.seriesFilter.trim().toLowerCase();
     const matching = (s: SimSeries) => !needle || s.name.toLowerCase().includes(needle);
-    const ordered = [...selected.filter(matching), ...rest.filter(matching)];
+    // Simulation order, filtered — not checked-first, so a click never moves a row.
+    const ordered = this.result.series.filter(matching);
     for (const s of ordered.slice(0, SERIES_PAGE)) this.renderSeriesRow(list, s);
     if (ordered.length > SERIES_PAGE) {
       list.createDiv({

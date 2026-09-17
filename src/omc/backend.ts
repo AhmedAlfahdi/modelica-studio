@@ -564,9 +564,20 @@ export function collectRunWarnings(output: string): string[] {
       );
       continue;
     }
-    if (/^LOG_(ASSERT|ERROR|STDOUT)\b/.test(line) && !/LOG_SUCCESS/.test(line)) {
-      const msg = line.replace(/^LOG_\w+\s*\|\s*\w+\s*\|\s*/, "");
-      if (msg && !/simulation finished successfully/i.test(msg)) out.push(msg);
+    // Only lines that are actually a problem.
+    //
+    // This matched `LOG_STDOUT` as well, which carries ORDINARY output, so a
+    // perfectly good run reported "The initialization finished successfully
+    // without homotopy method" as a warning — five of them on one run, in
+    // yellow, about nothing. What counts is the SEVERITY in the log line, not
+    // which stream it arrived on.
+    const structured = /^LOG_(\w+)\s*\|\s*(\w+)\s*\|\s*(.*)$/.exec(line);
+    if (structured) {
+      const severity = structured[2].toLowerCase();
+      const msg = structured[3].trim();
+      const isProblem = structured[1] === "ASSERT" || severity === "warning" || severity === "error";
+      if (isProblem && msg && !/simulation finished successfully/i.test(msg)) out.push(msg);
+      continue;
     }
     if (/^Error:/.test(line)) out.push(line);
   }
