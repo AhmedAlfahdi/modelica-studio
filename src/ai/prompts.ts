@@ -8,19 +8,58 @@
 import type { LibraryIndex } from "../modelica/library";
 
 /**
- * Whether to let a DeepSeek model reason before answering.
+ * How much the provider should reason before answering.
  *
- * DeepSeek V4 enables thinking mode by default at "high" effort, which means the
- * model writes a long chain of thought BEFORE its answer. For writing a Modelica
- * model that is mostly latency: the extra reasoning buys little on a task whose
- * correctness is checked by a compiler a second later, and it is the difference
- * between a reply in seconds and one in minutes. It also silently disables
+ * DeepSeek V4 thinks at "high" effort unless told otherwise, which is a long
+ * chain of thought before every answer. For writing a Modelica model that is
+ * mostly waiting: correctness is checked by a compiler seconds later, so the
+ * reasoning buys little and costs a lot of latency. It also silently disables
  * `temperature`, which the provider accepts and ignores.
  *
- * Left as a setting because it is the user's call, and because other providers
- * either ignore the parameter or do not have it.
+ * Exposed as a level rather than a switch because the honest answer depends on
+ * the task: a quick component list wants `off`, a subtle multi-domain model can
+ * use `high`, and a model that keeps failing is worth `max`.
+ *
+ * "low" and "high" are the provider's own names, verified against its
+ * documentation; it also accepts "max", and maps anything unrecognised to a
+ * default rather than erroring.
  */
-export type ThinkingMode = "default" | "disabled";
+export type AiThinking = "off" | "low" | "high" | "max";
+
+/**
+ * Whether the model should be built from a schematic or from equations.
+ *
+ * The two are not equally reliable. A DIAGRAM is what makes Modelica worth
+ * using -- the structure is visible and a reader can check the wiring -- but it
+ * depends on getting component paths, parameters and every connection right, and
+ * one bad parameter fails the whole compile. EQUATIONS have far less surface to
+ * get wrong, so they compile first time more often.
+ *
+ * That asymmetry is why the two exist as a preference with a fallback rather
+ * than a single setting: ask for the diagram, and fall back to equations when it
+ * will not build.
+ */
+export type ModelStyle = "visual" | "equations";
+
+export const AI_THINKING_LEVELS: Array<{ id: AiThinking; label: string; hint: string }> = [
+  { id: "off", label: "Off", hint: "Answer immediately. Fastest, and the right default for code." },
+  { id: "low", label: "Low", hint: "A little reasoning. A middle ground for awkward requests." },
+  { id: "high", label: "High", hint: "The provider's own default. Slower, sometimes better on hard models." },
+  { id: "max", label: "Max", hint: "Most reasoning. Slowest; worth trying when attempts keep failing." },
+];
+
+export const MODEL_STYLES: Array<{ id: ModelStyle; label: string; hint: string }> = [
+  {
+    id: "visual",
+    label: "Diagram first",
+    hint: "Build from library components you can see and rewire. Falls back to equations if it will not compile.",
+  },
+  {
+    id: "equations",
+    label: "Equations",
+    hint: "Write the physics directly. Fewer things to get wrong, so it compiles more reliably, but there is no schematic.",
+  },
+];
 
 export interface AiConfig {
   /**
@@ -58,11 +97,10 @@ export interface AiConfig {
    * what went stale when `deepseek-chat` was retired.
    */
   models?: string[];
-  /**
-   * Whether to disable the provider's reasoning pass. "default" leaves the
-   * provider alone, which for DeepSeek means high-effort thinking.
-   */
-  thinking?: ThinkingMode;
+  /** How much the provider should reason before answering. */
+  thinking?: AiThinking;
+  /** Whether to build a schematic or write equations. */
+  style?: ModelStyle;
   /**
    * How long to wait for a reply, in seconds. A request that hangs with no
    * deadline hangs forever.
@@ -81,7 +119,8 @@ export const AI_DEFAULTS: AiConfig = {
   systemPrompt: "",
   // DeepSeek reasons at high effort unless told not to, which is mostly waiting
   // for a job the compiler checks anyway.
-  thinking: "disabled",
+  thinking: "off",
+  style: "visual",
   timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
 };
 
@@ -358,6 +397,14 @@ scale goes to zero.
 export interface GenerateRequest {
   /** What the user asked for. */
   prompt: string;
+  /**
+   * Which approach to take.
+   *
+   * This is what makes the fallback real: without it the loop would change its
+   * own label and send the same instruction again, and the model would produce
+   * the same failing diagram.
+   */
+  style?: ModelStyle;
   /** The model currently in the editor, if any. */
   current?: string;
   /** Compiler or parser diagnostics to fix, if the user is asking for a repair. */
@@ -381,6 +428,9 @@ export interface GenerateRequest {
 
 export function buildMessages(req: GenerateRequest): ChatMessage[] {
   const parts: string[] = [BASE_RULES];
+  // Appended to the standing rules rather than replacing them, so a fallback
+  // keeps every constraint and changes only which form is asked for.
+  if (req.style) parts.push(styleRule(req.style));
   if (req.systemPrompt?.trim()) {
     parts.push(`Additional instructions from the user:\n${req.systemPrompt.trim()}`);
   }
@@ -443,4 +493,32 @@ export function extractModelica(reply: string): string {
 export function modelNameOf(source: string): string | undefined {
   const m = /^\s*(?:model|block|package|record|connector)\s+([A-Za-z_]\w*)/m.exec(source);
   return m?.[1];
+}
+
+/**
+ * The instruction that decides which form the answer takes.
+ *
+ * Stated as its own block, appended last, because it is the one thing that
+ * changes between a first attempt and a fallback: leaving it inside the standing
+ * rules would bury the single instruction the fallback depends on.
+ */
+export function styleRule(style: ModelStyle): string {
+  return style === "visual"
+    ? [
+        "## Form of the answer: BUILD A DIAGRAM",
+        "Assemble this from library components, placed and wired, so the result is a",
+        "schematic the reader can see and rewire. Prefer the diagram even where the",
+        "same physics could be written as equations -- the visible structure is the",
+        "reason to use this tool. If some part of the request genuinely has no",
+        "component to represent it, write that part as an equation in the same model",
+        "rather than abandoning the diagram.",
+      ].join("\n")
+    : [
+        "## Form of the answer: WRITE EQUATIONS",
+        "Write the physics directly as equations. Do not assemble library components,",
+        "do not use connect(), and do not add Placement annotations. This form is",
+        "chosen for reliability, so keep the model small and self-contained: declare",
+        "what you need, write one equation per unknown, and make sure every name is",
+        "declared. A model of nothing but declarations and equations is the goal.",
+      ].join("\n");
 }

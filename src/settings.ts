@@ -9,7 +9,7 @@
 import { App, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import type ModelicaStudioPlugin from "./main";
 import { libraryHelpUrl, libraryVersionFrom } from "./modelica/doclinks";
-import { AI_DEFAULTS,
+import { AI_THINKING_LEVELS, MODEL_STYLES, type AiThinking, type ModelStyle, AI_DEFAULTS,
   DEFAULT_TIMEOUT_SECONDS, AI_PROVIDERS, AiConfig, LEGACY_SECRET_NAME, legacyKeyOf } from "./ai/prompts";
 
 
@@ -381,18 +381,47 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Skip the model's reasoning pass")
+      .setName("Reasoning effort")
       .setDesc(
-        "DeepSeek V4 thinks at high effort before answering unless told not to. That is " +
-          "mostly waiting for a task a compiler checks anyway, and it silently disables " +
-          "Temperature. Leave this on unless you want the extra reasoning."
+        "How much the model reasons before answering. Providers that default to thinking " +
+          "spend that time on every request, and it silently disables Temperature. " +
+          "Off is fastest and suits code; raise it if attempts keep failing."
       )
-      .addToggle((t) =>
-        t.setValue((this.plugin.settings.ai.thinking ?? "disabled") === "disabled").onChange(async (v) => {
-          this.plugin.settings.ai.thinking = v ? "disabled" : "default";
+      .addDropdown((d) => {
+        for (const level of AI_THINKING_LEVELS) d.addOption(level.id, level.label);
+        d.setValue(this.plugin.settings.ai.thinking ?? "off");
+        // The hint for the chosen level, since a dropdown cannot show one per item.
+        const hint = containerEl.createDiv({ cls: "modelica-studio-muted" });
+        const show = (id: string) => {
+          hint.setText(AI_THINKING_LEVELS.find((l) => l.id === id)?.hint ?? "");
+        };
+        show(this.plugin.settings.ai.thinking ?? "off");
+        d.onChange(async (v) => {
+          this.plugin.settings.ai.thinking = v as AiThinking;
+          show(v);
           await this.plugin.saveSettings();
-        })
-      );
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Model style")
+      .setDesc(
+        "Diagram first builds from library components, so the result is a schematic you " +
+          "can see and rewire; if it will not compile the run falls back to equations. " +
+          "Equations skips straight to the physics, which compiles more reliably but draws nothing."
+      )
+      .addDropdown((d) => {
+        for (const style of MODEL_STYLES) d.addOption(style.id, style.label);
+        d.setValue(this.plugin.settings.ai.style ?? "visual");
+        const hint = containerEl.createDiv({ cls: "modelica-studio-muted" });
+        const show = (id: string) => hint.setText(MODEL_STYLES.find((s) => s.id === id)?.hint ?? "");
+        show(this.plugin.settings.ai.style ?? "visual");
+        d.onChange(async (v) => {
+          this.plugin.settings.ai.style = v as ModelStyle;
+          show(v);
+          await this.plugin.saveSettings();
+        });
+      });
 
     new Setting(containerEl)
       .setName("Reply timeout")
@@ -542,5 +571,5 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
   }
 }
 
-export { DEFAULT_SETTINGS, mergeSettings } from "./settings-merge";
+export { DEFAULT_SETTINGS, mergeSettings, migrateSettings } from "./settings-merge";
 export type { ChartState, ModelicaStudioSettings } from "./settings-merge";

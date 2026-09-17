@@ -25,7 +25,7 @@ const declared = (...names) => new Set(names);
 
 // The settings shape, the defaults and the merge rules are one pure module, so
 // they are tested together and without Obsidian.
-const { DEFAULT_SETTINGS, mergeSettings } = await import(
+const { DEFAULT_SETTINGS, mergeSettings, migrateSettings } = await import(
   path.join(buildLibs("settings-merge", ["src/settings-merge.ts"]), "settings-merge.js")
 );
 
@@ -316,4 +316,21 @@ test("nothing stored leaves the defaults untouched", () => {
   // every `?? default` at the point of use.
   const merged = mergeSettings(DEFAULT_SETTINGS, { omcPath: undefined });
   assert.equal(merged.omcPath, DEFAULT_SETTINGS.omcPath);
+});
+
+test("an old setting value is brought forward, not left inert", () => {
+  // `thinking` was a switch whose "on" value was the string "disabled". It is now
+  // a level. An unrecognised value reaches the provider as a parameter it accepts
+  // and ignores -- which would put the setting back to having no effect, the exact
+  // failure this area already had once.
+  const base = { ...DEFAULT_SETTINGS, ai: { ...DEFAULT_SETTINGS.ai } };
+  assert.equal(migrateSettings({ ...base, ai: { ...base.ai, thinking: "disabled" } }).ai.thinking, "off");
+  assert.equal(migrateSettings({ ...base, ai: { ...base.ai, thinking: "default" } }).ai.thinking, "high");
+  // Valid levels are left alone.
+  for (const level of ["off", "low", "high", "max"]) {
+    assert.equal(migrateSettings({ ...base, ai: { ...base.ai, thinking: level } }).ai.thinking, level);
+  }
+  // And a config predating the style choice asks for a diagram.
+  assert.equal(migrateSettings({ ...base, ai: { ...base.ai, style: undefined } }).ai.style, "visual");
+  assert.equal(migrateSettings({ ...base, ai: { ...base.ai, style: "equations" } }).ai.style, "equations");
 });

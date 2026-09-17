@@ -242,3 +242,24 @@ export function mergeSettings(
 function isMapLike(key: string): boolean {
   return key === "modelFiles" || key === "modelStopTimes" || key === "charts";
 }
+
+/**
+ * Bring a stored config forward when a setting's values change.
+ *
+ * `thinking` was a switch whose "on" value was the string "disabled"; it is now a
+ * level whose equivalent is "off". Left alone, an old value is neither a valid
+ * level nor a default, so it reaches the provider as an unrecognised parameter --
+ * which the provider accepts and quietly ignores, putting the setting back to
+ * having no effect. That is the failure this whole area already had once.
+ */
+export function migrateSettings(settings: ModelicaStudioSettings): ModelicaStudioSettings {
+  const ai = settings.ai as unknown as Record<string, unknown> | undefined;
+  if (!ai) return settings;
+  const thinking = ai.thinking;
+  if (thinking === "disabled") ai.thinking = "off";
+  else if (thinking === "default") ai.thinking = "high";
+  // A config written before the choice existed asks for a diagram, which is what
+  // the prompt already preferred.
+  if (ai.style !== "visual" && ai.style !== "equations") ai.style = "visual";
+  return settings;
+}

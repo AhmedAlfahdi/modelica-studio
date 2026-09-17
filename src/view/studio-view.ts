@@ -963,10 +963,13 @@ export class ModelicaStudioView extends ItemView {
           solver: this.plugin.settings.solver,
         },
         send: (messages) => chat(cfg, messages, () => this.plugin.aiKey()),
-        buildMessages: (p, current, failureText) =>
+        buildMessages: (p, current, failureText, style) =>
           buildMessages({
             prompt: p,
             current,
+            // The style reaches the prompt, so the fallback changes the answer
+            // rather than only the loop's label for it.
+            style,
             // The generated source is repaired against the compiler's own words,
             // and the standard brief is attached to every attempt so a repair is
             // made with the same knowledge as the first draft.

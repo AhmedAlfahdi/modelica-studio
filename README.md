@@ -157,6 +157,18 @@ input:
    goes back to the provider as the next request.
 4. Steps 2 and 3 repeat until it compiles.
 
+**You choose the form and the effort.** Two settings under AI assistance:
+
+- **Model style** — *Diagram first* builds from library components, so you get a
+  schematic you can see and rewire. A schematic depends on component paths,
+  parameters and every connection being right, so the ways to fail outnumber the
+  ways to succeed; equations have far less to get wrong. So if the diagram has
+  had two attempts and still will not compile, the run **falls back to equations**
+  automatically and says so. *Equations* skips straight there.
+- **Reasoning effort** — *Off* / *Low* / *High* / *Max*. Providers that default to
+  thinking spend that time on every request, and it silently disables Temperature.
+  Off is fastest and suits code; raise it when attempts keep failing.
+
 The loop stops when the model compiles, when the model returns the same source
 twice, when the same error comes back twice (compared after stripping build
 paths and timings, which differ on every attempt), when a provider error

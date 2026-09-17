@@ -514,10 +514,11 @@ test("thinking is disabled by default, because it is mostly latency here", () =>
   // It also silently disables `temperature`: the provider accepts it and ignores
   // it, so the setting appeared to work and did nothing.
   const src = fs.readFileSync(path.join(repoRoot, "src/ai/prompts.ts"), "utf8");
-  assert.match(src, /thinking: "disabled"/, "the default disables it");
-  assert.match(src, /type: ThinkingMode|thinking\?: ThinkingMode/, "and it is configurable");
+  assert.match(src, /thinking: "off"/, "the default turns it off");
+  assert.match(src, /type AiThinking = "off" \| "low" \| "high" \| "max"/, "and it is a level, not a switch");
   const client = fs.readFileSync(path.join(repoRoot, "src/ai/client.ts"), "utf8");
-  assert.match(client, /body\.thinking = \{ type: "disabled" \}/, "the request carries the switch");
+  assert.match(client, /body\.thinking = \{ type: "disabled" \}/, "off is sent as disabled");
+  assert.match(client, /body\.reasoning_effort = thinking/, "and a level is sent as an effort");
   // And a deadline is always applied.
   assert.match(client, /timeoutSeconds \?\? DEFAULT_TIMEOUT_SECONDS/, "the deadline has a default");
 });
@@ -565,4 +566,119 @@ test("timeout detection does not catch an ordinary failure", () => {
   assert.equal(isTimeout("the request timed out"), true);
   assert.equal(isTimeout("Provider error 401: the API key was rejected."), false);
   assert.equal(isTimeout("Could not reach https://api.example.com."), false);
+});
+
+/* ---- the approach, and falling back ---- */
+
+test("a failing diagram falls back to equations", async () => {
+  // A schematic depends on component paths, parameters and every connection being
+  // right, so the ways to fail outnumber the ways to succeed. Equations have far
+  // less to get wrong -- which is why the request asks for the diagram first and
+  // settles for equations when it will not build.
+  //
+  // Only a source produced by the FALLBACK compiles here, so there is no way for
+  // the test to pass without the switch actually happening.
+  const styles = [];
+  let n = 0;
+  const r = await runGenerationLoop({
+    style: "visual",
+    switchStyle: ({ from }) => (from === "visual" ? "equations" : null),
+    generate: async ({ style }) => {
+      styles.push(style);
+      return ["model A", `  Real x${n++};`, `  // ${style}`, "end A;"].join("\n");
+    },
+    compile: async (source) => ({
+      ok: source.includes("// equations"),
+      failure: "Error: the diagram will not build",
+    }),
+  });
+
+  assert.equal(r.ok, true, `the fallback compiled; got ${r.reason}: ${r.message}`);
+  assert.equal(r.style, "equations", "and the result records which approach won");
+  assert.deepEqual(styles, ["visual", "visual", "equations"], "two diagram attempts, then equations");
+});
+
+test("the fallback is offered once, and only from the diagram", async () => {
+  // Falling back from equations would be thrashing: there is nothing less
+  // error-prone to fall back TO.
+  let switches = 0;
+  const styles = [];
+  const r = await runGenerationLoop({
+    style: "visual",
+    switchStyle: ({ from }) => {
+      switches++;
+      return from === "visual" ? "equations" : null;
+    },
+    generate: async ({ style }) => {
+      styles.push(style);
+      return ["model A", `  Real y${styles.length};`, "end A;"].join("\n");
+    },
+    compile: async () => ({ ok: false, failure: `Error: nope ${styles.length}` }),
+  });
+
+  assert.equal(r.ok, false);
+  assert.equal(switches, 1, "asked exactly once, not on every attempt");
+  assert.equal(styles.filter((s) => s === "visual").length, 2, "the diagram got its attempts");
+  assert.ok(styles.filter((s) => s === "equations").length >= 1, "and equations got the rest");
+  assert.ok(!styles.slice(2).includes("visual"), "it never goes back");
+});
+
+test("a fallback gets its own budget rather than the remains of the failed one", async () => {
+  // Counting attempts globally would leave the fallback almost nothing on a
+  // ceiling of five after two diagram attempts and their repairs.
+  const styles = [];
+  const r = await runGenerationLoop(
+    {
+      style: "visual",
+      switchStyle: ({ from }) => (from === "visual" ? "equations" : null),
+      generate: async ({ style }) => {
+        styles.push(style);
+        return ["model A", `  Real z${styles.length};`, "end A;"].join("\n");
+      },
+      compile: async (source) => ({ ok: source.includes("z4"), failure: `Error: e${styles.length}` }),
+    },
+    { maxAttempts: 6, maxUnchanged: 2, attemptsBeforeSwitch: 2 }
+  );
+  assert.equal(r.ok, true, `expected the fallback to reach attempt 4; got ${r.reason}`);
+  assert.equal(styles[3], "equations", "the fourth attempt is the fallback's second");
+});
+
+test("nothing carries over into the fallback", async () => {
+  // The new approach is not a repair of the old one. Keeping the previous attempt
+  // would let the loop reject the fallback's first answer for repeating the
+  // diagram's source, and would compare its failures against a different problem.
+  const seen = [];
+  let n = 0;
+  await runGenerationLoop({
+    style: "visual",
+    switchStyle: ({ from }) => (from === "visual" ? "equations" : null),
+    generate: async ({ previous, style }) => {
+      seen.push({ style, hadPrevious: !!previous });
+      // Distinct across the diagram attempts, and the fallback's own source is a
+      // repeat of nothing -- which is the property under test.
+      return `model A\n  Real q${style === "equations" ? "" : n++};\nend A;`;
+    },
+    compile: async () => ({ ok: false, failure: "Error: same" }),
+  });
+  const firstEquationAttempt = seen.find((s) => s.style === "equations");
+  assert.ok(firstEquationAttempt, "the fallback ran");
+  assert.equal(
+    firstEquationAttempt.hadPrevious,
+    false,
+    "the fallback starts clean, so identical text is not treated as a repeat"
+  );
+});
+
+test("without a switchStyle the loop stays on one approach", async () => {
+  const styles = [];
+  const r = await runGenerationLoop({
+    style: "visual",
+    generate: async ({ style }) => {
+      styles.push(style);
+      return ["model A", `  Real w${styles.length};`, "end A;"].join("\n");
+    },
+    compile: async () => ({ ok: false, failure: `Error: x${styles.length}` }),
+  });
+  assert.equal(r.reason, "attempts-exhausted");
+  assert.deepEqual([...new Set(styles)], ["visual"], "one approach throughout");
 });

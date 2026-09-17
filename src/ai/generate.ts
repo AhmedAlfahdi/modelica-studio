@@ -21,7 +21,7 @@
 import type { SimulationBackend } from "../omc/backend";
 import { SimulationError, type CompileDiagnostic } from "../omc/backend";
 import type { AiConfig, ChatMessage } from "./prompts";
-import { extractModelica, modelNameOf } from "./prompts";
+import { extractModelica, modelNameOf, type ModelStyle } from "./prompts";
 import { DEFAULT_LIMITS, runGenerationLoop, summarise, type Attempt, type LoopLimits, type LoopResult } from "./loop";
 
 export interface GenerationRequest {
@@ -43,11 +43,17 @@ export interface GenerationRequest {
     tolerance: number;
     solver: string;
   };
-  /** Turn the conversation into messages. Injected so prompt building stays testable. */
+  /**
+   * Turn the conversation into messages.
+   *
+   * `style` is which approach this attempt should take, so the fallback reaches
+   * the prompt rather than only the loop.
+   */
   buildMessages: (
     prompt: string,
     current: string | undefined,
-    failure: string
+    failure: string,
+    style: ModelStyle
   ) => ChatMessage[];
   /**
    * Send a conversation to the provider and return its reply.
@@ -60,7 +66,8 @@ export interface GenerationRequest {
   onProgress?: (event: {
     attempt: number;
     maxAttempts: number;
-    phase: "asking" | "compiling" | "repairing";
+    phase: "asking" | "compiling" | "repairing" | "switching";
+    style?: string;
     detail?: string;
   }) => void;
   isCancelled?: () => boolean;
@@ -83,23 +90,34 @@ export interface GenerationOutcome extends LoopResult {
 export async function generateModel(request: GenerationRequest): Promise<GenerationOutcome> {
   let diagnostics: CompileDiagnostic[] = [];
   let modelName: string | undefined;
+  const initial = request.config.style ?? "visual";
 
   const result = await runGenerationLoop(
     {
-      generate: async ({ attempt, previous }) => {
+      style: initial,
+      /**
+       * The diagram is the better answer when it works and the harder one to get
+       * right, so it is tried first and abandoned for equations when it will not
+       * build. Only from visual: there is nothing less error-prone to fall back
+       * to, and a second change would be thrashing.
+       */
+      switchStyle: ({ from, lastFailure }) => {
+        if (from !== "visual") return null;
+        // A model that is not a diagram at all is not a diagram that failed:
+        // falling back would be the right answer for the wrong reason, and the
+        // equations answer is what the request already had.
+        return "equations";
+      },
+      generate: async ({ attempt, previous, style }) => {
         const messages = request.buildMessages(
           request.prompt,
           request.current,
-          previous ? failureText(previous) : ""
+          previous ? failureText(previous) : "",
+          (style as ModelStyle) || initial
         );
         const reply = await request.send(messages);
         const source = extractModelica(reply);
         if (source) modelName = modelNameOf(source) ?? modelName;
-        request.onProgress?.({
-          attempt,
-          maxAttempts: request.limits?.maxAttempts ?? DEFAULT_LIMITS.maxAttempts,
-          phase: previous ? "repairing" : "asking",
-        });
         return source;
       },
 

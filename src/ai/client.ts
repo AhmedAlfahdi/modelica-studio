@@ -68,7 +68,15 @@ export async function chat(
   // DeepSeek reasons at high effort by default, which is a long wait for a task
   // the compiler checks anyway -- and it silently disables `temperature`. Sending
   // the switch explicitly is the difference between seconds and minutes.
-  if (cfg.thinking === "disabled") body.thinking = { type: "disabled" };
+  // "off" is the one that needs saying: the provider thinks at high effort unless
+  // told not to. Any other level is passed through as `reasoning_effort`, which is
+  // the provider's own parameter name.
+  const thinking = cfg.thinking ?? "off";
+  if (thinking === "off") {
+    body.thinking = { type: "disabled" };
+  } else {
+    body.reasoning_effort = thinking;
+  }
 
   const timeoutMs = Math.max(5, cfg.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS) * 1000;
   let response;

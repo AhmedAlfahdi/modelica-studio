@@ -29,11 +29,23 @@ export interface Attempt {
   ok: boolean;
   /** The compiler's output when it did not, verbatim. */
   failure: string;
+  /** Which approach produced this source. */
+  style?: string;
 }
 
 export interface LoopLimits {
   /** Most attempts in total, including the first. */
   maxAttempts: number;
+  /**
+   * How many attempts to give the FIRST approach before trying the other one.
+   *
+   * Only consulted when a `switchStyle` is supplied, which is the diagram case:
+   * a schematic depends on component paths, parameters and every connection being
+   * right, so the ways to fail outnumber the ways to succeed, and equations have
+   * far less to get wrong. Two attempts is enough to tell "nearly there" from
+   * "this approach is not working".
+   */
+  attemptsBeforeSwitch: number;
   /**
    * Give up after this many consecutive attempts that made no observable
    * progress. Two is enough: the first repeat is worth one more try because a
@@ -43,7 +55,11 @@ export interface LoopLimits {
   maxUnchanged: number;
 }
 
-export const DEFAULT_LIMITS: LoopLimits = { maxAttempts: 5, maxUnchanged: 2 };
+export const DEFAULT_LIMITS: LoopLimits = {
+  maxAttempts: 5,
+  maxUnchanged: 2,
+  attemptsBeforeSwitch: 2,
+};
 
 /**
  * The reasons a run can end.
@@ -65,6 +81,8 @@ export type StopReason =
 export interface LoopResult {
   /** The last source produced, whether or not it compiled. */
   source: string;
+  /** The approach the last attempt used. */
+  style: string;
   /** True when a source compiled. */
   ok: boolean;
   attempts: Attempt[];
@@ -75,17 +93,32 @@ export interface LoopResult {
 
 export interface LoopEvents {
   /**
+   * The approach to start with, and the one to change to when it is not working.
+   *
+   * Supplying `switchStyle` is what enables the fallback: the loop calls it when
+   * the current approach has had its attempts and still has not compiled, and
+   * resets its progress counters if a different style comes back. Without it, a
+   * single style runs to the attempt ceiling.
+   */
+  style?: string;
+  switchStyle?: (context: {
+    from: string;
+    attempts: number;
+    lastFailure: string;
+  }) => string | null;
+  /**
    * Produce a candidate source. `failure` is the previous attempt's compiler
    * output, and is empty on the first call.
    */
-  generate: (context: { attempt: number; previous?: Attempt }) => Promise<string>;
+  generate: (context: { attempt: number; previous?: Attempt; style: string }) => Promise<string>;
   /** Compile and run a candidate. Never throws; a failure is a result. */
   compile: (source: string, attempt: number) => Promise<{ ok: boolean; failure: string }>;
   /** Progress, for a status line. */
   onProgress?: (event: {
     attempt: number;
     maxAttempts: number;
-    phase: "asking" | "compiling" | "repairing";
+    phase: "asking" | "compiling" | "repairing" | "switching";
+    style?: string;
     detail?: string;
   }) => void;
   /** Polled between attempts, so a long loop can be stopped. */
@@ -106,34 +139,76 @@ export async function runGenerationLoop(
   const attempts: Attempt[] = [];
   let previous: Attempt | undefined;
   let unchanged = 0;
+  let style = events.style ?? "";
+  /** Attempts spent on the current style, which the fallback is measured in. */
+  let onThisStyle = 0;
+  /** The fallback is offered once. A second change would be thrashing. */
+  let switched = false;
 
   for (let index = 1; index <= limits.maxAttempts; index++) {
     if (events.isCancelled?.()) {
-      return finish(attempts, "cancelled", "Stopped.");
+      return finish(attempts, "cancelled", "Stopped.", style);
+    }
+
+    // Offer the other approach before spending another attempt on this one. The
+    // count is per style, so a fallback gets its own budget rather than the
+    // remains of the one that failed.
+    if (
+      !switched &&
+      events.switchStyle &&
+      onThisStyle >= limits.attemptsBeforeSwitch &&
+      previous &&
+      !previous.ok
+    ) {
+      const next = events.switchStyle({
+        from: style,
+        attempts: onThisStyle,
+        lastFailure: previous.failure,
+      });
+      if (next && next !== style) {
+        switched = true;
+        style = next;
+        onThisStyle = 0;
+        // A new approach is not a repair of the old one, so nothing carries over:
+        // keeping `previous` would let the loop reject the new style's first
+        // answer for repeating the old style's source, and would compare its
+        // failures against a different problem.
+        previous = undefined;
+        unchanged = 0;
+        events.onProgress?.({
+          attempt: index,
+          maxAttempts: limits.maxAttempts,
+          phase: "switching",
+          style,
+          detail: summarise(attempts[attempts.length - 1]?.failure ?? ""),
+        });
+      }
     }
 
     events.onProgress?.({
       attempt: index,
       maxAttempts: limits.maxAttempts,
-      phase: index === 1 ? "asking" : "repairing",
+      phase: index === 1 || !previous ? "asking" : "repairing",
+      style,
       detail: previous ? summarise(previous.failure) : undefined,
     });
 
     let source: string;
     try {
-      source = (await events.generate({ attempt: index, previous })).trim();
+      source = (await events.generate({ attempt: index, previous, style })).trim();
     } catch (err) {
       // Neither a refusal nor a timeout is fixed by another attempt, and they are
       // told apart because the reader has to do different things about them.
       const text = messageOf(err);
-      return finish(attempts, isTimeout(text) ? "timed-out" : "provider-error", text);
+      return finish(attempts, isTimeout(text) ? "timed-out" : "provider-error", text, style);
     }
 
     if (!source) {
       return finish(
         attempts,
         "no-source",
-        "The model replied without any Modelica source, so there was nothing to compile."
+        "The model replied without any Modelica source, so there was nothing to compile.",
+        style
       );
     }
 
@@ -143,18 +218,20 @@ export async function runGenerationLoop(
       return finish(
         attempts,
         "no-progress",
-        "The model returned the same source again, so asking once more would not help."
+        "The model returned the same source again, so asking once more would not help.",
+        style
       );
     }
 
-    events.onProgress?.({ attempt: index, maxAttempts: limits.maxAttempts, phase: "compiling" });
+    events.onProgress?.({ attempt: index, maxAttempts: limits.maxAttempts, phase: "compiling", style });
     const outcome = await events.compile(source, index);
 
-    const attempt: Attempt = { index, source, ok: outcome.ok, failure: outcome.failure };
+    const attempt: Attempt = { index, source, ok: outcome.ok, failure: outcome.failure, style };
     attempts.push(attempt);
+    onThisStyle++;
 
     if (outcome.ok) {
-      return finish(attempts, "compiled", describeSuccess(index));
+      return finish(attempts, "compiled", describeSuccess(index), style);
     }
 
     // Progress means the error CHANGED. A different message is a different
@@ -166,7 +243,8 @@ export async function runGenerationLoop(
         return finish(
           attempts,
           "no-progress",
-          `The same error came back ${unchanged + 1} times, so the loop stopped rather than repeat it.`
+          `The same error came back ${unchanged + 1} times, so the loop stopped rather than repeat it.`,
+          style
         );
       }
     } else {
@@ -179,14 +257,21 @@ export async function runGenerationLoop(
   return finish(
     attempts,
     "attempts-exhausted",
-    `Still failing after ${limits.maxAttempts} attempts.`
+    `Still failing after ${limits.maxAttempts} attempts.`,
+    style
   );
 }
 
-function finish(attempts: Attempt[], reason: StopReason, message: string): LoopResult {
+function finish(
+  attempts: Attempt[],
+  reason: StopReason,
+  message: string,
+  style: string
+): LoopResult {
   const last = attempts[attempts.length - 1];
   return {
     source: last?.source ?? "",
+    style,
     ok: last?.ok ?? false,
     attempts,
     reason,
