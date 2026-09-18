@@ -27,6 +27,7 @@ import { AiError, chat, listModels } from "./ai/client";
 import { RunLog } from "./ai/run-log";
 import { AiEnvironment, describeAvailableClasses, describeEnvironment, describeLog } from "./ai/context";
 import { LEGACY_SECRET_NAME, buildMessages, legacyKeyOf, secretNameOf } from "./ai/prompts";
+import { Trace, describeStateForTrace, type TraceKind } from "./diagnostics/trace";
 import { BENCH_PROMPTS, formatBenchmark, runBenchmark } from "./ai/benchmark";
 import {
   isNewRevision,
@@ -302,6 +303,7 @@ export default class ModelicaStudioPlugin extends Plugin {
       for (const old of revisionsToPrune(this.listRevisions(modelName))) {
         fs.rmSync(path.join(dir, old.file), { force: true });
       }
+      this.trace.add("snapshot", modelName, { revisions: existing.length + 1 });
       this.diag(`history: kept a revision of ${modelName} (${existing.length + 1} total)`);
     } catch (err) {
       this.diag(`history: could not record a revision of ${modelName}: ${String(err)}`, "warn");
@@ -348,6 +350,39 @@ export default class ModelicaStudioPlugin extends Plugin {
   private omc: OmcInstallation | null = null;
   /** The settings tab, kept so it can re-render when the index becomes known. */
   private settingsTab: ModelicaStudioSettingTab | null = null;
+
+  /**
+   * Every step that changes what is on disk.
+   *
+   * `modelicaStudio.trace()` reads it back. See `diagnostics/trace.ts` for why it
+   * exists: the losses here have all been two modules disagreeing about when
+   * something is written, with nothing failing at the time.
+   */
+  readonly trace = new Trace();
+
+  /**
+   * Record the current state under one step.
+   *
+   * One call rather than passing five facts at each site, so a new field is added
+   * in one place and every existing step gains it -- which is what makes the trace
+   * comparable step to step, and comparison is the whole point.
+   */
+  traceStep(kind: TraceKind, model = this.model.name): void {
+    this.trace.add(
+      kind,
+      model,
+      describeStateForTrace({
+        modelName: model,
+        sourceLength: this.modelSource.length,
+        sourceIsCurrent: !this.modelOutdated,
+        components: this.model.components.length,
+        equations: this.model.equations?.length ?? 0,
+        savedPath: this.settings.modelFiles[model] ?? null,
+        mode: this.settings.editorMode,
+      })
+    );
+  }
+
   /** Print every diagnostic to the console, not only the ones the setting allows. */
   verbose = false;
 
@@ -510,6 +545,28 @@ export default class ModelicaStudioPlugin extends Plugin {
         console.log(table);
         return table;
       },
+      /**
+       * What the plugin has held, step by step.
+       *
+       *   modelicaStudio.trace()                 the last 20 steps
+       *   modelicaStudio.trace({ all: true })    the whole session
+       *   modelicaStudio.trace({ model: "Tank" }) just that model
+       */
+      trace: (options?: { all?: boolean; model?: string; last?: number }) => {
+        const entries = options?.model
+          ? this.trace.forModel(options.model)
+          : options?.all
+            ? this.trace.all()
+            : this.trace.last(options?.last ?? 20);
+        const text = this.trace.toText(entries);
+        console.log(text);
+        return text;
+      },
+      /** Forget the trace, so the next steps are read on their own. */
+      clearTrace: () => {
+        this.trace.clear();
+        return "Trace cleared.";
+      },
       probeHelp: () => {
         const anchor = document.querySelector(".modelica-studio-help") as HTMLElement | null;
         const row = document.querySelector(".modelica-studio-classrow") as HTMLElement | null;
@@ -541,6 +598,7 @@ export default class ModelicaStudioPlugin extends Plugin {
           "modelicaStudio.view         the open studio view",
           "modelicaStudio.library      the class index",
           "modelicaStudio.runLog       every simulation this session",
+          "modelicaStudio.trace()      what the plugin held, step by step",
           "modelicaStudio.setVerbose(true)   print every diagnostic",
         ].join("\n"),
     };
@@ -1140,6 +1198,40 @@ export default class ModelicaStudioPlugin extends Plugin {
   }
 
   /**
+   * Make sure everything currently open is on disk.
+   *
+   * Called before the model is replaced. Two things are written: the pending
+   * state, synchronously, because the debounce is about to be cancelled; and the
+   * model's own `.mo` file, because an unsaved repair is worth more than a tidy
+   * vault.
+   *
+   * Only for a model that already has a file. A model that has never been saved
+   * is not given one here -- creating files behind the user's back is a different
+   * decision from not losing their work.
+   */
+  async flushCurrentModel(): Promise<void> {
+    this.flushPersistSync();
+    const name = this.model.name;
+    if (!this.settings.modelFiles[name]) return;
+    try {
+      // Whatever the editor holds, first: the same rule saving follows.
+      this.getView()?.flushEditorIntoModel();
+      await this.saveModelToNote();
+      this.traceStep("switch", name);
+      this.diag(`switch: saved ${name} before replacing it`, "info");
+    } catch (err) {
+      // The switch goes ahead regardless -- refusing to open a file because
+      // another could not be written would be its own kind of trap -- but it must
+      // not pass unnoticed.
+      this.diag(`switch: could not save ${name} before replacing it: ${String(err)}`, "warn");
+      new Notice(
+        `Modelica Studio: could not save "${name}" before opening the other model. ` +
+          `Its changes are still in the studio.`
+      );
+    }
+  }
+
+  /**
    * Where the plugin's own data file lives.
    *
    * Obsidian writes it through `saveData`, which is asynchronous. That is fine
@@ -1207,6 +1299,7 @@ export default class ModelicaStudioPlugin extends Plugin {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const fs = require("node:fs") as typeof import("node:fs");
       fs.writeFileSync(file, JSON.stringify(this.persistPayload(), null, 2), "utf8");
+      this.traceStep("unload");
       this.diag("unload: wrote the pending change synchronously");
     } catch (err) {
       // Nothing more can be done here, but it should not pass unnoticed.
@@ -1236,6 +1329,14 @@ export default class ModelicaStudioPlugin extends Plugin {
   }
 
   async loadModelFromFile(file: TFile): Promise<void> {
+    // Write out whatever is currently open, before it is replaced.
+    //
+    // This was a silent data-loss path: loading a model overwrote the current one
+    // and rescheduled the debounced persist, which CANCELS the pending save. So a
+    // repair made just before opening another model was never written -- and the
+    // debounce that would have written it was cancelled by the very act of
+    // switching. Nothing warned, because nothing had failed.
+    await this.flushCurrentModel();
     const text = await this.app.vault.read(file);
     let classes;
     try {
@@ -1256,6 +1357,7 @@ export default class ModelicaStudioPlugin extends Plugin {
     // Remember the file it came from, so Save writes back to it instead of
     // creating a second copy under the class name.
     this.settings.modelFiles[withComponents.name] = file.path;
+    this.traceStep("open", withComponents.name);
     await this.saveSettings();
     await this.persist();
     this.getView()?.loadModelIntoEditor();
@@ -1284,6 +1386,9 @@ export default class ModelicaStudioPlugin extends Plugin {
     // is saved even if Simulate was never pressed.
     this.getView()?.flushEditorIntoModel();
     const source = this.sourceForSave();
+    // Recorded BEFORE the write, so a trace shows the length that was saved and
+    // the length afterwards can be compared against it.
+    this.trace.add("save", this.model.name, { bytes: source.length, to: "" });
     const folder = this.settings.modelFolder.trim().replace(/^\/+|\/+$/g, "");
     if (folder) await this.ensureFolder(folder);
 
@@ -1316,6 +1421,7 @@ export default class ModelicaStudioPlugin extends Plugin {
 
     if (here) {
       const file = this.app.vault.getAbstractFileByPath(here) as TFile;
+      this.trace.add("save", this.model.name, { bytes: source.length, to: here, existed: true });
       // Snapshot what is being REPLACED, before it is replaced. On disk rather
       // than in memory, so it survives the plugin and can be read with `ls`.
       try {
@@ -1330,6 +1436,7 @@ export default class ModelicaStudioPlugin extends Plugin {
     }
 
     await this.app.vault.create(intended, source);
+    this.trace.add("save", this.model.name, { bytes: source.length, to: intended, created: true });
     this.settings.modelFiles[this.model.name] = intended;
     await this.saveSettings();
     return { path: intended, created: true };
@@ -1459,6 +1566,7 @@ export default class ModelicaStudioPlugin extends Plugin {
     this.model = model;
     this.modelSource = source;
     this.modelOutdated = false;
+    this.traceStep("adopt", model.name);
     this.schedulePersist();
   }
 
@@ -1470,6 +1578,9 @@ export default class ModelicaStudioPlugin extends Plugin {
    * truth from that moment, and the source is regenerated from it.
    */
   markSourceStale(): void {
+    // Only the first change per edit burst is worth recording, or a drag would
+    // fill the trace with identical steps.
+    if (!this.modelOutdated) this.traceStep("edit");
     this.modelOutdated = true;
   }
 

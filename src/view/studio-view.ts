@@ -651,6 +651,7 @@ export class ModelicaStudioView extends ItemView {
     this.mode = mode;
     // Persisted so the studio opens the way it was left.
     this.plugin.settings.editorMode = mode;
+    this.plugin.traceStep("mode");
     void this.plugin.saveSettings();
     const isCode = mode === "code";
     if (this.bodyEl) this.bodyEl.style.display = isCode ? "none" : "";

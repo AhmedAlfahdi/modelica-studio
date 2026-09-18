@@ -206,3 +206,31 @@ test("there is a way back to the file on disk", () => {
   // The button is disabled when there is nothing to revert to.
   assert.match(view, /set\(this\.btnRevert, !!this\.plugin\.settings\.modelFiles/, "disabled without a file");
 });
+
+test("opening another model saves the one being replaced", () => {
+  // A silent data-loss path, reported as "opened a new model and still worked, but
+  // after a restart it lost data". Loading a model overwrote the current one AND
+  // rescheduled the debounced persist, which CANCELS the pending save -- so a
+  // repair made just before opening another model was never written, and the
+  // debounce that would have written it was cancelled by the act of switching.
+  const load = /async loadModelFromFile[\s\S]*?\n  \}/.exec(main);
+  assert.ok(load, "the loader is present");
+  const flushAt = load[0].indexOf("await this.flushCurrentModel()");
+  const readAt = load[0].indexOf("vault.read(file)");
+  assert.ok(flushAt > 0, "it flushes the outgoing model");
+  assert.ok(flushAt < readAt, "before the new one is read, so the switch cannot cancel it");
+
+  const flush = /async flushCurrentModel\(\): Promise<void> \{[\s\S]*?\n  \}/.exec(main);
+  assert.ok(flush, "the flush exists");
+  // The pending state is written synchronously, because the debounce is about to
+  // be cancelled by the new model's own schedule.
+  assert.match(flush[0], /this\.flushPersistSync\(\)/, "the pending state is written first");
+  // And the model's own file, since an unsaved repair is worth more than a tidy vault.
+  assert.match(flush[0], /await this\.saveModelToNote\(\)/, "and the .mo file");
+  // Only for a model that already has a file: creating files behind the user's
+  // back is a different decision from not losing their work.
+  assert.match(flush[0], /if \(!this\.settings\.modelFiles\[name\]\) return/, "only a model that has a file");
+  // A failed save must not block the switch, but must not pass unnoticed either.
+  assert.match(flush[0], /could not save/, "a failure is reported");
+  assert.match(flush[0], /catch/, "and does not stop the model being opened");
+});

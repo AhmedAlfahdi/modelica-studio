@@ -246,7 +246,23 @@ modelicaStudio.settings      // stored settings
 modelicaStudio.library       // the class index
 modelicaStudio.runLog        // every simulation this session
 modelicaStudio.setVerbose(true)   // print every diagnostic line
+modelicaStudio.trace()            // what the plugin held, step by step
 ```
+
+`trace()` is the one for a suspected loss. The file log records what the plugin
+**did**; the trace records what it **held** at each moment that changed — which
+model, how long its source is, whether that source is still current, and which
+file it will be written to:
+
+```
+      0ms  open    AirplaneDrag   src=2869 current=true comps=8 eqs=0 file=Modelica/AirplaneDrag.mo mode=code
+   4200ms  edit    AirplaneDrag   src=2869 current=false comps=8 eqs=0 file=Modelica/AirplaneDrag.mo mode=diagram
+   5100ms  adopt   AirplaneDrag   src=2874 current=true  comps=8 eqs=0 file=Modelica/AirplaneDrag.mo mode=code
+   9800ms  switch  AirplaneDrag   src=2874 current=true  comps=8 eqs=0 file=Modelica/AirplaneDrag.mo mode=code
+```
+
+A `current=false` with no following `save` is the shape of a loss: the plugin was
+holding an edit it had not written.
 
 The log file is opt-in (**Write diagnostic log** in settings) because it survives
 a reload and can be read from outside the app. The console needs no setting:
