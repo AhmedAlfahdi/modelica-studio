@@ -137,6 +137,7 @@ export async function generateModel(request: GenerationRequest): Promise<Generat
           // OpenModelica's answer would be about the file rather than the model.
           return {
             ok: false,
+            builds: false,
             failure:
               'The reply has no class declaration, so there is nothing to compile. Expected "model <Name> ... end <Name>;".',
           };
@@ -153,7 +154,9 @@ export async function generateModel(request: GenerationRequest): Promise<Generat
         });
         diagnostics = outcome.diagnostics;
 
-        if (!outcome.ok) return { ok: false, failure: formatDiagnostics(outcome.diagnostics) };
+        if (!outcome.ok) {
+          return { ok: false, builds: false, failure: formatDiagnostics(outcome.diagnostics) };
+        }
 
         // Compiling is not the same as being usable. Two things build perfectly
         // and are still not what was asked for, and both are checked here so a
@@ -162,7 +165,11 @@ export async function generateModel(request: GenerationRequest): Promise<Generat
           describeStaticModel(source, outcome.diagnostics) ??
           describeLooseDiagram(source) ??
           describeStyleViolation(source, askedFor);
-        return problem ? { ok: false, failure: problem } : { ok: true, failure: "" };
+        // It BUILT. A problem here is a rejection, not a compile failure, and the
+        // caller is told so because the source is worth keeping and running.
+        return problem
+          ? { ok: false, builds: true, failure: problem }
+          : { ok: true, builds: true, failure: "" };
       },
 
       onProgress: request.onProgress,

@@ -31,6 +31,7 @@ import { docUrlFor, libraryVersionFrom } from "../modelica/doclinks";
 import { acceptsFileDrag, droppedVaultFile } from "./drop";
 import { RESULTS_TABS, resultsTabState, tabLabel, type ResultsTab } from "./bottom-tabs";
 import { savePrompt } from "../modelica/save-state";
+import { keptSourceNote, stopMessage } from "../ai/stop-message";
 import { SavedModelsModal } from "./saved-models-modal";
 import { HelpModal } from "./help-modal";
 import { SimulationError } from "../omc/backend";
@@ -1282,6 +1283,9 @@ export class ModelicaStudioView extends ItemView {
       // restart. Asked rather than saved silently: writing a file is the user's
       // decision, and a folder quietly filling with models is its own problem.
       void this.offerToSave(`"${name ?? "the model"}" compiled`);
+      // Done. Falling through to the failure path below re-applied the same
+      // source and overwrote the state it had just set.
+      return;
     }
 
     // Nothing usable. The last attempt is kept in the editor so the failure can
@@ -1292,22 +1296,14 @@ export class ModelicaStudioView extends ItemView {
     }
     this.lastSimulationError = outcome.attempts[outcome.attempts.length - 1]?.failure ?? null;
 
-    // The reasons are distinct because they need different actions, and calling a
-    // timeout a refusal sends the reader to check their key when the problem is
-    // that the model is slow.
-    const why =
-      outcome.reason === "cancelled"
-        ? "Stopped."
-        : outcome.reason === "attempts-exhausted"
-          ? `Gave up after ${attempts} attempts.`
-          : outcome.reason === "no-progress"
-            ? `Stopped after ${attempts} attempt${attempts === 1 ? "" : "s"}: no progress.`
-            : outcome.reason === "provider-error"
-              ? outcome.message
-              : "The reply contained no Modelica.";
+    // A model that BUILT and was rejected is not a model that failed to build:
+    // it compiles, it is in the editor, and pressing Simulate runs it. Saying
+    // "gave up" about it is what made a working model look broken.
+    const why = stopMessage(outcome.reason, outcome.message, attempts);
+    const kept = outcome.source && outcome.source !== original ? keptSourceNote(outcome.builds) : "";
 
-    this.setAiProgress(`${why} ${outcome.message}`);
-    this.setStatus(`AI: ${why} See the Run log for the compiler output.`);
+    this.setAiProgress(`${why} ${outcome.message} ${kept}`.trim());
+    this.setStatus(`AI: ${why} ${kept || "See the Run log for the compiler output."}`.trim());
     new Notice(`Modelica AI: ${why}`, 8000);
   }
 

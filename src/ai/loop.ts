@@ -27,6 +27,16 @@ export interface Attempt {
   source: string;
   /** True when it compiled and ran. */
   ok: boolean;
+  /**
+   * True when the COMPILER accepted it, whether or not the result was usable.
+   *
+   * Separate from `ok` because a model can build perfectly and still be rejected:
+   * it may have nothing time-dependent to simulate, or be a diagram whose blocks
+   * are not wired, or be the wrong form entirely. Those are not compile failures,
+   * and reporting them as "it did not build" is what made a model that runs look
+   * broken.
+   */
+  builds: boolean;
   /** The compiler's output when it did not, verbatim. */
   failure: string;
   /** Which approach produced this source. */
@@ -85,6 +95,8 @@ export interface LoopResult {
   style: string;
   /** True when a source compiled. */
   ok: boolean;
+  /** True when the compiler accepted the last attempt, usable or not. */
+  builds: boolean;
   attempts: Attempt[];
   reason: StopReason;
   /** Human-readable explanation of why it stopped. */
@@ -112,7 +124,17 @@ export interface LoopEvents {
    */
   generate: (context: { attempt: number; previous?: Attempt; style: string }) => Promise<string>;
   /** Compile and run a candidate. Never throws; a failure is a result. */
-  compile: (source: string, attempt: number) => Promise<{ ok: boolean; failure: string }>;
+  /**
+   * Compile a candidate.
+   *
+   * `builds` is the compiler's verdict alone; `ok` is the verdict after the
+   * usability checks. They differ whenever a model builds but is not usable, and
+   * the difference is what the report has to carry.
+   */
+  compile: (
+    source: string,
+    attempt: number
+  ) => Promise<{ ok: boolean; failure: string; builds?: boolean }>;
   /** Progress, for a status line. */
   onProgress?: (event: {
     attempt: number;
@@ -226,7 +248,17 @@ export async function runGenerationLoop(
     events.onProgress?.({ attempt: index, maxAttempts: limits.maxAttempts, phase: "compiling", style });
     const outcome = await events.compile(source, index);
 
-    const attempt: Attempt = { index, source, ok: outcome.ok, failure: outcome.failure, style };
+    const attempt: Attempt = {
+      index,
+      source,
+      ok: outcome.ok,
+      // Defaulted to `ok` so a caller that does not distinguish the two is not
+      // silently wrong: it is only a caller that REJECTS a built model that has
+      // to say so.
+      builds: outcome.builds ?? outcome.ok,
+      failure: outcome.failure,
+      style,
+    };
     attempts.push(attempt);
     onThisStyle++;
 
@@ -273,6 +305,10 @@ function finish(
     source: last?.source ?? "",
     style,
     ok: last?.ok ?? false,
+    // Carried out of the loop so the report can say the model BUILDS. Without it
+    // a rejected-but-working model reads exactly like one that does not compile,
+    // and the reader is told to give up on something they can run.
+    builds: last?.builds ?? false,
     attempts,
     reason,
     message,
