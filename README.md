@@ -216,6 +216,21 @@ answer. The request includes the current source and a shortlist of library
 classes relevant to your description, so the model composes real MSL classes
 instead of inventing names.
 
+## Recovering a lost model
+
+A saved model has three places it can still be found after the vault copy is gone:
+
+1. **The plugin's history** — every save keeps the version it replaced, in the
+   plugin's own folder (`.obsidian/plugins/modelica-studio/history/`), one
+   directory per model. Twenty revisions are kept; **Model list…** in the studio
+   shows them with restore.
+2. **OpenModelica's build cache** — `/tmp/modelica-studio/*/<Model>/<Model>.mo`
+   holds the exact source that was last compiled.
+3. **The desktop trash** — `~/.local/share/Trash/files/` on Linux.
+
+Deleting from **Model list…** uses the vault's own trash and snapshots first, so
+that route is reversible twice.
+
 ## Debugging
 
 The plugin logs to Obsidian's **developer console** (Ctrl+Shift+I) as well as to
