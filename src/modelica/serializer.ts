@@ -220,11 +220,12 @@ export function serializeDiagram(
     // not what the model said.
     const binding = entries.find(([k]) => k === "=" || k === v.id);
     const mods = entries.filter(([k]) => k !== "=" && k !== v.id);
-    const tail = binding
-      ? `=${binding[1]}`
-      : mods.length
-        ? `(${mods.map(([k, value]) => `${k}=${value}`).join(", ")})`
-        : "";
+    // BOTH, when a declaration has both: `parameter Real x(unit = "V") = 5` is a
+    // modifier list AND a binding. Emitting only the binding silently dropped the
+    // unit, which is a quiet loss rather than a loud one -- the model still
+    // compiled, with the wrong declaration.
+    const modList = mods.length ? `(${mods.map(([k, value]) => `${k}=${value}`).join(", ")})` : "";
+    const tail = binding ? `${modList}=${binding[1]}` : modList;
     const pre = v.prefixes?.length ? `${v.prefixes.join(" ")} ` : "";
     lines.push(`${ind}${pre}${v.type} ${v.id}${v.suffixDims ?? ""}${tail};`);
   }
@@ -308,10 +309,23 @@ export function serializeComponent(
   // Dotted keys name nested modifiers and must be regrouped: `T.start=373.15`
   // is not Modelica, `T(start=373.15)` is. Emitting the flat form produced a
   // model that would not even parse, while the diagram still looked right.
+  // A parameter named after the declaration is the declaration's own BINDING, not
+  // a modifier: `Real x = 1` is stored as `params.x = "1"`. Emitting it as a
+  // modifier produces `x(x = 1)`, which says "set the member x of the type Real"
+  // -- and Real has no member x, so OpenModelica answers "Modified element x not
+  // found in class Real" and the model will not build.
+  //
+  // This was the whole shape of a reported loss: the serializer wrote the broken
+  // form, the AI fixed the TEXT, and the diagram kept the broken parameter -- so
+  // the next save and the next restore put the fault back.
+  const binding = typeof params[id] === "string" ? params[id] : "";
+
   const nested = new Map<string, string[]>();
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === null || v === "") continue;
     if (isRedeclarePackage && (k === "Medium" || k === "redeclare" || k === "package")) continue;
+    // Handled below, as a binding.
+    if (k === id) continue;
     const dot = k.indexOf(".");
     if (dot < 0) {
       mods.push(`${k}=${v}`);
@@ -334,7 +348,10 @@ export function serializeComponent(
   // declaration then references parameters it is not meant to.
   const dims = suffixDims ? suffixDims : "";
   const cond = condition ? ` if ${condition}` : "";
-  return `${pre}${className} ${id}${dims}${modStr}${cond} ${ann};`;
+  // The binding comes after the modifier list, which is where Modelica wants it:
+  // `Real x(start = 1) = 5`.
+  const bind = binding ? ` = ${binding}` : "";
+  return `${pre}${className} ${id}${dims}${modStr}${cond}${bind} ${ann};`;
 }
 
 /** serializePlacement already returns `Placement(...)`; avoid double wrapping. */
