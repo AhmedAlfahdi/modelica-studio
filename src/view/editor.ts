@@ -50,9 +50,13 @@ import {
   placementTransform,
   transformedBounds,
   viewportTransform,
+  distanceToPolyline,
   drawComponent,
   drawConnection,
   drawHandles,
+  drawWireVertices,
+  nearestVertexIndex,
+  polylineInBox,
   drawPorts,
   findPortAt,
   handleCursor,
@@ -142,6 +146,23 @@ type Interaction =
       y: number;
       additive: boolean;
       baseSelection: Set<string>;
+      baseWireSelection: Set<string>;
+    }
+  | {
+      /**
+       * Dragging one corner of a wire to re-route it.
+       *
+       * `index` is a VERTEX index, so the flat points array is indexed at
+       * `index * 2`. Only interior vertices are ever dragged: the first and last
+       * are the pins, and `connectionPoints` rewrites them from the ports on
+       * every draw, so a drag there would snap straight back.
+       */
+      kind: "wireVertex";
+      connId: string;
+      index: number;
+      startX: number;
+      startY: number;
+      moved: boolean;
     }
   | {
       /**
@@ -196,6 +217,21 @@ export class SchematicEditor {
 
   private interaction: Interaction = { kind: "none" };
   private selection = new Set<string>();
+  /**
+   * Selected wires, by connection id.
+   *
+   * Kept SEPARATE from `selection` rather than mixed into it with a prefix. Every
+   * consumer of `selection` -- the inspector, copy, the "still alive" filter after
+   * an undo, rotation -- assumes a component id, and a wire id in there would be
+   * silently dropped by some of them and passed to a component lookup by others.
+   * Two sets make that class of mistake impossible instead of merely unlikely.
+   *
+   * A connection's id is `component.port|component.port`, which cannot collide
+   * with the other set anyway.
+   */
+  private wireSelection = new Set<string>();
+  /** The wire under the pointer, so it can be shown as clickable. */
+  private hoveredWire: string | null = null;
   private hovered: string | null = null;
   private hoveredPort: { component: string; port: string } | undefined;
   /** Pin the current press is armed on, before the gesture is decided. */
@@ -281,6 +317,16 @@ export class SchematicEditor {
     return [...this.selection];
   }
 
+  /** Selected wires, by connection id. */
+  get selectedWireIds(): string[] {
+    return [...this.wireSelection];
+  }
+
+  /** Whatever is selected, of either kind. */
+  get hasSelection(): boolean {
+    return this.selection.size > 0 || this.wireSelection.size > 0;
+  }
+
   get canvasRect(): DOMRect {
     return this.canvas.getBoundingClientRect();
   }
@@ -355,10 +401,21 @@ export class SchematicEditor {
     this.zoomToFit();
   }
 
-  private setSelection(ids: Iterable<string>): void {
+  /**
+   * Set the component selection.
+   *
+   * The wire selection is dropped unless `keepWires` is asked for, because a
+   * press that lands on a component means the component: leaving a wire selected
+   * as well would make the next Delete remove a connection the user had stopped
+   * thinking about. The marquee passes `keepWires` because it sweeps both on
+   * purpose.
+   */
+  private setSelection(ids: Iterable<string>, opts: { keepWires?: boolean } = {}): void {
     const next = new Set(ids);
-    if (sameSet(next, this.selection)) return;
+    const wiresDropped = !opts.keepWires && this.wireSelection.size > 0;
+    if (sameSet(next, this.selection) && !wiresDropped) return;
     this.selection = next;
+    if (wiresDropped) this.wireSelection = new Set();
     // Tell the view, so the inspector and toolbar track the canvas.
     this.cb.onSelectionChange?.([...this.selection]);
     this.requestDraw();
@@ -752,7 +809,53 @@ export class SchematicEditor {
       return;
     }
 
-    // 5. Empty space. Pan on the middle or right button, or with Shift held;
+    // 5. A wire. Tested AFTER the component body, so a wire crossing a symbol
+    // does not steal the click from the symbol, and before empty space, so a wire
+    // in open space is reachable at all -- which it previously was not, at any
+    // zoom, by any gesture.
+    const wireHit = this.hitTestWire(dx, dy, WIRE_GRAB_PX / this.viewport.scale);
+    if (wireHit && ev.button === 0) {
+      const additive = ev.ctrlKey || ev.metaKey || ev.shiftKey;
+      if (additive) {
+        const next = new Set(this.wireSelection);
+        if (next.has(wireHit.conn.id)) next.delete(wireHit.conn.id);
+        else next.add(wireHit.conn.id);
+        this.setWireSelection(next);
+      } else if (!this.wireSelection.has(wireHit.conn.id)) {
+        this.setWireSelection([wireHit.conn.id]);
+      }
+      // A press on an interior corner starts a reshape; a press anywhere else on
+      // the wire just selects it. The endpoints are skipped because they are the
+      // pins: `connectionPoints` rewrites them from the ports on every draw, so a
+      // drag there would snap straight back and look broken.
+      const vertex = nearestVertexIndex(
+        wireHit.points,
+        dx,
+        dy,
+        WIRE_VERTEX_GRAB_PX / this.viewport.scale
+      );
+      const interior = vertex > 0 && vertex * 2 + 3 < wireHit.points.length;
+      report(interior ? "wire-vertex" : "select-wire");
+      if (interior) {
+        // No `beginEdit` here: a press that never moves is a selection, and
+        // opening an edit on pointerdown would leave one pending for the next
+        // gesture to record against the wrong before-state.
+        this.beginInteraction(
+          {
+            kind: "wireVertex",
+            connId: wireHit.conn.id,
+            index: vertex,
+            startX: dx,
+            startY: dy,
+            moved: false,
+          },
+          ev
+        );
+      }
+      return;
+    }
+
+    // 6. Empty space. Pan on the middle or right button, or with Shift held;
     // otherwise a rubber-band selection.
     if (ev.button === 1 || ev.button === 2 || ev.shiftKey) {
       report("pan");
@@ -772,6 +875,7 @@ export class SchematicEditor {
         y: dy,
         additive,
         baseSelection: additive ? new Set(this.selection) : new Set<string>(),
+        baseWireSelection: additive ? new Set(this.wireSelection) : new Set<string>(),
       },
       ev
     );
@@ -855,11 +959,53 @@ export class SchematicEditor {
         return;
       }
 
+      case "wireVertex": {
+        const conn = this.model.connections.find((c) => c.id === inter.connId);
+        if (!conn) return;
+        // The resolved route, WITHOUT writing it back yet: `beginEdit` must
+        // capture the state before the route is materialised, or undo would
+        // restore a route that was already explicit and the derived form could
+        // never be recovered.
+        const route = conn.points.length >= 8 ? conn.points : this.connectionPoints(conn);
+        const i = inter.index * 2;
+        if (i <= 0 || i + 1 >= route.length - 1) return;
+        const dist = Math.hypot(dx - inter.startX, dy - inter.startY) * this.viewport.scale;
+        if (!inter.moved && dist < DRAG_THRESHOLD_PX) return;
+        if (!inter.moved) {
+          inter.moved = true;
+          this.beginEdit(`route ${conn.id}`);
+        }
+        // Materialise on the first movement. Until then `points` may be empty and
+        // the polyline is derived from the ports, so there is nothing to edit --
+        // writing the derived route back is what turns "reshape this wire" into an
+        // edit of stored waypoints.
+        if (conn.points.length < 8) conn.points = route;
+        // Snapped to the same grid as components, so a reshaped wire lines up with
+        // the symbols it runs between.
+        conn.points[i] = Math.round(dx / GRID) * GRID;
+        conn.points[i + 1] = Math.round(dy / GRID) * GRID;
+        this.requestDraw();
+        return;
+      }
+
       case "rubber": {
         inter.x = dx;
         inter.y = dy;
-        const inside = this.componentsInBox(rubberBox(inter));
-        this.setSelection(inter.additive ? [...inter.baseSelection, ...inside] : inside);
+        const box = rubberBox(inter);
+        const inside = this.componentsInBox(box);
+        this.setSelection(inter.additive ? [...inter.baseSelection, ...inside] : inside, {
+          keepWires: true,
+        });
+        // Wires are swept too, so a marquee can clear a tangle in one gesture.
+        // A wire counts as caught only when the whole route is inside: catching
+        // one that merely crosses the box would delete a connection the user was
+        // not pointing at.
+        const wires = this.model.connections
+          .filter((c) => polylineInBox(this.connectionPoints(c), box))
+          .map((c) => c.id);
+        this.wireSelection = new Set(
+          inter.additive ? [...inter.baseWireSelection, ...wires] : wires
+        );
         this.requestDraw();
         return;
       }
@@ -937,6 +1083,17 @@ export class SchematicEditor {
       this.hovered = next;
       this.requestDraw();
     }
+
+    // A wire is not a component and has no symbol to light up, so the cursor is
+    // what says it can be clicked. Without this the wire is selectable but nothing
+    // on screen suggests it, which is how it stayed unselectable in practice.
+    const wire = bodyHit || p ? undefined : this.hitTestWire(dx, dy, WIRE_GRAB_PX / this.viewport.scale);
+    const wireId = wire?.conn.id ?? null;
+    if (wireId !== this.hoveredWire) {
+      this.hoveredWire = wireId;
+      this.requestDraw();
+    }
+    if (wire) this.canvas.style.cursor = "pointer";
   }
 
   private setHoveredPort(p: { component: string; port: string } | undefined): void {
@@ -959,9 +1116,12 @@ export class SchematicEditor {
       case "resize":
         if (inter.moved) this.commitEdit();
         break;
+      case "wireVertex":
+        if (inter.moved) this.commitEdit();
+        break;
       case "rubber":
         // A plain click on empty space clears the selection.
-        if (!inter.additive && isZeroSize(inter)) this.setSelection([]);
+        if (!inter.additive && isZeroSize(inter)) this.clearSelection();
         break;
       case "armWire": {
         // Never moved: the user meant to select, not to wire.
@@ -1050,7 +1210,19 @@ export class SchematicEditor {
   private onDoubleClick = (ev: MouseEvent) => {
     const [dx, dy] = this.toDiagram(ev);
     const hit = hitTestComponent(this.model, this.cb.lookup, dx, dy, 2 / this.viewport.scale);
-    if (hit) this.setSelection([hit.id]);
+    if (hit) {
+      this.setSelection([hit.id]);
+      return;
+    }
+    // Double-clicking a wire restores its automatic route, so the gesture that
+    // reshapes a wire also has an obvious inverse. Without this the only way back
+    // from a route dragged into a symbol is to undo, which also undoes whatever
+    // else came after it.
+    const wire = this.hitTestWire(dx, dy, WIRE_GRAB_PX / this.viewport.scale);
+    if (wire) {
+      this.setWireSelection([wire.conn.id]);
+      this.resetWireRoutes();
+    }
   };
 
   /* ---------------- keyboard ---------------- */
@@ -1108,7 +1280,10 @@ export class SchematicEditor {
     switch (ev.key) {
       case "Delete":
       case "Backspace":
-        if (this.selection.size === 0) return;
+        // Either kind counts: guarding on the component selection alone left a
+        // selected wire undeletable by the key, which is the main way to delete
+        // one.
+        if (!this.hasSelection) return;
         ev.preventDefault();
         this.deleteSelection();
         return;
@@ -1257,9 +1432,19 @@ export class SchematicEditor {
 
   private applyRestored(state: string): void {
     this.model = JSON.parse(state) as DiagramModel;
-    // Anything that no longer exists must leave the selection.
-    const alive = new Set(this.model.components.map((c) => c.id));
-    this.setSelection([...this.selection].filter((id) => alive.has(id)));
+    // Anything that no longer exists must leave the selection -- and that includes
+    // wires. A wire id that has been undone away would otherwise stay in the
+    // selection: the inspector would report connections that are not there, and
+    // the next Delete would act on a set the user cannot see.
+    const aliveComponents = new Set(this.model.components.map((c) => c.id));
+    const aliveWires = new Set(this.model.connections.map((c) => c.id));
+    const keptWires = new Set([...this.wireSelection].filter((id) => aliveWires.has(id)));
+    const wiresChanged = keptWires.size !== this.wireSelection.size;
+    this.wireSelection = keptWires;
+    this.setSelection([...this.selection].filter((id) => aliveComponents.has(id)), {
+      keepWires: true,
+    });
+    if (wiresChanged) this.cb.onSelectionChange?.(this.selectedIds);
     this.cb.onChange?.(this.model);
     this.requestDraw();
   }
@@ -1394,26 +1579,42 @@ export class SchematicEditor {
     // Right-clicking an unselected component selects it first, which is what
     // makes the menu's actions apply to what the user pointed at.
     if (hit && !this.selection.has(hit.id)) this.setSelection([hit.id]);
-    else if (!hit) this.setSelection([]);
+    else if (!hit) {
+      // No component: a wire may still be under the pointer, and right-clicking
+      // it should offer the same actions. Falling straight through to clearing
+      // the selection made the menu's Delete unavailable on the one thing the
+      // user had pointed at.
+      const wire = this.hitTestWire(dx, dy, WIRE_GRAB_PX / this.viewport.scale);
+      if (wire && !this.wireSelection.has(wire.conn.id)) this.setWireSelection([wire.conn.id]);
+      else if (!wire) this.clearSelection();
+    }
 
     this.closeContextMenu();
     const rect = this.container.getBoundingClientRect();
     const menu = this.container.ownerDocument.createElement("div");
     menu.className = "modelica-studio-context-menu";
 
-    const hasSelection = this.selection.size > 0;
+    // Delete applies to either kind; the clipboard and rotation are component
+    // operations and stay disabled for a wire rather than appearing to do nothing.
+    const comps = this.selection.size > 0;
+    const anySelected = this.hasSelection;
     const items: { label: string; enabled: boolean; run: () => void }[] = [
-      { label: "Cut", enabled: hasSelection, run: () => { this.copy(); this.deleteSelection(); } },
-      { label: "Copy", enabled: hasSelection, run: () => this.copy() },
+      { label: "Cut", enabled: comps, run: () => { this.copy(); this.deleteSelection(); } },
+      { label: "Copy", enabled: comps, run: () => this.copy() },
       { label: "Paste", enabled: this.canPaste, run: () => void this.paste() },
-      { label: "Duplicate", enabled: hasSelection, run: () => this.duplicate() },
-      { label: "Delete", enabled: hasSelection, run: () => this.deleteSelection() },
-      { label: "Rotate 90°", enabled: hasSelection, run: () => this.rotateSelection(90) },
+      { label: "Duplicate", enabled: comps, run: () => this.duplicate() },
+      { label: "Delete", enabled: anySelected, run: () => this.deleteSelection() },
+      {
+        label: "Reset route",
+        enabled: this.canResetRoutes,
+        run: () => this.resetWireRoutes(),
+      },
+      { label: "Rotate 90°", enabled: comps, run: () => this.rotateSelection(90) },
       { label: "Undo", enabled: this.history.canUndo, run: () => this.undo() },
       { label: "Redo", enabled: this.history.canRedo, run: () => this.redo() },
       {
         label: "Select all",
-        enabled: this.model.components.length > 0,
+        enabled: this.model.components.length > 0 || this.model.connections.length > 0,
         run: () => this.selectAll(),
       },
       {
@@ -1546,21 +1747,59 @@ export class SchematicEditor {
     return conn;
   }
 
-  deleteSelection(): void {
-    if (this.selection.size === 0) return;
-    const doomed = new Set(this.selection);
-    this.beginEdit(
-      doomed.size > 1 ? `delete ${doomed.size} components` : `delete ${[...doomed][0]}`
+  /**
+   * Put the selected wires back on their automatic route.
+   *
+   * A stored route is a snapshot of where the corners were; when the components
+   * move it is not recomputed, so a wire can end up doubling back through a
+   * symbol -- which is exactly what a route that was reshaped and then left
+   * behind by a move looks like. This throws the stored corners away and lets
+   * `routeConnection` derive the L again, which is the escape hatch from a route
+   * that has gone bad.
+   */
+  resetWireRoutes(): void {
+    const wires = this.model.connections.filter((c) => this.wireSelection.has(c.id));
+    if (wires.length === 0) return;
+    // Only the ones that actually have a stored route: clearing an already
+    // derived wire would put an undo entry in the history for no change.
+    const stored = wires.filter((c) => c.points.length >= 4);
+    if (stored.length === 0) {
+      this.cb.onStatus?.("that connection already follows the automatic route");
+      return;
+    }
+    this.beginEdit(stored.length > 1 ? `re-route ${stored.length} wires` : `re-route ${stored[0].id}`);
+    for (const conn of stored) conn.points = [];
+    this.commitEdit();
+    this.cb.onStatus?.(`re-routed ${stored.length} connection(s)`);
+    this.requestDraw();
+  }
+
+  /** Whether any selected wire carries a stored route worth resetting. */
+  get canResetRoutes(): boolean {
+    return this.model.connections.some(
+      (c) => this.wireSelection.has(c.id) && c.points.length >= 4
     );
+  }
+
+  deleteSelection(): void {
+    if (this.selection.size === 0 && this.wireSelection.size === 0) return;
+    const doomed = new Set(this.selection);
+    const doomedWires = new Set(this.wireSelection);
+    const parts: string[] = [];
+    if (doomed.size) parts.push(`${doomed.size} component(s)`);
+    if (doomedWires.size) parts.push(`${doomedWires.size} connection(s)`);
+    this.beginEdit(`delete ${parts.join(" and ")}`);
     this.model.components = this.model.components.filter((c) => !doomed.has(c.id));
     // Connections to a removed component must go too, or the generated
-    // Modelica would reference a missing instance.
+    // Modelica would reference a missing instance. A wire the user picked goes
+    // whether or not its components survive.
     this.model.connections = this.model.connections.filter(
-      (c) => !doomed.has(c.from.component) && !doomed.has(c.to.component)
+      (c) =>
+        !doomed.has(c.from.component) && !doomed.has(c.to.component) && !doomedWires.has(c.id)
     );
     this.commitEdit();
-    this.setSelection([]);
-    this.cb.onStatus?.(`deleted ${doomed.size} component(s)`);
+    this.clearSelection();
+    this.cb.onStatus?.(`deleted ${parts.join(" and ")}`);
   }
 
   rotateSelection(deltaDeg: number): void {
@@ -1622,7 +1861,12 @@ export class SchematicEditor {
   }
 
   selectAll(): void {
-    this.setSelection(this.model.components.map((c) => c.id));
+    this.setSelection(this.model.components.map((c) => c.id), { keepWires: true });
+    // Everything, so a single Delete clears the diagram. The two sets are kept
+    // apart everywhere else; here they are both filled on purpose.
+    this.wireSelection = new Set(this.model.connections.map((c) => c.id));
+    this.cb.onSelectionChange?.(this.selectedIds);
+    this.requestDraw();
   }
 
   getModel(): DiagramModel {
@@ -1699,10 +1943,23 @@ export class SchematicEditor {
     this.drawGrid(ctx);
 
     for (const conn of this.model.connections) {
-      drawConnection(ctx, conn, this.connectionPoints(conn), vp, dpr, {
+      const picked = this.wireSelection.has(conn.id);
+      const points = this.connectionPoints(conn);
+      drawConnection(ctx, conn, points, vp, dpr, {
+        // A wire is highlighted when it is selected itself, and also when a
+        // component it attaches to is selected: moving a component takes its
+        // wires with it, so showing which ones those are is what makes the
+        // consequence of the selection visible before the drag.
         selected:
-          this.selection.has(conn.from.component) || this.selection.has(conn.to.component),
+          picked ||
+          this.selection.has(conn.from.component) ||
+          this.selection.has(conn.to.component) ||
+          this.hoveredWire === conn.id,
       });
+      // Corners to drag, but only for the wire in hand: showing them for every
+      // wire attached to a selected component would litter a multi-selection with
+      // handles that mostly do not belong to the thing being moved.
+      if (picked) drawWireVertices(ctx, points, vp, dpr, theme);
     }
 
     for (const inst of this.model.components) {
@@ -2020,6 +2277,58 @@ export class SchematicEditor {
     return routeConnection(a, b, conn.points);
   }
 
+  /**
+   * The wire under a point, and the resolved polyline it was hit on.
+   *
+   * `slack` is in diagram units, so the caller divides a screen tolerance by the
+   * zoom and the grab distance stays constant on screen at any scale. Wires are
+   * tested nearest-first so that crossing wires pick the one on top, which is the
+   * one drawn last.
+   */
+  private hitTestWire(
+    x: number,
+    y: number,
+    slack: number
+  ): { conn: Connection; points: number[]; distance: number } | undefined {
+    let best: { conn: Connection; points: number[]; distance: number } | undefined;
+    for (const conn of this.model.connections) {
+      const points = this.connectionPoints(conn);
+      const distance = distanceToPolyline(points, x, y);
+      if (distance > slack) continue;
+      // `<=` keeps the LAST wire among equals, matching the draw order.
+      if (!best || distance <= best.distance) best = { conn, points, distance };
+    }
+    return best;
+  }
+
+  /**
+   * Set the wire selection, and tell the view.
+   *
+   * The component selection is cleared unless asked otherwise: a press on a wire
+   * means the wire, and leaving components selected as well would make the next
+   * Delete remove things the user had stopped thinking about.
+   */
+  private setWireSelection(ids: Iterable<string>, opts: { keepComponents?: boolean } = {}): void {
+    const next = new Set(ids);
+    const same = sameSet(next, this.wireSelection);
+    if (same && (opts.keepComponents || this.selection.size === 0)) return;
+    this.wireSelection = next;
+    if (!opts.keepComponents) this.selection = new Set();
+    this.cb.onSelectionChange?.(this.selectedIds);
+    this.requestDraw();
+  }
+
+  /** Drop both selections. */
+  private clearSelection(): void {
+    const had = this.selection.size > 0 || this.wireSelection.size > 0;
+    this.selection = new Set();
+    this.wireSelection = new Set();
+    if (had) {
+      this.cb.onSelectionChange?.([]);
+      this.requestDraw();
+    }
+  }
+
   private drawGrid(ctx: CanvasRenderingContext2D): void {
     const step = GRID * this.viewport.scale;
     if (step < 6) return;
@@ -2057,6 +2366,18 @@ const DRAG_THRESHOLD_PX = 4;
 
 /** Radius, in screen pixels, within which a connector can be grabbed. */
 const PORT_GRAB_PX = 7;
+
+/**
+ * How close, in screen pixels, a press must be to a wire to land on it.
+ *
+ * Wider than a port's grab radius because a wire is a thin line with nothing
+ * behind it: aiming at one exactly is fiddly, and the nearest-miss is
+ * unambiguous in a way that two overlapping components are not.
+ */
+const WIRE_GRAB_PX = 6;
+
+/** Radius within which a press on a wire grabs a corner instead of the wire. */
+const WIRE_VERTEX_GRAB_PX = 8;
 
 const MIN_ZOOM = 0.08;
 const MAX_ZOOM = 16;

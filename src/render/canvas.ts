@@ -1597,6 +1597,130 @@ export function drawConnection(
 }
 
 /**
+ * Distance from a point to a line segment.
+ *
+ * The primitive behind every wire interaction: a wire is a polyline, so "is the
+ * pointer on this wire" is the smallest distance to any of its segments. Zero
+ * length segments are handled rather than dividing by zero -- a wire whose two
+ * waypoints coincide is degenerate but reachable by dragging one onto another.
+ */
+export function distanceToSegment(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number
+): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+  // Where the point projects onto the line, clamped to the segment so the
+  // distance is to the segment and not to the infinite line through it.
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+/**
+ * Distance from a point to a polyline given as a flat `[x, y, x, y, ...]` list.
+ *
+ * Returns `Infinity` for a polyline with no segment, so a caller comparing
+ * distances does not have to special-case a wire with too few points.
+ */
+export function distanceToPolyline(points: number[], x: number, y: number): number {
+  let best = Infinity;
+  for (let i = 0; i + 3 < points.length; i += 2) {
+    const d = distanceToSegment(x, y, points[i], points[i + 1], points[i + 2], points[i + 3]);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+/**
+ * The index of the polyline VERTEX nearest a point, or -1 when none is within
+ * `slack`.
+ *
+ * Used to decide whether a press on a wire grabbed a corner to drag or just
+ * landed on the wire to select it. Endpoints are excluded by the caller rather
+ * than here: they are pinned to the ports, so dragging one would tear the wire
+ * off its pin.
+ */
+export function nearestVertexIndex(points: number[], x: number, y: number, slack: number): number {
+  let best = -1;
+  let bestDistance = slack;
+  for (let i = 0; i + 1 < points.length; i += 2) {
+    const d = Math.hypot(x - points[i], y - points[i + 1]);
+    // `<=` so that a later vertex wins a tie, which is the one drawn on top.
+    if (d <= bestDistance) {
+      bestDistance = d;
+      best = i / 2;
+    }
+  }
+  return best;
+}
+
+/**
+ * Whether a whole polyline lies inside a box.
+ *
+ * EVERY vertex, not the bounding box: a wire that loops out of the marquee and
+ * back in has a bounding box that covers the marquee even though the wire itself
+ * is mostly elsewhere, and selecting it would be a surprise.
+ */
+export function polylineInBox(
+  points: number[],
+  box: [number, number, number, number]
+): boolean {
+  if (points.length < 4) return false;
+  const minX = Math.min(box[0], box[2]);
+  const maxX = Math.max(box[0], box[2]);
+  const minY = Math.min(box[1], box[3]);
+  const maxY = Math.max(box[1], box[3]);
+  for (let i = 0; i + 1 < points.length; i += 2) {
+    if (points[i] < minX || points[i] > maxX) return false;
+    if (points[i + 1] < minY || points[i + 1] > maxY) return false;
+  }
+  return true;
+}
+
+/** Size of a wire's draggable corner, in screen pixels. */
+const WIRE_VERTEX_PX = 7;
+
+/**
+ * Draw the draggable corners of a selected wire.
+ *
+ * Only the INTERIOR vertices: the first and last are the pins themselves, and a
+ * handle on a pin would suggest it can be moved off the component.
+ *
+ * Drawn in screen space like the resize handles, so they stay a constant and
+ * clickable size at any zoom.
+ */
+export function drawWireVertices(
+  ctx: CanvasRenderingContext2D,
+  points: number[],
+  vp: Viewport,
+  dpr: number,
+  theme: Theme = currentTheme()
+): void {
+  if (points.length < 8) return;
+  const vt = viewportTransform(vp, dpr);
+  const size = WIRE_VERTEX_PX;
+  for (let i = 2; i + 3 < points.length; i += 2) {
+    const [x, y] = apply(vt, points[i], points[i + 1]);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = theme.handleFill;
+    ctx.strokeStyle = theme.selection;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.rect(x - size / 2, y - size / 2, size, size);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+/**
  * Route a wire between two points.
  *
  * Modelica stores connection waypoints explicitly in the `Line` annotation, so

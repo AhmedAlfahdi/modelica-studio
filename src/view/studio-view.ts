@@ -1640,6 +1640,23 @@ export class ModelicaStudioView extends ItemView {
     selected: string[]
   ): void {
     if (selected.length === 0) {
+      // A selected wire is not "nothing selected", and telling the user to select
+      // a component while one is already picked reads as the click not having
+      // worked.
+      const wires = this.editor?.selectedWireIds ?? [];
+      if (wires.length > 0) {
+        const conns = (this.plugin.model.connections ?? []).filter((c) => wires.includes(c.id));
+        const one = conns.length === 1 ? conns[0] : undefined;
+        parent.createDiv({
+          cls: "modelica-studio-empty",
+          text: one
+            ? `Connection ${one.from.component}.${one.from.port} → ` +
+              `${one.to.component}.${one.to.port}. Drag a corner to re-route it, ` +
+              `or press Delete to remove it.`
+            : `${conns.length} connections selected. Press Delete to remove them.`,
+        });
+        return;
+      }
       parent.createDiv({
         cls: "modelica-studio-empty",
         text: "Select a component to edit it, or drag one in from the palette.",
@@ -2716,18 +2733,23 @@ export class ModelicaStudioView extends ItemView {
   /** Enable or disable toolbar actions for the current selection. */
   private updateToolbarState(): void {
     const sel = this.editor?.selectedIds ?? [];
-    const has = sel.length > 0;
+    const wires = this.editor?.selectedWireIds ?? [];
+    // Wires are a second selection, so a toolbar that only counted components
+    // left Delete greyed out with a wire plainly selected.
+    const has = sel.length > 0 || wires.length > 0;
     const single = sel.length === 1;
     const set = (btn: HTMLButtonElement | undefined, enabled: boolean) => {
       if (!btn) return;
       btn.toggleClass("is-disabled", !enabled);
       btn.disabled = !enabled;
     };
-    set(this.btnRotate, has);
+    // Rotation is a component transform; a wire has nothing to rotate. Delete
+    // takes either kind.
+    set(this.btnRotate, sel.length > 0);
     set(this.btnDelete, has);
     set(this.btnUndo, this.editor?.history.canUndo ?? false);
     set(this.btnRedo, this.editor?.history.canRedo ?? false);
-    set(this.btnCopy, has);
+    set(this.btnCopy, sel.length > 0);
     set(this.btnPaste, this.editor?.canPaste ?? false);
     // Revert needs a saved file; a model that has never been written has nothing
     // to go back to, and a button that explains that only after being pressed is
