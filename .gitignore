@@ -20,6 +20,28 @@ data.json
 # Test scratch: OMC build trees from the suite (kept out of /tmp, which is small)
 .modelica-studio-test-tmp/
 
+# OpenModelica build output.
+#
+# `buildModel` writes the generated C, the objects, a makefile, an executable and a
+# results file into the working directory. A whole BouncingBall build tree -- 58
+# files, including the compiled binary and its _res.mat -- was committed in
+# f1d55c4, because one run happened in the repository root and `git add -A` swept it
+# up. The plugin and the suite both build in a temporary directory now; these rules
+# are the belt to that braces, covering the extensions that are never sources here.
+*.o
+*.libs
+*.makefile
+*_init.xml
+*_info.json
+*_literals.h
+*_model.h
+*_includes.h
+*_external_functions.json
+*_res.mat
+
+# A compiled Modelica model has no extension, so it cannot be matched by pattern.
+# `scripts/check-repo.mjs` fails the suite if one appears in the tree.
+
 # The example vault's plugin folder is populated by the build, not committed
 examples/vault/.obsidian/plugins/modelica-studio/main.js
 examples/vault/.obsidian/plugins/modelica-studio/styles.css
