@@ -158,10 +158,13 @@ test("the grip follows the pointer", () => {
   // lies from its divider, so the installer reads the side rather than hard-coding
   // one -- and the arithmetic lives in `sizeFromDividerDrag`, where it is tested as
   // geometry instead of pattern-matched out of the source.
-  assert.match(impl[0], /sizeFromDividerDrag\(\{ startSize, delta, side: opts\.side \}\)/, "one rule, told the side");
+  assert.match(impl[0], /sizeFromDividerDrag\(\{ startSize, delta, side: opts\.side\(\) \}\)/, "one rule, told the side");
   // Each caller declares its side, which is what makes the sign follow.
-  assert.match(src, /side: "after",/, "a pane after its divider");
-  assert.match(src, /side: "before",/, "and the palette before its own");
+  assert.match(src, /side: \(\) => "after"/, "a pane after its divider");
+  assert.match(src, /side: \(\) => "before"/, "and the palette before its own");
+  // The results read theirs from the mode, because the divider moves between the
+  // plot's two edges.
+  assert.match(src, /side: \(\) => \(this\.mode === "code" \? "before" : "after"\)/, "the plot reads the mode");
   // No hand-rolled sign anywhere: a second local formula is how the two old
   // installers came to disagree.
   assert.ok(!/apply\(startH/.test(impl[0]), "and no second, local formula");
@@ -194,7 +197,7 @@ test("every handle in the view moves with the pointer", () => {
   );
   assert.match(
     impl[0],
-    /sizeFromDividerDrag\(\{ startSize, delta, side: opts\.side \}\)/,
+    /sizeFromDividerDrag\(\{ startSize, delta, side: opts\.side\(\) \}\)/,
     "and the side decides the sign"
   );
   // Three dividers, one builder, so they cannot drift apart in appearance either.
@@ -287,7 +290,7 @@ test("the restored height is not clamped against an unlaid-out view", () => {
   // Guarded against feedback: the observer must not act on an unchanged size.
   assert.match(reclamp[0], /w === lastW && h === lastH/, "it ignores an unchanged measurement");
   // Installed where the panes are built, not inside its own body.
-  assert.match(src, /this\.installDivider\([\s\S]{0,400}?\n\s*this\.installPaneReclamp\(\)/, "and is installed");
+  assert.match(src, /this\.installDivider\([\s\S]{0,700}?\n\s*this\.installPaneReclamp\(\)/, "and is installed");
 
   // An observer left attached after the view closes is a leak.
   const close = /async onClose\(\): Promise<void> \{[\s\S]*?\n  \}/.exec(src);
@@ -332,4 +335,43 @@ test("the re-clamp renders without remembering its own result", () => {
       `${name} must default to not remembering`
     );
   }
+});
+
+test("the results divider sits on the boundary that is on screen", () => {
+  // In diagram mode the plot is below the canvas, so its top edge is the boundary
+  // the reader looks for. In code mode the editor is below the plot, so the
+  // boundary is the plot's BOTTOM edge -- and the divider was left above the plot,
+  // directly under the toolbar, attached to the pane but nowhere near the boundary
+  // it controls. Reported as "add a resizing handle for this too" while looking
+  // straight at the plot/editor split.
+  const src = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  const pos = /private positionResultsDivider\(\): void \{[\s\S]*?\n  \}\n/.exec(src);
+  assert.ok(pos, "the repositioning exists");
+  // Diagram mode puts it BEFORE the pane, code mode AFTER.
+  assert.match(pos[0], /const wantAfter = this\.mode === "code"/, "the mode decides");
+  assert.match(pos[0], /insertAdjacentElement\("afterend", splitter\)/, "code mode: after the plot");
+  assert.match(pos[0], /insertAdjacentElement\("beforebegin", splitter\)/, "diagram mode: before it");
+  // Moving a node that is already in place would fight the DOM, so it checks.
+  assert.match(pos[0], /results\.nextElementSibling === splitter/, "and does nothing when already right");
+
+  // The SIGN has to follow the move, or the divider drags against the pointer in
+  // one of the two modes.
+  assert.match(
+    src,
+    /side: \(\) => \(this\.mode === "code" \? "before" : "after"\)/,
+    "and the side is read from the mode at drag time"
+  );
+  // Re-positioned on every mode switch.
+  const mode = /private setMode\(mode: "diagram" \| "code"\): void \{[\s\S]*?\n  \}\n/.exec(src);
+  assert.ok(mode, "setMode is present");
+  assert.match(mode[0], /this\.positionResultsDivider\(\)/, "the divider is moved on a mode switch");
+  assert.ok(
+    mode[0].indexOf("this.positionResultsDivider()") < mode[0].indexOf("this.applyModeResultsHeight("),
+    "before the height is applied, since the side is read from the mode"
+  );
+
+  // Still ONE divider: a second handle on the same boundary was tried before and
+  // gave two grips dragging in opposite directions.
+  assert.match(src, /this\.installDivider\(\{[\s\S]*?pane: resultsCol/, "one results divider");
+  assert.equal([...src.matchAll(/pane: resultsCol/g)].length, 1, "and only one");
 });

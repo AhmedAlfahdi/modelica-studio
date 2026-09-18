@@ -219,7 +219,7 @@ export class ModelicaStudioView extends ItemView {
     this.installDivider({
       el: splitter,
       axis: "x",
-      side: "after",
+      side: () => "after",
       pane: rightCol,
       apply: (w) => this.applyInspectorWidth(w),
       reset: () => DEFAULT_INSPECTOR_W,
@@ -228,7 +228,7 @@ export class ModelicaStudioView extends ItemView {
     this.installDivider({
       el: paletteDivider,
       axis: "x",
-      side: "before",
+      side: () => "before",
       pane: paletteCol,
       apply: (w) => this.applyPaletteWidth(w),
       reset: () => DEFAULT_PALETTE_W,
@@ -267,7 +267,10 @@ export class ModelicaStudioView extends ItemView {
     this.installDivider({
       el: resultsSplitter,
       axis: "y",
-      side: "after",
+      // The plot is BELOW its divider in diagram mode (the divider draws the
+      // boundary with the canvas) and ABOVE it in code mode (the divider draws
+      // the boundary with the editor), so the sign follows the mode.
+      side: () => (this.mode === "code" ? "before" : "after"),
       pane: resultsCol,
       apply: (h) => this.applyResultsHeight(h),
       reset: () => (this.mode === "code" ? CODE_RESULTS_H : DEFAULT_RESULTS_H),
@@ -719,6 +722,9 @@ export class ModelicaStudioView extends ItemView {
     if (this.bodyEl) this.bodyEl.style.display = isCode ? "none" : "";
     if (this.codeHost) this.codeHost.style.display = isCode ? "" : "none";
     this.syncToolbarToMode();
+    // Before the height is applied: the divider's side is read from the mode, so
+    // it has to be on the right boundary first.
+    this.positionResultsDivider();
     this.applyModeResultsHeight(isCode);
     if (isCode) {
       this.codeEditor?.focus();
@@ -727,6 +733,11 @@ export class ModelicaStudioView extends ItemView {
       this.editor?.requestDraw();
     }
     this.setStatus(isCode ? "Code mode. Ctrl+Space completes, Ctrl+Enter simulates." : "Diagram mode.");
+    // Reported per mode change, because the results divider MOVES between the
+    // plot's two edges and "the pane is the wrong size" is a per-mode question.
+    // The one-shot settled reading runs before the stored mode is restored, so it
+    // reports the other mode's geometry.
+    this.reportLayout(mode);
   }
 
   /**
@@ -835,6 +846,29 @@ export class ModelicaStudioView extends ItemView {
     this.contentEl?.style.setProperty("--ms-palette-width", `${next}px`);
     if (remember) this.plugin.settings.paletteWidth = next;
     return next;
+  }
+
+  /**
+   * Put the results divider on the boundary that is on screen.
+   *
+   * The pane it sizes has the canvas above it in diagram mode and the code editor
+   * below it in code mode, so "the edge of the results pane" is a different edge in
+   * each. Leaving it before the pane put the grip directly under the toolbar in
+   * code mode -- attached to the pane, but nowhere near the plot/editor boundary it
+   * controls, which is the one a reader looks for.
+   *
+   * Still ONE divider. A second handle on the same boundary was tried before and
+   * gave two grips dragging in opposite directions.
+   */
+  private positionResultsDivider(): void {
+    const splitter = this.resultsResize;
+    const results = this.resultsEl;
+    if (!splitter || !results) return;
+    const wantAfter = this.mode === "code";
+    const isAfter = results.nextElementSibling === splitter;
+    if (wantAfter === isAfter) return;
+    if (wantAfter) results.insertAdjacentElement("afterend", splitter);
+    else results.insertAdjacentElement("beforebegin", splitter);
   }
 
   /**
@@ -3078,7 +3112,15 @@ export class ModelicaStudioView extends ItemView {
     el: HTMLElement;
     /** `x` for a column's width, `y` for a pane's height. */
     axis: "x" | "y";
-    side: DividerSide;
+    /**
+     * Which side the pane is on, read at DRAG time.
+     *
+     * A function rather than a value because the results divider moves: in
+     * diagram mode it draws the plot's top edge and the pane is below it, and in
+     * code mode it draws the plot's bottom edge and the pane is above. A value
+     * captured at install time would give the wrong sign for one of the two.
+     */
+    side: () => DividerSide;
     /** The pane this divider sizes. */
     pane: HTMLElement;
     /** Apply a size, clamped, returning what was actually applied. */
@@ -3097,7 +3139,7 @@ export class ModelicaStudioView extends ItemView {
       // Rendered but not remembered: only the finished gesture is the user's
       // choice, and a drag that ends elsewhere must not leave the intermediate
       // sizes behind if the app closes mid-drag.
-      lastSize = opts.apply(sizeFromDividerDrag({ startSize, delta, side: opts.side }));
+      lastSize = opts.apply(sizeFromDividerDrag({ startSize, delta, side: opts.side() }));
       this.afterPaneResize();
     };
     const onUp = (ev: PointerEvent) => {
