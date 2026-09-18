@@ -23,6 +23,7 @@ import { SimulationError, type CompileDiagnostic } from "../omc/backend";
 import type { AiConfig, ChatMessage } from "./prompts";
 import { extractModelica, modelNameOf, type ModelStyle } from "./prompts";
 import { DEFAULT_LIMITS, runGenerationLoop, summarise, type Attempt, type LoopLimits, type LoopResult } from "./loop";
+import type { AiExchange } from "./interaction-log";
 
 export interface GenerationRequest {
   /** What the user asked for. */
@@ -70,6 +71,14 @@ export interface GenerationRequest {
     style?: string;
     detail?: string;
   }) => void;
+  /**
+   * Called once per attempt, with the reply AND its verdict.
+   *
+   * Both halves are needed for the record to be worth keeping, and they are known
+   * at different moments -- the reply when it arrives, the verdict after the
+   * compiler has seen it. This is called at the later of the two.
+   */
+  onExchange?: (exchange: AiExchange) => void;
   isCancelled?: () => boolean;
   limits?: LoopLimits;
 }
@@ -99,6 +108,10 @@ export async function generateModel(request: GenerationRequest): Promise<Generat
    * about to be compiled.
    */
   let askedFor: ModelStyle = initial;
+  /** The last conversation sent and the raw reply, held until its verdict is in. */
+  let lastMessages: ChatMessage[] = [];
+  let lastReply = "";
+  let lastAskedAt = 0;
 
   const result = await runGenerationLoop(
     {
@@ -124,23 +137,43 @@ export async function generateModel(request: GenerationRequest): Promise<Generat
           previous ? failureText(previous) : "",
           (style as ModelStyle) || initial
         );
+        // Kept so the record has the conversation that produced the reply. The
+        // reply alone cannot be used to improve a prompt: what was asked is half
+        // the evidence.
+        lastMessages = messages;
+        lastAskedAt = Date.now();
         const reply = await request.send(messages);
+        lastReply = reply;
         const source = extractModelica(reply);
         if (source) modelName = modelNameOf(source) ?? modelName;
         return source;
       },
 
-      compile: async (source) => {
+      compile: async (source, attempt) => {
+        // Whatever the verdict, it is recorded against the reply that earned it.
+        const record = (outcome: AiExchange["outcome"], detail: string) => {
+          request.onExchange?.({
+            at: new Date().toISOString(),
+            attempt,
+            style: askedFor,
+            prompt: request.prompt,
+            messages: lastMessages.map((m) => ({ role: m.role, content: m.content })),
+            reply: lastReply,
+            extracted: source || null,
+            outcome,
+            detail,
+            ms: lastAskedAt ? Date.now() - lastAskedAt : 0,
+          });
+        };
+
         const name = modelNameOf(source);
         if (!name) {
           // Without a class to build there is nothing to ask the compiler, and
           // OpenModelica's answer would be about the file rather than the model.
-          return {
-            ok: false,
-            builds: false,
-            failure:
-              'The reply has no class declaration, so there is nothing to compile. Expected "model <Name> ... end <Name>;".',
-          };
+          const failure =
+            'The reply has no class declaration, so there is nothing to compile. Expected "model <Name> ... end <Name>;".';
+          record("no-source", failure);
+          return { ok: false, builds: false, failure };
         }
         modelName = name;
         const outcome = await request.backend.compile({
@@ -155,7 +188,9 @@ export async function generateModel(request: GenerationRequest): Promise<Generat
         diagnostics = outcome.diagnostics;
 
         if (!outcome.ok) {
-          return { ok: false, builds: false, failure: formatDiagnostics(outcome.diagnostics) };
+          const failure = formatDiagnostics(outcome.diagnostics);
+          record("compile-error", failure);
+          return { ok: false, builds: false, failure };
         }
 
         // Compiling is not the same as being usable. Two things build perfectly
@@ -167,9 +202,14 @@ export async function generateModel(request: GenerationRequest): Promise<Generat
           describeStyleViolation(source, askedFor);
         // It BUILT. A problem here is a rejection, not a compile failure, and the
         // caller is told so because the source is worth keeping and running.
-        return problem
-          ? { ok: false, builds: true, failure: problem }
-          : { ok: true, builds: true, failure: "" };
+        if (problem) {
+          // It BUILT. Recorded as a rejection so the log can separate "the
+          // instruction was unclear" from "the model cannot write Modelica".
+          record("rejected", problem);
+          return { ok: false, builds: true, failure: problem };
+        }
+        record("ok", "");
+        return { ok: true, builds: true, failure: "" };
       },
 
       onProgress: request.onProgress,

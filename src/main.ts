@@ -28,6 +28,15 @@ import { RunLog } from "./ai/run-log";
 import { AiEnvironment, describeAvailableClasses, describeEnvironment, describeLog } from "./ai/context";
 import { LEGACY_SECRET_NAME, buildMessages, legacyKeyOf, secretNameOf } from "./ai/prompts";
 import { describeSaveState, type SaveDescription } from "./modelica/save-state";
+import { TextModal } from "./view/saved-models-modal";
+import {
+  formatSummary,
+  parseLog,
+  pruneLines,
+  summarise,
+  toLogLine,
+  type AiExchange,
+} from "./ai/interaction-log";
 import { Trace, describeStateForTrace, type TraceKind } from "./diagnostics/trace";
 import { BENCH_PROMPTS, formatBenchmark, runBenchmark } from "./ai/benchmark";
 import {
@@ -450,6 +459,72 @@ export default class ModelicaStudioPlugin extends Plugin {
     }
   }
 
+  /**
+   * Where the AI exchange log lives.
+   *
+   * Beside `data.json` in the plugin's own folder rather than in the vault: it is
+   * diagnostic evidence, not a note, and it should not appear in the file
+   * explorer or be synced as content.
+   */
+  aiLogPath(): string | undefined {
+    const data = this.dataFilePath();
+    if (!data) return undefined;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const nodePath = require("node:path") as typeof import("node:path");
+    return nodePath.join(nodePath.dirname(data), "ai-exchanges.jsonl");
+  }
+
+  /**
+   * Record one exchange, if the log is on.
+   *
+   * Never allowed to break a generation: a log that cannot be written is a lost
+   * diagnostic, not a failed request.
+   */
+  appendAiExchange(exchange: AiExchange): void {
+    if (!this.settings.aiLog) return;
+    const file = this.aiLogPath();
+    if (!file) return;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require("node:fs") as typeof import("node:fs");
+      fs.appendFileSync(file, toLogLine(exchange, this.aiKey()) + "\n");
+      // Trimmed on write rather than on read: the file is bounded by construction,
+      // so it cannot grow without limit if nobody ever opens it.
+      const text = fs.readFileSync(file, "utf8");
+      const pruned = pruneLines(text);
+      if (pruned !== text) fs.writeFileSync(file, pruned, "utf8");
+    } catch (err) {
+      this.diag(`ai log: could not record the exchange: ${String(err)}`, "warn");
+    }
+  }
+
+  /** Read the exchanges back, newest last. */
+  readAiExchanges(): AiExchange[] {
+    const file = this.aiLogPath();
+    if (!file) return [];
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require("node:fs") as typeof import("node:fs");
+      if (!fs.existsSync(file)) return [];
+      return parseLog(fs.readFileSync(file, "utf8")).exchanges;
+    } catch {
+      return [];
+    }
+  }
+
+  /** Delete the log, for when it has served its purpose. */
+  clearAiExchanges(): void {
+    const file = this.aiLogPath();
+    if (!file) return;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require("node:fs") as typeof import("node:fs");
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+    } catch {
+      /* nothing to clear */
+    }
+  }
+
   /** Forget the cached text for a path, after writing it. */
   forgetFileText(path: string): void {
     this.fileTextCache.delete(path);
@@ -658,6 +733,25 @@ export default class ModelicaStudioPlugin extends Plugin {
         console.log(text);
         return text;
       },
+      /**
+       * The AI exchanges, as text.
+       *
+       *   modelicaStudio.aiLog()            a summary of what went wrong
+       *   modelicaStudio.aiLog({ all: true })  every exchange, verbatim
+       */
+      aiLog: (options?: { all?: boolean }) => {
+        const exchanges = this.readAiExchanges();
+        const text = options?.all
+          ? exchanges.map((e) => toLogLine(e, null)).join("\n")
+          : formatSummary(summarise(exchanges), exchanges.slice(-15));
+        console.log(text);
+        return text;
+      },
+      /** Delete the AI log. */
+      clearAiLog: () => {
+        this.clearAiExchanges();
+        return "AI log cleared.";
+      },
       /** Forget the trace, so the next steps are read on their own. */
       clearTrace: () => {
         this.trace.clear();
@@ -790,6 +884,35 @@ export default class ModelicaStudioPlugin extends Plugin {
       id: "new-model",
       name: "New model",
       callback: () => void this.promptNewModel(),
+    });
+
+    this.addCommand({
+      id: "show-ai-log",
+      name: "Show the AI prompt log",
+      callback: () => {
+        const exchanges = this.readAiExchanges();
+        const summary = summarise(exchanges);
+        // The most recent few in full, because the summary says WHAT is going
+        // wrong and the exchanges say what was actually asked and answered.
+        const recent = exchanges.slice(-5);
+        let text = formatSummary(summary, exchanges.slice(-15));
+        if (recent.length) {
+          text += "\n\n" + "-".repeat(72) + "\n\n";
+          text += recent
+            .map((e) => {
+              const asked = e.prompt.replace(/\s+/g, " ").trim();
+              return [
+                `### ${e.at}  attempt ${e.attempt}  style=${e.style}  ${e.outcome}  ${e.ms}ms`,
+                ``,
+                `ASKED: ${asked}`,
+                e.reply ? `\nREPLY:\n${e.reply}` : "\nREPLY: (none)",
+                e.detail ? `\nWHY NOT: ${e.detail}` : "",
+              ].join("\n");
+            })
+            .join("\n\n");
+        }
+        new TextModal(this.app, "AI prompt log", text).open();
+      },
     });
 
     this.addCommand({

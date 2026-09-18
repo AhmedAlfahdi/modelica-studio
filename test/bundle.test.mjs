@@ -14,6 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
 import { createRequire } from "node:module";
@@ -422,4 +423,90 @@ test("end-to-end: serialize a diagram, run OMC, read results", { skip: !HAS_BUND
   }
   backend.dispose();
   void parseOmcCsv;
+});
+
+test("the AI log is written, bounded and free of the key", { skip: !HAS_BUNDLE }, async () => {
+  // The recording path against a REAL file: the plugin's own `appendAiExchange`,
+  // its own path resolution, and the bytes that actually land on disk. The pure
+  // formatting is tested in interaction-log.test.mjs; this is the half that a unit
+  // test cannot reach, and the half where a path bug would silently record
+  // nothing at all.
+  const mod = loadBundle();
+  const instance = new mod.default();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-log-"));
+  const pluginDir = path.join(dir, ".obsidian", "plugins", "modelica-studio");
+  fs.mkdirSync(pluginDir, { recursive: true });
+
+  instance.app = {
+    vault: {
+      // `configDir` is what the plugin builds its data path from, and it is a real
+      // Obsidian property; without it the path resolution throws and is swallowed,
+      // which is what "the log records nothing" looks like from the outside.
+      configDir: ".obsidian",
+      adapter: { getBasePath: () => dir },
+      getAbstractFileByPath: () => null,
+    },
+    workspace: { getLeavesOfType: () => [] },
+  };
+  instance.manifest = { id: "modelica-studio", version: "0.2.0-beta.1" };
+  instance.settings = { aiLog: true };
+  instance.aiKey = () => "sk-testkey1234567890abcdef";
+
+  const exchange = (over = {}) => ({
+    at: new Date().toISOString(),
+    attempt: 1,
+    style: "visual",
+    prompt: "a tank that drains through three pipes",
+    messages: [{ role: "user", content: "a tank that drains" }],
+    reply: "model Tank end Tank;",
+    extracted: "model Tank end Tank;",
+    outcome: "ok",
+    detail: "",
+    ms: 1200,
+    ...over,
+  });
+
+  try {
+    // The path is where the plugin's own data lives, not somewhere in the vault.
+    assert.equal(instance.aiLogPath(), path.join(pluginDir, "ai-exchanges.jsonl"));
+
+    instance.appendAiExchange(exchange());
+    instance.appendAiExchange(
+      exchange({ outcome: "rejected", detail: "That is not a diagram.", reply: "key sk-testkey1234567890abcdef" })
+    );
+
+    const file = instance.aiLogPath();
+    assert.ok(fs.existsSync(file), "the file was created");
+    const text = fs.readFileSync(file, "utf8");
+    assert.equal(text.split("\n").filter(Boolean).length, 2, "one line per exchange");
+    // The configured key must not be on disk, however it arrived.
+    assert.ok(!text.includes("sk-testkey1234567890abcdef"), "no key in the file");
+    assert.match(text, /REDACTED/, "and it is visibly replaced");
+    assert.match(text, /a tank that drains/, "while the useful content survives");
+
+    // Reading back gives the same records, in order.
+    const back = instance.readAiExchanges();
+    assert.equal(back.length, 2);
+    assert.equal(back[1].outcome, "rejected");
+
+    // Off means off: nothing is appended.
+    instance.settings.aiLog = false;
+    instance.appendAiExchange(exchange());
+    assert.equal(fs.readFileSync(file, "utf8").split("\n").filter(Boolean).length, 2);
+
+    // And it is bounded, using the same writer rather than a separate code path.
+    instance.settings.aiLog = true;
+    for (let i = 0; i < 210; i++) instance.appendAiExchange(exchange({ attempt: i }));
+    const lines = fs.readFileSync(file, "utf8").split("\n").filter(Boolean);
+    assert.equal(lines.length, 200, `the file is bounded, got ${lines.length}`);
+
+    instance.clearAiExchanges();
+    assert.ok(!fs.existsSync(file), "clearing removes it");
+    // Compared by length, not `deepEqual`: the plugin runs in a `vm` context, so
+    // its Array prototype is not this realm's and a strict deep comparison of two
+    // empty arrays fails for a reason that has nothing to do with the log.
+    assert.equal(instance.readAiExchanges().length, 0, "reading an absent log is empty, not an error");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

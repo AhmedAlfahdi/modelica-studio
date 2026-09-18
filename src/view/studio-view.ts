@@ -1214,6 +1214,7 @@ export class ModelicaStudioView extends ItemView {
             systemPrompt: cfg.systemPrompt,
             environment: this.plugin.aiContext(p),
           }),
+        onExchange: (exchange) => this.plugin.appendAiExchange(exchange),
         onProgress: (event) => {
           this.aiPhase =
             event.phase === "compiling"

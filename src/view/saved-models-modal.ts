@@ -377,7 +377,13 @@ class RevisionModal extends Modal {
 }
 
 /** Read-only text, for looking at a revision. */
-class TextModal extends Modal {
+/**
+ * A read-only block of text.
+ *
+ * Exported so the AI prompt log can be read in the app rather than in a console:
+ * reviewing what was sent and what came back is the whole point of keeping it.
+ */
+export class TextModal extends Modal {
   constructor(app: App, private title: string, private text: string) {
     super(app);
   }

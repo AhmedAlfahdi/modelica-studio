@@ -6,7 +6,7 @@
  * unusual setup rather than to require tuning.
  */
 
-import { App, PluginSettingTab, SecretComponent, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import type ModelicaStudioPlugin from "./main";
 import { FolderSuggest } from "./view/folder-suggest";
 import { exclusionsFrom, libraryRows } from "./modelica/library-exclusions";
@@ -203,6 +203,24 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         t.setValue(this.plugin.settings.debugLog).onChange(async (v) => {
           this.plugin.settings.debugLog = v;
           await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Keep a log of AI requests and replies")
+      .setDesc(
+        "Records what was sent to the AI, what came back and what the compiler " +
+          "made of it, in the plugin folder as ai-exchanges.jsonl. The reasons a " +
+          "model was rejected after building are what a prompt change should be " +
+          "aimed at, and they are only visible at the moment of the exchange. " +
+          "Your API key is never written. Read it with the \"Show the AI prompt " +
+          'log\" command.'
+      )
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.aiLog).onChange(async (v) => {
+          this.plugin.settings.aiLog = v;
+          await this.plugin.saveSettings();
+          new Notice(v ? "AI log on." : "AI log off. Existing entries are kept.");
         })
       );
 

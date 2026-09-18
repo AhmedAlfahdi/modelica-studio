@@ -86,6 +86,16 @@ export interface ModelicaStudioSettings {
   debugLog: boolean;
 
   /**
+   * Keep a record of what was sent to the AI and what came back.
+   *
+   * On by default: the evidence for improving a prompt exists only at the moment
+   * of the exchange. The run log keeps the compiler's verdict and not the reply
+   * that provoked it, and by the time a model has been repaired twice the
+   * original answer is gone.
+   */
+  aiLog: boolean;
+
+  /**
    * Draw the editor's coordinate diagnostics: the clickable region, the drawn
    * box and centre of every component, the click marker, and the live viewport
    * readout.
@@ -185,6 +195,7 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   modelFiles: {},
   excludedLibraries: "",
   debugLog: false,
+  aiLog: true,
   debugOverlay: false,
   editorMode: "diagram",
   inspectorWidth: 380,
