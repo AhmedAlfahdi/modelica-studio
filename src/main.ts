@@ -362,6 +362,50 @@ export default class ModelicaStudioPlugin extends Plugin {
   readonly trace = new Trace();
 
   /**
+   * Take the model's source from its file, when there is one.
+   *
+   * Called on load, and after a save, so the file and the studio cannot disagree
+   * about what the model is. Silently does nothing when there is no file, or the
+   * file cannot be read: the snapshot is a real fallback, just not the authority.
+   */
+  /** Set when a file's source should be adopted once the vault is indexed. */
+  private pendingSourceAdoption = false;
+
+  /**
+   * Adopt the pending source once the vault is usable.
+   *
+   * Called from `onLayoutReady`. Doing this during `loadSettings` looked right and
+   * did nothing: the vault is not indexed yet, so the model's file is not found
+   * and the snapshot is kept.
+   */
+  adoptPendingSource(): void {
+    if (!this.pendingSourceAdoption) return;
+    this.pendingSourceAdoption = false;
+    this.adoptSourceFromFile();
+  }
+
+  private adoptSourceFromFile(): void {
+    const path = this.settings.modelFiles[this.model.name];
+    if (!path) {
+      this.diag(`load: ${this.model.name} has no tracked file`, "info");
+      return;
+    }
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) {
+      this.diag(`load: ${path} is not in the vault yet`, "warn");
+      return;
+    }
+    const text = this.cachedFileText(path);
+    if (text === null || !text.trim()) {
+      this.diag(`load: ${path} could not be read`, "warn");
+      return;
+    }
+    this.modelSource = text;
+    this.modelOutdated = true; // the diagram came from the snapshot, not this text
+    this.diag(`load: took the source from ${path} (${text.length} chars)`, "info");
+  }
+
+  /**
    * Whether the model in the studio differs from its file.
    *
    * Read from the vault rather than tracked as a flag: a flag can drift out of
@@ -789,6 +833,23 @@ export default class ModelicaStudioPlugin extends Plugin {
     // libraries, and can be open before they are known.
     this.settingsTab = new ModelicaStudioSettingTab(this);
     this.addSettingTab(this.settingsTab);
+
+    // The model's file is the authority, but the vault cannot be read until the
+    // layout is ready. This replaces the snapshot's source with the file's, which
+    // is what makes a save survive a restart.
+    this.app.workspace.onLayoutReady(() => {
+      if (!this.pendingSourceAdoption) return;
+      this.adoptPendingSource();
+      // Re-parse so the diagram matches the source that was just adopted, and
+      // push it to the view: the view may already have rendered the snapshot,
+      // because it opens before the layout is ready. `setModelFromSource` alone
+      // updates the plugin and leaves the editor showing the old text.
+      void this.setModelFromSource(this.modelSource).then(() => {
+        // The view may already have rendered the snapshot, so it is told again
+        // after the source has been adopted.
+        this.getView()?.loadModelIntoEditor();
+      });
+    });
 
     // Detect OpenModelica in the background so startup stays fast, and so the
     // index build (which is slower still) is not competing with it.
@@ -1220,6 +1281,12 @@ export default class ModelicaStudioPlugin extends Plugin {
     if (data?.model && Array.isArray(data.model.components)) {
       this.model = data.model;
       this.modelSource = typeof data.modelSource === "string" ? data.modelSource : "";
+      // The FILE wins over the snapshot -- see `adoptSourceFromFile`. Deferred to
+      // `onLayoutReady` rather than done here: `loadSettings` runs before Obsidian
+      // has indexed the vault, so every lookup returned "not in the vault yet" and
+      // the adoption silently did nothing. The vault is only trustworthy once the
+      // layout is ready.
+      this.pendingSourceAdoption = true;
       // Restore the span this model ran over. Without it the model inherited
       // the previous one's span, so a tank that drains over 20 s was integrated
       // over 2 s and its curve read as a straight line.
@@ -1476,6 +1543,11 @@ export default class ModelicaStudioPlugin extends Plugin {
       this.trace.add("save", this.model.name, { bytes: source.length, to: here, existed: true });
       // The cached text is now stale, and the status bar is about to read it.
       this.forgetFileText(here);
+      // The studio now holds exactly what the file holds. Without this the snapshot
+      // kept the PREVIOUS text while the file had the new one -- so a restart
+      // loaded the old model and the save looked like it had not happened.
+      this.modelSource = source;
+      this.modelOutdated = false;
       // Snapshot what is being REPLACED, before it is replaced. On disk rather
       // than in memory, so it survives the plugin and can be read with `ls`.
       try {
@@ -1492,6 +1564,9 @@ export default class ModelicaStudioPlugin extends Plugin {
     await this.app.vault.create(intended, source);
     this.trace.add("save", this.model.name, { bytes: source.length, to: intended, created: true });
     this.forgetFileText(intended);
+    // Same as above: the studio and the file must agree from here on.
+    this.modelSource = source;
+    this.modelOutdated = false;
     this.settings.modelFiles[this.model.name] = intended;
     await this.saveSettings();
     return { path: intended, created: true };

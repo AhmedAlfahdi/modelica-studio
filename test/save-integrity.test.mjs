@@ -234,3 +234,82 @@ test("opening another model saves the one being replaced", () => {
   assert.match(flush[0], /could not save/, "a failure is reported");
   assert.match(flush[0], /catch/, "and does not stop the model being opened");
 });
+
+test("the file is what a restart loads, not the plugin's snapshot", () => {
+  // THE REPORTED LOSS. Saving wrote the file correctly, and the restart did not
+  // read it: `loadSettings` restored `modelSource` from the plugin's own data.json,
+  // which still held the SERIALISED form because saving never updated it. So the
+  // file had the fix, the snapshot did not, and the model on screen after a restart
+  // was the snapshot. "I clicked save, it said saved, and after a restart it was
+  // gone."
+  // Consulted once the LAYOUT is ready, not during loadSettings: the vault is not
+  // indexed yet at that point, so every lookup returned "not in the vault yet" and
+  // the adoption silently did nothing. The second test below covers that ordering.
+  const ready = /onLayoutReady\(\(\) => \{[\s\S]*?\n    \}\);/.exec(main);
+  assert.ok(ready, "the layout-ready handler is present");
+  assert.match(ready[0], /adoptPendingSource\(\)/, "the file is consulted once the vault is readable");
+  assert.match(main, /adoptSourceFromFile\(\): void \{/, "and the adoption exists");
+
+  const adopt = /private adoptSourceFromFile\(\): void \{[\s\S]*?\n  \}/.exec(main);
+  assert.ok(adopt, "the adoption exists");
+  // It reads the FILE for the model's tracked path, and takes its text.
+  assert.match(adopt[0], /this\.settings\.modelFiles\[this\.model\.name\]/, "it uses the tracked path");
+  assert.match(adopt[0], /this\.modelSource = text/, "and takes the file's text as the source");
+  // An unreadable file must not wipe the snapshot: it is a fallback, not a rival.
+  assert.match(adopt[0], /if \(text === null \|\| !text\.trim\(\)\) \{?/, "an empty read is ignored");
+  assert.match(adopt[0], /could not be read/, "and says so rather than passing silently");
+  // And the diagram is marked stale rather than left disagreeing with the source.
+  assert.match(adopt[0], /modelOutdated = true/, "the diagram is rebuilt from the file's text");
+});
+
+test("saving keeps the studio in step with the file it wrote", () => {
+  // The other half: without this the snapshot kept the PREVIOUS text while the
+  // file had the new one, which is how the two came to disagree at all.
+  const save = /async saveModelToNote[\s\S]*?\n  \}/.exec(main);
+  assert.ok(save, "the save is present");
+  const assignments = save[0].match(/this\.modelSource = source;/g) ?? [];
+  assert.equal(assignments.length, 2, "both write paths (overwrite and create) update the source");
+  assert.equal(
+    (save[0].match(/this\.modelOutdated = false;/g) ?? []).length,
+    2,
+    "and both clear the stale flag, so the status reads saved"
+  );
+});
+
+test("code mode shows the source, not a re-serialisation of the diagram", () => {
+  // The LAST place the lossy serializer was still winning, and the reason a
+  // correct save still looked broken: entering code mode rebuilt the text from
+  // the diagram, so the comments on disk were replaced by the normalised form the
+  // moment the editor appeared. Load correctly, switch to code, and the file's
+  // text was gone from the screen.
+  const sync = /private syncDiagramToCode\(\): void \{[\s\S]*?\n    if \(!this\.codeEditor\)/.exec(view);
+  assert.ok(sync, "the sync is present");
+  assert.match(sync[0], /this\.plugin\.sourceForSave\(\)/, "it uses the same rule saving uses");
+  assert.ok(
+    !/serializeDiagram\(this\.plugin\.model\)/.test(sync[0]),
+    "and no longer re-serialises the diagram over the source"
+  );
+});
+
+test("the file is adopted only once the vault can be read", () => {
+  // `loadSettings` runs before Obsidian has indexed the vault, so every lookup
+  // there returns "not in the vault yet" and the adoption silently did nothing --
+  // which looked exactly like the adoption not being implemented.
+  const load = /async loadSettings[\s\S]*?\n  \}/.exec(main);
+  assert.match(load[0], /this\.pendingSourceAdoption = true/, "the load marks it pending");
+  assert.ok(
+    !/this\.adoptSourceFromFile\(\)/.test(load[0]),
+    "and does NOT adopt there, where the vault is not yet indexed"
+  );
+  assert.match(main, /onLayoutReady\(\(\) => \{/, "the adoption waits for the layout");
+  const ready = /onLayoutReady\(\(\) => \{[\s\S]*?\n    \}\);/.exec(main);
+  assert.ok(ready, "the ready handler is present");
+  assert.match(ready[0], /adoptPendingSource\(\)/, "it adopts");
+  assert.match(ready[0], /loadModelIntoEditor\(\)/, "and pushes the result to the open view");
+
+  // The failure modes are reported rather than silent, which is what made this
+  // one hard to find.
+  const adopt = /private adoptSourceFromFile\(\): void \{[\s\S]*?\n  \}/.exec(main);
+  assert.match(adopt[0], /is not in the vault yet/, "an unindexed vault is reported");
+  assert.match(adopt[0], /could not be read/, "and so is an unreadable file");
+});

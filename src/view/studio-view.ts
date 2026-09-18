@@ -713,9 +713,20 @@ export class ModelicaStudioView extends ItemView {
   private syncDiagramToCode(): void {
     let text: string;
     try {
-      text = serializeDiagram(this.plugin.model);
+      // The SOURCE when it is current, and the diagram only when it is not.
+      //
+      // This is the last place the lossy serializer was still winning: switching
+      // into code mode rebuilt the text from the diagram, so the comments and
+      // formatting that were on disk were replaced by the normalised form the
+      // moment the editor appeared. Loading a model correctly and then showing
+      // code mode therefore threw the file's text away -- the save had worked, and
+      // the screen said otherwise.
+      //
+      // `sourceForSave` is the same rule saving uses, so the two cannot disagree
+      // about which representation is the truth.
+      text = this.plugin.sourceForSave();
     } catch (err) {
-      text = `// The diagram could not be serialized:\n// ${String(err)}\n`;
+      text = `// The source could not be produced:\n// ${String(err)}\n`;
     }
     if (!this.codeEditor) {
       this.codeEditor = createCodeEditor(this.codeHost, text, {

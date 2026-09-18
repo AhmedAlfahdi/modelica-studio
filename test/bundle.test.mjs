@@ -206,6 +206,9 @@ test("bundle instantiates and its lifecycle runs", { skip: !HAS_BUNDLE }, async 
       getLeavesOfType: () => [],
       getActiveFile: () => null,
       on: () => {},
+      // The plugin defers adopting its file's source to the layout being ready,
+      // because the vault is not indexed before that.
+      onLayoutReady: (cb) => cb(),
     },
     vault: {
       adapter: { getBasePath: () => "/tmp" },
@@ -249,7 +252,12 @@ test("each model keeps its own simulation span", { skip: !HAS_BUNDLE }, async ()
   const mod = loadBundle();
   const instance = new mod.default();
   instance.app = {
-    workspace: { getLeavesOfType: () => [], getActiveFile: () => null, on: () => {} },
+    workspace: {
+      getLeavesOfType: () => [],
+      getActiveFile: () => null,
+      on: () => {},
+      onLayoutReady: (cb) => cb(),
+    },
     vault: {
       adapter: { getBasePath: () => "/tmp" },
       getAbstractFileByPath: () => null,
