@@ -603,3 +603,51 @@ test("the view uses the tab state machine, not a parallel copy of it", () => {
     "the source tab no longer switches mode and returns, leaving the tab stranded"
   );
 });
+
+test("the save prompt appears after AI output, and can be answered", async () => {
+  // The report was "it still isn't saving, ask them if they want to save after AI
+  // output". Nothing distinguished a successful run from a saved model, so the
+  // offer is made explicitly -- and asked rather than done silently, because
+  // writing a file is the user's decision.
+  const out = page(
+    `import { savePrompt, describeSaveState } from "${ROOT}/src/modelica/save-state";`,
+    "window.test('an unsaved model is offered', () => String(savePrompt(describeSaveState({ source: 'x', onDisk: null }), 'Tank', null)));",
+    "window.test('an already-saved model is not', () => String(savePrompt(describeSaveState({ source: 'x', onDisk: 'x' }), 'Tank', 'Modelica/Tank.mo')));",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  const d = passed(out);
+  assert.match(d["an unsaved model is offered"], /Save "Tank" to a \.mo file/);
+  assert.equal(d["an already-saved model is not"], "null", "no prompt when there is nothing to save");
+
+  // The wiring: the AI success path offers, Simulate realises the editor, and the
+  // status carries the state.
+  const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  const ai = /private finishAiRun[\s\S]*?\n  \}/.exec(view);
+  assert.ok(ai, "the AI completion path is present");
+  assert.match(ai[0], /void this\.offerToSave\(/, "it offers to save");
+  // Offered AFTER the run, so the reader is told whether it worked first.
+  assert.ok(
+    ai[0].indexOf("runSimulation") < ai[0].indexOf("offerToSave"),
+    "the run comes first, then the offer"
+  );
+
+  const offer = /async offerToSave[\s\S]*?\n  \}/.exec(view);
+  assert.ok(offer, "the offer exists");
+  assert.match(offer[0], /savePrompt\(/, "it asks the shared question");
+  assert.match(offer[0], /confirmSave\(/, "in a dialog that can be answered");
+  assert.match(offer[0], /not saved/, "declining is recorded in the status");
+  // Nothing is asked when the model is already saved.
+  assert.match(offer[0], /if \(!prompt\) return/, "and skipped when there is nothing to save");
+
+  // Simulate realises the editor, so what runs is what is on screen.
+  const sim = /async runSimulation[\s\S]*?\n    if \(this\.busy\) return;/.exec(view);
+  assert.ok(sim, "the simulation entry point is present");
+  assert.match(view.slice(sim.index, sim.index + 400), /flushEditorIntoModel\(\)/, "it realises the editor first");
+
+  // The status line carries the state, and a failed save leaves it visible.
+  assert.match(view, /toggleClass\("is-unsaved"/, "the status is marked when unsaved");
+  const save = /async saveToNote[\s\S]*?\n  \}/.exec(view);
+  assert.match(save[0], /Could not save/, "a failed save is reported");
+  assert.match(save[0], /this\.setStatus\(/, "and reflected in the status");
+});

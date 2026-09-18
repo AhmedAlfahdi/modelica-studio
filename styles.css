@@ -1775,3 +1775,10 @@ body.modelica-studio-resizing * {
   outline-offset: -2px;
   background: var(--background-modifier-hover);
 }
+
+/* The save state, appended to the status line.
+   Nothing distinguished "it ran" from "it is saved" before, which is how a
+   successful run read as "kept" while the work was only in memory. */
+.modelica-studio-status.is-unsaved {
+  color: var(--text-warning);
+}

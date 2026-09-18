@@ -30,6 +30,7 @@ import { fuzzyFilter } from "../modelica/fuzzy";
 import { docUrlFor, libraryVersionFrom } from "../modelica/doclinks";
 import { acceptsFileDrag, droppedVaultFile } from "./drop";
 import { resultsTabState, tabLabel, tabsForMode } from "./bottom-tabs";
+import { savePrompt } from "../modelica/save-state";
 import { SavedModelsModal } from "./saved-models-modal";
 import { HelpModal } from "./help-modal";
 import { SimulationError } from "../omc/backend";
@@ -1078,7 +1079,12 @@ export class ModelicaStudioView extends ItemView {
       this.setStatus(`AI wrote ${name ? `"${name}"` : "a model"}. ${outcome.message}`);
       // The model compiled, so run it: the point of generating it is to see it.
       void this.runSimulation();
-      return;
+      // And then offer to keep it. Nothing else distinguishes "it ran" from "it is
+      // saved", so the run succeeds, the status says "Ready", and the model is
+      // only in memory -- which is exactly how a repair came to be lost after a
+      // restart. Asked rather than saved silently: writing a file is the user's
+      // decision, and a folder quietly filling with models is its own problem.
+      void this.offerToSave(`"${name ?? "the model"}" compiled`);
     }
 
     // Nothing usable. The last attempt is kept in the editor so the failure can
@@ -2997,13 +3003,49 @@ export class ModelicaStudioView extends ItemView {
   }
 
   setStatus(text: string): void {
-    if (this.statusEl) this.statusEl.setText(text);
+    if (this.statusEl) {
+      // The save state is appended rather than replacing the message: the message
+      // says what just happened, the state says whether it is safe.
+      const desc = this.plugin.saveState();
+      this.statusEl.setText(desc.state === "saved" ? text : `${text} — ${desc.label}`);
+      this.statusEl.toggleClass("is-unsaved", desc.state !== "saved");
+    }
+  }
+
+  /**
+   * Ask whether to keep a model that was not written anywhere.
+   *
+   * Only when there is something to save, and only once per run: a prompt that
+   * appears when the model is already saved is noise, and one that appears twice
+   * teaches the reader to dismiss it.
+   */
+  async offerToSave(reason: string): Promise<void> {
+    const desc = this.plugin.saveState();
+    const prompt = savePrompt(desc, this.plugin.model.name, this.plugin.settings.modelFiles[this.plugin.model.name] ?? null);
+    if (!prompt) return;
+    const wanted = await confirmSave(this.app, reason, prompt, desc.state === "unsaved");
+    if (!wanted) {
+      // Declining is a decision, not a failure: the status line keeps saying so.
+      this.setStatus(`${reason}, but not saved.`);
+      return;
+    }
+    await this.saveToNote();
+  }
+
+  /** Redraw the status line, so the save state is current after a write. */
+  private refreshSaveState(): void {
+    const desc = this.plugin.saveState();
+    if (this.statusEl) this.statusEl.toggleClass("is-unsaved", desc.state !== "saved");
   }
 
   /* ---------------- simulation ---------------- */
 
   async runSimulation(opts: { silent?: boolean } = {}): Promise<void> {
     if (this.busy) return;
+    // What is on screen is what runs: the code editor holds edits that have not
+    // been parsed into the model yet, and simulating the previous version of the
+    // source would be a lie about what was tested.
+    this.flushEditorIntoModel();
     if (!this.plugin.backend) {
       if (!opts.silent) this.plugin.showSetupHelp();
       return;
@@ -3253,8 +3295,14 @@ export class ModelicaStudioView extends ItemView {
     try {
       const { path, created } = await this.plugin.saveModelToNote();
       new Notice(`Modelica: ${created ? "created" : "saved"} ${path}`, 4000);
+      // The message is set AFTER the write, so the save state it appends is the
+      // one the write produced rather than the one before it.
+      this.setStatus(created ? `Created ${path}.` : `Saved ${path}.`);
     } catch (err) {
-      new Notice(`Could not save: ${err instanceof Error ? err.message : String(err)}`);
+      const message = err instanceof Error ? err.message : String(err);
+      new Notice(`Could not save: ${message}`, 8000);
+      // A failed save must leave the state visibly unsaved, not merely quiet.
+      this.setStatus(`Could not save: ${message}`);
     }
   }
 }
@@ -3383,6 +3431,40 @@ export function describeToolbar(buttons: Record<string, HTMLButtonElement | unde
 }
 
 
+
+/**
+ * Ask whether to save, with the answer as the two buttons rather than a checkbox.
+ *
+ * A dialog rather than a Notice: a Notice cannot be answered, and this needs an
+ * answer. Cancel is focused, so a stray Enter does not write a file.
+ */
+function confirmSave(app: App, title: string, body: string, creates: boolean): Promise<boolean> {
+  return new Promise((resolve) => {
+    const modal = new Modal(app);
+    modal.titleEl.setText(title);
+    modal.contentEl.createEl("p", { text: body });
+    let answered = false;
+    const done = (value: boolean) => {
+      if (answered) return;
+      answered = true;
+      modal.close();
+      resolve(value);
+    };
+    const buttons = modal.contentEl.createDiv({ cls: "modelica-studio-prompt-buttons" });
+    // The label says what will happen: creating a file and updating one are
+    // different enough to name separately.
+    const yes = buttons.createEl("button", {
+      cls: "mod-cta",
+      text: creates ? "Save as .mo" : "Save changes",
+    });
+    yes.addEventListener("click", () => done(true));
+    const no = buttons.createEl("button", { text: "Not now" });
+    no.addEventListener("click", () => done(false));
+    modal.onClose = () => done(false);
+    modal.open();
+    window.setTimeout(() => no.focus(), 0);
+  });
+}
 
 /**
  * A yes/no dialog for an action that discards work.

@@ -27,6 +27,7 @@ import { AiError, chat, listModels } from "./ai/client";
 import { RunLog } from "./ai/run-log";
 import { AiEnvironment, describeAvailableClasses, describeEnvironment, describeLog } from "./ai/context";
 import { LEGACY_SECRET_NAME, buildMessages, legacyKeyOf, secretNameOf } from "./ai/prompts";
+import { describeSaveState, type SaveDescription } from "./modelica/save-state";
 import { Trace, describeStateForTrace, type TraceKind } from "./diagnostics/trace";
 import { BENCH_PROMPTS, formatBenchmark, runBenchmark } from "./ai/benchmark";
 import {
@@ -359,6 +360,57 @@ export default class ModelicaStudioPlugin extends Plugin {
    * something is written, with nothing failing at the time.
    */
   readonly trace = new Trace();
+
+  /**
+   * Whether the model in the studio differs from its file.
+   *
+   * Read from the vault rather than tracked as a flag: a flag can drift out of
+   * step with the file -- the whole class of bug this plugin keeps having -- and
+   * comparing two strings is cheap next to being wrong about whether the user's
+   * work is safe.
+   */
+  saveState(): SaveDescription {
+    const path = this.settings.modelFiles[this.model.name];
+    const file = path ? this.app.vault.getAbstractFileByPath(path) : null;
+    if (!(file instanceof TFile)) return describeSaveState({ source: "", onDisk: null });
+    const onDisk = this.cachedFileText(file.path);
+    return describeSaveState({ source: this.sourceForSave(), onDisk });
+  }
+
+  /**
+   * A file's text, cached by modification time.
+   *
+   * `saveState` runs to draw the status bar, which happens often; reading the file
+   * each time would put a disk read in the paint path. The mtime is what makes the
+   * cache safe -- a file changed outside the plugin is still picked up.
+   */
+  private fileTextCache = new Map<string, { mtime: number; text: string }>();
+  private cachedFileText(path: string): string | null {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require("node:fs") as typeof import("node:fs");
+      const adapter = this.app.vault.adapter as { getBasePath?: () => string };
+      const base = adapter.getBasePath?.();
+      if (!base) return null;
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const nodePath = require("node:path") as typeof import("node:path");
+      const full = nodePath.join(base, path);
+      const mtime = fs.statSync(full).mtimeMs;
+      const hit = this.fileTextCache.get(path);
+      if (hit && hit.mtime === mtime) return hit.text;
+      const text = fs.readFileSync(full, "utf8");
+      this.fileTextCache.set(path, { mtime, text });
+      return text;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Forget the cached text for a path, after writing it. */
+  forgetFileText(path: string): void {
+    this.fileTextCache.delete(path);
+  }
+
 
   /**
    * Record the current state under one step.
@@ -1422,6 +1474,8 @@ export default class ModelicaStudioPlugin extends Plugin {
     if (here) {
       const file = this.app.vault.getAbstractFileByPath(here) as TFile;
       this.trace.add("save", this.model.name, { bytes: source.length, to: here, existed: true });
+      // The cached text is now stale, and the status bar is about to read it.
+      this.forgetFileText(here);
       // Snapshot what is being REPLACED, before it is replaced. On disk rather
       // than in memory, so it survives the plugin and can be read with `ls`.
       try {
@@ -1437,6 +1491,7 @@ export default class ModelicaStudioPlugin extends Plugin {
 
     await this.app.vault.create(intended, source);
     this.trace.add("save", this.model.name, { bytes: source.length, to: intended, created: true });
+    this.forgetFileText(intended);
     this.settings.modelFiles[this.model.name] = intended;
     await this.saveSettings();
     return { path: intended, created: true };
