@@ -966,7 +966,7 @@ export default class ModelicaStudioPlugin extends Plugin {
       /** The source the model was parsed from, when it came from a file. */
       modelSource?: string;
     } | null;
-    this.settings = migrateSettings(mergeSettings(DEFAULT_SETTINGS, data));
+    this.settings = migrateSettings(mergeSettings(DEFAULT_SETTINGS, data), data);
     if (data?.model && Array.isArray(data.model.components)) {
       this.model = data.model;
       this.modelSource = typeof data.modelSource === "string" ? data.modelSource : "";

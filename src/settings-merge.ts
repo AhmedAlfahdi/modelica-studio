@@ -252,7 +252,20 @@ function isMapLike(key: string): boolean {
  * which the provider accepts and quietly ignores, putting the setting back to
  * having no effect. That is the failure this whole area already had once.
  */
-export function migrateSettings(settings: ModelicaStudioSettings): ModelicaStudioSettings {
+export function migrateSettings(
+  settings: ModelicaStudioSettings,
+  stored?: Partial<ModelicaStudioSettings> | null
+): ModelicaStudioSettings {
+  // A save folder that was never recorded gets the default. An EMPTY one that was
+  // recorded is left empty, because that is a choice: the setting says leaving it
+  // blank saves beside the notes, and quietly overriding a deliberate value is
+  // worse than an untidy vault. The two look identical in the merged object,
+  // which is why the stored data is consulted.
+  const recordedFolder = stored ? Object.prototype.hasOwnProperty.call(stored, "modelFolder") : false;
+  if (!recordedFolder && !settings.modelFolder.trim()) {
+    settings.modelFolder = DEFAULT_SETTINGS.modelFolder;
+  }
+
   const ai = settings.ai as unknown as Record<string, unknown> | undefined;
   if (!ai) return settings;
   const thinking = ai.thinking;

@@ -225,3 +225,24 @@ test("the list lives in the studio, not in settings", () => {
   const openable = render[0].indexOf('addClass("is-openable")');
   assert.ok(missingCheck > 0 && missingCheck < openable, "the missing case returns before that");
 });
+
+test("the folder field completes from the folders that exist", () => {
+  // A plain text box meant remembering a folder's name and spelling it right, and
+  // a typo produced a NEW folder rather than an error -- the plugin creates
+  // whatever path it is given. A vault with Models, models and Modelica is the
+  // predictable result.
+  const src = fs.readFileSync(path.join(repoRoot, "src/view/folder-suggest.ts"), "utf8");
+  assert.match(src, /extends AbstractInputSuggest/, "it uses the app's own mechanism");
+  assert.match(src, /getSuggestions\(query: string\)/, "and implements the one abstract method");
+  assert.match(src, /selectSuggestion\(value: string\)/, "with selection wired to the field");
+
+  // A folder that does NOT exist is offered, because the plugin creates it -- and
+  // it is marked, since "choose this" and "create this" look identical in a list.
+  assert.match(src, /new folder/, "a folder that would be created is marked");
+  assert.match(src, /TFolder/, "existence is checked against the vault");
+
+  // And the setting uses it.
+  const settings = fs.readFileSync(path.join(repoRoot, "src/settings.ts"), "utf8");
+  assert.match(settings, /new FolderSuggest\(this\.app, t\.inputEl/, "the save folder wires it up");
+  assert.match(settings, /addSearch\(/, "on a search-shaped input");
+});

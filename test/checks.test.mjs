@@ -429,3 +429,21 @@ test("the solver setting offers only names the runtime has", () => {
   assert.match(rungekutta[1], /NOT rungekutta4/, "and its note names the trap");
 });
 
+
+test("a save folder that was never set gets the default; a cleared one stays cleared", () => {
+  // The two are indistinguishable after merging -- both are the empty string --
+  // so the stored data decides. Applying a default over a deliberate choice would
+  // be overriding the user, and the setting explicitly documents that blank means
+  // "beside your notes".
+  const neverSet = migrateSettings({ ...DEFAULT_SETTINGS, modelFolder: "" }, { jobs: 4 });
+  assert.equal(neverSet.modelFolder, "Modelica", "a config predating the default gets one");
+
+  const cleared = migrateSettings({ ...DEFAULT_SETTINGS, modelFolder: "" }, { modelFolder: "" });
+  assert.equal(cleared.modelFolder, "", "an empty value that was recorded is a choice");
+
+  const chosen = migrateSettings({ ...DEFAULT_SETTINGS, modelFolder: "models" }, { modelFolder: "models" });
+  assert.equal(chosen.modelFolder, "models", "and a chosen folder is untouched");
+
+  // No stored data at all: the merged object already carries the default.
+  assert.equal(migrateSettings(DEFAULT_SETTINGS, null).modelFolder, "Modelica");
+});

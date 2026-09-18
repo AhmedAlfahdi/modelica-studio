@@ -8,6 +8,7 @@
 
 import { App, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import type ModelicaStudioPlugin from "./main";
+import { FolderSuggest } from "./view/folder-suggest";
 import { exclusionsFrom, libraryRows } from "./modelica/library-exclusions";
 import { SOLVERS, solverDescription, AI_THINKING_LEVELS, MODEL_STYLES, type AiThinking, type ModelStyle, AI_DEFAULTS,
   DEFAULT_TIMEOUT_SECONDS, AI_PROVIDERS, AiConfig, LEGACY_SECRET_NAME, legacyKeyOf } from "./ai/prompts";
@@ -519,18 +520,23 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Save folder")
       .setDesc(
-        "Vault folder for saved models. Created on first save. Leave empty to save " +
-          "beside your notes instead."
+        "Vault folder for saved models, created on first save. Start typing to " +
+          "choose from the folders that exist, or type a new name to make one."
       )
-      .addText((t) =>
-        t
-          .setPlaceholder("Modelica")
+      .addSearch((t) => {
+        t.setPlaceholder("Modelica")
           .setValue(this.plugin.settings.modelFolder)
           .onChange(async (v) => {
             this.plugin.settings.modelFolder = v.trim();
             await this.plugin.saveSettings();
-          })
-      );
+          });
+        // `addSearch` supplies a search-shaped input, which is also what
+        // AbstractInputSuggest expects.
+        new FolderSuggest(this.app, t.inputEl, async (path) => {
+          this.plugin.settings.modelFolder = path;
+          await this.plugin.saveSettings();
+        });
+      });
 
     containerEl.createDiv({
       cls: "modelica-studio-muted",

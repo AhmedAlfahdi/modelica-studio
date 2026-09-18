@@ -41,6 +41,10 @@ fs.writeFileSync(
   "export class PluginSettingTab { constructor(app, plugin) { this.app = app; this.plugin = plugin; } }\n" +
     "export class Setting { constructor() {} }\n" +
     "export class App {}\n" +
+    // The save folder field completes from the vault's folders.
+    "export class AbstractInputSuggest { constructor(app, el) { this.app = app; this.inputEl = el; } " +
+    "onSelect() { return this; } close() {} }\n" +
+    "export class TFolder {}\n" +
     // TFile is used at run time -- the saved-models list tests each tracked path
     // with `instanceof TFile` -- so it must be a real class here, not a type.
     // Notice is called by the saved-models repair button.

@@ -105,6 +105,19 @@ const obsidianStub = {
   },
   // The help dialog reads this at module scope to label the modifier key.
   Platform: { isMacOS: false, isMobile: false },
+  // The folder field extends this, so an undefined export fails the same way a
+  // missing Modal does.
+  AbstractInputSuggest: class AbstractInputSuggest {
+    constructor(app, el) {
+      this.app = app;
+      this.inputEl = el;
+    }
+    onSelect() {
+      return this;
+    }
+    close() {}
+  },
+  TFolder: class TFolder {},
   // Modal is extended by the saved-models and help dialogs, so the stub needs a
   // real base class -- an undefined export fails as "class extends value
   // undefined", which reads as a plugin error rather than a missing stub.

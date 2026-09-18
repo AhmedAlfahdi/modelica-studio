@@ -1689,3 +1689,12 @@ body.modelica-studio-resizing * {
   font-size: 12px;
   padding-bottom: 4px;
 }
+
+/* Marks a suggestion that would be CREATED rather than chosen. The two look
+   identical in a list of paths and have different consequences. */
+.modelica-studio-folder-new {
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
