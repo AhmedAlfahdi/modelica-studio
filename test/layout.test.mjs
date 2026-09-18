@@ -14,11 +14,14 @@ import path from "node:path";
 import fs from "node:fs";
 import {
   clampInspectorWidth,
+  clampPaletteWidth,
   clampResultsHeight,
   CODE_RESULTS_H,
+  DEFAULT_PALETTE_W,
   DEFAULT_RESULTS_H,
-  heightFromTopEdgeDrag,
+  MIN_PALETTE_W,
   MIN_RESULTS_H,
+  sizeFromDividerDrag,
 } from "../src/view/panes.ts";
 import { repoRoot } from "./helpers/build.mjs";
 
@@ -59,10 +62,21 @@ test("nonsense input falls back rather than propagating NaN", () => {
 });
 
 test("the inspector keeps the canvas a usable width", () => {
-  // The same missing-bound fault on the other splitter: the canvas needs a
-  // minimum, or the inspector can be dragged until the diagram has nowhere.
+  // The same missing-bound fault on the other divider: the canvas needs a minimum,
+  // or the inspector can be dragged until the diagram has nowhere.
   assert.equal(clampInspectorWidth(380, 1400), 380, "an ordinary width is left alone");
-  assert.equal(clampInspectorWidth(5000, 1400), 1140, "a huge request leaves the canvas 260px");
+  // The ceiling now also reserves the palette and two dividers, so the canvas gets
+  // its 260 rather than having the palette's width quietly taken out of it.
+  assert.equal(
+    clampInspectorWidth(5000, 1400, 0),
+    1400 - 260 - 0 - 18,
+    "a huge request leaves the canvas its minimum"
+  );
+  assert.equal(
+    clampInspectorWidth(5000, 1400, 210),
+    1400 - 260 - 210 - 18,
+    "and leaves the palette its width as well"
+  );
   assert.ok(clampInspectorWidth(5000, 1400) <= 1400 - 260);
   assert.equal(clampInspectorWidth(10, 1400), 260, "never below the minimum");
   // A window narrower than the minimum plus the canvas cannot satisfy both; the
@@ -87,15 +101,23 @@ test("there is exactly one handle between the results and the code pane", () => 
   // The code pane is bounded by the results pane above it, so ONE handle divides
   // them. A second handle on the same boundary gave two grips dragging in
   // opposite directions, and neither was the one that mattered.
+  // Every divider is the same class, so there is one style to keep consistent and
+  // a test can find them all without knowing three names. Two different styles was
+  // the state this replaced.
   const css = fs.readFileSync(path.join(repoRoot, "styles.css"), "utf8");
-  const splitters = [...css.matchAll(/\.modelica-studio-([a-z-]*splitter)\s*\{/g)].map((m) => m[1]);
-  assert.deepEqual(
-    splitters.sort(),
-    ["results-splitter", "splitter"],
-    `one horizontal handle and one vertical, got ${JSON.stringify(splitters)}`
-  );
+  const stale = [...css.matchAll(/\.modelica-studio-[a-z-]*splitter\s*\{/g)].map((m) => m[0]);
+  assert.deepEqual(stale, [], `no divider keeps the old per-pane style, got ${JSON.stringify(stale)}`);
+  assert.match(css, /\.modelica-studio-divider\.is-col/, "the column variant exists");
+  assert.match(css, /\.modelica-studio-divider\.is-row/, "and the row variant");
 
   const src = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  // Three panes, three dividers, all built by the one helper.
+  const made = [...src.matchAll(/this\.makeDivider\((\w+), "([xy])", "([^"]+)"\)/g)].map((m) => m[1]);
+  assert.deepEqual(
+    made.sort(),
+    ["body", "body", "root"],
+    `one divider per resizable pane, got ${JSON.stringify(made)}`
+  );
   // The handle renders on the pane's TOP edge, which is the boundary between the
   // diagram above and the results below -- so it comes BEFORE the results pane in
   // document order, and after the editing area.
@@ -104,7 +126,7 @@ test("there is exactly one handle between the results and the code pane", () => 
   // still attached to the pane, but it sits against the status bar at the far end
   // of the window: nowhere near the diagram it divides, and reported as "there is
   // no handle for the plot section" by someone looking straight at it.
-  const splitIdx = src.indexOf("const resultsSplitter = root.createDiv");
+  const splitIdx = src.indexOf('const resultsSplitter = this.makeDivider(root, "y", "Results")');
   const resultsIdx = src.indexOf("const resultsCol = root.createDiv");
   const bodyIdx = src.indexOf('const body = root.createDiv({ cls: "modelica-studio-body" })');
   // Each anchor must EXIST before it is compared: `indexOf` answers -1 for a
@@ -129,18 +151,20 @@ test("the grip follows the pointer", () => {
   // follows from where the grip is, and every handle in the view moves the same
   // way the mouse does.
   const src = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
-  const impl = /private installResultsResize[\s\S]*?\n  \}/.exec(src);
-  assert.ok(impl, "the resize handler is present");
+  const impl = /private installDivider\(opts: \{[\s\S]*?\n  \}\n/.exec(src);
+  assert.ok(impl, "the divider installer is present");
 
-  // The boundary moves WITH the pointer. The grip draws the pane's TOP edge and
-  // the pane is anchored at the bottom, so dragging down makes the pane SHORTER --
-  // the sign is the opposite of the one a bottom-edge grip needs, and the invariant
-  // is the same either way. The arithmetic lives in `heightFromTopEdgeDrag` so the
-  // sign can be tested directly instead of pattern-matched out of the source.
-  assert.match(impl[0], /heightFromTopEdgeDrag\(startH, ev\.clientY - startY\)/, "top-edge rule");
-  assert.ok(!/apply\(startH \+/.test(impl[0]), "and not the bottom-edge sign, which would invert the drag");
-
-  // No mode-dependent second formula.
+  // The boundary moves WITH the pointer. The sign depends on which side the pane
+  // lies from its divider, so the installer reads the side rather than hard-coding
+  // one -- and the arithmetic lives in `sizeFromDividerDrag`, where it is tested as
+  // geometry instead of pattern-matched out of the source.
+  assert.match(impl[0], /sizeFromDividerDrag\(\{ startSize, delta, side: opts\.side \}\)/, "one rule, told the side");
+  // Each caller declares its side, which is what makes the sign follow.
+  assert.match(src, /side: "after",/, "a pane after its divider");
+  assert.match(src, /side: "before",/, "and the palette before its own");
+  // No hand-rolled sign anywhere: a second local formula is how the two old
+  // installers came to disagree.
+  assert.ok(!/apply\(startH/.test(impl[0]), "and no second, local formula");
   assert.ok(!/startH \* -1/.test(impl[0]), "one arithmetic for both modes");
 
   // The editing area is never given a height of its own.
@@ -151,51 +175,87 @@ test("the grip follows the pointer", () => {
 });
 
 test("every handle in the view moves with the pointer", () => {
-  // A handle that moves against the mouse is the bug being fixed, so no handle
-  // may subtract an un-negated delta.
+  // A handle that moves against the mouse is the bug being fixed, so there is now
+  // ONE installer: three copies of the drag arithmetic is how two of them came to
+  // behave differently from the third.
   const src = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
-  const splitters = [...src.matchAll(/private install\w*Splitter[\s\S]*?\n  \}/g)].map((m) => m[0]);
-  splitters.push(/private installResultsResize[\s\S]*?\n  \}/.exec(src)[0]);
-  assert.ok(splitters.length >= 2, `found ${splitters.length} handle implementations`);
-  for (const impl of splitters) {
-    // The inspector's is on the pane's left edge, so it subtracts an X delta:
-    // dragging left must widen it. That is still "towards the pointer" in the
-    // axis that pane grows along.
-    // A pane that grows downward takes `+deltaY`; one anchored at the bottom and
-    // grown from its top edge takes `-deltaY`; the inspector grows leftward from
-    // its left edge and takes `-deltaX`. Each is "towards the pointer" in the axis
-    // that pane grows along.
-    const addY = /startH \+ \(ev\.clientY/.test(impl);
-    const topEdgeY = /heightFromTopEdgeDrag\(startH, ev\.clientY/.test(impl);
-    const subX = /startW - \(ev\.clientX/.test(impl);
-    assert.ok(addY || topEdgeY || subX, "each handle moves consistently with its edge");
-  }
+  const perPane = [...src.matchAll(/private install\w*[Ss]plitter[\s\S]*?\n  \}/g)].map((m) => m[0]);
+  assert.deepEqual(perPane, [], "no per-pane installers are left");
+
+  const impl = /private installDivider\(opts: \{[\s\S]*?\n  \}\n/.exec(src);
+  assert.ok(impl, "the shared installer is present");
+  // It reads the axis and the side instead of hard-coding a sign, so all three
+  // panes move with the pointer by construction rather than by three correct
+  // guesses.
+  assert.match(
+    impl[0],
+    /const delta = opts\.axis === "x" \? ev\.clientX - startPos : ev\.clientY - startPos/,
+    "the axis is read from the pane it sizes"
+  );
+  assert.match(
+    impl[0],
+    /sizeFromDividerDrag\(\{ startSize, delta, side: opts\.side \}\)/,
+    "and the side decides the sign"
+  );
+  // Three dividers, one builder, so they cannot drift apart in appearance either.
+  const made = [...src.matchAll(/this\.makeDivider\(/g)].length;
+  assert.equal(made, 3, `one divider per resizable pane, got ${made}`);
 });
 
 
-test("the results grip moves the boundary with the pointer", () => {
-  // The invariant, stated as geometry rather than as a sign: the pane is pinned to
-  // the bottom of the window, and the grip draws its top edge. Whatever the
-  // arithmetic, the top edge must end up exactly where the pointer went -- a grip
-  // that moves against the pointer is unusable, and a screenshot cannot show it.
-  const BOTTOM = 900; // the pane's bottom edge, where the status bar starts
-  const START_H = 300;
-  const topEdge = (h) => BOTTOM - h;
-
-  for (const deltaY of [-120, -40, -1, 0, 1, 40, 120]) {
-    const next = heightFromTopEdgeDrag(START_H, deltaY);
-    assert.equal(
-      topEdge(next),
-      topEdge(START_H) + deltaY,
-      `dragging by ${deltaY} moves the boundary by ${deltaY}`
-    );
+test("every divider moves its boundary with the pointer", () => {
+  // The invariant, stated as geometry rather than as a sign: the divider IS the
+  // pane's edge, so whatever the arithmetic the edge must end up exactly where the
+  // pointer went. A divider that moves against the pointer is unusable, and that
+  // is invisible in a screenshot -- which is why it is geometry here and not a
+  // comment.
+  //
+  // Both arrangements are the same rule with the sign flipped: the results pane
+  // and the inspector lie AFTER their divider, the palette BEFORE its.
+  const AFTER_BOTTOM = 900; // results: pinned to the bottom, divider on top
+  const edge = (h) => AFTER_BOTTOM - h;
+  for (const delta of [-120, -1, 0, 1, 120]) {
+    const next = sizeFromDividerDrag({ startSize: 300, delta, side: "after" });
+    assert.equal(edge(next), edge(300) + delta, `a pane after its divider moves by ${delta}`);
   }
+  // The inspector: after its divider, and dragging LEFT (negative) widens it.
+  assert.equal(
+    sizeFromDividerDrag({ startSize: 380, delta: -40, side: "after" }),
+    420,
+    "dragging the inspector's divider left widens it"
+  );
+  // The palette: BEFORE its divider, so dragging RIGHT widens it.
+  assert.equal(
+    sizeFromDividerDrag({ startSize: 210, delta: 40, side: "before" }),
+    250,
+    "dragging the palette's divider right widens it"
+  );
+  // Spelled out for the row case, because the two directions are the whole point.
+  assert.equal(sizeFromDividerDrag({ startSize: 300, delta: 50, side: "after" }), 250, "down shrinks the results");
+  assert.equal(sizeFromDividerDrag({ startSize: 300, delta: -50, side: "after" }), 350, "up grows them");
+  // A no-op drag must not move anything, whichever side.
+  assert.equal(sizeFromDividerDrag({ startSize: 300, delta: 0, side: "after" }), 300, "no movement, no change");
+  assert.equal(sizeFromDividerDrag({ startSize: 300, delta: 0, side: "before" }), 300, "either side");
+});
 
-  // Spelled out, because the two directions are the whole point.
-  assert.equal(heightFromTopEdgeDrag(300, 50), 250, "dragging DOWN shrinks the pane");
-  assert.equal(heightFromTopEdgeDrag(300, -50), 350, "dragging UP grows it");
-  // A no-op drag must not move anything.
-  assert.equal(heightFromTopEdgeDrag(300, 0), 300, "a click without movement changes nothing");
+test("the palette is clamped so the diagram always has room", () => {
+  // The palette had no clamp because it had no divider. Now that all three share
+  // the width, each reserves the canvas minimum AND the current width of the
+  // other panel, so widening one cannot squeeze the diagram to nothing.
+  assert.equal(clampPaletteWidth(210, 1400, 380), 210, "a sensible width is left alone");
+  assert.ok(clampPaletteWidth(900, 1400, 380) < 900, "a greedy one is pulled back");
+  // And the canvas keeps its floor: 1400 - 260 canvas - 380 inspector - 18 dividers.
+  assert.equal(clampPaletteWidth(9999, 1400, 380), 742, "the ceiling accounts for the inspector");
+  assert.equal(clampPaletteWidth(10, 1400, 380), MIN_PALETTE_W, "the floor holds");
+  assert.equal(clampPaletteWidth(NaN, 1400, 380), DEFAULT_PALETTE_W, "nonsense falls back");
+  // Nothing measurable to clamp against: honour the request, never below the floor.
+  assert.equal(clampPaletteWidth(300, 0, 0), 300, "an unmeasured view honours the request");
+
+  // The inspector's ceiling accounts for the palette the same way.
+  const wide = clampInspectorWidth(9999, 1400, 300);
+  assert.ok(wide <= 1400 - 260 - 300 - 18, `the inspector leaves the palette and canvas room, got ${wide}`);
+  // And a wide palette must not be able to Evict the canvas through the inspector.
+  assert.ok(clampInspectorWidth(9999, 900, 400) >= 260, "the inspector keeps its own floor");
 });
 
 test("the restored height is not clamped against an unlaid-out view", () => {
@@ -216,17 +276,60 @@ test("the restored height is not clamped against an unlaid-out view", () => {
   // The ceiling is applied as soon as there is a real height, and re-applied when
   // the window changes -- otherwise a pane sized on a large monitor would push its
   // own grip off the top of a small one.
-  const reclamp = /private installResultsReclamp\(\): void \{[\s\S]*?\n  \}/.exec(src);
+  const reclamp = /private installPaneReclamp\(\): void \{[\s\S]*?\n  \}/.exec(src);
   assert.ok(reclamp, "the re-clamp exists");
   assert.match(reclamp[0], /new ResizeObserver/, "it watches the real size");
-  assert.match(reclamp[0], /clampResultsHeight\(current\)/, "and clamps the height in use");
+  assert.match(reclamp[0], /this\.applyResultsHeight\(/, "and re-applies the height in use");
+  // Every pane, not just the results: a width chosen on a wide monitor is the same
+  // fault as a height, and nothing re-clamped the widths at all before.
+  assert.match(reclamp[0], /this\.applyPaletteWidth\(/, "the palette too");
+  assert.match(reclamp[0], /this\.applyInspectorWidth\(/, "and the inspector");
   // Guarded against feedback: the observer must not act on an unchanged size.
-  assert.match(reclamp[0], /h === measured/, "it ignores an unchanged measurement");
-  // Installed where the pane is built, not inside its own body.
-  assert.match(src, /this\.installResultsResize\([^)]*\);\s*\n\s*this\.installResultsReclamp\(\)/, "and is installed");
+  assert.match(reclamp[0], /w === lastW && h === lastH/, "it ignores an unchanged measurement");
+  // Installed where the panes are built, not inside its own body.
+  assert.match(src, /this\.installDivider\([\s\S]{0,400}?\n\s*this\.installPaneReclamp\(\)/, "and is installed");
 
   // An observer left attached after the view closes is a leak.
   const close = /async onClose\(\): Promise<void> \{[\s\S]*?\n  \}/.exec(src);
   assert.ok(close, "onClose is present");
   assert.match(close[0], /this\.resultsReclamp\?\.disconnect\(\)/, "the observer is disconnected");
+});
+
+test("the re-clamp renders without remembering its own result", () => {
+  // The re-clamp runs whenever the view changes size, so writing its result back
+  // turned a moment of narrowness into the user's permanent choice. Found live:
+  // the palette came back 194px wide -- a number nobody ever asked for -- because
+  // some earlier layout had been narrower and the clamped value had been saved.
+  const src = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  const reclamp = /private installPaneReclamp\(\): void \{[\s\S]*?\n  \}\n/.exec(src);
+  assert.ok(reclamp, "the re-clamp is present");
+  // Every apply in the re-clamp must omit `remember`, so none of them persists.
+  const calls = [...reclamp[0].matchAll(/this\.apply\w+\(([^;]*)\)/g)].map((m) => m[1]);
+  assert.ok(calls.length >= 3, `all three panes are re-applied, got ${calls.length}`);
+  for (const args of calls) {
+    assert.ok(
+      !/true/.test(args),
+      `the re-clamp must not remember its result, got apply(${args.slice(0, 60)})`
+    );
+  }
+
+  // A gesture DOES persist, and only once it has finished.
+  const install = /private installDivider\(opts: \{[\s\S]*?\n  \}\n/.exec(src);
+  assert.ok(install, "the installer is present");
+  assert.match(install[0], /opts\.apply\(lastSize, true\)/, "the finished drag is remembered");
+  assert.match(install[0], /opts\.apply\(opts\.reset\(\), true\)/, "and so is a double-click reset");
+  // During the drag it renders only -- an interrupted drag must not leave the
+  // intermediate sizes saved.
+  const move = /const onMove = \(ev: PointerEvent\) => \{[\s\S]*?\n    \};/.exec(install[0]);
+  assert.ok(move, "the move handler is present");
+  assert.ok(!/, true\)/.test(move[0]), "and intermediate sizes are not remembered");
+
+  // The appliers default to NOT remembering, so a new call site is safe by default.
+  for (const name of ["applyResultsHeight", "applyInspectorWidth", "applyPaletteWidth"]) {
+    assert.match(
+      src,
+      new RegExp(`private ${name}\\(\\w+: number, remember = false\\)`),
+      `${name} must default to not remembering`
+    );
+  }
 });

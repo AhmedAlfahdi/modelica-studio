@@ -36,11 +36,15 @@ import { HelpModal } from "./help-modal";
 import { SimulationError } from "../omc/backend";
 import {
   CODE_RESULTS_H,
+  DEFAULT_INSPECTOR_W,
+  DEFAULT_PALETTE_W,
   DEFAULT_RESULTS_H,
   MIN_RESULTS_H,
   clampInspectorWidth,
+  clampPaletteWidth,
   clampResultsHeight,
-  heightFromTopEdgeDrag,
+  sizeFromDividerDrag,
+  type DividerSide,
 } from "./panes";
 import { checkModel, ModelProblem } from "../modelica/checks";
 import { createCodeEditor, CodeEditorHandle, Diagnostic } from "./code-editor";
@@ -62,8 +66,12 @@ export class ModelicaStudioView extends ItemView {
   private logHost: HTMLElement | null = null;
   /** Reverts to the saved file; disabled when there is nothing to go back to. */
   private btnRevert: HTMLButtonElement | undefined;
-  /** Watches the view's height, so the pane's ceiling tracks the window. */
+  /** Watches the view, so every pane's ceiling tracks the window. */
   private resultsReclamp: ResizeObserver | undefined;
+  /** Guards the one settled layout reading, so a resize does not spam the log. */
+  private settledLayoutLogged = false;
+  /** The palette's divider. */
+  private paletteSplitterEl: HTMLElement | undefined;
   /**
    * The palette's rows, in the order they are drawn.
    *
@@ -187,12 +195,17 @@ export class ModelicaStudioView extends ItemView {
     });
     this.paletteEl = paletteCol.createDiv({ cls: "modelica-studio-palette-list" });
 
+    // The palette is resizable too. It was the one pane with no divider, so its
+    // width was a constant and a long class name in the list was cut off with no
+    // way to widen the column.
+    const paletteDivider = this.makeDivider(body, "x", "Component palette");
+    this.paletteSplitterEl = paletteDivider;
+
     // Canvas
     this.canvasHost = body.createDiv({ cls: "modelica-studio-col modelica-studio-canvas-host" });
 
-    // Inspector + results, with a draggable splitter so results can be made
-    // large enough to actually read.
-    const splitter = body.createDiv({ cls: "modelica-studio-splitter" });
+    // Inspector + results, with a draggable divider so the parameters can be read.
+    const splitter = this.makeDivider(body, "x", "Inspector");
     this.splitterEl = splitter;
     const rightCol = body.createDiv({ cls: "modelica-studio-col modelica-studio-inspector" });
     this.inspectorCol = rightCol;
@@ -202,7 +215,24 @@ export class ModelicaStudioView extends ItemView {
     // otherwise appear over every tab in it.
     noLabelTooltip(this.inspectorTabsEl, "Inspector");
     this.inspectorEl = rightCol.createDiv({ cls: "modelica-studio-inspector-body" });
-    this.installSplitter(splitter, rightCol);
+    // The inspector is to the RIGHT of its divider, so dragging left widens it.
+    this.installDivider({
+      el: splitter,
+      axis: "x",
+      side: "after",
+      pane: rightCol,
+      apply: (w) => this.applyInspectorWidth(w),
+      reset: () => DEFAULT_INSPECTOR_W,
+    });
+    // The palette is to the LEFT of its divider, so dragging right widens it.
+    this.installDivider({
+      el: paletteDivider,
+      axis: "x",
+      side: "before",
+      pane: paletteCol,
+      apply: (w) => this.applyPaletteWidth(w),
+      reset: () => DEFAULT_PALETTE_W,
+    });
 
     // Results get their own pane across the window rather than a slot inside the
     // inspector. In a 380px column a plot is unreadable, and the legend covers
@@ -215,14 +245,7 @@ export class ModelicaStudioView extends ItemView {
     // at the far end of the window -- nowhere near the diagram it divides, and easy
     // to miss. The editing area is ABOVE the results, so the top edge is the shared
     // boundary and the bottom edge is the window's own.
-    const resultsSplitter = root.createDiv({ cls: "modelica-studio-results-splitter" });
-    // Named for what it does, so it is findable by hover as well as by eye.
-    resultsSplitter.setAttribute("role", "separator");
-    resultsSplitter.setAttribute("aria-orientation", "horizontal");
-    resultsSplitter.setAttribute(
-      "aria-label",
-      "Drag to resize the results pane; double-click to reset"
-    );
+    const resultsSplitter = this.makeDivider(root, "y", "Results");
     const resultsCol = root.createDiv({ cls: "modelica-studio-results" });
     // Restore the height the user dragged it to, so the choice survives a
     // reload rather than resetting to the default every time.
@@ -240,8 +263,16 @@ export class ModelicaStudioView extends ItemView {
     }
     this.resultsEl = resultsCol;
     this.resultsResize = resultsSplitter;
-    this.installResultsResize(resultsSplitter, resultsCol);
-    this.installResultsReclamp();
+    // The results are BELOW their divider, so dragging down makes the pane shorter.
+    this.installDivider({
+      el: resultsSplitter,
+      axis: "y",
+      side: "after",
+      pane: resultsCol,
+      apply: (h) => this.applyResultsHeight(h),
+      reset: () => (this.mode === "code" ? CODE_RESULTS_H : DEFAULT_RESULTS_H),
+    });
+    this.installPaneReclamp();
 
     // There is deliberately no source preview here. It was a read-only copy of
     // the model, which code mode now edits directly, and showing the same text
@@ -726,32 +757,95 @@ export class ModelicaStudioView extends ItemView {
   }
 
   /**
-   * Keep the results pane inside a view that may have changed size.
+   * Keep every pane inside a view that may have changed size.
    *
-   * Two jobs, both consequences of the ceiling depending on the window. The first
-   * is to apply that ceiling once the view has a real height, because the height
-   * restored at construction could not be clamped against one. The second is to
-   * re-apply it when the window changes: a pane dragged tall on a large monitor
-   * would otherwise keep its height on a small one and push its own grip off the
-   * top of the screen.
+   * The sizes are restored before the view is laid out, so they cannot be clamped
+   * against the window at that point, and nothing re-clamped them afterwards: a
+   * layout chosen on a wide monitor kept its widths on a narrow one until the
+   * diagram had nowhere to draw.
    */
-  private installResultsReclamp(): void {
+  private installPaneReclamp(): void {
     if (!this.contentEl || typeof ResizeObserver === "undefined") return;
-    let measured = 0;
+    let lastW = 0;
+    let lastH = 0;
     const observer = new ResizeObserver(() => {
+      const w = this.contentEl?.clientWidth ?? 0;
       const h = this.contentEl?.clientHeight ?? 0;
       // Only on a real change. Re-applying on every callback would fight the
       // observer it was triggered by.
-      if (h <= 0 || h === measured) return;
-      measured = h;
-      if (!this.resultsEl) return;
-      // The CURRENT height is what gets clamped, so a size the user chose is kept
-      // whenever the window can still afford it.
-      const current = this.resultsEl.getBoundingClientRect().height;
-      if (current > 0) this.resultsEl.style.height = `${this.clampResultsHeight(current)}px`;
+      if (w <= 0 || h <= 0 || (w === lastW && h === lastH)) return;
+      lastW = w;
+      lastH = h;
+      // Each pane is clamped against the CURRENT width of the others, so a
+      // combination that no longer fits is brought back in without any of them
+      // being reset to a default.
+      this.applyResultsHeight(this.resultsEl?.getBoundingClientRect().height ?? 0);
+      this.applyPaletteWidth(this.plugin.settings.paletteWidth || DEFAULT_PALETTE_W);
+      this.applyInspectorWidth(this.plugin.settings.inspectorWidth || DEFAULT_INSPECTOR_W);
+      this.afterPaneResize();
+      // The probe in `onOpen` runs before the panes are laid out and reports zeros
+      // for the body, which is the line you most want when a pane is the wrong
+      // size. This is the same reading once there is something to measure.
+      if (!this.settledLayoutLogged) {
+        this.settledLayoutLogged = true;
+        this.reportLayout("settled");
+      }
     });
     observer.observe(this.contentEl);
     this.resultsReclamp = observer;
+  }
+
+  /**
+   * Apply a pane size, clamped, and remember it.
+   *
+   * One place per pane, so the drag, the double-click reset and the re-clamp all
+   * go through the same arithmetic -- three callers writing a width three ways is
+   * how they came to disagree.
+   *
+   * `remember` is what separates a size the USER chose from one the CLAMP produced.
+   * The re-clamp runs whenever the view changes size, so writing its result back
+   * turned a moment of narrowness into a permanent choice: the palette came back
+   * 194px wide, a number nobody ever asked for, because some earlier layout had
+   * been narrower. Only a gesture persists.
+   */
+  private applyResultsHeight(h: number, remember = false): number {
+    const next = clampResultsHeight(h, this.contentEl?.clientHeight ?? 0);
+    if (this.resultsEl) this.resultsEl.style.height = `${next}px`;
+    if (remember) this.storeResultsHeight(next);
+    return next;
+  }
+
+  private applyInspectorWidth(w: number, remember = false): number {
+    const next = clampInspectorWidth(
+      w,
+      this.contentEl?.clientWidth ?? 0,
+      this.plugin.settings.paletteWidth || DEFAULT_PALETTE_W
+    );
+    this.contentEl?.style.setProperty("--ms-inspector-width", `${next}px`);
+    if (remember) this.plugin.settings.inspectorWidth = next;
+    return next;
+  }
+
+  private applyPaletteWidth(w: number, remember = false): number {
+    const next = clampPaletteWidth(
+      w,
+      this.contentEl?.clientWidth ?? 0,
+      this.plugin.settings.inspectorWidth || DEFAULT_INSPECTOR_W
+    );
+    this.contentEl?.style.setProperty("--ms-palette-width", `${next}px`);
+    if (remember) this.plugin.settings.paletteWidth = next;
+    return next;
+  }
+
+  /**
+   * Re-measure after any pane changes size.
+   *
+   * The canvas is sized from the DOM, so it has to be told or it keeps drawing at
+   * the old width and the diagram appears clipped.
+   */
+  private afterPaneResize(): void {
+    this.editor?.resize();
+    this.drawResults();
   }
 
   /** Remember a height the user dragged, against the current mode. */
@@ -2184,50 +2278,6 @@ export class ModelicaStudioView extends ItemView {
    * The results pane owns the height in both modes and the editing area takes
    * whatever is left, so the editor can never be left with dead space below it.
    */
-  private installResultsResize(handle: HTMLElement, pane: HTMLElement): void {
-    let startY = 0;
-    let startH = 0;
-    const inCode = () => this.mode === "code";
-
-    const apply = (h: number) => {
-      const next = this.clampResultsHeight(h);
-      pane.style.height = `${next}px`;
-      // The editor is measured on screen, so its caret may need bringing back.
-      if (inCode()) this.codeEditor?.revealCaret();
-      else if (this.bottomTab === "plot") this.drawResults();
-      return next;
-    };
-
-    const onMove = (ev: PointerEvent) => {
-      // The grip draws the pane's top edge, so this is the top-edge rule -- see
-      // `heightFromTopEdgeDrag`, which is where the sign lives and is tested.
-      apply(heightFromTopEdgeDrag(startH, ev.clientY - startY));
-    };
-
-    const commit = () => this.storeResultsHeight(pane.getBoundingClientRect().height);
-
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      handle.removeClass("is-dragging");
-      commit();
-    };
-    handle.addEventListener("pointerdown", (ev) => {
-      startY = ev.clientY;
-      startH = pane.getBoundingClientRect().height;
-      handle.addClass("is-dragging");
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
-      ev.preventDefault();
-    });
-    // Double-click restores the default for the mode on screen. Without it a pane
-    // dragged to an awkward size has to be dragged back by hand.
-    handle.addEventListener("dblclick", () => {
-      apply(inCode() ? CODE_RESULTS_H : DEFAULT_RESULTS_H);
-      commit();
-    });
-  }
-
   /**
    * Show the plot over the whole window.
    *
@@ -3012,62 +3062,100 @@ export class ModelicaStudioView extends ItemView {
    * The width is written to a CSS custom property on the root so it survives
    * re-renders of the panel contents, and persisted in settings.
    */
-  private installSplitter(splitter: HTMLElement, col: HTMLElement): void {
-    const root = this.contentEl;
-    const apply = (w: number) => {
-      const clamped = clampInspectorWidth(w, root.clientWidth);
-      root.style.setProperty("--ms-inspector-width", `${clamped}px`);
-      return clamped;
-    };
-    apply(this.plugin.settings.inspectorWidth || DEFAULT_INSPECTOR_W);
-
-    let startX = 0;
-    let startW = 0;
+  /**
+   * Make a pane resizable by its divider.
+   *
+   * One implementation for every divider. There were two, which is why they did
+   * not behave alike: the results divider clamped against the view and re-applied
+   * on resize, and the inspector's did neither, so a width chosen on a wide window
+   * stayed on a narrow one until the diagram was gone.
+   *
+   * `side` says which way the pane lies from its divider, and that is the whole of
+   * the arithmetic -- see `sizeFromDividerDrag`, where the sign lives and is
+   * tested.
+   */
+  private installDivider(opts: {
+    el: HTMLElement;
+    /** `x` for a column's width, `y` for a pane's height. */
+    axis: "x" | "y";
+    side: DividerSide;
+    /** The pane this divider sizes. */
+    pane: HTMLElement;
+    /** Apply a size, clamped, returning what was actually applied. */
+    apply: (size: number, remember?: boolean) => number;
+    /** The size a double-click restores. */
+    reset: () => number;
+  }): void {
+    let startPos = 0;
+    let startSize = 0;
+    let lastSize = 0;
     let dragging = false;
 
     const onMove = (ev: PointerEvent) => {
       if (!dragging) return;
-      const next = apply(startW - (ev.clientX - startX));
-      this.plugin.settings.inspectorWidth = next;
-      // The canvas must resize with the column, or it keeps drawing at the old
-      // width and the diagram appears clipped.
-      this.editor?.resize();
-      this.drawResults();
+      const delta = opts.axis === "x" ? ev.clientX - startPos : ev.clientY - startPos;
+      // Rendered but not remembered: only the finished gesture is the user's
+      // choice, and a drag that ends elsewhere must not leave the intermediate
+      // sizes behind if the app closes mid-drag.
+      lastSize = opts.apply(sizeFromDividerDrag({ startSize, delta, side: opts.side }));
+      this.afterPaneResize();
     };
     const onUp = (ev: PointerEvent) => {
       if (!dragging) return;
       dragging = false;
-      splitter.removeClass("is-dragging");
+      // The size the gesture ended on is the one to keep.
+      if (lastSize > 0) opts.apply(lastSize, true);
+      opts.el.removeClass("is-dragging");
       document.body.removeClass("modelica-studio-resizing");
       try {
-        splitter.releasePointerCapture(ev.pointerId);
+        opts.el.releasePointerCapture(ev.pointerId);
       } catch {
         /* capture may already be released */
       }
       void this.plugin.persist();
     };
 
-    splitter.addEventListener("pointerdown", (ev: PointerEvent) => {
+    opts.el.addEventListener("pointerdown", (ev: PointerEvent) => {
+      if (ev.button !== 0) return;
       dragging = true;
-      startX = ev.clientX;
-      startW = col.getBoundingClientRect().width;
-      splitter.addClass("is-dragging");
+      startPos = opts.axis === "x" ? ev.clientX : ev.clientY;
+      // Measured rather than read back from the setting: the setting may have been
+      // clamped on apply, and starting from the pre-clamp value makes the first
+      // drag jump.
+      const rect = opts.pane.getBoundingClientRect();
+      startSize = opts.axis === "x" ? rect.width : rect.height;
+      opts.el.addClass("is-dragging");
       document.body.addClass("modelica-studio-resizing");
-      splitter.setPointerCapture(ev.pointerId);
+      opts.el.setPointerCapture(ev.pointerId);
       ev.preventDefault();
     });
-    splitter.addEventListener("pointermove", onMove);
-    splitter.addEventListener("pointerup", onUp);
-    splitter.addEventListener("pointercancel", onUp);
-
-    // Double-click restores a sensible default.
-    splitter.addEventListener("dblclick", () => {
-      const w = apply(DEFAULT_INSPECTOR_W);
-      this.plugin.settings.inspectorWidth = w;
-      this.editor?.resize();
-      this.drawResults();
+    opts.el.addEventListener("pointermove", onMove);
+    opts.el.addEventListener("pointerup", onUp);
+    opts.el.addEventListener("pointercancel", onUp);
+    // Double-click restores the default. Without it a pane dragged to an awkward
+    // size has to be dragged back by hand.
+    opts.el.addEventListener("dblclick", () => {
+      lastSize = opts.apply(opts.reset(), true);
+      this.afterPaneResize();
       void this.plugin.persist();
     });
+  }
+
+  /**
+   * Build one of the drag dividers.
+   *
+   * They share a class and a tooltip, so they read as the same control in three
+   * places and a test can find them all instead of knowing each name.
+   */
+  private makeDivider(parent: HTMLElement, axis: "x" | "y", label: string): HTMLElement {
+    const el = parent.createDiv({
+      cls: `modelica-studio-divider is-${axis === "x" ? "col" : "row"}`,
+    });
+    el.setAttribute("role", "separator");
+    el.setAttribute("aria-orientation", axis === "x" ? "vertical" : "horizontal");
+    // Obsidian tooltips come from `aria-label`, never `title`.
+    el.setAttribute("aria-label", `${label} — drag to resize, double-click to reset`);
+    return el;
   }
 
   /**
@@ -3290,7 +3378,7 @@ export class ModelicaStudioView extends ItemView {
    * A region that does not reach its neighbour shows as an unexplained band, and
    * which element is short is not visible from the outside.
    */
-  private reportLayout(): void {
+  private reportLayout(why = "open"): void {
     // Top, height AND left, width. A height alone cannot tell a correctly laid
     // out flex row from a collapsed one: every child of a row is the same height,
     // and it was the widths that would have shown the columns sitting on top of
@@ -3307,16 +3395,23 @@ export class ModelicaStudioView extends ItemView {
     this.plugin.diag(
       // `asked` beside the rendered box: a pane that ignored the height it was
       // given looked identical to one that had been given the wrong height.
-      "layout: resultsH=" + (this.resultsEl?.style.height || "(none)") +
+      `layout${why === "open" ? "" : " (" + why + ")"}: resultsH=` +
+        (this.resultsEl?.style.height || "(none)") +
         " | content=" + box(this.contentEl) +
         " root=" + box(q(".modelica-studio-root")) +
         " body=" + box(q(".modelica-studio-body")) +
         " canvasHost=" + box(q(".modelica-studio-canvas-host")) +
         " canvas=" + box(q(".modelica-studio-canvas")) +
         " palette=" + box(q(".modelica-studio-palette")) +
-        " inspectorSplit=" + box(q(".modelica-studio-splitter")) +
+        // All three dividers, found by the one class they share. The old names
+        // went stale with the markup and the diag silently reported nothing --
+        // "?" is what a missing element looks like here, so it has to be checked.
+        " paletteDiv=" + box(this.paletteSplitterEl) +
+        " paletteW=" + (this.contentEl?.style.getPropertyValue("--ms-palette-width") || "?") +
+        " inspectorDiv=" + box(this.splitterEl) +
         " inspector=" + box(q(".modelica-studio-inspector")) +
-        " resultsSplit=" + box(q(".modelica-studio-results-splitter")) +
+        " inspectorW=" + (this.contentEl?.style.getPropertyValue("--ms-inspector-width") || "?") +
+        " resultsDiv=" + box(q(".modelica-studio-divider.is-row")) +
         " results=" + box(q(".modelica-studio-results")) +
         " code=" + box(q(".modelica-studio-code")) +
         " status=" + box(q(".modelica-studio-status")) +
@@ -3406,7 +3501,6 @@ export class ModelicaStudioView extends ItemView {
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
 
-const DEFAULT_INSPECTOR_W = 380;
 
 /** Smallest height the results pane can be dragged to, in pixels. */
 

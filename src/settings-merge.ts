@@ -110,6 +110,8 @@ export interface ModelicaStudioSettings {
 
   /** Right-hand inspector width in pixels; 0 means the default. */
   inspectorWidth: number;
+  /** Left-hand palette width in pixels; 0 means the default. */
+  paletteWidth: number;
   /**
    * Results-pane height in DIAGRAM mode; 0 means the default.
    *
@@ -186,6 +188,7 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   debugOverlay: false,
   editorMode: "diagram",
   inspectorWidth: 380,
+  paletteWidth: 210,
   plotHeight: 0,
   codePlotHeight: 0,
   modelStopTimes: {},

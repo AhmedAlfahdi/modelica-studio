@@ -75,8 +75,9 @@
 }
 
 .modelica-studio-palette {
-  width: 210px;
-  flex: 0 0 210px;
+  /* Set by the view from the setting, so a width the user dragged survives. */
+  width: var(--ms-palette-width, 210px);
+  flex: 0 0 var(--ms-palette-width, 210px);
   border-right: 1px solid var(--background-modifier-border);
   display: flex;
   flex-direction: column;
@@ -424,23 +425,75 @@
   margin-top: 1px;
 }
 
-.modelica-studio-splitter {
-  flex: 0 0 5px;
-  cursor: col-resize;
-  background: var(--background-modifier-border);
-  transition: background 120ms ease;
+/* Every pane divider, in one style.
+   Three panes are resizable and they must read as the same control: 9px of the
+   pane's own background, a hairline on the boundary, a centred grip so the handle
+   is visible at rest, and the accent on hover. The old inspector divider was a
+   solid slab of border colour that read as a stray bar rather than a handle, and
+   the results pane had a different style again. */
+.modelica-studio-divider {
+  flex: 0 0 auto;
   position: relative;
+  /* Above the panes it divides, so the grip is never covered. */
+  z-index: 2;
+  background: var(--background-secondary);
+  transition: background 120ms ease;
 }
-
-.modelica-studio-splitter:hover,
-.modelica-studio-splitter.is-dragging {
-  background: var(--interactive-accent);
+.modelica-studio-divider.is-col {
+  flex-basis: 9px;
+  cursor: col-resize;
+  /* Both edges: a column divider sits between the canvas and a panel, so it reads
+     as a gutter rather than as part of either. */
+  border-left: 1px solid var(--background-modifier-border);
+  border-right: 1px solid var(--background-modifier-border);
 }
-
-.modelica-studio-splitter::after {
+.modelica-studio-divider.is-row {
+  flex-basis: 9px;
+  cursor: row-resize;
+  border-top: 1px solid var(--background-modifier-border);
+}
+/* The grip. An invisible handle is one nobody drags, which is how two panes came
+   to look unresizable when only one of them was. */
+.modelica-studio-divider::before {
   content: "";
   position: absolute;
-  inset: 0 -4px;
+  left: 50%;
+  top: 50%;
+  border-radius: 2px;
+  background: var(--text-faint);
+  opacity: 0.55;
+}
+.modelica-studio-divider.is-col::before {
+  width: 4px;
+  height: 44px;
+  margin: -22px 0 0 -2px;
+}
+.modelica-studio-divider.is-row::before {
+  width: 44px;
+  height: 4px;
+  margin: -2px 0 0 -22px;
+}
+.modelica-studio-divider:hover,
+.modelica-studio-divider.is-dragging {
+  background: var(--background-modifier-hover);
+}
+.modelica-studio-divider:hover::before,
+.modelica-studio-divider.is-dragging::before {
+  background: var(--interactive-accent);
+  opacity: 1;
+}
+/* A longer grab area than the visible strip, so 9px is not a 9px target. It
+   reaches along the drag axis only: extending across it would take clicks from the
+   canvas edge, which is where components get dragged. */
+.modelica-studio-divider.is-col::after {
+  content: "";
+  position: absolute;
+  inset: 0 -3px;
+}
+.modelica-studio-divider.is-row::after {
+  content: "";
+  position: absolute;
+  inset: -2px 0 -5px;
 }
 
 body.modelica-studio-resizing,
@@ -615,56 +668,11 @@ body.modelica-studio-resizing * {
   display: flex;
   flex-direction: column;
   padding: 6px 8px 8px;
-  /* No border-top: the splitter directly above draws this boundary, and both
+  /* No border-top: the divider directly above draws this boundary, and both
      together drew the same line twice. */
   background: var(--background-secondary);
   overflow: hidden;
   box-sizing: border-box;
-}
-
-.modelica-studio-results-splitter {
-  flex: 0 0 auto;
-  /* Above the pane it divides, so the grip is never covered. */
-  position: relative;
-  z-index: 2;
-  height: 9px;
-  cursor: row-resize;
-  /* The pane's own top edge rather than a bar floating between two areas: it now
-     sits directly under the diagram, and a slab of border colour there reads as a
-     second toolbar. The grip and the hover state are what make it findable. */
-  background: var(--background-secondary);
-  border-top: 1px solid var(--background-modifier-border);
-}
-.modelica-studio-results-splitter::after {
-  /* A taller grab area than the visible strip, so a 9px band is not a 9px target.
-     It reaches further DOWN than up: extending upward would take clicks from the
-     bottom edge of the canvas, which is where components get dragged. */
-  content: "";
-  position: absolute;
-  inset: -2px 0 -5px;
-}
-.modelica-studio-results-splitter:hover,
-.modelica-studio-results-splitter.is-dragging {
-  border-top-color: var(--interactive-accent);
-}
-.modelica-studio-results-splitter::before {
-  /* The grip. An invisible handle is one nobody drags, which is how the results
-     pane came to look unresizable even though it always was. */
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 44px;
-  height: 4px;
-  margin: -2px 0 0 -22px;
-  border-radius: 2px;
-  background: var(--text-faint);
-  opacity: 0.55;
-}
-.modelica-studio-results-splitter:hover::before,
-.modelica-studio-results-splitter.is-dragging::before {
-  background: var(--interactive-accent);
-  opacity: 1;
 }
 
 .modelica-studio-results .modelica-studio-plot {
@@ -855,35 +863,14 @@ body.modelica-studio-resizing * {
 }
 
 @media (max-width: 900px) {
+  /* Narrower DEFAULTS on a small window -- and only defaults. These used to set a
+     fixed width, which overrode the width the user had dragged and made the panes
+     look unresizable exactly when space was tightest. The view clamps the real
+     width against the actual view size, so only a fallback belongs here. */
   .modelica-studio-palette {
-    width: 150px;
-    flex-basis: 150px;
+    width: var(--ms-palette-width, 170px);
+    flex-basis: var(--ms-palette-width, 170px);
   }
-  .modelica-studio-inspector {
-    width: 220px;
-    flex-basis: 220px;
-  }
-}
-
-@media (max-width: 900px) {
-  .modelica-studio-inspector {
-    width: var(--ms-inspector-width, 300px);
-    flex-basis: var(--ms-inspector-width, 300px);
-  }
-}
-
-@media (max-width: 900px) {
-  .modelica-studio-palette {
-    width: 150px;
-    flex-basis: 150px;
-  }
-  .modelica-studio-inspector {
-    width: 220px;
-    flex-basis: 220px;
-  }
-}
-
-@media (max-width: 900px) {
   .modelica-studio-inspector {
     width: var(--ms-inspector-width, 300px);
     flex-basis: var(--ms-inspector-width, 300px);
