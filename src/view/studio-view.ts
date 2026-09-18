@@ -2538,6 +2538,11 @@ export class ModelicaStudioView extends ItemView {
 
   private onModelChanged(_m: DiagramModel): void {
     this.freshModel = false;
+    // A drag, a wire or a delete changes the diagram without replacing the source,
+    // so the stored source no longer describes the model. Marking it stale is what
+    // stops the next save writing the OLD text over the edit -- the same class of
+    // bug as saving the diagram instead of the editor, in the other direction.
+    this.plugin.markSourceStale();
     this.renderInspector();
     this.updateToolbarState();
     void this.plugin.persist();
@@ -2610,6 +2615,23 @@ export class ModelicaStudioView extends ItemView {
    * model emptied the canvas while the old code sat in the editor, and the two
    * disagreed about what was being edited.
    */
+  /**
+   * Realise whatever the code editor holds, so a save cannot miss it.
+   *
+   * A repair from the AI, or a line typed and not yet applied, lives only in the
+   * editor until something parses it. `applyCodeToDiagram` is what does that, and
+   * it is normally triggered by Apply or Simulate — so a save that did not run it
+   * wrote the previous version of the model and the fix was lost. Called before
+   * every save instead of relying on the user having pressed something else first.
+   *
+   * Only in code mode: in diagram mode the editor is a rendering of the model, and
+   * parsing it back would be a no-op at best.
+   */
+  flushEditorIntoModel(): void {
+    if (this.mode !== "code" || !this.codeEditor) return;
+    this.applyCodeToDiagram(false);
+  }
+
   loadModelIntoEditor(): void {
     // The user asked for this model, so the canvas is meant to be empty. Without
     // this the seeding below replaced a brand-new model with an example the
@@ -2621,7 +2643,15 @@ export class ModelicaStudioView extends ItemView {
     this.result = null;
     this.lastSimulationError = null;
     this.clearCodeProblem();
-    if (this.codeEditor) this.codeEditor.setValue(serializeDiagram(this.plugin.model));
+    // The exact source when there is one, and the serialised diagram only as a
+    // fallback. Rebuilding the text from the diagram loses declaration comments
+    // and normalises formatting, so a model saved and reopened came back subtly
+    // different from what was written -- and a user who had fixed a line would
+    // find the fix apparently gone.
+    if (this.codeEditor) {
+      const source = this.plugin.modelSourceText();
+      this.codeEditor.setValue(source.trim() ? source : serializeDiagram(this.plugin.model));
+    }
     this.installDropTarget();
     this.renderInspector();
   }

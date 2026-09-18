@@ -62,7 +62,11 @@ test("a new model clears the code editor as well as the canvas", () => {
   const load = /loadModelIntoEditor\(\): void \{[\s\S]*?\n  \}/.exec(view);
   assert.ok(load, "loadModelIntoEditor is present");
   assert.match(load[0], /this\.editor\?\.setModel\(this\.plugin\.model\)/, "the diagram is set");
-  assert.match(load[0], /this\.codeEditor\.setValue\(serializeDiagram\(this\.plugin\.model\)\)/, "and so is the source");
+  // The editor is set from the stored SOURCE when there is one, falling back to
+  // the serialised diagram. Rebuilding from the diagram is lossy, which is what
+  // made a saved fix look like it had not been saved.
+  assert.match(load[0], /this\.codeEditor\.setValue\(/, "and so is the source");
+  assert.match(load[0], /modelSourceText\(\)/, "taken from the stored source");
   // Results from the previous model would plot traces that no longer match.
   assert.match(load[0], /this\.result = null/, "the previous result is dropped");
 });

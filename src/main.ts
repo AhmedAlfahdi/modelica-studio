@@ -182,6 +182,26 @@ export default class ModelicaStudioPlugin extends Plugin {
     return this.modelSource;
   }
 
+  /**
+   * The text to write to a `.mo` file.
+   *
+   * The SOURCE wins whenever there is one, and this is the fix for a data-losing
+   * bug: saving used to serialise the DIAGRAM, so anything the code editor held
+   * that had not been pushed into it — a repair from the AI, a line typed and not
+   * yet applied — was not written. The user saw a saved file that did not contain
+   * their fix, and after a restart the old text was back.
+   *
+   * The serializer is a fallback, not the primary path. It rebuilds from the
+   * parsed model, which is lossy: declaration comments go, formatting is
+   * normalised, and anything the parser does not model is simply absent. It is
+   * only correct when the diagram IS the truth, which is the case for a model
+   * assembled by dragging, where the source is regenerated from it on every edit.
+   */
+  sourceForSave(): string {
+    if (this.modelSource.trim() && !this.modelOutdated) return this.modelSource;
+    return serializeDiagram(this.model);
+  }
+
   takeModelOutdated(): boolean {
     const v = this.modelOutdated;
     this.modelOutdated = false;
@@ -1191,7 +1211,10 @@ export default class ModelicaStudioPlugin extends Plugin {
    * overwrites that file rather than leaving a second copy beside it.
    */
   async saveModelToNote(): Promise<{ path: string; created: boolean }> {
-    const source = serializeDiagram(this.model);
+    // Whatever the editor holds is realised first, so a repair made in code mode
+    // is saved even if Simulate was never pressed.
+    this.getView()?.flushEditorIntoModel();
+    const source = this.sourceForSave();
     const folder = this.settings.modelFolder.trim().replace(/^\/+|\/+$/g, "");
     if (folder) await this.ensureFolder(folder);
 
@@ -1368,6 +1391,17 @@ export default class ModelicaStudioPlugin extends Plugin {
     this.modelSource = source;
     this.modelOutdated = false;
     this.schedulePersist();
+  }
+
+  /**
+   * The model changed without the source being replaced.
+   *
+   * Called when a component is dragged, wired or deleted. The stored source no
+   * longer describes the model, so it must not be saved — the diagram is the
+   * truth from that moment, and the source is regenerated from it.
+   */
+  markSourceStale(): void {
+    this.modelOutdated = true;
   }
 
   /**
