@@ -1750,3 +1750,28 @@ body.modelica-studio-resizing * {
   font-size: 12px;
   white-space: pre-wrap;
 }
+
+/* A failed run marks the Run log tab, so the failure is visible without opening
+   it -- a compile error is not a property of the selected component, so it is not
+   shown in the inspector. */
+.modelica-studio-tab.is-bad {
+  color: var(--text-error);
+}
+.modelica-studio-tab.is-bad::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--text-error);
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* The palette row takes focus, so the focused row must be visible as such --
+   the palette is walkable by keyboard and an invisible cursor is not a cursor. */
+.modelica-studio-palette-item:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+  background: var(--background-modifier-hover);
+}

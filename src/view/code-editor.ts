@@ -104,7 +104,21 @@ export function createCodeEditor(
 
   /* ---- text and caret ---- */
 
-  const text = (): string => editor.textContent ?? "";
+  /**
+   * The editor's text, with the layout padding removed.
+   *
+   * `highlight` appends a newline so the last line is not collapsed by
+   * `white-space: pre`, and a contenteditable has the same artefact of its own:
+   * the text content of a block always ends with a line break. Reading it back
+   * verbatim returned that padding AS DATA, so the value grew by one newline on
+   * every repaint -- and a save and reopen added another, for ever. The trim is
+   * the exact inverse of the padding, which is why it is a single character and
+   * not a general `trimEnd`.
+   */
+  const text = (): string => {
+    const raw = editor.textContent ?? "";
+    return raw.endsWith("\n") ? raw.slice(0, -1) : raw;
+  };
 
   /** Caret position as a plain-text offset from the start of the document. */
   function caretOffset(): number {

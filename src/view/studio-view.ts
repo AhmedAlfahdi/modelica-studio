@@ -9,7 +9,7 @@
  * an escape hatch when a construct has no diagram form.
  */
 
-import { ItemView, Notice, Platform, WorkspaceLeaf, setIcon } from "obsidian";
+import { App, ItemView, Modal, Notice, Platform, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import type ModelicaStudioPlugin from "../main";
 import { SchematicEditor } from "./editor";
 import { drawPlot, plotThemeFrom, seriesColor, summarize, type SeriesStyle } from "./plot";
@@ -51,6 +51,16 @@ export class ModelicaStudioView extends ItemView {
   private inspectorEl!: HTMLElement;
   /** The run-log pane and its text, sharing the bottom area with the plot. */
   private logHost: HTMLElement | null = null;
+  /** Reverts to the saved file; disabled when there is nothing to go back to. */
+  private btnRevert: HTMLButtonElement | undefined;
+  /**
+   * The palette's rows, in the order they are drawn.
+   *
+   * Kept as a flat list so the keyboard can walk it: the rows are nested under
+   * package and group headings, but the arrows should cross those boundaries
+   * rather than stopping at each one.
+   */
+  private paletteItems: string[] = [];
   private logText: HTMLElement | null = null;
   private inspectorCol!: HTMLElement;
   private splitterEl!: HTMLElement;
@@ -370,6 +380,17 @@ export class ModelicaStudioView extends ItemView {
     // between them rather than only a report.
     addBtn(model, "files", "Model list…", "Every model saved in this vault; click one to open it", () =>
       new SavedModelsModal(this.app, this.plugin).open()
+    );
+    // The way back to the file on disk. It was the missing escape hatch: once a
+    // bad edit reached the editor and was persisted, there was no one-click return
+    // to what was last saved -- which is exactly what is wanted after a repair
+    // that made things worse.
+    this.btnRevert = addBtn(
+      model,
+      "history",
+      "Revert",
+      "Discard the changes since the last save and reload the file from disk",
+      () => void this.revertToSaved()
     );
     // Help sits at the end, after the actions: it is where you look when the
     // others have not answered the question.
@@ -1134,6 +1155,7 @@ export class ModelicaStudioView extends ItemView {
    * up front is 551 nodes, and the user is looking at one branch of it.
    */
   private renderPalette(): void {
+    this.paletteItems = [];
     if (!this.paletteEl) return;
     const started = performance.now();
     let shown = 0;
@@ -1319,6 +1341,45 @@ export class ModelicaStudioView extends ItemView {
     // The row's tooltip: the class name and what it is. `aria-label` rather than
     // `title`, so it is Obsidian's tooltip and not the browser's.
     btn.setAttribute("aria-label", `${item.name}${item.comment ? ` — ${item.comment}` : ""}`);
+    // Focusable, so the palette can be walked from the keyboard: it had no
+    // keyboard path at all, and a row now carries a second control (the help
+    // icon), which makes aiming with a mouse the only way in.
+    btn.tabIndex = 0;
+    btn.setAttribute("role", "button");
+    this.paletteItems.push(item.name);
+    const index = this.paletteItems.length - 1;
+    // Placing from the keyboard needs a canvas position; the centre of the
+    // visible area is the least surprising one.
+    const placeFromKeyboard = () => {
+      const vp = this.editor?.viewport;
+      if (!vp || !this.editor) return;
+      const w = this.canvasHost?.clientWidth ?? 0;
+      const h = this.canvasHost?.clientHeight ?? 0;
+      const inst = this.editor.addComponent(
+        item.name,
+        (w / 2 - vp.x) / vp.scale,
+        (h / 2 - vp.y) / vp.scale
+      );
+      if (inst) this.setStatus(`Added ${inst.id}.`);
+    };
+    btn.addEventListener("keydown", (ev) => {
+      const move = paletteKeyTarget(
+        this.paletteItems.map((_, i) => i),
+        index,
+        ev.key
+      );
+      if (!move) return;
+      ev.preventDefault();
+      if (move.place) {
+        placeFromKeyboard();
+        return;
+      }
+      // Focus moves rather than a cursor being drawn: the browser already tracks
+      // focus, and a second notion of "current row" would have to be kept in step.
+      const all = this.paletteEl?.querySelectorAll<HTMLElement>(".modelica-studio-palette-item");
+      all?.[move.next]?.focus();
+    });
+    btn.addEventListener("focus", () => this.setStatus(`${item.name} — press Enter to place it.`));
 
     const thumb = btn.createEl("canvas", { cls: "modelica-studio-palette-thumb" });
     thumb.width = THUMB_SIZE;
@@ -2591,6 +2652,10 @@ export class ModelicaStudioView extends ItemView {
     set(this.btnRedo, this.editor?.history.canRedo ?? false);
     set(this.btnCopy, has);
     set(this.btnPaste, this.editor?.canPaste ?? false);
+    // Revert needs a saved file; a model that has never been written has nothing
+    // to go back to, and a button that explains that only after being pressed is
+    // worse than one that is plainly unavailable.
+    set(this.btnRevert, !!this.plugin.settings.modelFiles[this.plugin.model.name]);
     void single;
   }
 
@@ -2627,6 +2692,35 @@ export class ModelicaStudioView extends ItemView {
    * Only in code mode: in diagram mode the editor is a rendering of the model, and
    * parsing it back would be a no-op at best.
    */
+  /**
+   * Put the saved file back, discarding everything since.
+   *
+   * Confirmed, because it throws away the current text with no undo. The file is
+   * read fresh rather than from anything cached: the point is to get back to what
+   * is ON DISK, which may have been changed outside the plugin.
+   */
+  async revertToSaved(): Promise<void> {
+    const name = this.plugin.model.name;
+    const path = this.plugin.settings.modelFiles[name];
+    if (!path) {
+      new Notice(`"${name}" has not been saved to a file yet, so there is nothing to revert to.`);
+      return;
+    }
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) {
+      new Notice(`The file ${path} is not there, so there is nothing to revert to.`);
+      return;
+    }
+    const confirmed = await confirmDiscard(
+      this.app,
+      `Revert "${name}"?`,
+      `Everything since the last save is discarded, and the model is reloaded from ${path}.`
+    );
+    if (!confirmed) return;
+    await this.plugin.loadModelFromPath(path);
+    this.setStatus(`Reverted ${name} to ${path}.`);
+  }
+
   flushEditorIntoModel(): void {
     if (this.mode !== "code" || !this.codeEditor) return;
     this.applyCodeToDiagram(false);
@@ -2956,6 +3050,9 @@ export class ModelicaStudioView extends ItemView {
       this.result = result;
       this.lastSimulationError = null;
       this.setCodeStatus("");
+      // A successful run clears the failure marker, so the tab only carries one
+      // while the last run is actually broken.
+      this.clearLogBadge();
       this.resetZoom();
       this.plugin.diag(
         `sim ${this.plugin.model.name}: t=${result.time[0]}..${result.time[result.time.length - 1]}` +
@@ -3041,8 +3138,11 @@ export class ModelicaStudioView extends ItemView {
       });
       this.setCodeStatus(firstLine(msg), true);
       new Notice(`Modelica: ${firstLine(msg)}`, 8000);
-      this.showDiagnostics(detail);
-      this.renderRunLog();
+      // The Run log, and brought to the front. The message was already written
+      // there; showing it AGAIN in the inspector put a compile error in a tab
+      // about the selected component, which it has nothing to do with -- and left
+      // the user to find the log themselves.
+      this.showRunLog(firstLine(msg));
       void previous;
     } finally {
       this.busy = false;
@@ -3087,14 +3187,34 @@ export class ModelicaStudioView extends ItemView {
     );
   }
 
-  /** Show compiler errors in the inspector, where they are readable. */
-  private showDiagnostics(message: string): void {
-    const el = this.inspectorEl;
-    if (!el) return;
-    const box = el.createDiv({ cls: "modelica-studio-diagnostics" });
-    box.createDiv({ cls: "modelica-studio-diagnostics-head", text: "Diagnostics" });
-    box.createEl("pre", { text: message });
-    el.prepend(box);
+  /**
+   * Bring the Run log to the front, and mark it as holding a failure.
+   *
+   * A failed run is the moment the log matters, so the tab is selected rather
+   * than left for the user to find. The tab carries a marker as well, because a
+   * failure is worth seeing when the log is not the tab in view.
+   */
+  private showRunLog(failure: string): void {
+    this.bottomTab = "log";
+    this.applyBottomTab();
+    this.renderRunLog();
+    this.setLogBadge(failure);
+  }
+
+  /** Mark the Run log tab, so a failure is visible without opening it. */
+  private setLogBadge(failure: string): void {
+    const tab = this.bottomTabEls?.log;
+    if (!tab) return;
+    tab.addClass("is-bad");
+    tab.setAttribute("aria-label", `Run log — last run failed: ${failure}`);
+  }
+
+  /** Clear the marker once a run succeeds. */
+  private clearLogBadge(): void {
+    const tab = this.bottomTabEls?.log;
+    if (!tab) return;
+    tab.removeClass("is-bad");
+    tab.setAttribute("aria-label", "Run log");
   }
 
   /**
@@ -3264,6 +3384,35 @@ export function describeToolbar(buttons: Record<string, HTMLButtonElement | unde
 
 
 /**
+ * A yes/no dialog for an action that discards work.
+ *
+ * Focuses Cancel, so a stray Enter does nothing: this is the one dialog where the
+ * wrong keypress loses the user's edits.
+ */
+function confirmDiscard(app: App, title: string, body: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const modal = new Modal(app);
+    modal.titleEl.setText(title);
+    modal.contentEl.createEl("p", { text: body });
+    let answered = false;
+    const done = (value: boolean) => {
+      if (answered) return;
+      answered = true;
+      modal.close();
+      resolve(value);
+    };
+    const buttons = modal.contentEl.createDiv({ cls: "modelica-studio-prompt-buttons" });
+    const yes = buttons.createEl("button", { cls: "mod-warning", text: "Revert" });
+    yes.addEventListener("click", () => done(true));
+    const no = buttons.createEl("button", { text: "Cancel" });
+    no.addEventListener("click", () => done(false));
+    modal.onClose = () => done(false);
+    modal.open();
+    window.setTimeout(() => no.focus(), 0);
+  });
+}
+
+/**
  * Open a URL in the user's browser rather than the Obsidian window.
  *
  * A plain click on an anchor would navigate the app window away from the studio.
@@ -3293,4 +3442,34 @@ export function openInBrowser(url: string): void {
 export function noLabelTooltip(el: HTMLElement, name: string): void {
   el.setAttribute("aria-label", name);
   el.style.setProperty("--no-tooltip", "true");
+}
+
+/**
+ * Move the palette's keyboard cursor.
+ *
+ * The palette had no keyboard support at all: every component had to be found and
+ * dragged with a mouse. Now that each row also carries a help control, a click
+ * lands on one of two things, which makes the mouse-only path worse rather than
+ * better. Arrow keys move, Enter places.
+ *
+ * Returns true when the key was handled, so the caller does not also act on it.
+ */
+export function paletteKeyTarget(
+  items: number[],
+  active: number,
+  key: string
+): { next: number; place: boolean } | null {
+  if (items.length === 0) return null;
+  if (key === "ArrowDown" || key === "ArrowUp") {
+    const step = key === "ArrowDown" ? 1 : -1;
+    // Wraps, so the ends are not dead stops.
+    const next = (active + step + items.length) % items.length;
+    return { next, place: false };
+  }
+  if (key === "Home") return { next: 0, place: false };
+  if (key === "End") return { next: items.length - 1, place: false };
+  if ((key === "Enter" || key === " ") && active >= 0 && active < items.length) {
+    return { next: active, place: true };
+  }
+  return null;
 }

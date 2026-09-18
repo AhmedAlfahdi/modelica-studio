@@ -687,6 +687,9 @@ export default class ModelicaStudioPlugin extends Plugin {
   }
 
   async onunload(): Promise<void> {
+    // Before anything else: a change made in the last 600 ms is still in the
+    // debounce timer, and once this returns there is no plugin left to write it.
+    this.flushPersistSync();
     this.backend?.dispose();
     this.backend = null;
   }
@@ -1136,9 +1139,40 @@ export default class ModelicaStudioPlugin extends Plugin {
     await this.persist();
   }
 
-  /** Persist settings and the current diagram together. */
-  async persist(): Promise<void> {
-    await this.saveData({
+  /**
+   * Where the plugin's own data file lives.
+   *
+   * Obsidian writes it through `saveData`, which is asynchronous. That is fine
+   * everywhere except unload, where the process may be gone before the promise
+   * settles — see `flushPersistSync`.
+   */
+  private dataFilePath(): string | undefined {
+    try {
+      const adapter = this.app.vault.adapter as { getBasePath?: () => string };
+      const base = adapter.getBasePath?.();
+      if (!base) return undefined;
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const path = require("node:path") as typeof import("node:path");
+      return path.join(
+        base,
+        this.app.vault.configDir,
+        "plugins",
+        this.manifest.id,
+        "data.json"
+      );
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * The payload both save paths write.
+   *
+   * One function so the synchronous and asynchronous saves cannot disagree about
+   * what is persisted — a divergence there would be a data-loss bug of its own.
+   */
+  private persistPayload(): Record<string, unknown> {
+    return {
       ...this.settings,
       model: this.model,
       modelSchema: MODEL_SCHEMA,
@@ -1147,7 +1181,42 @@ export default class ModelicaStudioPlugin extends Plugin {
       // diagram so restoring the model restores the span it is meant to run
       // over, instead of inheriting whatever the previous model used.
       modelStopTime: this.stopTime(),
-    });
+    };
+  }
+
+  /**
+   * Write the pending state synchronously, if any is pending.
+   *
+   * Called from `onunload`. Saving is debounced by 600 ms, so an edit made just
+   * before a reload or a quit was still in the timer when the plugin went away and
+   * was never written: the user's last change silently vanished. `saveData` cannot
+   * be awaited there, so the same payload is written straight to the file the app
+   * would have written.
+   *
+   * Only when a write is actually pending. Writing unconditionally on every
+   * unload would touch the file each time the plugin is disabled or the app
+   * closes, for no gain.
+   */
+  flushPersistSync(): void {
+    if (this.persistTimer === null) return;
+    window.clearTimeout(this.persistTimer);
+    this.persistTimer = null;
+    const file = this.dataFilePath();
+    if (!file) return;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require("node:fs") as typeof import("node:fs");
+      fs.writeFileSync(file, JSON.stringify(this.persistPayload(), null, 2), "utf8");
+      this.diag("unload: wrote the pending change synchronously");
+    } catch (err) {
+      // Nothing more can be done here, but it should not pass unnoticed.
+      this.diag(`unload: could not write the pending change: ${String(err)}`, "warn");
+    }
+  }
+
+  /** Persist settings and the current diagram together. */
+  async persist(): Promise<void> {
+    await this.saveData(this.persistPayload());
   }
 
   /* ---------------- model I/O ---------------- */

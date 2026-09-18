@@ -11,7 +11,7 @@
  * the list is the way in, not only a report.
  */
 
-import { App, Modal, Notice, Setting, TFile, setIcon } from "obsidian";
+import { App, Menu, Modal, Notice, Setting, TFile, setIcon } from "obsidian";
 import type ModelicaStudioPlugin from "../main";
 import { describeRow, describeSavedModels, repairModelFiles, type SavedModelRow } from "../modelica/saved-models";
 import type { Revision } from "../modelica/revisions";
@@ -163,13 +163,26 @@ export class SavedModelsModal extends Modal {
       });
     }
 
-    const remove = actions.createEl("button", { cls: "modelica-studio-saved-action is-danger" });
-    setIcon(remove, "trash");
-    remove.setAttribute("aria-label", `Delete ${row.name}`);
-    remove.title = row.status === "missing" ? "Forget this model" : "Delete the file";
-    remove.addEventListener("click", (ev) => {
+    // Delete is behind a menu, not a button on the row.
+    //
+    // It was a trash icon sitting beside the history icon on every row, which is
+    // one mis-click from destroying a model -- and one was made: a saved file
+    // ended up in the system trash while nothing on screen suggested a deletion
+    // was in progress. A menu costs one extra click and cannot be hit by accident.
+    const more = actions.createEl("button", { cls: "modelica-studio-saved-action" });
+    setIcon(more, "more-horizontal");
+    more.setAttribute("aria-label", `More actions for ${row.name}`);
+    more.addEventListener("click", (ev) => {
       ev.stopPropagation();
-      void this.deleteModel(row);
+      const menu = new Menu();
+      menu.addItem((item) =>
+        item
+          .setTitle(row.status === "missing" ? "Forget this model" : "Delete the file…")
+          .setIcon("trash")
+          .onClick(() => void this.deleteModel(row))
+      );
+      // Anchored to the button, so the menu appears where it was asked for.
+      menu.showAtMouseEvent(ev as MouseEvent);
     });
 
     if (row.status === "missing") {

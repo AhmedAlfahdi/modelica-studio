@@ -178,3 +178,31 @@ test("editing the diagram after a load saves the diagram, not the stale source",
   assert.ok(after.includes("model M"), "the diagram is serialised instead");
   assert.notEqual(after, source, "and it is not the stale source");
 });
+
+test("there is a way back to the file on disk", () => {
+  // The missing escape hatch: once a bad edit reached the editor and was
+  // persisted there was no one-click return to what was last saved, which is
+  // exactly what is wanted after a repair that made things worse.
+  assert.match(view, /async revertToSaved\(\): Promise<void>/, "the revert exists");
+  assert.match(view, /addBtn\(\s*model,\s*"history",\s*"Revert"/, "and has a button in the Model group");
+  const revert = /async revertToSaved\(\): Promise<void> \{[\s\S]*?\n  \}/.exec(view);
+  assert.ok(revert, "the implementation is present");
+
+  // It reloads from the FILE, not from anything cached: the point is to get back
+  // to what is on disk, which may have changed outside the plugin.
+  assert.match(revert[0], /loadModelFromPath\(path\)/, "it reloads from the path");
+  // It is confirmed, because it discards work with no undo.
+  assert.match(revert[0], /confirmDiscard\(/, "it asks first");
+  assert.match(revert[0], /discarded/, "and says what will be lost");
+  // And it explains itself when there is nothing to revert to.
+  assert.match(revert[0], /has not been saved to a file yet/, "no file: it says so");
+  assert.match(revert[0], /is not there, so there is nothing to revert to/, "missing file: it says so");
+
+  // The confirmation focuses Cancel.
+  const dialog = /function confirmDiscard[\s\S]*?\n\}/.exec(view);
+  assert.ok(dialog, "the dialog is present");
+  assert.match(dialog[0], /no\.focus\(\)/, "Cancel takes focus, so a stray Enter does nothing");
+
+  // The button is disabled when there is nothing to revert to.
+  assert.match(view, /set\(this\.btnRevert, !!this\.plugin\.settings\.modelFiles/, "disabled without a file");
+});
