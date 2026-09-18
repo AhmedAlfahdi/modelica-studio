@@ -1698,3 +1698,55 @@ body.modelica-studio-resizing * {
   color: var(--text-faint);
   font-size: 11px;
 }
+
+/* Row actions in the saved-model dialog.
+   The row itself is no longer a button: a click on Delete must not also open the
+   model, so only the name is clickable and the actions sit apart from it. */
+.modelica-studio-saved-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+.modelica-studio-saved-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 5px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  box-shadow: none;
+}
+.modelica-studio-saved-action:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+/* The one destructive control, marked as such only on hover: a permanent red
+   trash icon on every row reads as an invitation. */
+.modelica-studio-saved-action.is-danger:hover {
+  color: var(--text-error);
+}
+.modelica-studio-saved-action svg {
+  width: 15px;
+  height: 15px;
+}
+.modelica-studio-saved-name.is-openable {
+  cursor: pointer;
+}
+.modelica-studio-saved-name.is-openable:hover {
+  color: var(--text-accent);
+}
+/* A revision's text, for reading rather than editing. */
+.modelica-studio-revision-text {
+  max-height: 60vh;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 5px;
+  background: var(--background-secondary);
+  font-size: 12px;
+  white-space: pre-wrap;
+}

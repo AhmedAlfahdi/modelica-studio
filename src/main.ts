@@ -28,6 +28,14 @@ import { RunLog } from "./ai/run-log";
 import { AiEnvironment, describeAvailableClasses, describeEnvironment, describeLog } from "./ai/context";
 import { LEGACY_SECRET_NAME, buildMessages, legacyKeyOf, secretNameOf } from "./ai/prompts";
 import { BENCH_PROMPTS, formatBenchmark, runBenchmark } from "./ai/benchmark";
+import {
+  isNewRevision,
+  revisionDirName,
+  revisionFileName,
+  revisionTime,
+  revisionsToPrune,
+  type Revision,
+} from "./modelica/revisions";
 import { ModelicaStudioView, VIEW_TYPE_MODELICA } from "./view/studio-view";
 import { ModelicaStudioSettingTab, DEFAULT_SETTINGS, type ModelicaStudioSettings , mergeSettings, migrateSettings } from "./settings";
 
@@ -186,6 +194,115 @@ export default class ModelicaStudioPlugin extends Plugin {
    * Stored next to the plugin rather than in the vault, so it is not synced and
    * does not appear as a file the user might edit.
    */
+  /**
+   * Where a model's revisions are kept.
+   *
+   * In the plugin's own folder, NOT in the vault: snapshots that sit beside the
+   * models they protect can be moved, renamed or deleted along with them, which is
+   * the opposite of a backup. The plugin's folder is the one location guaranteed
+   * writable and guaranteed to belong to this plugin.
+   */
+  private revisionsRoot(): string | undefined {
+    try {
+      const adapter = this.app.vault.adapter as { getBasePath?: () => string };
+      const base = adapter.getBasePath?.();
+      if (!base) return undefined;
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const path = require("node:path") as typeof import("node:path");
+      return path.join(base, this.app.vault.configDir, "plugins", this.manifest.id, "history");
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Every revision of a model, newest first. Never throws: history is a bonus. */
+  listRevisions(modelName: string): Revision[] {
+    const root = this.revisionsRoot();
+    if (!root) return [];
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require("node:fs") as typeof import("node:fs");
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const path = require("node:path") as typeof import("node:path");
+      const dir = path.join(root, revisionDirName(modelName));
+      if (!fs.existsSync(dir)) return [];
+      const out: Revision[] = [];
+      for (const file of fs.readdirSync(dir)) {
+        const at = revisionTime(file);
+        if (!at) continue;
+        out.push({ file, at, bytes: fs.statSync(path.join(dir, file)).size });
+      }
+      return out.sort((a, b) => b.at.getTime() - a.at.getTime());
+    } catch {
+      return [];
+    }
+  }
+
+  /** The text of one revision, or null when it cannot be read. */
+  readRevision(modelName: string, file: string): string | null {
+    const root = this.revisionsRoot();
+    if (!root) return null;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require("node:fs") as typeof import("node:fs");
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const path = require("node:path") as typeof import("node:path");
+      // `file` comes from our own listing, but it is still checked: a name with a
+      // separator in it would escape the model's directory.
+      if (file.includes("/") || file.includes("\\") || file.includes("..")) return null;
+      return fs.readFileSync(path.join(root, revisionDirName(modelName), file), "utf8");
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Record a revision, if it differs from the last one.
+   *
+   * Called before a save overwrites a file, so what is stored is the version being
+   * replaced rather than the one replacing it. Never throws: a history that cannot
+   * be written must not stop a model being saved.
+   */
+  snapshotRevision(modelName: string, source: string): void {
+    const root = this.revisionsRoot();
+    if (!root || !source.trim()) return;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require("node:fs") as typeof import("node:fs");
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const path = require("node:path") as typeof import("node:path");
+      const dir = path.join(root, revisionDirName(modelName));
+      const existing = this.listRevisions(modelName);
+      const newest = existing[0] ? this.readRevision(modelName, existing[0].file) : undefined;
+      if (!isNewRevision(newest ?? undefined, source)) return;
+
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, revisionFileName(new Date())), source, "utf8");
+
+      for (const old of revisionsToPrune(this.listRevisions(modelName))) {
+        fs.rmSync(path.join(dir, old.file), { force: true });
+      }
+      this.diag(`history: kept a revision of ${modelName} (${existing.length + 1} total)`);
+    } catch (err) {
+      this.diag(`history: could not record a revision of ${modelName}: ${String(err)}`, "warn");
+    }
+  }
+
+  /** Throw away a model's whole history. Used when the model itself is deleted. */
+  clearRevisions(modelName: string): void {
+    const root = this.revisionsRoot();
+    if (!root) return;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require("node:fs") as typeof import("node:fs");
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const path = require("node:path") as typeof import("node:path");
+      fs.rmSync(path.join(root, revisionDirName(modelName)), { recursive: true, force: true });
+    } catch {
+      /* a history that cannot be removed is not worth a failure */
+    }
+  }
+
   private libraryCachePath(): string | undefined {
     try {
       // `manifest.dir` is not populated at runtime, so the path is derived from
@@ -1107,6 +1224,13 @@ export default class ModelicaStudioPlugin extends Plugin {
 
     if (here) {
       const file = this.app.vault.getAbstractFileByPath(here) as TFile;
+      // Snapshot what is being REPLACED, before it is replaced. On disk rather
+      // than in memory, so it survives the plugin and can be read with `ls`.
+      try {
+        this.snapshotRevision(this.model.name, await this.app.vault.read(file));
+      } catch {
+        /* history is a bonus; a save must not fail because it could not be kept */
+      }
       await this.app.vault.modify(file, source);
       this.settings.modelFiles[this.model.name] = here;
       await this.saveSettings();
