@@ -29,6 +29,7 @@ import { serializeDiagram } from "../modelica/serializer";
 import { fuzzyFilter } from "../modelica/fuzzy";
 import { docUrlFor, libraryVersionFrom } from "../modelica/doclinks";
 import { acceptsFileDrag, droppedVaultFile } from "./drop";
+import { resultsTabState, tabLabel, tabsForMode } from "./bottom-tabs";
 import { SavedModelsModal } from "./saved-models-modal";
 import { HelpModal } from "./help-modal";
 import { SimulationError } from "../omc/backend";
@@ -1666,6 +1667,9 @@ export class ModelicaStudioView extends ItemView {
 
   /** Show the bottom pane's active tab. */
   private applyBottomTab(): void {
+    // Healed here as well as on a click: the mode can change without one, and a
+    // stored tab that the mode hides would leave the strip with nothing selected.
+    this.bottomTab = resultsTabState(this.mode, this.bottomTab, this.bottomTab).tab;
     const showPlot = this.bottomTab === "plot" && this.result !== null;
     const showLog = this.bottomTab === "log";
     if (this.plotHost) this.plotHost.style.display = showPlot ? "" : "none";
@@ -1907,22 +1911,18 @@ export class ModelicaStudioView extends ItemView {
       tabs.setAttribute("role", "tablist");
       noLabelTooltip(tabs, "Results");
       this.bottomTabEls = {};
-      for (const [id, label] of [
-        ["plot", "Plot"],
-        ["source", "Source"],
-        ["log", "Run log"],
-      ] as const) {
-        const b = tabs.createEl("button", { cls: "modelica-studio-tab", text: label });
+      for (const id of tabsForMode("diagram")) {
+        const b = tabs.createEl("button", { cls: "modelica-studio-tab", text: tabLabel(id) });
         b.setAttribute("role", "tab");
         b.setAttribute("aria-selected", "false");
         b.addEventListener("click", () => {
-          if (id === "source") {
-            // Code mode is the source, so the tab switches to it rather than
-            // showing a second read-only copy of the same text.
-            this.setMode("code");
-            return;
-          }
-          this.bottomTab = id;
+          // One state machine rather than two assignments in the click path and a
+          // third in the mode switch. Clicking Source used to change the MODE and
+          // leave the active tab on a tab that mode hides, so the strip ended up
+          // with nothing selected and the way back was the tab that had vanished.
+          const next = resultsTabState(this.mode, this.bottomTab, id);
+          if (next.mode !== this.mode) this.setMode(next.mode);
+          this.bottomTab = next.tab;
           this.applyBottomTab();
         });
         this.bottomTabEls[id] = b;

@@ -539,3 +539,67 @@ test("the plot draws many traces, and paging does not hide them", async () => {
   assert.equal(d["a degenerate x-range does not produce NaN"], "survived a zero-width range");
   assert.equal(d["a zero-size canvas does not throw"], "survived");
 });
+
+test("the results tabs never leave the strip with nothing selected", async () => {
+  // Reported as "the link logic takes me in circular logic": clicking Source
+  // switches to code mode, which HIDES the Source tab -- while the active tab is
+  // still `source`. The result is a tab strip with no visible selection and no
+  // obvious way back, because the tab that would take you back is the one that
+  // just disappeared.
+  //
+  // The state machine is small enough to check exhaustively: from every (mode,
+  // tab) pair, every tab click must lead to a state where some VISIBLE tab is
+  // active.
+  const out = page(
+    `import { resultsTabState } from "${ROOT}/src/view/bottom-tabs";`,
+    "const modes = ['diagram', 'code'];",
+    "const tabs = ['plot', 'source', 'log'];",
+    "const problems = [];",
+    "for (const mode of modes) {",
+    "  for (const tab of tabs) {",
+    "    for (const clicked of tabs) {",
+    "      const next = resultsTabState(mode, tab, clicked);",
+    "      const visible = next.visibleTabs.length;",
+    "      const activeVisible = next.visibleTabs.includes(next.tab);",
+    "      if (visible === 0) problems.push(mode + '/' + tab + ' click ' + clicked + ': no tabs visible');",
+    "      if (!activeVisible) problems.push(mode + '/' + tab + ' click ' + clicked + ': active tab ' + next.tab + ' is not one of ' + next.visibleTabs.join(','));",
+    "    }",
+    "  }",
+    "}",
+    "window.test('no sequence strands the tab strip', () => problems.length ? problems.join(' | ') : 'ok');",
+    "// And the specific report: click Source, then try to get back.",
+    "window.test('clicking Source in diagram mode leaves something selected', () => {",
+    "  const next = resultsTabState('diagram', 'plot', 'source');",
+    "  return 'mode=' + next.mode + ' tab=' + next.tab + ' visible=' + next.visibleTabs.join(',');",
+    "});",
+    "window.test('Source is not offered in code mode, where it would be a no-op', () =>",
+    "  resultsTabState('code', 'log', 'plot').visibleTabs.join(','));",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  const d = passed(out);
+  assert.equal(d["no sequence strands the tab strip"], "ok", "every sequence leaves a visible active tab");
+  assert.match(d["clicking Source in diagram mode leaves something selected"], /visible=.*plot/);
+  assert.match(d["clicking Source in diagram mode leaves something selected"], /mode=code/);
+  assert.ok(
+    !/visible=[^,]*source/.test(d["Source is not offered in code mode, where it would be a no-op"]),
+    "the source tab is gone in code mode"
+  );
+});
+
+test("the view uses the tab state machine, not a parallel copy of it", () => {
+  // The bug was two places deciding the same thing: the click path set `bottomTab`
+  // and the mode switch hid the tab, and neither knew about the other. The fix is
+  // only real if the view actually goes through the one function.
+  const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  assert.match(view, /resultsTabState\(this\.mode, this\.bottomTab, id\)/, "the click goes through it");
+  assert.match(view, /resultsTabState\(this\.mode, this\.bottomTab, this\.bottomTab\)/, "and applyBottomTab heals");
+  assert.match(view, /tabsForMode\("diagram"\)/, "the strip is built from the same list");
+  assert.match(view, /tabLabel\(id\)/, "and the labels come from it too");
+
+  // The old shape must be gone: a click handler that changed the mode and returned.
+  assert.ok(
+    !/if \(id === "source"\) \{[\s\S]{0,120}this\.setMode\("code"\);\s*return;/.test(view),
+    "the source tab no longer switches mode and returns, leaving the tab stranded"
+  );
+});
