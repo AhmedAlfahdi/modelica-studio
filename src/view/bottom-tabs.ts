@@ -1,75 +1,37 @@
 /**
- * The results tab strip, as a state machine.
+ * The results tab strip.
  *
- * Reported as "the link logic takes me in circular logic", and the cause was that
- * clicking a tab could switch the editor MODE without updating which tab is
- * active. Source switches to code mode; code mode hides the Source tab. Clicking
- * it therefore left the strip with nothing selected, and the obvious way back —
- * click Source again — was the tab that had just disappeared.
+ * Two tabs, both always present: the plot and the run log. There was a third,
+ * `source`, which was not a view of the results at all — it was a shortcut into
+ * code mode, and since the toolbar already has a Code tab it read as a second,
+ * duplicate way to do the same thing. It is gone.
  *
- * That is a state machine with three states and a coupling to a second one, which
- * is small enough to check exhaustively rather than reason about. Extracted from
- * the view for exactly that reason.
+ * Removing it also removed the strip's dependence on the editor mode. The mode was
+ * consulted for exactly one reason: to hide the source tab in code mode, where it
+ * would have been a no-op. With that gone the visible tabs are a constant, so what
+ * remains here is the guard that the active tab is one that exists.
  */
 
 /** The tabs the results pane can show. */
-export type ResultsTab = "plot" | "source" | "log";
+export type ResultsTab = "plot" | "log";
 
-/** The editor modes those tabs interact with. */
-export type EditorMode = "diagram" | "code";
-
-export interface ResultsTabState {
-  /** The mode after the click. */
-  mode: EditorMode;
-  /** The tab that is active after the click. */
-  tab: ResultsTab;
-  /** The tabs that are actually in the strip after the click. */
-  visibleTabs: ResultsTab[];
-}
+/** Every tab, in the order they are drawn. */
+export const RESULTS_TABS: ResultsTab[] = ["plot", "log"];
 
 /**
- * What clicking a tab does.
+ * The tab that is active after one is clicked.
  *
- * The rule the bug was missing: **the active tab must always be one that exists**.
- * `source` is not a third view of the results — it is a shortcut into code mode —
- * so clicking it changes the mode and leaves the active tab somewhere visible
- * rather than on itself.
+ * Idempotent, and never returns a tab outside `RESULTS_TABS`: an unknown id leaves
+ * the strip as it was rather than selecting something that is not there. That
+ * guard is the whole function now — it used to be a state machine coupled to the
+ * editor mode, and the fault it was written for was a strip that could end up with
+ * nothing selected and no way back.
  */
-export function resultsTabState(
-  mode: EditorMode,
-  current: ResultsTab,
-  clicked: ResultsTab
-): ResultsTabState {
-  // Source is available only where switching to code is meaningful. In code mode
-  // the source is already on screen, so the tab is removed rather than left as a
-  // no-op that appears to do nothing.
-  const visibleTabs: ResultsTab[] =
-    mode === "code" ? ["plot", "log"] : ["plot", "source", "log"];
-
-  if (clicked === "source" && mode === "diagram") {
-    // A shortcut, not a view: the mode changes AND the active tab moves to one
-    // that survives the change. Leaving it on `source` is what stranded the strip.
-    return { mode: "code", tab: "plot", visibleTabs: ["plot", "log"] };
-  }
-
-  // The invariant, applied on every call rather than only on the click: the active
-  // tab must be one that exists. The exhaustive test found a second way to strand
-  // the strip that a click-only fix would have missed -- the mode can change
-  // without a tab being clicked at all, leaving `source` active in code mode.
-  // Falling back to the first visible tab is what makes that impossible.
-  if (!visibleTabs.includes(clicked)) {
-    const next = visibleTabs.includes(current) ? current : visibleTabs[0];
-    return { mode, tab: next, visibleTabs };
-  }
-  return { mode, tab: clicked, visibleTabs };
+export function resultsTabState(current: ResultsTab, clicked: ResultsTab): ResultsTab {
+  return RESULTS_TABS.includes(clicked) ? clicked : current;
 }
 
-/** The tabs to draw for a mode, in order. */
-export function tabsForMode(mode: EditorMode): ResultsTab[] {
-  return mode === "code" ? ["plot", "log"] : ["plot", "source", "log"];
-}
-
-/** The label a tab shows. Source is named for what it does, not where it goes. */
+/** The label a tab shows. */
 export function tabLabel(tab: ResultsTab): string {
-  return tab === "plot" ? "Plot" : tab === "source" ? "Source" : "Run log";
+  return tab === "plot" ? "Plot" : "Run log";
 }

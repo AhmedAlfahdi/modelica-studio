@@ -2037,7 +2037,7 @@ export class SchematicEditor {
           ["This model has no schematic.", "16px sans-serif"],
           [
             `${vars.length} variable${vars.length === 1 ? "" : "s"} and ${vars.length === 1 ? "its" : "their"} equations —` +
-              ` the physics is in the Source tab.`,
+              ` switch to Code to read the physics.`,
             "13px sans-serif",
           ],
           [vars.map((v) => v.id).join(", "), "13px monospace"],

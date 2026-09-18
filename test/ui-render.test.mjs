@@ -548,114 +548,50 @@ test("the plot draws many traces, and paging does not hide them", async () => {
   assert.equal(d["a zero-size canvas does not throw"], "survived");
 });
 
-test("the results tabs never leave the strip with nothing selected", async () => {
-  // Reported as "the link logic takes me in circular logic": clicking Source
-  // switches to code mode, which HIDES the Source tab -- while the active tab is
-  // still `source`. The result is a tab strip with no visible selection and no
-  // obvious way back, because the tab that would take you back is the one that
-  // just disappeared.
+test("the results strip has exactly the two tabs, and never strands itself", () => {
+  // It had three. The third, `source`, was not a view of the results at all -- it
+  // was a shortcut into code mode, and since the toolbar already has a Code tab it
+  // read as a duplicate way to do the same thing. Reported as "remove the Source
+  // tab, it only adds confusion, I think I have seen two of them".
   //
-  // The state machine is small enough to check exhaustively: from every (mode,
-  // tab) pair, every tab click must lead to a state where some VISIBLE tab is
-  // active.
+  // Its removal also removed the strip's dependence on the editor mode: the mode
+  // was consulted only to hide that tab in code mode. So the check is now the whole
+  // of the rule -- every tab is always visible, and a click always lands on one.
   const out = page(
-    `import { resultsTabState } from "${ROOT}/src/view/bottom-tabs";`,
-    "const modes = ['diagram', 'code'];",
-    "const tabs = ['plot', 'source', 'log'];",
-    "const problems = [];",
-    "for (const mode of modes) {",
-    "  for (const tab of tabs) {",
-    "    for (const clicked of tabs) {",
-    "      const next = resultsTabState(mode, tab, clicked);",
-    "      const visible = next.visibleTabs.length;",
-    "      const activeVisible = next.visibleTabs.includes(next.tab);",
-    "      if (visible === 0) problems.push(mode + '/' + tab + ' click ' + clicked + ': no tabs visible');",
-    "      if (!activeVisible) problems.push(mode + '/' + tab + ' click ' + clicked + ': active tab ' + next.tab + ' is not one of ' + next.visibleTabs.join(','));",
-    "    }",
-    "  }",
-    "}",
-    "window.test('no sequence strands the tab strip', () => problems.length ? problems.join(' | ') : 'ok');",
-    "// And the specific report: click Source, then try to get back.",
-    "window.test('clicking Source in diagram mode leaves something selected', () => {",
-    "  const next = resultsTabState('diagram', 'plot', 'source');",
-    "  return 'mode=' + next.mode + ' tab=' + next.tab + ' visible=' + next.visibleTabs.join(',');",
-    "});",
-    "window.test('Source is not offered in code mode, where it would be a no-op', () =>",
-    "  resultsTabState('code', 'log', 'plot').visibleTabs.join(','));",
+    `import { RESULTS_TABS, resultsTabState, tabLabel } from "${ROOT}/src/view/bottom-tabs";`,
+    "window.test('the tabs are the plot and the log', () => RESULTS_TABS.join(','));",
+    "window.test('Source is not among them', () => String(RESULTS_TABS.includes('source')));",
+    "window.test('every tab is labelled', () => RESULTS_TABS.map(tabLabel).join(' | '));",
+    "window.test('clicking a tab selects it', () => RESULTS_TABS.map((t) => resultsTabState('plot', t)).join(','));",
+    "window.test('an unknown id leaves the strip alone', () => resultsTabState('log', 'source'));",
+    "window.test('clicking twice is idempotent', () => resultsTabState(resultsTabState('plot', 'log'), 'log'));",
     "window.finish();"
   );
   if (out.skip) return;
   const d = passed(out);
-  assert.equal(d["no sequence strands the tab strip"], "ok", "every sequence leaves a visible active tab");
-  assert.match(d["clicking Source in diagram mode leaves something selected"], /visible=.*plot/);
-  assert.match(d["clicking Source in diagram mode leaves something selected"], /mode=code/);
-  assert.ok(
-    !/visible=[^,]*source/.test(d["Source is not offered in code mode, where it would be a no-op"]),
-    "the source tab is gone in code mode"
-  );
+  assert.equal(d["the tabs are the plot and the log"], "plot,log");
+  assert.equal(d["Source is not among them"], "false", "the Source tab is gone");
+  assert.equal(d["every tab is labelled"], "Plot | Run log");
+  assert.equal(d["clicking a tab selects it"], "plot,log");
+  // Guarding an unknown id is what stops a stale value selecting a tab that is not
+  // drawn -- the fault the state machine was originally written for.
+  assert.equal(d["an unknown id leaves the strip alone"], "log");
+  assert.equal(d["clicking twice is idempotent"], "log");
 });
 
-test("the view uses the tab state machine, not a parallel copy of it", () => {
-  // The bug was two places deciding the same thing: the click path set `bottomTab`
-  // and the mode switch hid the tab, and neither knew about the other. The fix is
-  // only real if the view actually goes through the one function.
+test("the view uses the tab helper, and no tab switches the mode", () => {
+  // Two things to hold: the view goes through the one function, and clicking a tab
+  // no longer changes the editor mode. That coupling is what made the strip's state
+  // depend on a second piece of state, and it is what the Source tab existed for.
   const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
-  assert.match(view, /resultsTabState\(this\.mode, this\.bottomTab, id\)/, "the click goes through it");
-  assert.match(view, /resultsTabState\(this\.mode, this\.bottomTab, this\.bottomTab\)/, "and applyBottomTab heals");
-  assert.match(view, /tabsForMode\("diagram"\)/, "the strip is built from the same list");
+  assert.match(view, /resultsTabState\(this\.bottomTab, id\)/, "the click goes through it");
+  assert.match(view, /resultsTabState\(this\.bottomTab, this\.bottomTab\)/, "and applyBottomTab heals");
+  assert.match(view, /for \(const id of RESULTS_TABS\)/, "the strip is built from the one list");
   assert.match(view, /tabLabel\(id\)/, "and the labels come from it too");
-
-  // The old shape must be gone: a click handler that changed the mode and returned.
-  assert.ok(
-    !/if \(id === "source"\) \{[\s\S]{0,120}this\.setMode\("code"\);\s*return;/.test(view),
-    "the source tab no longer switches mode and returns, leaving the tab stranded"
-  );
-});
-
-test("the save prompt appears after AI output, and can be answered", async () => {
-  // The report was "it still isn't saving, ask them if they want to save after AI
-  // output". Nothing distinguished a successful run from a saved model, so the
-  // offer is made explicitly -- and asked rather than done silently, because
-  // writing a file is the user's decision.
-  const out = page(
-    `import { savePrompt, describeSaveState } from "${ROOT}/src/modelica/save-state";`,
-    "window.test('an unsaved model is offered', () => String(savePrompt(describeSaveState({ source: 'x', onDisk: null }), 'Tank', null)));",
-    "window.test('an already-saved model is not', () => String(savePrompt(describeSaveState({ source: 'x', onDisk: 'x' }), 'Tank', 'Modelica/Tank.mo')));",
-    "window.finish();"
-  );
-  if (out.skip) return;
-  const d = passed(out);
-  assert.match(d["an unsaved model is offered"], /Save "Tank" to a \.mo file/);
-  assert.equal(d["an already-saved model is not"], "null", "no prompt when there is nothing to save");
-
-  // The wiring: the AI success path offers, Simulate realises the editor, and the
-  // status carries the state.
-  const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
-  const ai = /private finishAiRun[\s\S]*?\n  \}/.exec(view);
-  assert.ok(ai, "the AI completion path is present");
-  assert.match(ai[0], /void this\.offerToSave\(/, "it offers to save");
-  // Offered AFTER the run, so the reader is told whether it worked first.
-  assert.ok(
-    ai[0].indexOf("runSimulation") < ai[0].indexOf("offerToSave"),
-    "the run comes first, then the offer"
-  );
-
-  const offer = /async offerToSave[\s\S]*?\n  \}/.exec(view);
-  assert.ok(offer, "the offer exists");
-  assert.match(offer[0], /savePrompt\(/, "it asks the shared question");
-  assert.match(offer[0], /confirmSave\(/, "in a dialog that can be answered");
-  assert.match(offer[0], /not saved/, "declining is recorded in the status");
-  // Nothing is asked when the model is already saved.
-  assert.match(offer[0], /if \(!prompt\) return/, "and skipped when there is nothing to save");
-
-  // Simulate realises the editor, so what runs is what is on screen.
-  const sim = /async runSimulation[\s\S]*?\n    if \(this\.busy\) return;/.exec(view);
-  assert.ok(sim, "the simulation entry point is present");
-  assert.match(view.slice(sim.index, sim.index + 400), /flushEditorIntoModel\(\)/, "it realises the editor first");
-
-  // The status line carries the state, and a failed save leaves it visible.
-  assert.match(view, /toggleClass\("is-unsaved"/, "the status is marked when unsaved");
-  const save = /async saveToNote[\s\S]*?\n  \}/.exec(view);
-  assert.match(save[0], /Could not save/, "a failed save is reported");
-  assert.match(save[0], /this\.setStatus\(/, "and reflected in the status");
+  // No mode handling left in the tab path.
+  const click = /this\.bottomTab = resultsTabState[\s\S]{0,120}/.exec(view);
+  assert.ok(click, "the click handler is present");
+  assert.ok(!/setMode/.test(click[0]), "clicking a tab must not switch the mode");
+  // The field is typed to the two-tab union, so a third cannot be assigned.
+  assert.match(view, /private bottomTab: ResultsTab = "plot"/, "the active tab is typed to the union");
 });

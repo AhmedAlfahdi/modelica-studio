@@ -29,7 +29,7 @@ import { serializeDiagram } from "../modelica/serializer";
 import { fuzzyFilter } from "../modelica/fuzzy";
 import { docUrlFor, libraryVersionFrom } from "../modelica/doclinks";
 import { acceptsFileDrag, droppedVaultFile } from "./drop";
-import { resultsTabState, tabLabel, tabsForMode } from "./bottom-tabs";
+import { RESULTS_TABS, resultsTabState, tabLabel, type ResultsTab } from "./bottom-tabs";
 import { savePrompt } from "../modelica/save-state";
 import { SavedModelsModal } from "./saved-models-modal";
 import { HelpModal } from "./help-modal";
@@ -109,7 +109,7 @@ export class ModelicaStudioView extends ItemView {
   /** Filter text for the variable list. */
   private seriesFilter = "";
   /** Which bottom tab is showing. */
-  private bottomTab: "plot" | "source" | "log" = "plot";
+  private bottomTab: ResultsTab = "plot";
   /** Header of the bottom pane, whose actions depend on the tab. */
   private bottomBarEl: HTMLElement | null = null;
   private bottomActionsEl: HTMLElement | null = null;
@@ -1887,9 +1887,10 @@ export class ModelicaStudioView extends ItemView {
 
   /** Show the bottom pane's active tab. */
   private applyBottomTab(): void {
-    // Healed here as well as on a click: the mode can change without one, and a
-    // stored tab that the mode hides would leave the strip with nothing selected.
-    this.bottomTab = resultsTabState(this.mode, this.bottomTab, this.bottomTab).tab;
+    // Healed here as well as on a click. Nothing can invalidate the active tab now
+    // that every tab is a view of the results, but the guard is what keeps that
+    // true if a third one is ever added back.
+    this.bottomTab = resultsTabState(this.bottomTab, this.bottomTab);
     const showPlot = this.bottomTab === "plot" && this.result !== null;
     const showLog = this.bottomTab === "log";
     if (this.plotHost) this.plotHost.style.display = showPlot ? "" : "none";
@@ -1899,7 +1900,7 @@ export class ModelicaStudioView extends ItemView {
       this.emptyEl.style.display = this.result || showLog ? "none" : "";
     }
     if (showLog) this.renderRunLog();
-    // The plot's actions and scale controls belong to the plot, not the source.
+    // The plot's actions and scale controls belong to the plot, not the log.
     if (this.bottomActionsEl) {
       this.bottomActionsEl.style.display = showPlot ? "" : "none";
     }
@@ -1907,11 +1908,8 @@ export class ModelicaStudioView extends ItemView {
       this.inlineScale.style.display =
         showPlot && this.inlineScale.childElementCount > 0 ? "" : "none";
     }
-    // In code mode the source is already on screen, so the tab that reveals it
-    // is removed rather than left as a no-op.
-    if (this.bottomTabEls?.source) {
-      this.bottomTabEls.source.style.display = this.mode === "code" ? "none" : "";
-    }
+    // No tab is hidden per mode any more. The one that was -- Source, in code
+    // mode, where it would have been a no-op -- is gone entirely.
     for (const [id, b] of Object.entries(this.bottomTabEls ?? {})) {
       b.toggleClass("is-active", id === this.bottomTab);
       b.setAttribute("aria-selected", id === this.bottomTab ? "true" : "false");
@@ -2113,7 +2111,7 @@ export class ModelicaStudioView extends ItemView {
    * covers half the traces and the curves are unreadable.
    */
   /**
-   * Build the bottom pane: a tab strip, the plot, and the source.
+   * Build the bottom pane: a tab strip, the plot, and the run log.
    *
    * Runs when the result changes. Clicking a tab must NOT rebuild any of this —
    * the plot canvas and the source element are long-lived, and recreating them
@@ -2131,7 +2129,7 @@ export class ModelicaStudioView extends ItemView {
       tabs.setAttribute("role", "tablist");
       noLabelTooltip(tabs, "Results");
       this.bottomTabEls = {};
-      for (const id of tabsForMode("diagram")) {
+      for (const id of RESULTS_TABS) {
         const b = tabs.createEl("button", { cls: "modelica-studio-tab", text: tabLabel(id) });
         b.setAttribute("role", "tab");
         b.setAttribute("aria-selected", "false");
@@ -2140,9 +2138,9 @@ export class ModelicaStudioView extends ItemView {
           // third in the mode switch. Clicking Source used to change the MODE and
           // leave the active tab on a tab that mode hides, so the strip ended up
           // with nothing selected and the way back was the tab that had vanished.
-          const next = resultsTabState(this.mode, this.bottomTab, id);
-          if (next.mode !== this.mode) this.setMode(next.mode);
-          this.bottomTab = next.tab;
+          // No mode switch: every tab is a view of the results now, so clicking
+          // one only chooses what to show.
+          this.bottomTab = resultsTabState(this.bottomTab, id);
           this.applyBottomTab();
         });
         this.bottomTabEls[id] = b;
