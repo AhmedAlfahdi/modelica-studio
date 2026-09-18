@@ -35,7 +35,7 @@ const HEAD = [
   "  const opts = over || {};",
   "  return {",
   "    app,",
-  "    manifest: { id: 'modelica-studio', version: '0.1.0-beta.1' },",
+  "    manifest: { id: 'modelica-studio', version: '0.2.0-beta.1' },",
   "    settings: Object.assign({ modelFolder: 'Modelica', modelFiles: {} }, opts.settings),",
   "    model: { name: 'Tank', components: [], connections: [], equations: [] },",
   "    backend: null,",
