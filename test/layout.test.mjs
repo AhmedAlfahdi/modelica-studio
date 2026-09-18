@@ -12,13 +12,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import fs from "node:fs";
-import { buildLibs, repoRoot } from "./helpers/build.mjs";
+import {
+  clampInspectorWidth,
+  clampResultsHeight,
+  CODE_RESULTS_H,
+  DEFAULT_RESULTS_H,
+  heightFromTopEdgeDrag,
+  MIN_RESULTS_H,
+} from "../src/view/panes.ts";
+import { repoRoot } from "./helpers/build.mjs";
 
-// The clamp is pure, but it lives in a module that imports Obsidian.
-const mod = await import(
-  path.join(buildLibs("layout-lib", ["src/view/panes.ts"]), "panes.js")
-);
-const { clampResultsHeight, clampInspectorWidth, MIN_RESULTS_H, DEFAULT_RESULTS_H } = mod;
+// Imported directly rather than through a bundle: `panes.ts` is kept free of any
+// Obsidian import precisely so its numbers can be tested as they are.
 
 test("the results pane cannot be dragged taller than the view allows", () => {
   const view = 900;
@@ -69,12 +74,9 @@ test("code mode asks for a shorter results pane than diagram mode", async () => 
   // The pane sits ABOVE the editing area, so its height comes straight out of
   // what is being edited. At the diagram default it took 38% of a 937px view and
   // left the code editor looking like mostly empty space above the text.
-  const panes = await import(
-    path.join(buildLibs("layout-lib2", ["src/view/panes.ts"]), "panes.js")
-  );
   const view = 937;
-  const diagram = panes.clampResultsHeight(panes.DEFAULT_RESULTS_H, view);
-  const code = panes.clampResultsHeight(panes.CODE_RESULTS_H, view);
+  const diagram = clampResultsHeight(DEFAULT_RESULTS_H, view);
+  const code = clampResultsHeight(CODE_RESULTS_H, view);
   assert.ok(code < diagram, `code mode leaves more room, got ${code} vs ${diagram}`);
   // And the editor gets the majority of a normal view.
   assert.ok(code / view < 0.3, `the pane takes well under a third, got ${code}/${view}`);
@@ -94,14 +96,25 @@ test("there is exactly one handle between the results and the code pane", () => 
   );
 
   const src = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
-  // The handle renders on the pane's BOTTOM edge, which is the line between the
-  // results and the editing area — so it comes AFTER the results pane in document
-  // order. Before the pane it sat on the pane's top edge, above the tab strip.
-  const resultsIdx = src.indexOf("const resultsCol = root.createDiv");
+  // The handle renders on the pane's TOP edge, which is the boundary between the
+  // diagram above and the results below -- so it comes BEFORE the results pane in
+  // document order, and after the editing area.
+  //
+  // It used to come after the pane, putting it on the pane's bottom edge. That is
+  // still attached to the pane, but it sits against the status bar at the far end
+  // of the window: nowhere near the diagram it divides, and reported as "there is
+  // no handle for the plot section" by someone looking straight at it.
   const splitIdx = src.indexOf("const resultsSplitter = root.createDiv");
-  const codeIdx = src.indexOf("this.buildCodePane(root)");
-  assert.ok(resultsIdx < splitIdx, "the handle follows the pane it bounds");
-  assert.ok(splitIdx < codeIdx, "and precedes the editing area it divides from");
+  const resultsIdx = src.indexOf("const resultsCol = root.createDiv");
+  const bodyIdx = src.indexOf('const body = root.createDiv({ cls: "modelica-studio-body" })');
+  // Each anchor must EXIST before it is compared: `indexOf` answers -1 for a
+  // rename, and -1 is less than everything, so a missing anchor would make the
+  // ordering assertion pass while proving nothing. That happened here.
+  assert.ok(bodyIdx >= 0, "the editing area anchor was found");
+  assert.ok(splitIdx >= 0, "the handle anchor was found");
+  assert.ok(resultsIdx >= 0, "the results pane anchor was found");
+  assert.ok(splitIdx < resultsIdx, "the handle draws the pane's top edge, so it precedes it");
+  assert.ok(bodyIdx < splitIdx, "and follows the editing area it divides from");
 });
 
 test("the grip follows the pointer", () => {
@@ -119,9 +132,13 @@ test("the grip follows the pointer", () => {
   const impl = /private installResultsResize[\s\S]*?\n  \}/.exec(src);
   assert.ok(impl, "the resize handler is present");
 
-  // The boundary moves WITH the pointer: the delta is added, not subtracted.
-  assert.match(impl[0], /apply\(startH \+ \(ev\.clientY - startY\)\)/, "down lowers the boundary");
-  assert.ok(!/startH - \(ev\.clientY/.test(impl[0]), "and never moves against it");
+  // The boundary moves WITH the pointer. The grip draws the pane's TOP edge and
+  // the pane is anchored at the bottom, so dragging down makes the pane SHORTER --
+  // the sign is the opposite of the one a bottom-edge grip needs, and the invariant
+  // is the same either way. The arithmetic lives in `heightFromTopEdgeDrag` so the
+  // sign can be tested directly instead of pattern-matched out of the source.
+  assert.match(impl[0], /heightFromTopEdgeDrag\(startH, ev\.clientY - startY\)/, "top-edge rule");
+  assert.ok(!/apply\(startH \+/.test(impl[0]), "and not the bottom-edge sign, which would invert the drag");
 
   // No mode-dependent second formula.
   assert.ok(!/startH \* -1/.test(impl[0]), "one arithmetic for both modes");
@@ -144,9 +161,72 @@ test("every handle in the view moves with the pointer", () => {
     // The inspector's is on the pane's left edge, so it subtracts an X delta:
     // dragging left must widen it. That is still "towards the pointer" in the
     // axis that pane grows along.
+    // A pane that grows downward takes `+deltaY`; one anchored at the bottom and
+    // grown from its top edge takes `-deltaY`; the inspector grows leftward from
+    // its left edge and takes `-deltaX`. Each is "towards the pointer" in the axis
+    // that pane grows along.
     const addY = /startH \+ \(ev\.clientY/.test(impl);
+    const topEdgeY = /heightFromTopEdgeDrag\(startH, ev\.clientY/.test(impl);
     const subX = /startW - \(ev\.clientX/.test(impl);
-    assert.ok(addY || subX, "each handle moves consistently with its edge");
+    assert.ok(addY || topEdgeY || subX, "each handle moves consistently with its edge");
   }
 });
 
+
+test("the results grip moves the boundary with the pointer", () => {
+  // The invariant, stated as geometry rather than as a sign: the pane is pinned to
+  // the bottom of the window, and the grip draws its top edge. Whatever the
+  // arithmetic, the top edge must end up exactly where the pointer went -- a grip
+  // that moves against the pointer is unusable, and a screenshot cannot show it.
+  const BOTTOM = 900; // the pane's bottom edge, where the status bar starts
+  const START_H = 300;
+  const topEdge = (h) => BOTTOM - h;
+
+  for (const deltaY of [-120, -40, -1, 0, 1, 40, 120]) {
+    const next = heightFromTopEdgeDrag(START_H, deltaY);
+    assert.equal(
+      topEdge(next),
+      topEdge(START_H) + deltaY,
+      `dragging by ${deltaY} moves the boundary by ${deltaY}`
+    );
+  }
+
+  // Spelled out, because the two directions are the whole point.
+  assert.equal(heightFromTopEdgeDrag(300, 50), 250, "dragging DOWN shrinks the pane");
+  assert.equal(heightFromTopEdgeDrag(300, -50), 350, "dragging UP grows it");
+  // A no-op drag must not move anything.
+  assert.equal(heightFromTopEdgeDrag(300, 0), 300, "a click without movement changes nothing");
+});
+
+test("the restored height is not clamped against an unlaid-out view", () => {
+  // The pane came back the wrong size on every launch. The height restored at
+  // construction was run through the window-dependent clamp, but the view has not
+  // been laid out at that point, so `contentEl.clientHeight` is not the window's
+  // height: a stored 309px became 274. The mode switch that would have corrected it
+  // only runs when the mode CHANGES, so the wrong number stuck.
+  const src = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  const restore = /const storedH = this\.storedResultsHeight\(\);[\s\S]{0,200}?\n    \}/.exec(src);
+  assert.ok(restore, "the restore block is present");
+  assert.match(restore[0], /Math\.max\(MIN_RESULTS_H, storedH\)/, "it applies the floor only");
+  assert.ok(
+    !/clampResultsHeight\(this\.storedResultsHeight\(\)\)/.test(src),
+    "and never the window-dependent ceiling, which the view cannot answer yet"
+  );
+
+  // The ceiling is applied as soon as there is a real height, and re-applied when
+  // the window changes -- otherwise a pane sized on a large monitor would push its
+  // own grip off the top of a small one.
+  const reclamp = /private installResultsReclamp\(\): void \{[\s\S]*?\n  \}/.exec(src);
+  assert.ok(reclamp, "the re-clamp exists");
+  assert.match(reclamp[0], /new ResizeObserver/, "it watches the real size");
+  assert.match(reclamp[0], /clampResultsHeight\(current\)/, "and clamps the height in use");
+  // Guarded against feedback: the observer must not act on an unchanged size.
+  assert.match(reclamp[0], /h === measured/, "it ignores an unchanged measurement");
+  // Installed where the pane is built, not inside its own body.
+  assert.match(src, /this\.installResultsResize\([^)]*\);\s*\n\s*this\.installResultsReclamp\(\)/, "and is installed");
+
+  // An observer left attached after the view closes is a leak.
+  const close = /async onClose\(\): Promise<void> \{[\s\S]*?\n  \}/.exec(src);
+  assert.ok(close, "onClose is present");
+  assert.match(close[0], /this\.resultsReclamp\?\.disconnect\(\)/, "the observer is disconnected");
+});

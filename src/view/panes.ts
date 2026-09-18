@@ -29,6 +29,24 @@ export const RESULTS_CHROME_H = 56;
 export const MAX_RESULTS_FRACTION = 0.8;
 
 /**
+ * The height a bottom-anchored pane takes when the grip on its TOP edge is
+ * dragged by `deltaY`.
+ *
+ * The pane is pinned to the bottom of the window, so its top edge IS the boundary
+ * the grip draws: dragging the boundary DOWN makes the pane SHORTER. The sign is
+ * the entire content of this function, and it is the thing that has been wrong
+ * before -- a grip that moves against the pointer is unusable, and it is
+ * invisible in a screenshot, so it has to be pinned by a test rather than by
+ * reading the code.
+ *
+ * With the grip on the pane's BOTTOM edge the sign is the other way round, which
+ * is why this is named for the edge rather than being a bare `+`.
+ */
+export function heightFromTopEdgeDrag(startHeight: number, deltaY: number): number {
+  return startHeight - deltaY;
+}
+
+/**
  * Clamp a requested results height to what a view of `viewHeight` can give.
  *
  * The pane's grip sits on its TOP edge, so the pane's height is also where the

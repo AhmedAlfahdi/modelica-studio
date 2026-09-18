@@ -34,7 +34,14 @@ import { savePrompt } from "../modelica/save-state";
 import { SavedModelsModal } from "./saved-models-modal";
 import { HelpModal } from "./help-modal";
 import { SimulationError } from "../omc/backend";
-import { CODE_RESULTS_H, DEFAULT_RESULTS_H, clampInspectorWidth, clampResultsHeight } from "./panes";
+import {
+  CODE_RESULTS_H,
+  DEFAULT_RESULTS_H,
+  MIN_RESULTS_H,
+  clampInspectorWidth,
+  clampResultsHeight,
+  heightFromTopEdgeDrag,
+} from "./panes";
 import { checkModel, ModelProblem } from "../modelica/checks";
 import { createCodeEditor, CodeEditorHandle, Diagnostic } from "./code-editor";
 import { AiError, buildMessages, chat } from "../ai/client";
@@ -55,6 +62,8 @@ export class ModelicaStudioView extends ItemView {
   private logHost: HTMLElement | null = null;
   /** Reverts to the saved file; disabled when there is nothing to go back to. */
   private btnRevert: HTMLButtonElement | undefined;
+  /** Watches the view's height, so the pane's ceiling tracks the window. */
+  private resultsReclamp: ResizeObserver | undefined;
   /**
    * The palette's rows, in the order they are drawn.
    *
@@ -198,23 +207,41 @@ export class ModelicaStudioView extends ItemView {
     // Results get their own pane across the window rather than a slot inside the
     // inspector. In a 380px column a plot is unreadable, and the legend covers
     // half the traces; spanning the window is what makes it legible.
-    const resultsCol = root.createDiv({ cls: "modelica-studio-results" });
-    // The handle goes AFTER the results pane so it renders on that pane's BOTTOM
-    // edge — the line where the results end and the editing area begins, which is
-    // where a divider between the two belongs. Before the pane it sat on the
-    // pane's top edge instead, above the tab strip, which read as a bar floating
-    // over the plot rather than as the boundary it controls.
+    // The grip goes BEFORE the pane, so it renders on the pane's TOP edge: the
+    // boundary between the diagram and the results, which is the line it moves.
+    //
+    // It used to go after the pane, which put it on the pane's BOTTOM edge. That
+    // is still "a handle for the results pane", but it sits against the status bar
+    // at the far end of the window -- nowhere near the diagram it divides, and easy
+    // to miss. The editing area is ABOVE the results, so the top edge is the shared
+    // boundary and the bottom edge is the window's own.
     const resultsSplitter = root.createDiv({ cls: "modelica-studio-results-splitter" });
+    // Named for what it does, so it is findable by hover as well as by eye.
+    resultsSplitter.setAttribute("role", "separator");
+    resultsSplitter.setAttribute("aria-orientation", "horizontal");
+    resultsSplitter.setAttribute(
+      "aria-label",
+      "Drag to resize the results pane; double-click to reset"
+    );
+    const resultsCol = root.createDiv({ cls: "modelica-studio-results" });
     // Restore the height the user dragged it to, so the choice survives a
     // reload rather than resetting to the default every time.
-    if (this.storedResultsHeight() > 0) {
-      // Clamped on restore as well: a height stored before the maximum existed,
-      // or on a larger window, would otherwise come back out of range.
-      resultsCol.style.height = `${this.clampResultsHeight(this.storedResultsHeight())}px`;
+    //
+    // Floored but NOT ceilinged here. The ceiling depends on how tall the view is,
+    // and the view has not been laid out yet: `contentEl.clientHeight` is not the
+    // window's height at this point, so clamping against it shrank a stored 309px
+    // pane to 274 and applied that permanently -- the pane came back the wrong
+    // size on every launch, and the mode switch that would have corrected it only
+    // runs when the mode CHANGES. `installResultsReclamp` applies the real ceiling
+    // as soon as there is a real height to apply it against.
+    const storedH = this.storedResultsHeight();
+    if (storedH > 0) {
+      resultsCol.style.height = `${Math.max(MIN_RESULTS_H, storedH)}px`;
     }
     this.resultsEl = resultsCol;
     this.resultsResize = resultsSplitter;
     this.installResultsResize(resultsSplitter, resultsCol);
+    this.installResultsReclamp();
 
     // There is deliberately no source preview here. It was a read-only copy of
     // the model, which code mode now edits directly, and showing the same text
@@ -281,6 +308,8 @@ export class ModelicaStudioView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    this.resultsReclamp?.disconnect();
+    this.resultsReclamp = undefined;
     this.editor?.destroy();
     this.editor = null;
     this.codeEditor?.destroy();
@@ -694,6 +723,35 @@ export class ModelicaStudioView extends ItemView {
     const fallback = isCode ? CODE_RESULTS_H : DEFAULT_RESULTS_H;
     this.resultsEl.style.height = `${this.clampResultsHeight(stored > 0 ? stored : fallback)}px`;
     if (this.bottomTab === "plot") this.drawResults();
+  }
+
+  /**
+   * Keep the results pane inside a view that may have changed size.
+   *
+   * Two jobs, both consequences of the ceiling depending on the window. The first
+   * is to apply that ceiling once the view has a real height, because the height
+   * restored at construction could not be clamped against one. The second is to
+   * re-apply it when the window changes: a pane dragged tall on a large monitor
+   * would otherwise keep its height on a small one and push its own grip off the
+   * top of the screen.
+   */
+  private installResultsReclamp(): void {
+    if (!this.contentEl || typeof ResizeObserver === "undefined") return;
+    let measured = 0;
+    const observer = new ResizeObserver(() => {
+      const h = this.contentEl?.clientHeight ?? 0;
+      // Only on a real change. Re-applying on every callback would fight the
+      // observer it was triggered by.
+      if (h <= 0 || h === measured) return;
+      measured = h;
+      if (!this.resultsEl) return;
+      // The CURRENT height is what gets clamped, so a size the user chose is kept
+      // whenever the window can still afford it.
+      const current = this.resultsEl.getBoundingClientRect().height;
+      if (current > 0) this.resultsEl.style.height = `${this.clampResultsHeight(current)}px`;
+    });
+    observer.observe(this.contentEl);
+    this.resultsReclamp = observer;
   }
 
   /** Remember a height the user dragged, against the current mode. */
@@ -2124,8 +2182,9 @@ export class ModelicaStudioView extends ItemView {
     };
 
     const onMove = (ev: PointerEvent) => {
-      // Dragging down lowers the boundary, so the pane above the grip grows.
-      apply(startH + (ev.clientY - startY));
+      // The grip draws the pane's top edge, so this is the top-edge rule -- see
+      // `heightFromTopEdgeDrag`, which is where the sign lives and is tested.
+      apply(heightFromTopEdgeDrag(startH, ev.clientY - startY));
     };
 
     const commit = () => this.storeResultsHeight(pane.getBoundingClientRect().height);
@@ -3224,7 +3283,10 @@ export class ModelicaStudioView extends ItemView {
     };
     const q = (sel: string) => this.contentEl.querySelector(sel);
     this.plugin.diag(
-      "layout: content=" + box(this.contentEl) +
+      // `asked` beside the rendered box: a pane that ignored the height it was
+      // given looked identical to one that had been given the wrong height.
+      "layout: resultsH=" + (this.resultsEl?.style.height || "(none)") +
+        " | content=" + box(this.contentEl) +
         " root=" + box(q(".modelica-studio-root")) +
         " body=" + box(q(".modelica-studio-body")) +
         " canvasHost=" + box(q(".modelica-studio-canvas-host")) +

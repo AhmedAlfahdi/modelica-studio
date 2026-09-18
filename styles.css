@@ -615,7 +615,8 @@ body.modelica-studio-resizing * {
   display: flex;
   flex-direction: column;
   padding: 6px 8px 8px;
-  border-top: 1px solid var(--background-modifier-border);
+  /* No border-top: the splitter directly above draws this boundary, and both
+     together drew the same line twice. */
   background: var(--background-secondary);
   overflow: hidden;
   box-sizing: border-box;
@@ -626,34 +627,44 @@ body.modelica-studio-resizing * {
   /* Above the pane it divides, so the grip is never covered. */
   position: relative;
   z-index: 2;
-  height: 8px;
+  height: 9px;
   cursor: row-resize;
-  background: var(--background-modifier-border);
+  /* The pane's own top edge rather than a bar floating between two areas: it now
+     sits directly under the diagram, and a slab of border colour there reads as a
+     second toolbar. The grip and the hover state are what make it findable. */
+  background: var(--background-secondary);
+  border-top: 1px solid var(--background-modifier-border);
 }
-
-/* A wider hit area than the visible line: 8px is easy to miss with a mouse. */
 .modelica-studio-results-splitter::after {
+  /* A taller grab area than the visible strip, so a 9px band is not a 9px target.
+     It reaches further DOWN than up: extending upward would take clicks from the
+     bottom edge of the canvas, which is where components get dragged. */
   content: "";
   position: absolute;
-  inset: -4px 0;
+  inset: -2px 0 -5px;
 }
-
 .modelica-studio-results-splitter:hover,
 .modelica-studio-results-splitter.is-dragging {
-  background: var(--interactive-accent);
+  border-top-color: var(--interactive-accent);
 }
-
-/* A short grip, so the divider reads as draggable rather than decorative. */
 .modelica-studio-results-splitter::before {
+  /* The grip. An invisible handle is one nobody drags, which is how the results
+     pane came to look unresizable even though it always was. */
   content: "";
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 36px;
-  height: 2px;
-  margin: -1px 0 0 -18px;
-  border-radius: 1px;
+  width: 44px;
+  height: 4px;
+  margin: -2px 0 0 -22px;
+  border-radius: 2px;
   background: var(--text-faint);
+  opacity: 0.55;
+}
+.modelica-studio-results-splitter:hover::before,
+.modelica-studio-results-splitter.is-dragging::before {
+  background: var(--interactive-accent);
+  opacity: 1;
 }
 
 .modelica-studio-results .modelica-studio-plot {
