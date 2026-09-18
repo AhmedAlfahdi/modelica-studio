@@ -226,28 +226,72 @@ export function checkModel(input: CheckInput): ModelProblem[] {
     }
   }
 
-  /* ---- 3. attributes on the wrong kind of declaration ---- */
+  /* ---- 3. attributes and modifiers on the wrong kind of declaration ---- */
   //
-  // `parameter Real x(start = 1, fixed = true)` is a common mistake, and
-  // OpenModelica's answer names neither the declaration nor the attribute:
+  // OpenModelica answers several different mistakes with the same sentence:
   //
-  //     Modified element m not found in class Real.
+  //     Modified element X not found in class Y.
   //
-  // `fixed` is an attribute of a VARIABLE, describing whether its start value
-  // holds. On a parameter it means nothing, because a parameter is already fixed
-  // for the whole run.
-  for (const eq of input.equations) void eq;
+  // which names neither the declaration nor what is wrong with it. Two causes
+  // have been seen here, and they are the same fault: a modifier on a type that
+  // has no such member.
+  //
+  //   parameter Real m(start = 1, fixed = true)   ->  Modified element m not
+  //       found in class Real. `fixed` is a VARIABLE attribute, describing
+  //       whether its start value holds; a parameter is fixed for the whole run
+  //       already.
+  //
+  //   parameter SI.Density air_density(air_density = 1.225)
+  //       -> Modified element air_density not found in class Real. A parameter
+  //       was given a modifier NAMED AFTER ITSELF. `SI.Density` resolves to
+  //       `Real`, and `Real` has no member `air_density`.
+  //
+  // The second is worth catching on its own: it was written by the model, it
+  // compiles as far as the parser is concerned, and the message points at the
+  // type rather than at the line.
   if (input.declarations) {
     for (const d of input.declarations) {
-      if (!/\bparameter\b|\bconstant\b/.test(d.text)) continue;
-      if (!/\bfixed\s*=/.test(d.text)) continue;
-      problems.push({
-        line: d.line,
-        severity: "error",
-        message:
-          `"${d.name}" is a parameter, so "fixed" does nothing on it and OpenModelica reports it as ` +
-          `a missing element of its type. Remove fixed=true; keep start if you meant an initial value.`,
-      });
+      const isParameter = /\bparameter\b|\bconstant\b/.test(d.text);
+      if (!isParameter) continue;
+
+      if (/\bfixed\s*=/.test(d.text)) {
+        problems.push({
+          line: d.line,
+          severity: "error",
+          message:
+            `"${d.name}" is a parameter, so "fixed" does nothing on it and OpenModelica reports it as ` +
+            `a missing element of its type. Remove fixed=true; keep start if you meant an initial value.`,
+        });
+        continue;
+      }
+
+      // `name(name = ...)` on a simple type. Only when the modifier matches the
+      // declaration's own name: that is the case with no reading other than a
+      // mistake, whereas `x(unit = "V")` is legitimate.
+      // `name(name` specifically: a modifier whose NAME matches the declaration.
+      // Testing only for `name(` also matched `parameter Real x(unit = "V")`,
+      // which is ordinary and correct -- caught by the test, not by reading it.
+      const selfModifier = new RegExp(`\\b${d.name}\\s*\\(\\s*${d.name}\\s*(=|,|\\))`);
+      if (selfModifier.test(d.text)) {
+        const type = /\b(?:parameter|constant)\s+([\w.]+)/.exec(d.text)?.[1] ?? "its type";
+        // The class OpenModelica NAMES is the one the type resolves to -- for
+        // `SI.Density` that is `Real`, not `Density` -- and resolving that here
+        // would mean a second type system in the checker. So the message does not
+        // claim a class name it has not looked up: it says the error names one,
+        // and states the count. Quoting a name that might be wrong is exactly the
+        // problem with the original message.
+        problems.push({
+          line: d.line,
+          severity: "error",
+          message:
+            `"${d.name}" is declared with a modifier named after itself: ${d.name}(...) on a ` +
+            `declaration of type ${type}. A modifier sets a member of the TYPE, and ${type} has ` +
+            `no member called ${d.name}. OpenModelica reports this as "Modified element ` +
+            `${d.name} not found in class ...", naming the type rather than this line. ` +
+            `Write the value as the declaration's own binding instead: ` +
+            `parameter ${type} ${d.name} = <value>;`,
+        });
+      }
     }
   }
 

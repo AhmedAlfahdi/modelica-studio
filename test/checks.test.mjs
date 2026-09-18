@@ -447,3 +447,69 @@ test("a save folder that was never set gets the default; a cleared one stays cle
   // No stored data at all: the merged object already carries the default.
   assert.equal(migrateSettings(DEFAULT_SETTINGS, null).modelFolder, "Modelica");
 });
+
+test("a modifier named after its own declaration is caught", () => {
+  // OpenModelica answers this with "Modified element air_density not found in
+  // class Real" -- naming the TYPE rather than the line, so the mistake is hard
+  // to find from the error. It was written by the model and survived a repair,
+  // and it is the same fault as `fixed = true` on a parameter: a modifier on a
+  // type that has no such member.
+  const problem = checkModel({
+    declared: declared("air_density"),
+    declarations: [
+      {
+        name: "air_density",
+        text: "parameter Modelica.Units.SI.Density air_density(air_density=1.225);",
+        line: 5,
+      },
+    ],
+    equations: [],
+    hasComponents: false,
+    firstEquationLine: 9,
+  });
+  assert.equal(problem.length, 1, "exactly one problem");
+  assert.match(problem[0].message, /modifier named after itself/, "named");
+  assert.match(problem[0].message, /naming the type rather than this line/, "and why it is hard to find");
+  assert.match(problem[0].message, /not found in class/, "quoting the message the user sees");
+  // It must NOT guess which class OpenModelica will name: resolving `SI.Density`
+  // to `Real` needs a second type system in the checker, and a wrong name in the
+  // message is the exact problem being fixed.
+  assert.ok(!/found in class Real/.test(problem[0].message), "no class name it has not looked up");
+  // The fix has to be stated, since the error does not imply it.
+  assert.match(problem[0].message, /parameter .* air_density = <value>;/, "with the correct form");
+});
+
+test("legitimate modifiers are not mistaken for the mistake", () => {
+  // The first version of this check tested only for `name(`, which also matched
+  // `parameter Real x(unit = "V")` -- ordinary and correct. The test caught it.
+  const cases = [
+    ["x", 'parameter Real x(unit = "V") = 5;'],
+    ["y", "parameter Real y(start = 1) = 5;"],
+    ["z", "parameter Real z = 5;"],
+    ["v", "parameter Modelica.Units.SI.Velocity v(displayUnit = \"km/h\") = 1;"],
+  ];
+  for (const [name, text] of cases) {
+    const problems = checkModel({
+      declared: declared(name),
+      declarations: [{ name, text, line: 3 }],
+      equations: [],
+      hasComponents: false,
+      firstEquationLine: 9,
+    });
+    assert.deepEqual(problems, [], `${text} is correct and must not be flagged`);
+  }
+});
+
+test("the same name with spaces still counts", () => {
+  // Generated code is not always formatted tightly.
+  const problems = checkModel({
+    declared: declared("wing_area"),
+    declarations: [
+      { name: "wing_area", text: "parameter SI.Area wing_area ( wing_area = 16.0 );", line: 6 },
+    ],
+    equations: [],
+    hasComponents: false,
+    firstEquationLine: 9,
+  });
+  assert.equal(problems.length, 1);
+});

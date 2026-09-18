@@ -495,6 +495,22 @@ and it is still the wrong answer when the reader asked for a mechanism.
   for a circuit, an inner Modelica.Fluid.System or inner Modelica.Mechanics.MultiBody.World
   where the fluid or multibody libraries require one.
 
+## Declaring a quantity: the name is the declaration, the value is the binding
+A parameter takes its value on the declaration, not as a modifier of the same name:
+
+    parameter Modelica.Units.SI.Density air_density = 1.225;              correct
+    parameter Modelica.Units.SI.Density air_density(air_density = 1.225); WRONG
+
+The second says "set the member air_density of the type SI.Density", and
+SI.Density is Real, which has no such member. OpenModelica answers "Modified
+element air_density not found in class Real", naming the TYPE rather than the
+line, so the mistake is hard to find from the error.
+
+A modifier sets a member of the TYPE, so use one only for something the type
+actually has. parameter Real x(unit = "V") = 5 is right, because unit is an
+attribute of Real; x(x = 5) is not, because x is not. And never put fixed = true
+on a parameter: a parameter is fixed for the whole run already.
+
 ## Document the model
 - A comment on the model itself: one line saying what it represents.
 - A comment on every declaration saying what the quantity IS, with its unit where
