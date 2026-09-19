@@ -9,6 +9,17 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ### Fixed
 
+- **The domain colours did not appear on the palette's group headings**, which is
+  the one place they were asked for. Obsidian's element helpers read a fixed set of
+  keys from their options — `cls`, `text`, `attr`, `title`, `value`, `type`,
+  `placeholder`, `href` — and ignore everything else, so a bare `"data-domain"` key
+  was dropped and the selector matched nothing. The attribute goes under `attr`.
+  The test that was supposed to cover this asserted that the value was spread at
+  the call site, that the CSS parsed, and that both hex values cleared AA: all of
+  which passed while every heading rendered in the ordinary colour. It now renders a
+  heading in a real engine, loads the shipped stylesheet, and asks the browser what
+  colour came out.
+
 - **Stop did nothing until the request finished on its own.** The button set a
   flag that is only read BETWEEN attempts, and one attempt is one HTTP call that
   can legitimately run for the whole timeout. The client had accepted an
@@ -69,6 +80,17 @@ version is 0, a minor bump may include changes that are not backward compatible.
   compiles.
 
 ### Fixed
+
+- **The domain colours did not appear on the palette's group headings**, which is
+  the one place they were asked for. Obsidian's element helpers read a fixed set of
+  keys from their options — `cls`, `text`, `attr`, `title`, `value`, `type`,
+  `placeholder`, `href` — and ignore everything else, so a bare `"data-domain"` key
+  was dropped and the selector matched nothing. The attribute goes under `attr`.
+  The test that was supposed to cover this asserted that the value was spread at
+  the call site, that the CSS parsed, and that both hex values cleared AA: all of
+  which passed while every heading rendered in the ordinary colour. It now renders a
+  heading in a real engine, loads the shipped stylesheet, and asks the browser what
+  colour came out.
 
 - **A documented answer was rejected for documenting.** `describeStyleViolation`
   counted components and connections in the raw source, so an equations answer that
@@ -147,6 +169,17 @@ several ways a saved model could quietly revert have been closed.
   prove.
 
 ### Fixed
+
+- **The domain colours did not appear on the palette's group headings**, which is
+  the one place they were asked for. Obsidian's element helpers read a fixed set of
+  keys from their options — `cls`, `text`, `attr`, `title`, `value`, `type`,
+  `placeholder`, `href` — and ignore everything else, so a bare `"data-domain"` key
+  was dropped and the selector matched nothing. The attribute goes under `attr`.
+  The test that was supposed to cover this asserted that the value was spread at
+  the call site, that the CSS parsed, and that both hex values cleared AA: all of
+  which passed while every heading rendered in the ordinary colour. It now renders a
+  heading in a real engine, loads the shipped stylesheet, and asks the browser what
+  colour came out.
 
 These are the ones that mattered. Each let a change appear to be saved when it
 was not, and each was silent at the time.

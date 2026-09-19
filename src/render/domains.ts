@@ -132,7 +132,17 @@ export function domainOfLabel(label: string): Domain {
  * Returned as attributes rather than a colour so the same call works for an
  * element in the plugin and for the HTML a generated note carries: `styles.css`
  * defines the light and dark values once, and the theme picks between them.
+ *
+ * `attr` is not decoration. Obsidian's element helpers read a fixed set of keys
+ * from their options -- `cls`, `text`, `attr`, `title`, `value`, `type`,
+ * `placeholder`, `href` -- and IGNORE everything else, so a bare `"data-domain"`
+ * key was silently dropped and the selector matched nothing. Every group heading
+ * in the palette rendered in the ordinary colour while the code, the CSS and a
+ * source-level test all said otherwise.
  */
-export function domainAttributes(domain: Domain): { cls: string; "data-domain": Domain } {
-  return { cls: "modelica-studio-domain", "data-domain": domain };
+export function domainAttributes(domain: Domain): {
+  cls: string;
+  attr: { "data-domain": Domain };
+} {
+  return { cls: "modelica-studio-domain", attr: { "data-domain": domain } };
 }

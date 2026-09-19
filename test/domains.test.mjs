@@ -149,9 +149,10 @@ test("the mapping reads the vocabulary that is already there", () => {
   assert.equal(domainOfLabel("Something New"), "other");
 
   // The attributes are what both the plugin and a generated note use.
+  // `attr`, not a bare key: Obsidian's helpers ignore anything they do not know.
   assert.deepEqual(domainAttributes("thermal"), {
     cls: "modelica-studio-domain",
-    "data-domain": "thermal",
+    attr: { "data-domain": "thermal" },
   });
 });
 
@@ -188,4 +189,105 @@ test("the palette and the examples actually use it", () => {
     /\*\*Domain:\*\* <span class="modelica-studio-domain" data-domain="multiphysics">/,
     `the newest note carries its colour: ${note.split("\n")[4]}`
   );
+});
+
+test("a rendered heading actually gets the colour", async () => {
+  // The check that was missing. The previous version of this file asserted that
+  // `domainAttributes` was SPREAD at the call site, that the CSS parsed, and that
+  // both hex values cleared AA -- all of which passed while every group heading in
+  // the palette rendered in the ordinary colour.
+  //
+  // The reason: Obsidian's element helpers read a fixed set of keys from their
+  // options and ignore the rest, so a bare `"data-domain"` key was dropped and
+  // `.modelica-studio-domain[data-domain="..."]` matched nothing. Only rendering it
+  // and asking the browser what colour came out can tell the difference.
+  const { runInDom, DOM_PREAMBLE } = await import("./helpers/dom-runner.mjs");
+  const R = repoRoot;
+  // Passed in from here rather than read in the page: the runner aliases the Node
+  // builtins to an empty module for the browser bundle, so `fs` is not `fs` there.
+  const css = JSON.stringify(fs.readFileSync(path.join(R, "styles.css"), "utf8"));
+  const out = runInDom(
+    [
+      DOM_PREAMBLE,
+      `import { domainAttributes, DOMAINS } from "${R}/src/render/domains";`,
+      `import { StubVault } from "${R}/test/helpers/obsidian-stub";`,
+      "",
+      "// The plugin's own stylesheet, exactly as it ships.",
+      "const style = document.createElement('style');",
+      `style.textContent = ${css};`,
+      "document.head.appendChild(style);",
+      "",
+      "// The palette's group heading, as the view builds it: a div whose colour is",
+      "// the muted text colour, containing a span that should override it.",
+      "function heading(domain, label, dark) {",
+      "  document.body.className = dark ? 'theme-dark' : 'theme-light';",
+      "  const host = document.body.createDiv({ cls: 'modelica-studio-palette-group-head' });",
+      "  host.style.color = 'rgb(120, 120, 120)';",
+      "  const span = host.createSpan({ ...domainAttributes(domain), text: label });",
+      "  return { host, span };",
+      "}",
+      "",
+      "window.test('the attribute survives the element helper', () => {",
+      "  const { span } = heading('blocks', 'MODELICA.BLOCKS', false);",
+      "  return 'data-domain=' + span.getAttribute('data-domain') +",
+      "    ' class=' + span.classList.contains('modelica-studio-domain');",
+      "});",
+      "window.test('the CSS selector matches the rendered element', () => {",
+      "  const { span } = heading('thermal', 'MODELICA.THERMAL', false);",
+      "  return String(span.matches('.modelica-studio-domain[data-domain=\"thermal\"]'));",
+      "});",
+      "window.test('light mode colours it, and differently from its parent', () => {",
+      "  const { host, span } = heading('blocks', 'MODELICA.BLOCKS', false);",
+      "  const own = getComputedStyle(span).color;",
+      "  return own + ' vs parent ' + getComputedStyle(host).color;",
+      "});",
+      "window.test('dark mode uses the dark value', () => {",
+      "  const { span } = heading('blocks', 'MODELICA.BLOCKS', true);",
+      "  return getComputedStyle(span).color;",
+      "});",
+      "window.test('every domain renders in a colour of its own', () => {",
+      "  const seen = {};",
+      "  const clashes = [];",
+      "  for (const d of DOMAINS) {",
+      "    const { span } = heading(d, d, false);",
+      "    const c = getComputedStyle(span).color;",
+      "    if (c === 'rgb(120, 120, 120)') clashes.push(d + ' kept the parent colour');",
+      "    if (seen[c]) clashes.push(d + ' same as ' + seen[c]);",
+      "    seen[c] = d;",
+      "  }",
+      "  return clashes.length ? clashes.join('; ') : Object.keys(seen).length + ' distinct colours';",
+      "});",
+      "window.finish();",
+    ].join("\n")
+  );
+  if (out.skip) return;
+  assert.ok(!out.fatal, out.fatal);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const d = Object.fromEntries(out.results.map((r) => [r.name, r.detail]));
+
+  assert.equal(
+    d["the attribute survives the element helper"],
+    "data-domain=blocks class=true",
+    "the element helper must apply `attr`, not silently drop it"
+  );
+  assert.equal(d["the CSS selector matches the rendered element"], "true");
+
+  // The proof: a colour computed by the browser, different from the parent's.
+  assert.notEqual(
+    d["light mode colours it, and differently from its parent"].split(" vs parent ")[0],
+    "rgb(120, 120, 120)",
+    `light mode must override the parent colour, got ${d["light mode colours it, and differently from its parent"]}`
+  );
+  assert.notEqual(
+    d["dark mode uses the dark value"],
+    "rgb(120, 120, 120)",
+    "and so must dark mode"
+  );
+  assert.notEqual(
+    d["dark mode uses the dark value"],
+    d["light mode colours it, and differently from its parent"].split(" vs parent ")[0],
+    "the two themes must not use the same value"
+  );
+  assert.equal(d["every domain renders in a colour of its own"], "11 distinct colours");
 });
