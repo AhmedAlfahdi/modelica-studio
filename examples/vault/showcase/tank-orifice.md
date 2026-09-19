@@ -2,7 +2,7 @@
 
 > Fluid: a tank draining through an orifice
 
-**Domain:** Fluid · **Simulated span:** 25 s · **Example:** `TankOrifice`
+**Domain:** <span class="modelica-studio-domain" data-domain="fluid">Fluid</span> · **Simulated span:** 25 s · **Example:** `TankOrifice`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

@@ -2,7 +2,7 @@
 
 > Mechanical: a ball bouncing until it comes to rest
 
-**Domain:** Mechanical · **Simulated span:** 10 s · **Example:** `DampedBounce`
+**Domain:** <span class="modelica-studio-domain" data-domain="mechanical">Mechanical</span> · **Simulated span:** 10 s · **Example:** `DampedBounce`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

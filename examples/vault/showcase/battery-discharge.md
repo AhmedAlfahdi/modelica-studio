@@ -2,7 +2,7 @@
 
 > Electrical: a battery discharging into a load
 
-**Domain:** Electrical · **Simulated span:** 1800 s · **Example:** `BatteryDischarge`
+**Domain:** <span class="modelica-studio-domain" data-domain="electrical">Electrical</span> · **Simulated span:** 1800 s · **Example:** `BatteryDischarge`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

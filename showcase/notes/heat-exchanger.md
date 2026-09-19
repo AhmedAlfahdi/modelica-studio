@@ -2,7 +2,7 @@
 
 > Thermal: a heated mass losing heat to ambient
 
-**Domain:** Thermal · **Simulated span:** 200 s · **Example:** `HeatExchanger`
+**Domain:** <span class="modelica-studio-domain" data-domain="thermal">Thermal</span> · **Simulated span:** 200 s · **Example:** `HeatExchanger`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

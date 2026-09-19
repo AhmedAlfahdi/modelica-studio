@@ -2,7 +2,7 @@
 
 > Electrical: half-wave rectifier charging a capacitor
 
-**Domain:** Electrical · **Simulated span:** 0.2 s · **Example:** `Rectifier`
+**Domain:** <span class="modelica-studio-domain" data-domain="electrical">Electrical</span> · **Simulated span:** 0.2 s · **Example:** `Rectifier`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

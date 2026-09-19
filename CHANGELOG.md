@@ -18,6 +18,20 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ### Added
 
+- **A domain colour code**, in the palette's package headings, the Examples menu's
+  domain headings, and the generated notes. One definition in `styles.css` serves
+  all three, so a domain is the same colour wherever it appears: electrical is
+  blue, thermal red, fluid teal, magnetic violet, mechanical slate, and so on.
+
+  The colours are TEXT colours and every pair is measured, not chosen by eye:
+  `test/domains.test.mjs` computes the WCAG contrast ratio against both theme
+  backgrounds and requires at least 4.5:1 on each. Obsidian's own `--color-*`
+  variables were the obvious choice and could not be used — measured as text every
+  one of them fails on the light background, `--color-yellow` at 1.88:1 and
+  `--color-green` at 2.35:1, because they are meant for accents and icons rather
+  than for words. The test also rejects a domain with no colour, a colour for a
+  domain that does not exist, and two domains sharing one.
+
 - **`ResistorSelfHeating`, the first multi-domain example.** A 10 V supply drives
   1 A through a 10 ohm resistor, and the 10 W of loss goes into the resistor's own
   body — 5 J/K of heat capacity with a 0.5 W/K path to ambient — instead of
@@ -87,6 +101,20 @@ actually keep a model in: wires can be edited, every pane can be sized, and the
 several ways a saved model could quietly revert have been closed.
 
 ### Added
+
+- **A domain colour code**, in the palette's package headings, the Examples menu's
+  domain headings, and the generated notes. One definition in `styles.css` serves
+  all three, so a domain is the same colour wherever it appears: electrical is
+  blue, thermal red, fluid teal, magnetic violet, mechanical slate, and so on.
+
+  The colours are TEXT colours and every pair is measured, not chosen by eye:
+  `test/domains.test.mjs` computes the WCAG contrast ratio against both theme
+  backgrounds and requires at least 4.5:1 on each. Obsidian's own `--color-*`
+  variables were the obvious choice and could not be used — measured as text every
+  one of them fails on the light background, `--color-yellow` at 1.88:1 and
+  `--color-green` at 2.35:1, because they are meant for accents and icons rather
+  than for words. The test also rejects a domain with no colour, a colour for a
+  domain that does not exist, and two domains sharing one.
 
 - **Wire editing.** Click a wire to select it, drag a corner to re-route it,
   double-click to restore the automatic route, and Delete to remove it. Wires can

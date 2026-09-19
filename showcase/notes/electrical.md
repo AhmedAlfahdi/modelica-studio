@@ -2,7 +2,7 @@
 
 > Electrical: a capacitor charging through a resistor
 
-**Domain:** Electrical · **Simulated span:** 1 s · **Example:** `Electrical`
+**Domain:** <span class="modelica-studio-domain" data-domain="electrical">Electrical</span> · **Simulated span:** 1 s · **Example:** `Electrical`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

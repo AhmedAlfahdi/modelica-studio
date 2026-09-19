@@ -2,7 +2,7 @@
 
 > Fluid: pressure drop along a pipe as the flow rises
 
-**Domain:** Fluid · **Simulated span:** 5 s · **Example:** `PipeFriction`
+**Domain:** <span class="modelica-studio-domain" data-domain="fluid">Fluid</span> · **Simulated span:** 5 s · **Example:** `PipeFriction`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

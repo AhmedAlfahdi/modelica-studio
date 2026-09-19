@@ -2,7 +2,7 @@
 
 > Fluid: orifice flow under a ramped pressure
 
-**Domain:** Fluid · **Simulated span:** 12 s · **Example:** `NonlinearOrifice`
+**Domain:** <span class="modelica-studio-domain" data-domain="fluid">Fluid</span> · **Simulated span:** 12 s · **Example:** `NonlinearOrifice`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

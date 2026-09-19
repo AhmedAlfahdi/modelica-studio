@@ -2,7 +2,7 @@
 
 > Fluid: a rising mass flow driving water through a pipe
 
-**Domain:** Fluid · **Simulated span:** 2 s · **Example:** `FluidPipe`
+**Domain:** <span class="modelica-studio-domain" data-domain="fluid">Fluid</span> · **Simulated span:** 2 s · **Example:** `FluidPipe`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

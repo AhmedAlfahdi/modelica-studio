@@ -2,7 +2,7 @@
 
 > Electrical: series RLC step response with ringing
 
-**Domain:** Electrical · **Simulated span:** 0.05 s · **Example:** `RLC`
+**Domain:** <span class="modelica-studio-domain" data-domain="electrical">Electrical</span> · **Simulated span:** 0.05 s · **Example:** `RLC`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

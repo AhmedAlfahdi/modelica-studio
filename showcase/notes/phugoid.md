@@ -2,7 +2,7 @@
 
 > Aerospace: the slow speed-and-height exchange of an aircraft
 
-**Domain:** Aerospace · **Simulated span:** 200 s · **Example:** `Phugoid`
+**Domain:** <span class="modelica-studio-domain" data-domain="aerospace">Aerospace</span> · **Simulated span:** 200 s · **Example:** `Phugoid`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

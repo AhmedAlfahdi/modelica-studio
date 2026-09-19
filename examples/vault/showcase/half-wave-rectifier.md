@@ -2,7 +2,7 @@
 
 > Electrical: a diode rectifier and its load
 
-**Domain:** Electrical · **Simulated span:** 0.06 s · **Example:** `HalfWaveRectifier`
+**Domain:** <span class="modelica-studio-domain" data-domain="electrical">Electrical</span> · **Simulated span:** 0.06 s · **Example:** `HalfWaveRectifier`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

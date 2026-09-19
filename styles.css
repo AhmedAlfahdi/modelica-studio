@@ -1780,3 +1780,43 @@ body.modelica-studio-resizing * {
 .modelica-studio-status.is-unsaved {
   color: var(--text-warning);
 }
+
+/* ---------------- domain colours ----------------
+
+   One definition, used by the palette's group headings, the Examples menu and the
+   generated notes, so a domain is the same colour wherever it appears.
+
+   These are TEXT colours, and every pair is measured against both theme
+   backgrounds rather than picked by eye: `test/domains.test.mjs` computes the
+   WCAG contrast ratio and requires at least 4.5:1 (AA for body text) on each.
+   Obsidian's own `--color-*` variables were the obvious choice and could not be
+   used: measured as text, every one of them fails on the light background --
+   `--color-yellow` is 1.88:1 and `--color-green` 2.35:1, because they are meant
+   for accents and icons rather than for words. */
+.modelica-studio-domain {
+  font-weight: 600;
+}
+.modelica-studio-domain[data-domain="electrical"] { color: #1c69dc; }
+.modelica-studio-domain[data-domain="mechanical"] { color: #5a5f6a; }
+.modelica-studio-domain[data-domain="fluid"] { color: #0f7987; }
+.modelica-studio-domain[data-domain="thermal"] { color: #c0392b; }
+.modelica-studio-domain[data-domain="magnetic"] { color: #7f4edb; }
+.modelica-studio-domain[data-domain="blocks"] { color: #a35a02; }
+.modelica-studio-domain[data-domain="media"] { color: #197c36; }
+.modelica-studio-domain[data-domain="discrete"] { color: #a3186e; }
+.modelica-studio-domain[data-domain="aerospace"] { color: #707012; }
+.modelica-studio-domain[data-domain="multiphysics"] { color: #7048c0; }
+.modelica-studio-domain[data-domain="other"] { color: #676e7a; }
+
+/* The dark values are lighter, so they hold up against a dark background. */
+.theme-dark .modelica-studio-domain[data-domain="electrical"] { color: #5aa9ff; }
+.theme-dark .modelica-studio-domain[data-domain="mechanical"] { color: #a8b0bd; }
+.theme-dark .modelica-studio-domain[data-domain="fluid"] { color: #3fd0d8; }
+.theme-dark .modelica-studio-domain[data-domain="thermal"] { color: #ff6b5e; }
+.theme-dark .modelica-studio-domain[data-domain="magnetic"] { color: #b98cff; }
+.theme-dark .modelica-studio-domain[data-domain="blocks"] { color: #ffa63d; }
+.theme-dark .modelica-studio-domain[data-domain="media"] { color: #4fd07a; }
+.theme-dark .modelica-studio-domain[data-domain="discrete"] { color: #ff7ac6; }
+.theme-dark .modelica-studio-domain[data-domain="aerospace"] { color: #cfcf5a; }
+.theme-dark .modelica-studio-domain[data-domain="multiphysics"] { color: #c9a9ff; }
+.theme-dark .modelica-studio-domain[data-domain="other"] { color: #9aa3b2; }

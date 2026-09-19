@@ -2,7 +2,7 @@
 
 > Mechanical: a mass on a spring and damper
 
-**Domain:** Mechanical · **Simulated span:** 5 s · **Example:** `MassSpring`
+**Domain:** <span class="modelica-studio-domain" data-domain="mechanical">Mechanical</span> · **Simulated span:** 5 s · **Example:** `MassSpring`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

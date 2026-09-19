@@ -2,7 +2,7 @@
 
 > Mechanical: a driven mass on a spring, near resonance
 
-**Domain:** Mechanical · **Simulated span:** 20 s · **Example:** `ForcedOscillator`
+**Domain:** <span class="modelica-studio-domain" data-domain="mechanical">Mechanical</span> · **Simulated span:** 20 s · **Example:** `ForcedOscillator`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

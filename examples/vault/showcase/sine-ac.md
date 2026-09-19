@@ -2,7 +2,7 @@
 
 > Electrical: a sine drive through an RL load
 
-**Domain:** Electrical · **Simulated span:** 0.1 s · **Example:** `SineAC`
+**Domain:** <span class="modelica-studio-domain" data-domain="electrical">Electrical</span> · **Simulated span:** 0.1 s · **Example:** `SineAC`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

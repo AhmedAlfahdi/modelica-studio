@@ -2,7 +2,7 @@
 
 > Thermal: two bodies equalising through a conducting wall
 
-**Domain:** Thermal · **Simulated span:** 3000 s · **Example:** `HeatConduction`
+**Domain:** <span class="modelica-studio-domain" data-domain="thermal">Thermal</span> · **Simulated span:** 3000 s · **Example:** `HeatConduction`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

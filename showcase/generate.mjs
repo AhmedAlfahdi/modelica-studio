@@ -17,6 +17,9 @@ import { EXPLAIN } from "./explain.mjs";
 const { EXAMPLES } = await import(
   path.join(buildLibs("showcase-ex", ["src/modelica/examples.ts"]), "examples.js")
 );
+const { domainOfLabel } = await import(
+  path.join(buildLibs("showcase-dom", ["src/render/domains.ts"]), "domains.js")
+);
 
 const outDir = process.argv[2] ?? path.join(import.meta.dirname, "notes");
 fs.mkdirSync(outDir, { recursive: true });
@@ -115,7 +118,7 @@ for (const ex of EXAMPLES) {
 
 > ${ex.description}
 
-**Domain:** ${note.domain} · **Simulated span:** ${ex.stopTime} s · **Example:** \`${ex.name}\`
+**Domain:** <span class="modelica-studio-domain" data-domain="${domainOfLabel(note.domain)}">${note.domain}</span> · **Simulated span:** ${ex.stopTime} s · **Example:** \`${ex.name}\`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 
@@ -207,7 +210,10 @@ models.
 `;
 for (const [domain, list] of byDomain) {
   const links = list.map((e) => `[${e.name}](${slug(e.name)}.md)`).join(", ");
-  index += `| ${domain} | ${links} |\n`;
+  // The domain name carries its colour here too, so the index is a legend for the
+  // palette rather than a plain list.
+  const dom = `<span class="modelica-studio-domain" data-domain="${domainOfLabel(domain)}">${domain}</span>`;
+  index += `| ${dom} | ${links} |\n`;
 }
 index += `
 ---

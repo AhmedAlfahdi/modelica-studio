@@ -2,7 +2,7 @@
 
 > Mechanics: a double pendulum swinging under gravity
 
-**Domain:** Mechanical · **Simulated span:** 6 s · **Example:** `DoublePendulum`
+**Domain:** <span class="modelica-studio-domain" data-domain="mechanical">Mechanical</span> · **Simulated span:** 6 s · **Example:** `DoublePendulum`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

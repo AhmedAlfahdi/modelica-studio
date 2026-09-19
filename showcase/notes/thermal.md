@@ -2,7 +2,7 @@
 
 > Thermal: a warm body cooling through a conductor
 
-**Domain:** Thermal · **Simulated span:** 2000 s · **Example:** `Thermal`
+**Domain:** <span class="modelica-studio-domain" data-domain="thermal">Thermal</span> · **Simulated span:** 2000 s · **Example:** `Thermal`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

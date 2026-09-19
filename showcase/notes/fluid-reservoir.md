@@ -2,7 +2,7 @@
 
 > Fluid: water draining from a tank under gravity
 
-**Domain:** Fluid · **Simulated span:** 20 s · **Example:** `FluidReservoir`
+**Domain:** <span class="modelica-studio-domain" data-domain="fluid">Fluid</span> · **Simulated span:** 20 s · **Example:** `FluidReservoir`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

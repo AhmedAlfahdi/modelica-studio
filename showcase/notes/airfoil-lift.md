@@ -2,7 +2,7 @@
 
 > Aerospace: lift and drag as the angle of attack changes
 
-**Domain:** Aerospace · **Simulated span:** 20 s · **Example:** `AirfoilLift`
+**Domain:** <span class="modelica-studio-domain" data-domain="aerospace">Aerospace</span> · **Simulated span:** 20 s · **Example:** `AirfoilLift`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

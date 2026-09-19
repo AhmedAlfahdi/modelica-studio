@@ -2,7 +2,7 @@
 
 > Electrical: a step-down chopper feeding an RC load
 
-**Domain:** Electrical · **Simulated span:** 0.03 s · **Example:** `BuckConverter`
+**Domain:** <span class="modelica-studio-domain" data-domain="electrical">Electrical</span> · **Simulated span:** 0.03 s · **Example:** `BuckConverter`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

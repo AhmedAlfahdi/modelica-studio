@@ -2,7 +2,7 @@
 
 > Mechanical: a mass on a spring with viscous damping
 
-**Domain:** Mechanical · **Simulated span:** 4 s · **Example:** `DampedOscillator`
+**Domain:** <span class="modelica-studio-domain" data-domain="mechanical">Mechanical</span> · **Simulated span:** 4 s · **Example:** `DampedOscillator`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

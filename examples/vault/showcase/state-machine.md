@@ -2,7 +2,7 @@
 
 > State machine: two states alternating on timers
 
-**Domain:** Discrete · **Simulated span:** 6 s · **Example:** `StateMachine`
+**Domain:** <span class="modelica-studio-domain" data-domain="discrete">Discrete</span> · **Simulated span:** 6 s · **Example:** `StateMachine`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

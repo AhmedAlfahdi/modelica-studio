@@ -2,7 +2,7 @@
 
 > Mechanical: a motor driving a load through a 5:1 gearbox
 
-**Domain:** Mechanical · **Simulated span:** 10 s · **Example:** `GearTrain`
+**Domain:** <span class="modelica-studio-domain" data-domain="mechanical">Mechanical</span> · **Simulated span:** 10 s · **Example:** `GearTrain`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

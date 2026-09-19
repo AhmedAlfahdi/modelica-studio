@@ -17,6 +17,7 @@ import { defaultSeriesNames } from "./series";
 import { collectParameters } from "./parameters";
 import type { TreeNode as PackageNode } from "../modelica/library";
 import { drawGraphic } from "../render/canvas";
+import { domainAttributes, domainOfLabel, domainOfPackage } from "../render/domains";
 import { currentTheme } from "../render/theme";
 import { EXAMPLES, findExample } from "../modelica/examples";
 import type {
@@ -1492,7 +1493,13 @@ export class ModelicaStudioView extends ItemView {
         cls: "modelica-studio-palette-group is-collapsed",
       });
       const head = group.createDiv({ cls: "modelica-studio-palette-group-head" });
-      head.setText(shortPackage(root));
+      // The package name carries its domain's colour, so the palette reads as
+      // physics rather than as a directory listing. A span rather than the head
+      // itself, so anything else added to the row stays in the normal colour.
+      head.createSpan({
+        ...domainAttributes(domainOfPackage(root)),
+        text: shortPackage(root),
+      });
       const list = group.createDiv({ cls: "modelica-studio-palette-group-list" });
       let built = false;
       head.addEventListener("click", () => {
@@ -3074,7 +3081,10 @@ export class ModelicaStudioView extends ItemView {
     }
 
     for (const [domain, list] of groups) {
-      menu.createDiv({ cls: "modelica-studio-examples-group", text: domain });
+      const dom = domainOfLabel(domain);
+      menu
+        .createDiv({ cls: "modelica-studio-examples-group" })
+        .createSpan({ ...domainAttributes(dom), text: domain });
       for (const ex of list) {
         const item = menu.createDiv({ cls: "modelica-studio-examples-item" });
         item.setAttribute("role", "menuitem");

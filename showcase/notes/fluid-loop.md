@@ -2,7 +2,7 @@
 
 > Fluid: a pumped loop through a pipe and an orifice
 
-**Domain:** Fluid · **Simulated span:** 3 s · **Example:** `FluidLoop`
+**Domain:** <span class="modelica-studio-domain" data-domain="fluid">Fluid</span> · **Simulated span:** 3 s · **Example:** `FluidLoop`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

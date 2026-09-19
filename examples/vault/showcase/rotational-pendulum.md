@@ -2,7 +2,7 @@
 
 > Mechanical: a rotational spring-damper met by a torque step
 
-**Domain:** Mechanical · **Simulated span:** 3 s · **Example:** `RotationalPendulum`
+**Domain:** <span class="modelica-studio-domain" data-domain="mechanical">Mechanical</span> · **Simulated span:** 3 s · **Example:** `RotationalPendulum`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

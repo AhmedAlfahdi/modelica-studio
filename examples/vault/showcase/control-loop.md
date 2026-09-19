@@ -2,7 +2,7 @@
 
 > Control: a PID controller driving a first-order plant
 
-**Domain:** Control · **Simulated span:** 8 s · **Example:** `ControlLoop`
+**Domain:** <span class="modelica-studio-domain" data-domain="blocks">Control</span> · **Simulated span:** 8 s · **Example:** `ControlLoop`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

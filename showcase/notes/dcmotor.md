@@ -2,7 +2,7 @@
 
 > Electrical: a permanent-magnet DC machine accelerating a load
 
-**Domain:** Electrical · **Simulated span:** 20 s · **Example:** `DCMotor`
+**Domain:** <span class="modelica-studio-domain" data-domain="electrical">Electrical</span> · **Simulated span:** 20 s · **Example:** `DCMotor`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

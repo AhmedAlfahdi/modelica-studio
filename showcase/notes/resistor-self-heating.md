@@ -2,7 +2,7 @@
 
 > Multiphysics: electrical loss heating a thermal mass, one domain into another
 
-**Domain:** Multiphysics · **Simulated span:** 100 s · **Example:** `ResistorSelfHeating`
+**Domain:** <span class="modelica-studio-domain" data-domain="multiphysics">Multiphysics</span> · **Simulated span:** 100 s · **Example:** `ResistorSelfHeating`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 

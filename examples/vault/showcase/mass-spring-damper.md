@@ -2,7 +2,7 @@
 
 > Mechanical: two free masses coupled by a spring and damper
 
-**Domain:** Mechanical · **Simulated span:** 5 s · **Example:** `MassSpringDamper`
+**Domain:** <span class="modelica-studio-domain" data-domain="mechanical">Mechanical</span> · **Simulated span:** 5 s · **Example:** `MassSpringDamper`
 
 *New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
 
