@@ -154,7 +154,14 @@ test("opening a file remembers where it came from", () => {
   const load = /async loadModelFromFile[\s\S]*?\n  \}/.exec(src);
   assert.ok(load, "the loader is present");
   assert.match(load[0], /this\.settings\.modelFiles\[withComponents\.name\] = file\.path/, "the path is recorded");
-  assert.match(load[0], /this\.modelSource = text/, "and the source, so a re-parse round-trips");
+  // The source goes with the diagram, in one call. Setting them separately is how
+  // `newModel` came to leave the previous model's source behind, which put the
+  // replaced model back on the canvas.
+  assert.match(load[0], /this\.replaceModel\([\s\S]*?text\)/, "and the source, so a re-parse round-trips");
+  assert.ok(
+    !/this\.modelSource = /.test(load[0]),
+    "assigned on its own, which is the shape of the bug this guards"
+  );
 });
 
 test("opening by path checks the file exists before reading it", () => {

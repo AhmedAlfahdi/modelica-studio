@@ -96,10 +96,20 @@ export async function chat(
         // so the timer makes it FAIL rather than hang. The abandoned request
         // finishes into nothing.
         const seconds = Math.round(timeoutMs / 1000);
+        // The thinking level is named when it is the likely cause, because it is
+        // the one setting that turns seconds into minutes and the remedy is a
+        // setting the reader can change. Sending them to "check the provider" when
+        // the answer is one dropdown away is the same mistake as calling a timeout
+        // a refusal.
+        const level = cfg.thinking ?? "off";
+        const blame =
+          level === "off"
+            ? "It may be a slow model, a long prompt, or a provider that is not responding."
+            : `Reasoning is set to "${level}", which asks the provider to think at length ` +
+              `before answering -- that alone can exceed this timeout.`;
         return new AiError(
-          `${cfg.model} did not reply within ${seconds} s. It may be a slow model, a ` +
-            `long prompt, or a provider that is not responding. Raise the timeout in ` +
-            `settings, or choose a faster model.`
+          `${cfg.model} did not reply within ${seconds} s. ${blame} Raise the timeout in ` +
+            `settings, set Thinking to Off, or choose a faster model.`
         );
       },
       signal

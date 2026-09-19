@@ -53,7 +53,17 @@ function loadBundle() {
     global: {},
     // settings.ts reads navigator.hardwareConcurrency when building defaults.
     navigator: { hardwareConcurrency: 4, userAgent: "node" },
-    window: { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} },
+    // `window` needs the timers too: the plugin's debounced persist uses
+    // `window.setTimeout`, and Obsidian's renderer provides that.
+    window: {
+      devicePixelRatio: 1,
+      addEventListener() {},
+      removeEventListener() {},
+      setTimeout,
+      clearTimeout,
+      setInterval,
+      clearInterval,
+    },
     requestAnimationFrame: (fn) => setTimeout(() => fn(0), 0),
     cancelAnimationFrame: (id) => clearTimeout(id),
     performance: { now: () => Date.now() },
@@ -423,6 +433,62 @@ test("end-to-end: serialize a diagram, run OMC, read results", { skip: !HAS_BUND
   }
   backend.dispose();
   void parseOmcCsv;
+});
+
+test("New leaves nothing of the previous model behind", { skip: !HAS_BUNDLE }, async () => {
+  // Driven through the plugin's real `newModel`, because the fault was a pairing
+  // that a source-level test can only describe: the diagram was replaced and the
+  // SOURCE was not, so `loadModelIntoEditor` filled the editor from the previous
+  // model's text and the editor's change handler parsed it straight back in. The
+  // canvas then repainted the model the user had just replaced.
+  const mod = loadBundle();
+  const instance = new mod.default();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "new-model-"));
+  fs.mkdirSync(path.join(dir, ".obsidian", "plugins", "modelica-studio"), { recursive: true });
+
+  instance.app = {
+    vault: { configDir: ".obsidian", adapter: { getBasePath: () => dir } },
+    workspace: { getLeavesOfType: () => [] },
+  };
+  instance.manifest = { id: "modelica-studio", version: "0.2.0-beta.1" };
+  // The settings the persist path reads. `modelStopTimes` is indexed by model
+  // name, so without it the save throws before it writes anything.
+  instance.settings = {
+    modelFiles: {},
+    modelFolder: "Modelica",
+    modelStopTimes: {},
+    stopTime: 20,
+  };
+  instance.saveData = async () => {};
+
+  const OLD = "model OldModel\n  Real x;\nend OldModel;";
+  try {
+    // A model the user had built, with its source, exactly as a real one is held.
+    instance.adoptModel(
+      { name: "OldModel", components: [{ id: "tank" }], connections: [], equations: [], graphics: [] },
+      OLD
+    );
+    assert.equal(instance.model.components.length, 1, "the old model is there to begin with");
+
+    await instance.newModel("FreshModel");
+
+    assert.equal(instance.model.name, "FreshModel", "the diagram is the new one");
+    assert.equal(instance.model.components.length, 0, "and it is empty");
+    // The one that matters: nothing of the old model may survive in the source,
+    // because the source is what refills the editor and then the diagram.
+    assert.ok(
+      !instance.modelSourceText().includes("OldModel"),
+      `the source still describes the previous model: ${instance.modelSourceText()}`
+    );
+    assert.equal(instance.modelSourceText(), "model FreshModel\nend FreshModel;\n", "it is the new skeleton");
+
+    // And Save writes the NEW model, not a stale or empty file.
+    const toSave = instance.sourceForSave();
+    assert.match(toSave, /model FreshModel/, "saving writes the new name");
+    assert.ok(!toSave.includes("OldModel"), "and nothing of the old one");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("the AI log is written, bounded and free of the key", { skip: !HAS_BUNDLE }, async () => {

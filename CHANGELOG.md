@@ -5,6 +5,28 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [Unreleased]
+
+### Fixed
+
+- **New left the previous model on the canvas.** `newModel` replaced the diagram
+  and left `modelSource` pointing at the model being replaced, so the editor was
+  filled from that stale text — and the editor's own change handler parsed it
+  straight back into the plugin. The canvas then repainted the model the user had
+  just asked to replace. It was the only one of five model-replacing paths that
+  missed the source; all five now go through one method that sets the diagram and
+  its source together, so a new path cannot repeat it.
+- **An AI request could sit for the whole timeout and answer nothing.** The
+  `Thinking` setting was on `High`, which asks the provider to reason at length
+  before answering — the client's own note calls it "the difference between
+  seconds and minutes", and on its own it can exceed the five-minute timeout. Its
+  label described it as "the provider's own default", which reads as the safe
+  choice. The hints now state what each level costs, a running request names the
+  level beside its clock, and a timeout names the level as the likely cause
+  instead of sending the reader to check the provider.
+- A missing optional field in the installation brief threw before the request was
+  sent, which from outside looks like the AI doing nothing at all.
+
 ## [0.2.0-beta.1] — 2026-09-18
 
 The first beta was a proof that the idea worked. This one is the editor you can

@@ -41,11 +41,36 @@ export type AiThinking = "off" | "low" | "high" | "max";
  */
 export type ModelStyle = "visual" | "equations";
 
+/**
+ * How much the provider is asked to reason before answering.
+ *
+ * The hints say what each level COSTS, because that is the part a reader cannot
+ * guess and the part that decides whether a run finishes. "High" used to be
+ * described as "the provider's own default", which reads as the safe choice: it
+ * is in fact the slow one, and it is what made a request that used to answer in
+ * seconds sit for the whole five-minute timeout instead.
+ */
 export const AI_THINKING_LEVELS: Array<{ id: AiThinking; label: string; hint: string }> = [
-  { id: "off", label: "Off", hint: "Answer immediately. Fastest, and the right default for code." },
-  { id: "low", label: "Low", hint: "A little reasoning. A middle ground for awkward requests." },
-  { id: "high", label: "High", hint: "The provider's own default. Slower, sometimes better on hard models." },
-  { id: "max", label: "Max", hint: "Most reasoning. Slowest; worth trying when attempts keep failing." },
+  {
+    id: "off",
+    label: "Off",
+    hint: "Answer immediately — seconds, not minutes. The right default for code, which the compiler checks anyway.",
+  },
+  {
+    id: "low",
+    label: "Low",
+    hint: "A little reasoning. Noticeably slower than Off; a middle ground for awkward requests.",
+  },
+  {
+    id: "high",
+    label: "High",
+    hint: "Heavy reasoning: expect MINUTES per attempt, which can exceed the timeout below. The provider's default, and the reason a request can appear to hang.",
+  },
+  {
+    id: "max",
+    label: "Max",
+    hint: "Most reasoning, and the slowest by some margin. Worth trying only when attempts keep failing.",
+  },
 ];
 
 /**

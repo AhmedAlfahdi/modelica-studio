@@ -1402,8 +1402,7 @@ export default class ModelicaStudioPlugin extends Plugin {
     } | null;
     this.settings = migrateSettings(mergeSettings(DEFAULT_SETTINGS, data), data);
     if (data?.model && Array.isArray(data.model.components)) {
-      this.model = data.model;
-      this.modelSource = typeof data.modelSource === "string" ? data.modelSource : "";
+      this.replaceModel(data.model, typeof data.modelSource === "string" ? data.modelSource : "");
       // The FILE wins over the snapshot -- see `adoptSourceFromFile`. Deferred to
       // `onLayoutReady` rather than done here: `loadSettings` runs before Obsidian
       // has indexed the vault, so every lookup returned "not in the vault yet" and
@@ -1594,8 +1593,7 @@ export default class ModelicaStudioPlugin extends Plugin {
     // Prefer a class that actually has a diagram; otherwise the first model.
     const withComponents = classes.find((c) => c.components.length > 0) ?? classes[0];
     await this.ensureLibrary();
-    this.model = toDiagramModel(withComponents, (n) => this.library.describe(n));
-    this.modelSource = text;
+    this.replaceModel(toDiagramModel(withComponents, (n) => this.library.describe(n)), text);
     // Remember the file it came from, so Save writes back to it instead of
     // creating a second copy under the class name.
     this.settings.modelFiles[withComponents.name] = file.path;
@@ -1788,9 +1786,7 @@ export default class ModelicaStudioPlugin extends Plugin {
     if (classes.length === 0) return undefined;
     // Prefer the first class that actually has components.
     const target = classes.find((c) => c.components.length > 0) ?? classes[0];
-    this.model = toDiagramModel(target, (n) => this.library.component(n));
-    this.modelSource = source;
-    this.modelOutdated = false;
+    this.replaceModel(toDiagramModel(target, (n) => this.library.component(n)), source);
     await this.persist();
     const view = this.getView();
     if (view) {
@@ -1814,11 +1810,28 @@ export default class ModelicaStudioPlugin extends Plugin {
     return toDiagramModel(target, (n) => this.library.component(n));
   }
 
-  /** Make a parsed model current, keeping the source it came from. */
-  adoptModel(model: DiagramModel, source: string): void {
+  /**
+   * Make a model current, with the source it came from.
+   *
+   * ONE method, because setting them separately is how `newModel` came to leave
+   * the previous model's source behind: `loadModelIntoEditor` then filled the
+   * editor from that stale text, and the editor's own change handler parsed it
+   * straight back into the plugin -- so the canvas repainted the model the user
+   * had just replaced. Every path that replaces the diagram goes through here, so
+   * a new one cannot repeat it.
+   *
+   * `outdated` says the source does NOT describe the diagram, which is true only
+   * while a diagram edit has not yet been realised back into text.
+   */
+  private replaceModel(model: DiagramModel, source: string, outdated = false): void {
     this.model = model;
     this.modelSource = source;
-    this.modelOutdated = false;
+    this.modelOutdated = outdated;
+  }
+
+  /** Make a parsed model current, keeping the source it came from. */
+  adoptModel(model: DiagramModel, source: string): void {
+    this.replaceModel(model, source);
     this.traceStep("adopt", model.name);
     this.schedulePersist();
   }
@@ -1852,9 +1865,21 @@ export default class ModelicaStudioPlugin extends Plugin {
     }, 600);
   }
 
-  /** Create a fresh diagram, e.g. from the command palette. */
+  /**
+   * Create a fresh diagram, e.g. from the command palette.
+   *
+   * The SOURCE goes with the model. Leaving it behind -- which is what this did --
+   * meant the editor was filled from the previous model's text, and the editor's
+   * change handler parsed that straight back into the plugin, so the canvas
+   * repainted the model the user had just replaced. Reported as "the canvas
+   * doesn't clean up".
+   *
+   * The skeleton rather than an empty string: the editor should not open blank,
+   * and Save should write a valid class rather than nothing. It is the source OF
+   * the empty diagram, so the two agree and nothing re-parses anything.
+   */
   async newModel(name: string): Promise<void> {
-    this.model = emptyDiagram(name);
+    this.replaceModel(emptyDiagram(name), `model ${name}\nend ${name};\n`);
     await this.persist();
     this.getView()?.loadModelIntoEditor();
   }

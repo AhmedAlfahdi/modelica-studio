@@ -1320,7 +1320,15 @@ export class ModelicaStudioView extends ItemView {
     const base = this.aiPhase || `Asking ${model}`;
     const limit = this.plugin.settings.ai.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
     const left = Math.max(0, limit - seconds);
-    this.aiProgressEl.setText(`${base} — ${seconds}s (gives up at ${limit}s, ${left}s left)`);
+    // The thinking level is named while a request runs, because it is the one
+    // setting that decides whether the wait is seconds or minutes and nothing
+    // else on screen says so. A clock that climbs for five minutes with no
+    // explanation is indistinguishable from a hang.
+    const thinking = this.plugin.settings.ai.thinking ?? "off";
+    const why = thinking === "off" ? "" : `, thinking=${thinking}`;
+    this.aiProgressEl.setText(
+      `${base} — ${seconds}s${why} (gives up at ${limit}s, ${left}s left)`
+    );
   }
 
   private stopAiTimer(): void {

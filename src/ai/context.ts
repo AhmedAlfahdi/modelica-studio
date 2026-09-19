@@ -81,7 +81,7 @@ export function describeEnvironment(env: AiEnvironment): string {
   );
   if (env.jobs > 1) lines.push(`- Code is generated with ${env.jobs} parallel jobs.`);
 
-  if (env.excluded.length) {
+  if (env.excluded?.length) {
     lines.push(
       `- These libraries are excluded by the user and must NOT be used: ${env.excluded.join(", ")}`
     );
