@@ -369,4 +369,20 @@ export const EXPLAIN = {
     takeaway:
       "The diode costs a **forward drop**: at 0.115 A it takes about 0.466 V, which is why the peak is 11.534 V rather than 12. It is also not perfect in reverse — Modelica's diode is a Shockley device with a saturation current, so the blocked half leaks about a microamp and the load sits 0.1 mV below zero rather than at exactly zero. Textbook diodes are idealisations; this one is not. That drop is a real design cost — it is a fixed tax on the voltage, so it hurts far more at 5 V than at 240 V. It is also why a bridge rectifier (four diodes) is used when you want to use both halves of the cycle: it doubles the output pulses but charges you two diode drops instead of one.",
   },
+  ResistorSelfHeating: {
+    idea:
+      "A 10 V supply drives 1 A through a 10 ohm resistor, which turns that current into 10 W of heat. The heat has nowhere to go but into the resistor's own body, which warms up, and from the body into the surrounding air. The temperature rises until the body sheds heat exactly as fast as the current makes it.",
+    schematic:
+      "**This one is genuinely two models joined.** On the left is an electrical circuit — a supply, a resistor, a return path — and on the right a thermal one: a heat capacity, a path to ambient, and a fixed ambient temperature. Nothing about the left side knows the right exists. They meet at one line, `connect(resistor.heatPort, body.port)`, which is the wire that carries watts instead of amps.",
+    reading: [
+      ["`resistor(R=10, useHeatPort=true)`", "10 ohms, and `useHeatPort` is what gives it a heat port to lose its loss through. Without it the heat would simply vanish, which is the usual electrical-only idealisation."],
+      ["`body(C=5)`", "how much heat it takes to raise the body's temperature: 5 joules per kelvin. A small part, so it warms quickly."],
+      ["`toAmbient(G=0.5)`", "how fast heat escapes: 0.5 watts for every kelvin above ambient. Twice the gap, twice the flow."],
+      ["`supply(V=10)` and `return_path`", "the 10 V source and the wire back to it, which is what makes the current 1 A."],
+      ["`P = V*I = 10 W`", "the heat being made, every second, from the first instant."],
+    ],
+    takeaway:
+      "The temperature climbs by **20 K and stops**, at 313.15 K (40 °C). It stops because 20 K is exactly the gap at which the body sheds `0.5 × 20 = 10 W` — the same 10 W coming in. Before that, more heat arrives than leaves and the surplus warms the body; the surplus shrinks as the gap opens, which is why the curve flattens rather than rising in a straight line.",
+  },
+
 };

@@ -653,6 +653,34 @@ equation
 end GearTrain;
 `;
 /** All built-in examples, grouped by physical domain, in the order shown. */
+const RESISTORSELFHEATING = `model ResistorSelfHeating "A resistor self-heating: electrical loss into a thermal mass"
+  Modelica.Electrical.Analog.Sources.ConstantVoltage supply(V = 10)
+    "Constant 10 V across the resistor"
+    annotation(Placement(transformation(extent = {{-60, -10}, {-40, 10}})));
+  Modelica.Electrical.Analog.Basic.Resistor resistor(R = 10, useHeatPort = true)
+    "10 ohm resistor; its electrical loss leaves through heatPort"
+    annotation(Placement(transformation(extent = {{-10, 20}, {10, 40}})));
+  Modelica.Electrical.Analog.Basic.Ground return_path
+    "The return conductor, held at zero potential"
+    annotation(Placement(transformation(extent = {{-60, -50}, {-40, -30}})));
+  Modelica.Thermal.HeatTransfer.Components.HeatCapacitor body(C = 5, T(start = 293.15, fixed = true))
+    "The resistor body: 5 J/K of thermal mass"
+    annotation(Placement(transformation(extent = {{20, 20}, {40, 40}})));
+  Modelica.Thermal.HeatTransfer.Components.ThermalConductor toAmbient(G = 0.5)
+    "0.5 W/K path from the body to the surrounding air"
+    annotation(Placement(transformation(extent = {{20, -40}, {40, -20}})));
+  Modelica.Thermal.HeatTransfer.Sources.FixedTemperature ambient(T = 293.15)
+    "Still air at 20 degrees C"
+    annotation(Placement(transformation(extent = {{60, -40}, {80, -20}})));
+equation
+  connect(supply.p, resistor.p);
+  connect(resistor.n, supply.n);
+  connect(supply.n, return_path.p);
+  connect(resistor.heatPort, body.port);
+  connect(body.port, toAmbient.port_a);
+  connect(toAmbient.port_b, ambient.port);
+end ResistorSelfHeating;
+`;
 export const EXAMPLES: ExampleModel[] = [
   {
     name: "Electrical",
@@ -860,6 +888,13 @@ export const EXAMPLES: ExampleModel[] = [
     stopTime: 10,
     series: ["motorInertia.w", "loadInertia.w"],
     source: GEARTRAIN,
+  },
+  {
+    name: "ResistorSelfHeating",
+    description: "Multiphysics: electrical loss heating a thermal mass, one domain into another",
+    stopTime: 100,
+    series: ["body.T", "resistor.LossPower", "toAmbient.Q_flow"],
+    source: RESISTORSELFHEATING,
   },
 ];
 

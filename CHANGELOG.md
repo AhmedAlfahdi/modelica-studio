@@ -16,6 +16,24 @@ version is 0, a minor bump may include changes that are not backward compatible.
   it takes effect in a fraction of a second — and a stopped run says it was
   stopped rather than reporting that the provider could not be reached.
 
+### Added
+
+- **`ResistorSelfHeating`, the first multi-domain example.** A 10 V supply drives
+  1 A through a 10 ohm resistor, and the 10 W of loss goes into the resistor's own
+  body — 5 J/K of heat capacity with a 0.5 W/K path to ambient — instead of
+  vanishing as it does in an electrical-only idealisation. The two domains meet at
+  one line, `connect(resistor.heatPort, body.port)`, which is the whole point of
+  the example: the electrical side is instantaneous and the thermal side
+  integrates, so the current settles in microseconds while the temperature takes
+  tens of seconds.
+
+  Ten new checks, all against values derived from the physics rather than read off
+  the simulation: the loss is `V^2/R`, the rise is `P/G = 20 K`, the time constant
+  is `C/G = 10 s`, and the closed form is matched at one and two time constants.
+  Two of them need no closed form at all — the instantaneous balance
+  `P_in - Q_out = C dT/dt`, and `Q_out = G(T - T_amb)` — which is what would catch
+  a port wired to the wrong side. The audit is now 97 checks.
+
 ### Removed
 
 - **The BouncingBall example**, from the built-in catalogue, the example vault and

@@ -235,7 +235,7 @@ code-block processor — \`\`\`modelica time=20 reaches the plugin as just
 
 ## How the verification works
 
-\`test/audit.test.mjs\` runs every example and asserts 88 numeric checks against
+\`test/audit.test.mjs\` runs every example and asserts 97 numeric checks against
 values derived independently of the plugin. Three of those expectations were
 themselves wrong when first written, and were corrected only after the
 discrepancy was traced to the expectation rather than the simulation — a series

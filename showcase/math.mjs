@@ -490,4 +490,24 @@ export const NOTES = {
       ["conduction", "half the cycle", "positive half only"],
     ],
   },
+  ResistorSelfHeating: {
+    title: "Multiphysics — a resistor heating itself",
+    domain: "Multiphysics",
+    equations: [
+      "P_{in} = \\frac{V^2}{R} = \\frac{10^2}{10} = 10\\ \\text{W}",
+      "C\\frac{dT}{dt} = P_{in} - G\\,(T - T_{amb})",
+      "\\tau = \\frac{C}{G} = \\frac{5}{0.5} = 10\\ \\text{s}, \\qquad \\Delta T_\\infty = \\frac{P_{in}}{G} = 20\\ \\text{K}",
+      "T(t) = T_{amb} + \\Delta T_\\infty\\left(1 - e^{-t/\\tau}\\right)",
+    ],
+    insight:
+      "Two domains, one equation each, joined by a single port. The **electrical** side is instantaneous — Ohm's law has no memory, so the loss is 10 W from the first microsecond. The **thermal** side integrates: that 10 W accumulates in 5 J/K of heat capacity until the body is hot enough to shed it to ambient as fast as it arrives. Nothing couples them but `connect(resistor.heatPort, body.port)`, and the two timescales are what make the model interesting: the current settles in microseconds, the temperature over tens of seconds.",
+    checks: [
+      ["loss power V^2/R", "10 W", "10.00 W"],
+      ["time constant C/G", "10 s", "10 s"],
+      ["body.T at 1 tau", "305.79 K", "305.79 K"],
+      ["body.T at 2 tau", "310.44 K", "310.44 K"],
+      ["steady rise P/G", "20 K", "20 K"],
+    ],
+  },
+
 };

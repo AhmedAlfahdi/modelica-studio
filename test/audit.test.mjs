@@ -493,6 +493,48 @@ test("every example matches an independently derived result", { skip: !HAS_OMC }
     check("load settles to rest against the bearing", 0, at(r, "loadInertia.w", 10), 1e-4, " rad/s");
   }
 
+  console.log("\n== ResistorSelfHeating: electrical loss into a thermal mass ==");
+  {
+    // Two domains joined at one port. Every expectation below is derived from the
+    // physics rather than read off the simulation, which is the whole point of
+    // this file: the electrical side is instantaneous and the thermal side
+    // integrates, and if the port between them were wired wrongly the numbers
+    // would still look plausible while meaning nothing.
+    const V = 10;
+    const R = 10;
+    const C = 5;
+    const G = 0.5;
+    const Tamb = 293.15;
+    const P = (V * V) / R; // 10 W, from Ohm's law alone
+    const tau = C / G; // 10 s
+    const rise = P / G; // 20 K, where shedding matches making
+
+    const r = await sim("ResistorSelfHeating", { stopTime: 20 * tau, numberOfIntervals: 20000 });
+
+    check("loss power V^2/R", P, at(r, "resistor.LossPower", tau), 1e-6, " W");
+    check("current V/R", V / R, at(r, "resistor.i", tau), 1e-9, " A");
+    check("body.T at t = C/G", Tamb + rise * (1 - Math.exp(-1)), at(r, "body.T", tau), 1e-3, " K");
+    check("body.T at t = 2C/G", Tamb + rise * (1 - Math.exp(-2)), at(r, "body.T", 2 * tau), 1e-3, " K");
+    check("steady rise = P/G", Tamb + rise, at(r, "body.T", 20 * tau), 1e-3, " K");
+
+    // The instantaneous power balance, which needs no closed form at all: what the
+    // current makes, less what the body sheds, is exactly what warms it. Checked
+    // mid-rise, where all three terms are large and a wiring mistake could not hide.
+    const t = 3 * tau;
+    const madeW = at(r, "resistor.LossPower", t);
+    const shedW = at(r, "toAmbient.Q_flow", t);
+    const warmsW = C * at(r, "body.der_T", t);
+    check("P_in - Q_out = C dT/dt", madeW, shedW + warmsW, 1e-3, " W");
+    check("Q_out = G (T - Tamb)", G * (at(r, "body.T", t) - Tamb), shedW, 1e-3, " W");
+
+    // And the shape, which no single number shows.
+    const T = S(r, "body.T").values;
+    let monotonic = 1;
+    for (let k = 1; k < T.length; k++) if (T[k] < T[k - 1] - 1e-9) monotonic = 0;
+    check("temperature rises monotonically", 1, monotonic, 0, "");
+    check("never overshoots the steady value", 1, Math.max(...T) <= Tamb + rise + 1e-6 ? 1 : 0, 0, "");
+  }
+
   console.log(`\n${results.filter((r) => r.ok).length}/${results.length} checks passed`);
 
   const failed = results.filter((r) => !r.ok);
