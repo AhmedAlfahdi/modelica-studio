@@ -326,3 +326,101 @@ test("documenting what was rejected does not get the answer rejected", async () 
     assert.match(body[0], /stripComments\(|replace\(\/\\\/\\\/\[\^\\n\]\*\/g/, `${name} must strip comments first`);
   }
 });
+
+test("Stop interrupts the request, not just the loop", async () => {
+  // Reported: "even when press stop it wont stop". The Stop button set a flag
+  // that is only READ BETWEEN ATTEMPTS, and one attempt is one HTTP call that can
+  // legitimately take minutes -- so Stop did nothing until the call returned by
+  // itself. The client had taken an `AbortSignal` all along; the view simply never
+  // passed one.
+  const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+
+  // A controller per run, aborted by the button.
+  assert.match(view, /private aiAbort: AbortController \| null = null/, "there is a controller");
+  assert.match(view, /this\.aiAbort = new AbortController\(\)/, "created for each run");
+  const stop = /stop\.addEventListener\("click", \(\) => \{[\s\S]*?\n    \}\);/.exec(view);
+  assert.ok(stop, "the stop handler is present");
+  assert.match(stop[0], /this\.aiAbort\?\.abort\(\)/, "and it aborts the request");
+
+  // And the signal reaches the call, which is the part that was missing.
+  assert.match(
+    view,
+    /chat\(cfg, messages, \(\) => this\.plugin\.aiKey\(\), this\.aiAbort\?\.signal\)/,
+    "the signal is passed to the request"
+  );
+  const client = fs.readFileSync(path.join(repoRoot, "src/ai/client.ts"), "utf8");
+  assert.match(client, /signal\?: AbortSignal/, "the client accepts one");
+  // `withTimeout` polls it, so a Stop takes effect in a fraction of a second
+  // rather than at the next attempt or the timeout.
+  const deadline = fs.readFileSync(path.join(repoRoot, "src/ai/deadline.ts"), "utf8");
+  assert.match(deadline, /if \(signal\.aborted\) reject/, "the wait notices the abort");
+
+  // The controller is dropped when the run ends, so a later Stop cannot abort a
+  // request that is not there.
+  assert.match(view, /this\.aiAbort = null;/, "and it is cleared in the finally");
+});
+
+test("a cancelled run says it was stopped, not that the provider failed", async () => {
+  // Aborting makes `withTimeout` reject with a plain Error, which the client
+  // wrapped as "Could not reach the provider" -- sending the reader to check a
+  // connection that was working, for an action they had just taken themselves.
+  const client = fs.readFileSync(path.join(repoRoot, "src/ai/client.ts"), "utf8");
+  // Bounded by the end of the catch block, not by the first `throw`: a
+  // non-greedy match to `throw new AiError(` stops BEFORE the call it is looking
+  // for, so the assertion below could never see the message.
+  const guard = /catch \(err\) \{[\s\S]*?\n  \}/.exec(client);
+  assert.ok(guard, "the client catch is present");
+  assert.match(guard[0], /if \(signal\?\.aborted\) throw new AiError\("Stopped\."\)/, "it checks the abort first");
+  assert.ok(
+    guard[0].indexOf("signal?.aborted") < guard[0].indexOf("Could not reach"),
+    "before the network case, or the wrong message wins"
+  );
+
+  // And the loop reports the reason the reader caused.
+  const loop = fs.readFileSync(path.join(repoRoot, "src/ai/loop.ts"), "utf8");
+  const caught = /const text = messageOf\(err\);[\s\S]*?provider-error", text, style\);/.exec(loop);
+  assert.ok(caught, "the loop catch is present");
+  assert.match(caught[0], /if \(events\.isCancelled\?\.\(\)\) return finish\(attempts, "cancelled"/, "it reports a cancellation");
+});
+
+test("Stop is not described as waiting for a step that may take minutes", () => {
+  // The old label said "after the current step", which was honest and still
+  // useless: the step is a request that can run for the whole timeout.
+  const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  assert.ok(!/Stopping after the current step/.test(view), "the misleading progress text is gone");
+  assert.match(view, /this\.setAiProgress\("Stopping…"\)/, "it says it is stopping");
+});
+
+test("a request that never answers is stopped promptly", async () => {
+  // The behaviour, not the wiring: a provider that accepts the call and then says
+  // nothing. Before the fix this ran to the 300 s timeout with Stop doing nothing.
+  const { withTimeout } = await import(
+    path.join(buildLibs("ai-deadline", ["src/ai/deadline.ts"]), "deadline.js")
+  );
+
+  // Never settles, like a request the provider has accepted and abandoned.
+  const hanging = new Promise(() => {});
+
+  // With a signal, an abort settles it in a fraction of a second -- and the poll
+  // is what makes that true, so the margin here is generous but the assertion is
+  // still about immediacy rather than about the timeout.
+  const controller = new AbortController();
+  const started = Date.now();
+  const p = withTimeout(hanging, 60_000, () => new Error("timed out"), controller.signal);
+  setTimeout(() => controller.abort(), 50);
+  await assert.rejects(p, /Cancelled/);
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < 2000, `an abort must settle the wait promptly, took ${elapsed}ms`);
+
+  // Without one it still gives up at the deadline rather than hanging for ever.
+  const started2 = Date.now();
+  await assert.rejects(
+    withTimeout(hanging, 120, () => new Error("timed out")),
+    /timed out/
+  );
+  assert.ok(Date.now() - started2 < 2000, "and the deadline still applies without a signal");
+
+  // A signal that never aborts does not disturb a normal answer.
+  const okController = new AbortController();
+  assert.equal(await withTimeout(Promise.resolve("answer"), 1000, () => new Error("x"), okController.signal), "answer");
+});

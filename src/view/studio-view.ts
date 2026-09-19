@@ -667,8 +667,11 @@ export class ModelicaStudioView extends ItemView {
     stop.style.display = "none";
     stop.addEventListener("click", () => {
       this.aiCancel = true;
+      // Interrupt the call, not just the loop: the loop only looks at the flag
+      // between attempts, and the attempt in flight can be minutes long.
+      this.aiAbort?.abort();
       stop.setAttribute("disabled", "true");
-      this.setAiProgress("Stopping after the current step…");
+      this.setAiProgress("Stopping…");
     });
     this.aiStopBtn = stop;
 
@@ -701,6 +704,15 @@ export class ModelicaStudioView extends ItemView {
   private aiStopBtn: HTMLButtonElement | null = null;
   /** Opens the AI exchange log, from the row that reports the failure. */
   private aiLogBtn: HTMLButtonElement | null = null;
+  /**
+   * Aborts the request in flight.
+   *
+   * `aiCancel` alone was not enough: it is only read BETWEEN attempts, and one
+   * attempt is one HTTP call that can legitimately take minutes. Pressing Stop
+   * therefore did nothing at all until the call returned on its own, which is what
+   * "press stop it wont stop" was. This reaches into the call itself.
+   */
+  private aiAbort: AbortController | null = null;
   private aiProgressEl: HTMLElement | null = null;
   /** Set by the Stop button; the loop polls it between steps. */
   private aiCancel = false;
@@ -1218,7 +1230,9 @@ export class ModelicaStudioView extends ItemView {
         // The library's verdict on what is a component, so a type declaration is
         // not mistaken for an unwired block.
         isComponent: (name) => this.plugin.isComponentClass(name),
-        send: (messages) => chat(cfg, messages, () => this.plugin.aiKey()),
+        // The signal, so Stop reaches the request instead of waiting for it.
+        send: (messages) =>
+          chat(cfg, messages, () => this.plugin.aiKey(), this.aiAbort?.signal),
         buildMessages: (p, current, failureText, style) =>
           buildMessages({
             prompt: p,
@@ -1246,6 +1260,7 @@ export class ModelicaStudioView extends ItemView {
           // and the number always describes the step on screen.
           if (event.phase !== "asking") {
             this.aiStartedAt = Date.now();
+      this.aiAbort = new AbortController();
             this.setAiProgress(`${this.aiPhase}…`);
           }
         },
@@ -1272,6 +1287,7 @@ export class ModelicaStudioView extends ItemView {
         this.aiStopBtn.removeAttribute("disabled");
       }
       this.aiCancel = false;
+      this.aiAbort = null;
     }
   }
 

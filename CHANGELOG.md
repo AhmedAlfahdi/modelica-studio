@@ -7,6 +7,15 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Stop did nothing until the request finished on its own.** The button set a
+  flag that is only read BETWEEN attempts, and one attempt is one HTTP call that
+  can legitimately run for the whole timeout. The client had accepted an
+  `AbortSignal` all along; the view never passed one. Stop now aborts the call, so
+  it takes effect in a fraction of a second — and a stopped run says it was
+  stopped rather than reporting that the provider could not be reached.
+
 ### Changed
 
 - **The AI is told to write equations rather than unwired blocks.** A model of

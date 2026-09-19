@@ -222,6 +222,11 @@ export async function runGenerationLoop(
       // Neither a refusal nor a timeout is fixed by another attempt, and they are
       // told apart because the reader has to do different things about them.
       const text = messageOf(err);
+      // A cancellation is the reader's own doing, and reporting it as a provider
+      // fault would be a lie about what happened. Checked here as well as between
+      // attempts because a Stop can land while the request is in flight -- which
+      // is the only moment it is ever pressed.
+      if (events.isCancelled?.()) return finish(attempts, "cancelled", "Stopped.", style);
       return finish(attempts, isTimeout(text) ? "timed-out" : "provider-error", text, style);
     }
 

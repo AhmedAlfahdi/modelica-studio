@@ -116,13 +116,18 @@ export async function chat(
     );
   } catch (err) {
     if (err instanceof AiError) throw err;
+    // A cancellation is reported as one, and checked BEFORE the network case:
+    // aborting makes `withTimeout` reject with a plain Error, which would
+    // otherwise be wrapped as "could not reach the provider" and send the reader
+    // to check a connection that was working.
+    if (signal?.aborted) throw new AiError("Stopped.");
     // Network-level failure: no response at all.
     throw new AiError(
       `Could not reach ${cfg.baseUrl}. Check the URL and your connection. (${String(err)})`
     );
   }
 
-  if (signal?.aborted) throw new AiError("Cancelled.");
+  if (signal?.aborted) throw new AiError("Stopped.");
 
   if (response.status < 200 || response.status >= 300) {
     throw new AiError(describeHttpError(response.status, response.text), response.status);
