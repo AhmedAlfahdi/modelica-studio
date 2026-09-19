@@ -232,3 +232,97 @@ test("the AI log is reachable from the row that reports the failure", () => {
   const main = fs.readFileSync(path.join(repoRoot, "src/main.ts"), "utf8");
   assert.match(main, /formatExchanges\(exchanges\)/, "the command uses the same formatter");
 });
+
+test("the prompt forbids unwired components and requires documentation", async () => {
+  // Asked for after seeing the AI return a model that compiles and simulates while
+  // carrying blocks nothing is connected to: "give the AI instructions to not
+  // create blocks and use just equations if the blocks are unconnectable", and
+  // "always produce extensively commented and documented code".
+  const { buildMessages } = await import(
+    path.join(buildLibs("ai-prompt", ["src/ai/prompts.ts"]), "prompts.js")
+  );
+
+  for (const style of ["visual", "equations"]) {
+    const system = buildMessages({ prompt: "simulate freefall of an object", style }).find(
+      (m) => m.role === "system"
+    ).content;
+
+    // The escape hatch has to be explicit, because the visual instruction pushes
+    // hard toward a diagram and otherwise leaves no way out of an unwireable one.
+    assert.match(system, /every component must have a wire/i, `${style}: the wiring rule is stated`);
+    assert.match(system, /cannot answer for every single component/i, `${style}: with a test to apply`);
+    assert.match(
+      system,
+      /Returning equations when the request sounded like a diagram is a GOOD answer/i,
+      `${style}: and equations are named as the right fallback`
+    );
+
+    // Documentation, as requirements rather than encouragement.
+    assert.match(system, /a reader must not have to guess/i, `${style}: documentation is required`);
+    assert.match(system, /comment on EVERY declaration/i, `${style}: on every declaration`);
+    assert.match(system, /Units named in every comment/i, `${style}: with units`);
+    assert.match(system, /comment before each GROUP of equations/i, `${style}: grouped`);
+    assert.match(system, /unfinished even when it compiles/i, `${style}: and it is not optional`);
+  }
+
+  // The style rules must not contradict the escape hatch: the visual rule is the
+  // one that would otherwise say "prefer the diagram" with no exception.
+  const prompts = fs.readFileSync(path.join(repoRoot, "src/ai/prompts.ts"), "utf8");
+  const visual = /"## Form of the answer: BUILD A DIAGRAM"[\s\S]*?\.join\("\\n"\)/.exec(prompts);
+  assert.ok(visual, "the visual rule is present");
+  assert.match(visual[0], /pile of unconnected blocks is not a diagram/, "the visual rule names the exception");
+});
+
+test("documenting what was rejected does not get the answer rejected", async () => {
+  // The hazard the documentation rule creates. `describeStyleViolation` counted
+  // components and connects in the RAW source, so an equations answer that
+  // illustrated the diagram it had considered -- in comments -- was rejected for
+  // containing it. The more thoroughly it explained itself, the more certainly
+  // that happened, which punishes exactly what the prompt now asks for.
+  const { describeStyleViolation } = await import(
+    path.join(buildLibs("ai-style", ["src/ai/generate.ts"]), "generate.js")
+  );
+
+  const documented = [
+    "model FreeFall",
+    "  // The diagram form was considered and rejected: there is nothing to wire.",
+    "  //   Modelica.Blocks.Sources.Constant weight(k = m * g)",
+    "  //   Modelica.Blocks.Math.Gain dragGain(k = 0.5 * rho * A * cd)",
+    "  //   connect(weight.y, netForce.u1);",
+    "  //   connect(dragGain.y, netForce.u2);",
+    "  Modelica.Units.SI.Height height;",
+    "equation",
+    "  der(height) = -velocity;",
+    "end FreeFall;",
+  ].join("\n");
+  assert.equal(
+    describeStyleViolation(documented, "equations"),
+    null,
+    "a commented-out example is not an assembly"
+  );
+
+  // The check still catches an assembly that is really there.
+  const real = [
+    "model Assembly",
+    "  Modelica.Blocks.Math.Gain a;",
+    "  Modelica.Blocks.Math.Gain b;",
+    "equation",
+    "  connect(a.y, b.u);",
+    "  connect(b.y, a.u);",
+    "end Assembly;",
+  ].join("\n");
+  assert.match(
+    String(describeStyleViolation(real, "equations")),
+    /came back as an assembly/,
+    "the real one is still caught"
+  );
+
+  // All three checks now agree on how to read a comment.
+  const generate = fs.readFileSync(path.join(repoRoot, "src/ai/generate.ts"), "utf8");
+  const checks = ["describeStaticModel", "describeLooseDiagram", "describeStyleViolation"];
+  for (const name of checks) {
+    const body = new RegExp(`export function ${name}\\([\\s\\S]*?\\n\\}`).exec(generate);
+    assert.ok(body, `${name} is present`);
+    assert.match(body[0], /stripComments\(|replace\(\/\\\/\\\/\[\^\\n\]\*\/g/, `${name} must strip comments first`);
+  }
+});

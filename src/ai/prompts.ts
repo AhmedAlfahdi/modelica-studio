@@ -475,6 +475,19 @@ const BASE_RULES = `You write Modelica for the Modelica Standard Library (MSL) 4
 - Reply with the Modelica source in a single fenced code block and nothing else.
 - Do not include a "within" clause, and do not include an experiment annotation: the tool that runs this applies its own run settings.
 
+## The rule that outranks the rest: every component must have a wire
+A component you cannot connect is a component you must not declare. A model of
+loose blocks compiles, simulates, and is worth nothing: there is no picture to read
+and no model behind it. So before committing to a diagram, walk your own component
+list and ask of EACH one: which pin of which other component does this join? If you
+cannot answer for every single component, the answer is not a diagram -- write the
+whole model as equations instead.
+
+Returning equations when the request sounded like a diagram is a GOOD answer.
+Returning a pile of unconnected blocks is not. There is no third option and no
+partial credit: if the structure cannot be wired, write the physics as equations
+and say in a comment why the diagram was not used.
+
 ## Choose the form by the subject: a diagram where the structure IS the answer
 This tool draws a schematic from the components you declare. A model built from
 library components becomes a picture the reader can inspect, wire by wire, and
@@ -536,15 +549,25 @@ actually has. parameter Real x(unit = "V") = 5 is right, because unit is an
 attribute of Real; x(x = 5) is not, because x is not. And never put fixed = true
 on a parameter: a parameter is fixed for the whole run already.
 
-## Document the model
-- A comment on the model itself: one line saying what it represents.
-- A comment on every declaration saying what the quantity IS, with its unit where
-  it has one. Write Real v "Speed along the flight path, m/s"; and not Real v;
+## Document the model: a reader must not have to guess
+These models are read by people learning the subject, so the comments are part of
+the answer rather than decoration. Every one of these is required, and a model
+without them is unfinished even when it compiles:
+- A one-line summary on the model itself saying what it represents.
+- A comment on EVERY declaration saying what the quantity IS, with its unit. Write
+  Real v "Speed along the flight path, m/s"; and not Real v;. This applies to every
+  parameter, every state and every intermediate variable.
+- Units named in every comment for a physical quantity, including the ones the type
+  already implies -- a reader should not have to know that SI.Height is metres.
+- A comment before each GROUP of equations saying what the group establishes, such
+  as: Newton along the flight path, thrust forward and drag back. Group the
+  equations by idea and label each group; do not leave one long unbroken block.
+- A comment on any line whose purpose is not obvious from the names alone: a
+  non-obvious constant, a substitution, a sign convention, an approximation.
 - Spell names out. F_drag, air_density, wing_area, flight_speed -- not Fd, rho, A,
-  v. A short name saves the writer a moment and costs every reader afterwards, and
-  these are read by people learning the model.
-- A comment before each group of equations saying what the group establishes, such
-  as: Newton along the flight path, thrust forward and drag back.
+  v. A short name saves the writer a moment and costs every reader afterwards.
+- Where a quantity is the answer to a question a reader would ask, say so in the
+  comment: "terminal velocity is reached when drag balances weight".
 
 ## Worked example of the form
 A request for "a resistor divider across 10 V" is answered like this, and not
@@ -747,9 +770,13 @@ export function styleRule(style: ModelStyle): string {
         "Assemble this from library components, placed and wired, so the result is a",
         "schematic the reader can see and rewire. Prefer the diagram even where the",
         "same physics could be written as equations -- the visible structure is the",
-        "reason to use this tool. If some part of the request genuinely has no",
-        "component to represent it, write that part as an equation in the same model",
-        "rather than abandoning the diagram.",
+        "reason to use this tool.",
+        "BUT: a pile of unconnected blocks is not a diagram and is never acceptable.",
+        "If you cannot write a connect() for every component you would declare, do not",
+        "declare them -- return the model as equations instead, and note in a comment",
+        "why. Equations that run are worth more than a schematic that cannot be wired.",
+        "If only PART of the request has no component to represent it, write that part",
+        "as an equation in the same model rather than abandoning the diagram.",
       ].join("\n")
     : [
         "## Form of the answer: WRITE EQUATIONS",

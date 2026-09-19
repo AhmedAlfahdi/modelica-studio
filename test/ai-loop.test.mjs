@@ -729,11 +729,18 @@ test("the prompt asks for documentation and spelled-out names", () => {
   // these are read by people learning the model.
   const src = fs.readFileSync(path.join(repoRoot, "src/ai/prompts.ts"), "utf8");
   assert.match(src, /## Document the model/, "there is a section for it");
-  assert.match(src, /comment on every declaration saying what the quantity IS/, "declarations are documented");
+  assert.match(src, /comment on EVERY declaration saying what the quantity IS/, "declarations are documented");
   assert.match(src, /Spell names out/, "names are spelled out");
   assert.match(src, /air_density/, "with an example of the difference");
-  // And the choice that produced the loose blocks is called out.
+  // Later hardened from encouragement into requirements: a reader must not have to
+  // guess, units are named in the comments, and equations are grouped and labelled.
+  assert.match(src, /a reader must not have to guess/, "and stated as a requirement");
+  assert.match(src, /Units named in every comment/, "with units");
+  // And the choice that produced the loose blocks is called out, with the escape
+  // hatch that makes the instruction actionable: equations instead of a pile.
   assert.match(src, /Do NOT assemble a pile of loose primitive blocks/, "loose primitives are named");
+  assert.match(src, /every component must have a wire/, "and the wiring rule outranks the rest");
+  assert.match(src, /Returning equations when the request sounded like a diagram is a GOOD answer/, "with equations named as the fallback");
 });
 
 /* ---- the benchmark's own arithmetic ---- */

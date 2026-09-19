@@ -373,8 +373,15 @@ function stripComments(source: string): string {
  */
 export function describeStyleViolation(source: string, style: ModelStyle): string | null {
   if (style !== "equations") return null;
-  const components = [...source.matchAll(/^\s*(?:redeclare\s+)?Modelica\.[\w.]+\s+\w+/gm)].length;
-  const connects = (source.match(/\bconnect\s*\(/g) ?? []).length;
+  // COMMENTS FIRST, like the other two checks. Scanning the raw source counted a
+  // commented-out illustration of the diagram form as a real assembly, so an
+  // equations answer that documented what it had considered and rejected was
+  // rejected for containing it -- and the more thoroughly it explained itself, the
+  // more certainly that happened. Asked for extensively documented code, the model
+  // would have been penalised for complying.
+  const body = stripComments(source);
+  const components = [...body.matchAll(/^\s*(?:redeclare\s+)?Modelica\.[\w.]+\s+\w+/gm)].length;
+  const connects = (body.match(/\bconnect\s*\(/g) ?? []).length;
 
   // Two of each is the point at which it is unmistakably an assembly.
   if (components < 2 || connects < 2) return null;

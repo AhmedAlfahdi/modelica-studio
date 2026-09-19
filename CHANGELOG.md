@@ -7,7 +7,27 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+### Changed
+
+- **The AI is told to write equations rather than unwired blocks.** A model of
+  loose blocks compiles, simulates, and is worth nothing. The rule now outranks
+  the rest, with the test to apply — walk your own component list and ask which
+  pin of which other component each one joins — and equations are named as a GOOD
+  answer when the structure cannot be wired, because the diagram instruction
+  otherwise pushes hard with no way out.
+- **Documentation is required, not encouraged.** A comment on every declaration
+  with its unit, each group of equations labelled with what it establishes, and a
+  comment on any line whose purpose is not obvious. These models are read by people
+  learning the subject, and a model without them is unfinished even when it
+  compiles.
+
 ### Fixed
+
+- **A documented answer was rejected for documenting.** `describeStyleViolation`
+  counted components and connections in the raw source, so an equations answer that
+  illustrated the diagram it had considered — in comments — was rejected for
+  containing it: the more thoroughly it explained itself, the more certainly that
+  happened. It strips comments now, like the other two checks.
 
 - **New left the previous model on the canvas.** `newModel` replaced the diagram
   and left `modelSource` pointing at the model being replaced, so the editor was
