@@ -5,7 +5,7 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
-## [Unreleased]
+## [0.2.0-beta.2] — 2026-09-19
 
 ### Fixed
 

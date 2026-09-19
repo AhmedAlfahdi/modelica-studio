@@ -73,13 +73,36 @@ files round-trip through OMEdit and other Modelica tools.
 
 ## Install
 
-Not in the community plugin list. Install manually:
+Not in the community plugin list yet. Two ways in.
+
+### With BRAT, which keeps it updated
+
+[BRAT](https://tfthacker.com/BRAT) installs a plugin straight from its GitHub
+releases and updates it for you. This plugin is beta-only, so every release is a
+pre-release and BRAT is the intended route.
+
+1. Install **BRAT** from Settings → Community plugins → Browse.
+2. In BRAT's settings, **Add Beta Plugin**.
+3. Enter this repository: `AhmedAlfahdi/modelica-studio`
+4. BRAT installs the latest release. Enable **Modelica Studio** in
+   Settings → Community plugins.
+
+To pin a version instead of tracking the latest, use BRAT's **frozen** option and
+name the release, for example `0.2.0-beta.2`.
+
+BRAT reports a mismatch if a release's tag, its name and the version inside the
+released `manifest.json` disagree. They are kept identical here on purpose, so an
+update is never held back by a version string.
+
+### By hand
 
 1. Take `main.js`, `manifest.json` and `styles.css` from a release, or build them
    (below).
 2. Create `<your-vault>/.obsidian/plugins/modelica-studio/`.
 3. Copy those three files into it.
-4. Enable **Modelica Studio** in Settings → Community plugins.
+4. **Reload Obsidian** — a plugin's `manifest.json` is read at startup, so
+   copying one in while the app is running does not register it.
+5. Enable **Modelica Studio** in Settings → Community plugins.
 
 To try it without your own vault, `examples/vault/` is a ready-made one — see
 [Testing](#testing).
@@ -90,7 +113,7 @@ To try it without your own vault, `examples/vault/` is a ready-made one — see
 npm install
 npm run build          # typecheck, then bundle to main.js
 npm run dev            # rebuild on change
-npm test               # 207 tests, including a numerical audit of every example
+npm test               # 504 tests, including a numerical audit of every example
 ```
 
 `npm test` runs the real OpenModelica compiler, so it needs `omc` on your PATH
