@@ -202,6 +202,30 @@ export function formatSummary(summary: LogSummary, recent: AiExchange[] = []): s
   return lines.join("\n");
 }
 
+/**
+ * The last few exchanges in full, for reading what was actually asked and answered.
+ *
+ * Apart from `formatSummary` because the two answer different questions: the
+ * summary says WHAT keeps going wrong, and this says what was sent and what came
+ * back for the cases that did.
+ */
+export function formatExchanges(exchanges: AiExchange[], count = 5): string {
+  const recent = exchanges.slice(-count);
+  if (!recent.length) return "";
+  return recent
+    .map((e) => {
+      const asked = e.prompt.replace(/\s+/g, " ").trim();
+      return [
+        `### ${e.at}  attempt ${e.attempt}  style=${e.style}  ${e.outcome}  ${e.ms}ms`,
+        ``,
+        `ASKED: ${asked}`,
+        e.reply ? `\nREPLY:\n${e.reply}` : "\nREPLY: (none)",
+        e.detail ? `\nWHY NOT: ${e.detail}` : "",
+      ].join("\n");
+    })
+    .join("\n\n");
+}
+
 function truncate(text: string, max: number): string {
   const oneLine = text.replace(/\s+/g, " ").trim();
   return oneLine.length <= max ? oneLine : `${oneLine.slice(0, max - 1)}…`;

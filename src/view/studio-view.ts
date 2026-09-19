@@ -31,7 +31,9 @@ import { docUrlFor, libraryVersionFrom } from "../modelica/doclinks";
 import { acceptsFileDrag, droppedVaultFile } from "./drop";
 import { RESULTS_TABS, resultsTabState, tabLabel, type ResultsTab } from "./bottom-tabs";
 import { savePrompt } from "../modelica/save-state";
-import { keptSourceNote, stopMessage } from "../ai/stop-message";
+import { keptSourceNote, reasonDetail, stopMessage } from "../ai/stop-message";
+import { formatExchanges, formatSummary, summarise } from "../ai/interaction-log";
+import { TextModal } from "./saved-models-modal";
 import { SavedModelsModal } from "./saved-models-modal";
 import { HelpModal } from "./help-modal";
 import { SimulationError } from "../omc/backend";
@@ -670,6 +672,19 @@ export class ModelicaStudioView extends ItemView {
     });
     this.aiStopBtn = stop;
 
+    // A way into the log from the row that reports the failure. The summary line
+    // can only carry so much, and "the same problem came back" is not actionable
+    // without the problem -- which is exactly what the log holds.
+    const logBtn = aiRow.createEl("button", { cls: "modelica-studio-btn" });
+    setIcon(logBtn, "file-text");
+    logBtn.createSpan({ text: "Prompt log" });
+    logBtn.setAttribute(
+      "aria-label",
+      "What was sent to the AI and what came back, with the reason each attempt was rejected"
+    );
+    logBtn.addEventListener("click", () => this.showAiLog());
+    this.aiLogBtn = logBtn;
+
     const progress = aiRow.createDiv({ cls: "modelica-studio-ai-progress" });
     progress.style.display = "none";
     progress.setAttribute("role", "status");
@@ -684,6 +699,8 @@ export class ModelicaStudioView extends ItemView {
   private aiInput: HTMLInputElement | null = null;
   private aiGoBtn: HTMLButtonElement | null = null;
   private aiStopBtn: HTMLButtonElement | null = null;
+  /** Opens the AI exchange log, from the row that reports the failure. */
+  private aiLogBtn: HTMLButtonElement | null = null;
   private aiProgressEl: HTMLElement | null = null;
   /** Set by the Stop button; the loop polls it between steps. */
   private aiCancel = false;
@@ -1198,6 +1215,9 @@ export class ModelicaStudioView extends ItemView {
           tolerance: this.plugin.settings.tolerance,
           solver: this.plugin.settings.solver,
         },
+        // The library's verdict on what is a component, so a type declaration is
+        // not mistaken for an unwired block.
+        isComponent: (name) => this.plugin.isComponentClass(name),
         send: (messages) => chat(cfg, messages, () => this.plugin.aiKey()),
         buildMessages: (p, current, failureText, style) =>
           buildMessages({
@@ -1303,8 +1323,17 @@ export class ModelicaStudioView extends ItemView {
     const why = stopMessage(outcome.reason, outcome.message, attempts);
     const kept = outcome.source && outcome.source !== original ? keptSourceNote(outcome.builds) : "";
 
-    this.setAiProgress(`${why} ${outcome.message} ${kept}`.trim());
+    // The REASON, not just the loop's description of it. "The same problem came
+    // back" says nothing a reader can act on, and the check that rejected the model
+    // said exactly what was wrong.
+    const last = outcome.attempts[outcome.attempts.length - 1];
+    const because = reasonDetail(last?.failure);
+    const tail = [because, outcome.message, kept].filter(Boolean).join(" ");
+    this.setAiProgress(`${why} ${tail}`.trim());
     this.setStatus(`AI: ${why} ${kept || "See the Run log for the compiler output."}`.trim());
+    // The panel line is one line; the full reason goes to the log, where it can be
+    // read and copied.
+    if (because) this.plugin.diag(`ai stopped: ${why} Reason: ${last?.failure}`, "warn");
     new Notice(`Modelica AI: ${why}`, 8000);
   }
 
@@ -1314,6 +1343,21 @@ export class ModelicaStudioView extends ItemView {
    * The label is kept and only the elapsed part is replaced, so a phase change
    * does not fight the clock.
    */
+  /**
+   * Show what was sent to the AI and what came back.
+   *
+   * Reachable from the AI row because the summary line can only carry so much: a
+   * reader told "the same problem came back" has no way to find out what the
+   * problem was, and the log is where it is written down.
+   */
+  private showAiLog(): void {
+    const exchanges = this.plugin.readAiExchanges();
+    const summary = formatSummary(summarise(exchanges), exchanges.slice(-15));
+    const detail = formatExchanges(exchanges);
+    const text = detail ? `${summary}\n\n${"-".repeat(72)}\n\n${detail}` : summary;
+    new TextModal(this.app, "AI prompt log", text).open();
+  }
+
   private tickAiProgress(model: string): void {
     if (!this.aiProgressEl) return;
     const seconds = Math.round((Date.now() - this.aiStartedAt) / 1000);

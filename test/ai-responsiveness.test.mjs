@@ -138,3 +138,97 @@ test("a missing optional field cannot abort a request", async () => {
   assert.match(text, /This installation/, "it describes what it can");
   assert.match(text, /not detected/, "and says what it does not know");
 });
+
+test("a type declaration is not an unwired block", async () => {
+  // THE REPORTED FAILURE. Asked to "simulate freefall of an object", the model came
+  // back written as quantities and equations — correct, and it builds — and was
+  // rejected five times running with "None of the 4 components are connected to
+  // each other: height, velocity, weight, drag_force". Those are declarations of
+  // `Modelica.Units.SI.*` types: physical quantities with no connector, for which
+  // no connect() could ever be written. The advice that followed was impossible to
+  // act on, so the same answer came back.
+  const { describeLooseDiagram, describeStyleViolation } = await import(
+    path.join(buildLibs("ai-loose", ["src/ai/generate.ts"]), "generate.js")
+  );
+
+  const equations = [
+    "model FreeFall",
+    "  parameter Modelica.Units.SI.Height release_height = 1000;",
+    "  Modelica.Units.SI.Height height(start = release_height, fixed = true);",
+    "  Modelica.Units.SI.Velocity velocity;",
+    "  Modelica.Units.SI.Force weight;",
+    "  Modelica.Units.SI.Force drag_force;",
+    "equation",
+    "  weight = 80 * 9.81;",
+    "  der(height) = -velocity;",
+    "end FreeFall;",
+  ].join("\n");
+  assert.equal(describeLooseDiagram(equations), null, "a correct equations model is not a loose diagram");
+  // And the style check agrees with it, which it always did -- the two were in
+  // direct contradiction, which is what made the loop unwinnable.
+  assert.equal(describeStyleViolation(equations, "equations"), null, "and it is the form that was asked for");
+
+  // A genuine loose diagram is still caught, or the fix would have removed the check.
+  const loose = [
+    "model Loose",
+    "  Modelica.Blocks.Math.Gain a;",
+    "  Modelica.Blocks.Math.Gain b;",
+    "equation",
+    "  y = a.y;",
+    "end Loose;",
+  ].join("\n");
+  // The message reads "None of the 2 components ARE connected to each other", so
+  // the phrase to match is the opening clause rather than a "not connected".
+  assert.match(String(describeLooseDiagram(loose)), /None of the 2 components are connected/, "a real loose diagram still fails");
+
+  // The library's own verdict takes precedence when it is available, so the check
+  // does not depend on a list of namespaces staying correct.
+  const asType = (name) => name.startsWith("Modelica.Blocks.");
+  assert.equal(describeLooseDiagram(equations, asType), null, "no components by the library's reckoning");
+  assert.match(String(describeLooseDiagram(loose, asType)), /None of the 2 components/, "and the blocks are still blocks");
+});
+
+test("an equations answer is not asked to wire anything", () => {
+  // The two checks contradicted each other: the style check says in as many words
+  // that "a library component inside an otherwise-equation model is fine", and the
+  // loose-diagram check rejected exactly that. Only a DIAGRAM can be a loose
+  // diagram, so the form decides whether the check applies at all.
+  const generate = fs.readFileSync(path.join(repoRoot, "src/ai/generate.ts"), "utf8");
+  const call = /const problem =[\s\S]*?describeStyleViolation\(source, askedFor\);/.exec(generate);
+  assert.ok(call, "the check chain is present");
+  assert.match(call[0], /askedFor === "equations"[\s\S]*?null/, "the equations form skips the loose check");
+  assert.match(call[0], /describeLooseDiagram\(source, request\.isComponent\)/, "and the library's verdict is used");
+  // The view supplies it.
+  const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  assert.match(view, /isComponent: \(name\) => this\.plugin\.isComponentClass\(name\)/, "the view answers it");
+});
+
+test("the report says what the problem was, not just that it recurred", () => {
+  // The panel read "the same problem came back" and left it there. The reason was
+  // known -- the check returned it -- so withholding it made a concrete fault look
+  // vague and gave the reader nothing to do.
+  const sm = fs.readFileSync(path.join(repoRoot, "src/ai/stop-message.ts"), "utf8");
+  assert.match(sm, /export function reasonDetail\(/, "the reason is carried");
+  const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  const finish = /private finishAiRun\([\s\S]*?\n  \}/.exec(view);
+  assert.ok(finish, "finishAiRun is present");
+  assert.match(finish[0], /reasonDetail\(last\?\.failure\)/, "and shown in the panel");
+  // The whole reason goes to the console, where it can be read and copied.
+  assert.match(finish[0], /ai stopped: \$\{why\} Reason:/, "with the full text logged");
+});
+
+test("the AI log is reachable from the row that reports the failure", () => {
+  // "The summary line can only carry so much, and the log is where the rest is" is
+  // the whole point: a button next to Generate is nearer to hand than a command.
+  const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  assert.match(view, /logBtn\.createSpan\(\{ text: "Prompt log" \}\)/, "there is a button");
+  assert.match(view, /logBtn\.addEventListener\("click", \(\) => this\.showAiLog\(\)\)/, "and it opens the log");
+  const show = /private showAiLog\(\): void \{[\s\S]*?\n  \}/.exec(view);
+  assert.ok(show, "showAiLog is present");
+  assert.match(show[0], /readAiExchanges\(\)/, "it reads the recorded exchanges");
+  assert.match(show[0], /formatSummary\(/, "with the summary");
+  assert.match(show[0], /formatExchanges\(/, "and the exchanges themselves");
+  // One formatter shared with the command, so the two views cannot drift.
+  const main = fs.readFileSync(path.join(repoRoot, "src/main.ts"), "utf8");
+  assert.match(main, /formatExchanges\(exchanges\)/, "the command uses the same formatter");
+});

@@ -30,6 +30,7 @@ import { LEGACY_SECRET_NAME, buildMessages, legacyKeyOf, secretNameOf } from "./
 import { describeSaveState, type SaveDescription } from "./modelica/save-state";
 import { TextModal } from "./view/saved-models-modal";
 import {
+  formatExchanges,
   formatSummary,
   parseLog,
   pruneLines,
@@ -891,26 +892,13 @@ export default class ModelicaStudioPlugin extends Plugin {
       name: "Show the AI prompt log",
       callback: () => {
         const exchanges = this.readAiExchanges();
-        const summary = summarise(exchanges);
-        // The most recent few in full, because the summary says WHAT is going
-        // wrong and the exchanges say what was actually asked and answered.
-        const recent = exchanges.slice(-5);
-        let text = formatSummary(summary, exchanges.slice(-15));
-        if (recent.length) {
-          text += "\n\n" + "-".repeat(72) + "\n\n";
-          text += recent
-            .map((e) => {
-              const asked = e.prompt.replace(/\s+/g, " ").trim();
-              return [
-                `### ${e.at}  attempt ${e.attempt}  style=${e.style}  ${e.outcome}  ${e.ms}ms`,
-                ``,
-                `ASKED: ${asked}`,
-                e.reply ? `\nREPLY:\n${e.reply}` : "\nREPLY: (none)",
-                e.detail ? `\nWHY NOT: ${e.detail}` : "",
-              ].join("\n");
-            })
-            .join("\n\n");
-        }
+        const summary = formatSummary(summarise(exchanges), exchanges.slice(-15));
+        // The summary says WHAT keeps going wrong; the exchanges say what was
+        // actually sent and answered, which is what a prompt change needs.
+        const detail = formatExchanges(exchanges);
+        const text = detail
+          ? `${summary}\n\n${"-".repeat(72)}\n\n${detail}`
+          : summary;
         new TextModal(this.app, "AI prompt log", text).open();
       },
     });
@@ -1100,6 +1088,19 @@ export default class ModelicaStudioPlugin extends Plugin {
       .split("\n")
       .map((l) => l.trim())
       .filter((l) => l && !l.startsWith("#"));
+  }
+
+  /**
+   * Whether a library class is a connectable component, rather than a type.
+   *
+   * Asked of the index, which records the class KIND: `Modelica.Units.SI.Height`
+   * is a `type` and `Modelica.Blocks.Math.Gain` is a `model`. The difference is
+   * what tells a physical quantity apart from a block, and it is what stops a
+   * correct equations model being read as an unwired schematic.
+   */
+  isComponentClass(className: string): boolean {
+    const kind = this.library.get(className)?.kind;
+    return kind === "model" || kind === "block" || kind === "connector";
   }
 
   /** Apply the exclusion list to an index and refresh anything showing it. */

@@ -24,7 +24,10 @@ export function stopMessage(reason: StopReason, message: string, attempts: numbe
     // Record has to be total, and an empty string is a visible placeholder.
     compiled: "",
     "attempts-exhausted": `Gave up after ${attempts} attempt${plural}.`,
-    "no-progress": `Stopped after ${attempts} attempt${plural}: the same problem came back.`,
+    // "The same problem came back" is a description of the loop, not of the
+    // problem: it left the reader with nothing to act on, and the reason was
+    // already known. `reasonDetail` carries it.
+    "no-progress": `Stopped after ${attempts} attempt${plural}.`,
     cancelled: "Stopped.",
     // The provider answered, but not with anything that could be built.
     "no-source": "The reply contained no Modelica source.",
@@ -36,6 +39,23 @@ export function stopMessage(reason: StopReason, message: string, attempts: numbe
     "timed-out": `The provider did not reply in time. ${message}`,
   };
   return messages[reason] ?? `Stopped for an unknown reason (${String(reason)}).`;
+}
+
+/**
+ * What the checks actually objected to, in their own words.
+ *
+ * Reported: the panel said "the same problem came back" with no statement of what
+ * the problem WAS. The reason exists at that point -- the checks returned it -- so
+ * withholding it made a concrete fault ("none of the 4 components are connected")
+ * look like a vague one, and left the reader with nothing to do about it.
+ *
+ * The first line only: the checks open with the fault and continue with advice,
+ * and the advice is what the summary line has no room for.
+ */
+export function reasonDetail(failure: string | undefined, max = 160): string {
+  const first = (failure ?? "").split("\n")[0].trim();
+  if (!first) return "";
+  return first.length <= max ? first : `${first.slice(0, max - 1)}…`;
 }
 
 /**

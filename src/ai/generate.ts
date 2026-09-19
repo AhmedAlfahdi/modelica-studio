@@ -80,6 +80,13 @@ export interface GenerationRequest {
    */
   onExchange?: (exchange: AiExchange) => void;
   isCancelled?: () => boolean;
+  /**
+   * Whether a library class is a connectable component rather than a type.
+   *
+   * Asked of the library index, which knows the difference. Without it the check
+   * falls back to excluding the namespaces that hold type definitions.
+   */
+  isComponent?: (className: string) => boolean;
   limits?: LoopLimits;
 }
 
@@ -196,9 +203,18 @@ export async function generateModel(request: GenerationRequest): Promise<Generat
         // Compiling is not the same as being usable. Two things build perfectly
         // and are still not what was asked for, and both are checked here so a
         // repair attempt hears about them instead of the run reporting success.
+        // A loose diagram is a fault only in a DIAGRAM. An equations answer is
+        // allowed to declare quantities with no connect() -- the physics is in the
+        // equations, and `describeStyleViolation` already catches an equations
+        // answer that is really an assembly. Applying this check to both is what
+        // rejected one correct equations model five times running, and the two
+        // checks contradicted each other: the style check says in as many words
+        // that a library component inside an otherwise-equation model is fine.
         const problem =
           describeStaticModel(source, outcome.diagnostics) ??
-          describeLooseDiagram(source) ??
+          (askedFor === "equations"
+            ? null
+            : describeLooseDiagram(source, request.isComponent)) ??
           describeStyleViolation(source, askedFor);
         // It BUILT. A problem here is a rejection, not a compile failure, and the
         // caller is told so because the source is worth keeping and running.
@@ -287,10 +303,21 @@ export { summarise };
  * Reported as a failure so the repair attempt is told, rather than the run
  * reporting success on something that draws a picture of nothing.
  */
-export function describeLooseDiagram(source: string): string | null {
+export function describeLooseDiagram(
+  source: string,
+  isComponent?: (className: string) => boolean
+): string | null {
   const body = stripComments(source);
-  // Only a model built from library components can be a loose diagram.
-  const declared = [...body.matchAll(/^\s*(?:redeclare\s+)?(Modelica\.[\w.]+)\s+(\w+)/gm)];
+  // Only a model built from library COMPONENTS can be a loose diagram. A class
+  // used as a TYPE is not a component: `Modelica.Units.SI.Height height` declares
+  // a physical quantity with no connector, so there is nothing to wire and no
+  // connect() that could be written. Counting those as components rejected a
+  // correct equations model -- and the advice that followed, "add the connect()
+  // statements that join them", was impossible to act on, so the same answer came
+  // back five times.
+  const declared = [
+    ...body.matchAll(/^\s*(?:redeclare\s+)?(Modelica\.[\w.]+)\s+(\w+)/gm),
+  ].filter((m) => (isComponent ? isComponent(m[1]) : !isTypeNamespace(m[1])));
   if (declared.length < 2) return null;
 
   const connected = new Set<string>();
@@ -314,6 +341,17 @@ export function describeLooseDiagram(source: string): string | null {
     : `${loose.length} component${loose.length === 1 ? " is" : "s are"} connected to nothing: ` +
         `${loose.join(", ")}. Every declared component must appear in a connect(), ` +
         `or be removed.`;
+}
+
+/**
+ * Namespaces that hold TYPE definitions rather than connectable components.
+ *
+ * The fallback for when the library index is not available to answer properly.
+ * `Modelica.Units.SI.*` is the one that bites: every physical quantity in an
+ * equations model is declared with one.
+ */
+function isTypeNamespace(className: string): boolean {
+  return /^Modelica\.(Units|Constants|Blocks\.Types|Media\.Types|SIunits)\./.test(className);
 }
 
 /** Source with comments removed, so a commented-out connect is not counted. */
