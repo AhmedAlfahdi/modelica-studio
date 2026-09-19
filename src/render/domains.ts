@@ -1,15 +1,23 @@
 /**
- * Which domain a package or an example belongs to.
+ * The domain colour code.
  *
- * Modelica is organised by physical domain, and the library, the palette and the
- * examples all use those names already — `Modelica.Thermal`, `Modelica.Fluid`,
- * "Thermal", "Fluid". What was missing was a single place that decides what those
- * names MEAN, so the same domain can be coloured the same way wherever it appears.
+ * Modelica is organised by physical domain, and the Modelica Standard Library
+ * publishes a colour for each one in `Modelica.UsersGuide.Conventions.Icons`:
+ * electrical `{0,0,255}`, thermal `{191,0,0}`, fluid `{0,127,255}`, magnetic
+ * `{255,127,0}`, and so on. It is the library's own convention rather than one
+ * invented here, and that page is worth reading before changing anything below.
  *
- * Only the mapping lives here. The colours are in `styles.css`, because a colour
- * has to change with the theme and CSS is what can do that: a Markdown note in the
- * example vault uses the same class as the palette, so one definition covers both.
- * `test/domains.test.mjs` measures every pair for contrast against both themes.
+ * The codes in that table are ICON FILL colours, and a fill that reads well on a
+ * white icon can be unreadable as text — `{85,170,255}` measures 1.9:1 on a pale
+ * background. So each domain keeps the library's HUE and takes a lightness that
+ * works as text in both themes, which is what `styles.css` holds and what
+ * `test/domains.test.mjs` measures. Where the library's own value already clears
+ * the bar it is used unchanged: electrical is exactly `{0,0,255}`.
+ *
+ * Only the mapping and the reference table live here. The colours are in
+ * `styles.css`, because a colour has to change with the theme and CSS is what can
+ * do that — and it means a Markdown note in the example vault and a palette
+ * heading are coloured by one definition rather than two kept in step by hand.
  */
 
 export type Domain =
@@ -19,7 +27,6 @@ export type Domain =
   | "thermal"
   | "magnetic"
   | "blocks"
-  | "media"
   | "discrete"
   | "aerospace"
   | "multiphysics"
@@ -33,12 +40,50 @@ export const DOMAINS: Domain[] = [
   "thermal",
   "magnetic",
   "blocks",
-  "media",
   "discrete",
   "aerospace",
   "multiphysics",
   "other",
 ];
+
+export interface DomainInfo {
+  domain: Domain;
+  /** What to call it in the legend. */
+  label: string;
+  /**
+   * The library's own icon colour, as `Modelica.UsersGuide.Conventions.Icons`
+   * gives it, or null where the library assigns none — `Modelica.Media`,
+   * `Modelica.Math`, `Modelica.Utilities` and the rest are left uncoloured.
+   */
+  msl: string | null;
+  /** The package that code is quoted from, since some domains have several. */
+  from?: string;
+}
+
+/**
+ * The reference table, for the legend in Help.
+ *
+ * Quoted from MSL 4.1.0. Where a domain has more than one code — mechanics is
+ * grey for rotational and multibody but green for translational — the one covering
+ * most of the domain is given, and `from` says which.
+ */
+export const DOMAIN_INFO: DomainInfo[] = [
+  { domain: "electrical", label: "Electrical", msl: "rgb(0, 0, 255)", from: "Electrical.Analog" },
+  { domain: "mechanical", label: "Mechanical", msl: "rgb(95, 95, 95)", from: "Mechanics.Rotational" },
+  { domain: "fluid", label: "Fluid", msl: "rgb(0, 127, 255)", from: "Fluid" },
+  { domain: "thermal", label: "Thermal", msl: "rgb(191, 0, 0)", from: "Thermal.HeatTransfer" },
+  { domain: "magnetic", label: "Magnetic", msl: "rgb(255, 127, 0)", from: "Magnetic.FluxTubes" },
+  { domain: "blocks", label: "Blocks", msl: "rgb(0, 0, 127)", from: "Blocks" },
+  { domain: "discrete", label: "Discrete", msl: "rgb(0, 0, 0)", from: "StateGraph" },
+  { domain: "aerospace", label: "Aerospace", msl: null },
+  { domain: "multiphysics", label: "Multiphysics", msl: null },
+  { domain: "other", label: "Other", msl: null, from: "uncoloured in the library" },
+];
+
+/** The reference row for a domain. */
+export function domainInfo(domain: Domain): DomainInfo | undefined {
+  return DOMAIN_INFO.find((d) => d.domain === domain);
+}
 
 /**
  * The domain of a palette group.
@@ -51,11 +96,12 @@ export const DOMAINS: Domain[] = [
  */
 export function domainOfPackage(qualified: string): Domain {
   const parts = qualified.split(".");
-  const top = parts[0] ?? "";
+  // Lowercased because the palette shows these upper-cased -- `MODELICA.BLOCKS` --
+  // and a comparison against the library's own spelling would silently miss.
+  const top = (parts[0] ?? "").toLowerCase();
   const branch = (parts[1] ?? "").toLowerCase();
 
-  if (top.toLowerCase().startsWith("obsolete")) return "other";
-  if (top === "ModelicaServices") return "other";
+  if (top.startsWith("obsolete") || top === "modelicaservices") return "other";
 
   switch (branch) {
     case "electrical":
@@ -72,14 +118,10 @@ export function domainOfPackage(qualified: string): Domain {
     case "blocks":
     case "complexblocks":
       return "blocks";
-    case "media":
-      return "media";
     case "stategraph":
     case "clocked":
     case "synchronous":
       return "discrete";
-    case "icons":
-      return "other";
     default:
       return "other";
   }
@@ -112,8 +154,6 @@ export function domainOfLabel(label: string): Domain {
     case "blocks":
     case "control":
       return "blocks";
-    case "media":
-      return "media";
     case "discrete":
     case "state":
       return "discrete";
@@ -122,6 +162,8 @@ export function domainOfLabel(label: string): Domain {
     case "multiphysics":
       return "multiphysics";
     default:
+      // Media, Math, Utilities, Constants, Icons: the library gives them no
+      // colour, and neither does this.
       return "other";
   }
 }

@@ -1783,40 +1783,65 @@ body.modelica-studio-resizing * {
 
 /* ---------------- domain colours ----------------
 
-   One definition, used by the palette's group headings, the Examples menu and the
-   generated notes, so a domain is the same colour wherever it appears.
+   The library's own code, from Modelica.UsersGuide.Conventions.Icons: electrical
+   {0,0,255}, thermal {191,0,0}, fluid {0,127,255}, magnetic {255,127,0}, blocks
+   {0,0,127}, mechanics {95,95,95}, StateGraph {0,0,0}. One definition, used by the
+   palette's group headings, the Examples menu and the generated notes, so a domain
+   is the same colour wherever it appears.
 
-   These are TEXT colours, and every pair is measured against both theme
-   backgrounds rather than picked by eye: `test/domains.test.mjs` computes the
-   WCAG contrast ratio and requires at least 4.5:1 (AA for body text) on each.
-   Obsidian's own `--color-*` variables were the obvious choice and could not be
-   used: measured as text, every one of them fails on the light background --
-   `--color-yellow` is 1.88:1 and `--color-green` 2.35:1, because they are meant
-   for accents and icons rather than for words. */
+   Those are ICON FILL colours. A fill that reads well on a white icon can be
+   unreadable as text -- {85,170,255} measures 1.9:1 on a pale background -- so each
+   domain keeps the library's hue and takes a lightness that works as text in both
+   themes. Where the library's value already clears AA it is used unchanged:
+   electrical is exactly rgb(0,0,255), blocks rgb(0,0,127), thermal rgb(191,0,0).
+
+   Every pair is measured against both theme backgrounds rather than picked by eye:
+   `test/domains.test.mjs` requires 4.5:1 (WCAG AA for body text) on each, and also
+   that no two domains are close enough to be confused. */
 .modelica-studio-domain {
   font-weight: 600;
 }
-.modelica-studio-domain[data-domain="electrical"] { color: #1c69dc; }
-.modelica-studio-domain[data-domain="mechanical"] { color: #5a5f6a; }
-.modelica-studio-domain[data-domain="fluid"] { color: #0f7987; }
-.modelica-studio-domain[data-domain="thermal"] { color: #c0392b; }
-.modelica-studio-domain[data-domain="magnetic"] { color: #7f4edb; }
-.modelica-studio-domain[data-domain="blocks"] { color: #a35a02; }
-.modelica-studio-domain[data-domain="media"] { color: #197c36; }
-.modelica-studio-domain[data-domain="discrete"] { color: #a3186e; }
-.modelica-studio-domain[data-domain="aerospace"] { color: #707012; }
-.modelica-studio-domain[data-domain="multiphysics"] { color: #7048c0; }
-.modelica-studio-domain[data-domain="other"] { color: #676e7a; }
+.modelica-studio-domain[data-domain="electrical"] { color: #0000ff; }
+.modelica-studio-domain[data-domain="mechanical"] { color: #5f5f5f; }
+.modelica-studio-domain[data-domain="fluid"] { color: #0066c8; }
+.modelica-studio-domain[data-domain="thermal"] { color: #bf0000; }
+.modelica-studio-domain[data-domain="magnetic"] { color: #a35200; }
+.modelica-studio-domain[data-domain="blocks"] { color: #00007f; }
+.modelica-studio-domain[data-domain="discrete"] { color: #000000; }
+.modelica-studio-domain[data-domain="aerospace"] { color: #6c6c00; }
+.modelica-studio-domain[data-domain="multiphysics"] { color: #a3186e; }
+.modelica-studio-domain[data-domain="other"] { color: #705a3c; }
 
-/* The dark values are lighter, so they hold up against a dark background. */
-.theme-dark .modelica-studio-domain[data-domain="electrical"] { color: #5aa9ff; }
-.theme-dark .modelica-studio-domain[data-domain="mechanical"] { color: #a8b0bd; }
-.theme-dark .modelica-studio-domain[data-domain="fluid"] { color: #3fd0d8; }
-.theme-dark .modelica-studio-domain[data-domain="thermal"] { color: #ff6b5e; }
-.theme-dark .modelica-studio-domain[data-domain="magnetic"] { color: #b98cff; }
-.theme-dark .modelica-studio-domain[data-domain="blocks"] { color: #ffa63d; }
-.theme-dark .modelica-studio-domain[data-domain="media"] { color: #4fd07a; }
-.theme-dark .modelica-studio-domain[data-domain="discrete"] { color: #ff7ac6; }
-.theme-dark .modelica-studio-domain[data-domain="aerospace"] { color: #cfcf5a; }
-.theme-dark .modelica-studio-domain[data-domain="multiphysics"] { color: #c9a9ff; }
-.theme-dark .modelica-studio-domain[data-domain="other"] { color: #9aa3b2; }
+/* Lighter, so they hold up against a dark background. */
+.theme-dark .modelica-studio-domain[data-domain="electrical"] { color: #7b7bff; }
+.theme-dark .modelica-studio-domain[data-domain="mechanical"] { color: #8b8b8b; }
+.theme-dark .modelica-studio-domain[data-domain="fluid"] { color: #1489ff; }
+.theme-dark .modelica-studio-domain[data-domain="thermal"] { color: #d86363; }
+.theme-dark .modelica-studio-domain[data-domain="magnetic"] { color: #ff7f00; }
+.theme-dark .modelica-studio-domain[data-domain="blocks"] { color: #8585c3; }
+.theme-dark .modelica-studio-domain[data-domain="discrete"] { color: #d4d4d4; }
+.theme-dark .modelica-studio-domain[data-domain="aerospace"] { color: #8e8e1d; }
+.theme-dark .modelica-studio-domain[data-domain="multiphysics"] { color: #ff7ac6; }
+.theme-dark .modelica-studio-domain[data-domain="other"] { color: #d0b48a; }
+
+/* The domain legend in Help: one row per domain, the name in its own colour and
+   the library's code beside it. Laid out as a grid so the codes line up. */
+.modelica-studio-help-domains {
+  display: grid;
+  grid-template-columns: max-content max-content 1fr;
+  gap: 2px 12px;
+  align-items: baseline;
+  margin: 6px 0 10px;
+}
+.modelica-studio-help-domain {
+  display: contents;
+}
+.modelica-studio-help-domain-code {
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.modelica-studio-help-domain-from {
+  font-size: 11px;
+  color: var(--text-faint);
+}

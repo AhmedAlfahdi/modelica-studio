@@ -16,6 +16,7 @@ import { App, Modal, Platform } from "obsidian";
 import type ModelicaStudioPlugin from "../main";
 import { libraryHelpUrl, libraryVersionFrom } from "../modelica/doclinks";
 import { openInBrowser } from "./studio-view";
+import { DOMAIN_INFO, domainAttributes } from "../render/domains";
 
 /** What the modifier key is called on this platform. */
 const mod = Platform.isMacOS ? "Cmd" : "Ctrl";
@@ -124,6 +125,61 @@ export class HelpModal extends Modal {
       "OpenModelica documentation",
       "The compiler's own documentation",
       "https://openmodelica.org/doc/OpenModelicaUsersGuide/latest/"
+    );
+
+    /* ---- the domain colour code ---- */
+    el.createEl("h4", { text: "Domain colours" });
+    el.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "Modelica's standard library assigns a colour to each physical domain, and " +
+        "this plugin uses the same code — so the palette's groups, the examples and " +
+        "these notes are coloured the way the library itself colours its icons.",
+    });
+    const legend = el.createDiv({ cls: "modelica-studio-help-domains" });
+    for (const info of DOMAIN_INFO) {
+      const line = legend.createDiv({ cls: "modelica-studio-help-domain" });
+      // The same class the palette and the notes use, so the legend cannot drift
+      // from what it describes.
+      line.createSpan({ ...domainAttributes(info.domain), text: info.label });
+      line.createSpan({
+        cls: "modelica-studio-help-domain-code",
+        text: info.msl ?? "no code",
+      });
+      if (info.from) {
+        line.createSpan({ cls: "modelica-studio-help-domain-from", text: info.from });
+      }
+    }
+    el.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "The library's values are icon FILL colours, and a fill that reads well on a " +
+        "white icon can be unreadable as text — rgb(85,170,255) measures 1.9:1 on a " +
+        "pale background. Each domain here keeps the library's hue and takes a " +
+        "lightness that works as text in both light and dark mode, measured against " +
+        "each theme at no less than 4.5:1. Where the library's own value already " +
+        "clears that it is used unchanged: electrical is exactly rgb(0,0,255).",
+    });
+    el.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "Some domains take several codes in the library — mechanics is grey for " +
+        "rotational and multibody but green for translational, and StateGraph is " +
+        "black — so the table above gives the one covering most of the domain and " +
+        "names the package it comes from. Media, Math, Utilities and Icons are left " +
+        "uncoloured by the library, and are shown as Other.",
+    });
+    const codeLinks = el.createDiv({ cls: "modelica-studio-help-links" });
+    const codeLink = codeLinks.createEl("button", { cls: "modelica-studio-btn" });
+    codeLink.createSpan({ text: "The library's icon conventions" });
+    codeLink.setAttribute(
+      "aria-label",
+      "Open Modelica.UsersGuide.Conventions.Icons, where the library lists these colours"
+    );
+    codeLink.addEventListener("click", () =>
+      openInBrowser(
+        "https://doc.modelica.org/Modelica%204.1.0/Resources/helpWSM/Modelica/Modelica.UsersGuide.Conventions.Icons.html"
+      )
     );
 
     /* ---- shortcuts ---- */

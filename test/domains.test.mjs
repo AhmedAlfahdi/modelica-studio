@@ -17,9 +17,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { buildLibs, repoRoot } from "./helpers/build.mjs";
 
-const { DOMAINS, domainOfPackage, domainOfLabel, domainAttributes } = await import(
-  path.join(buildLibs("domains", ["src/render/domains.ts"]), "domains.js")
-);
+const { DOMAINS, DOMAIN_INFO, domainInfo, domainOfPackage, domainOfLabel, domainAttributes } =
+  await import(path.join(buildLibs("domains", ["src/render/domains.ts"]), "domains.js"));
 
 /** Obsidian's own `--background-secondary`, which is what these sit on. */
 const LIGHT_BG = "#f2f3f5";
@@ -130,7 +129,9 @@ test("the mapping reads the vocabulary that is already there", () => {
   assert.equal(domainOfPackage("Modelica.Fluid.Pipes"), "fluid");
   assert.equal(domainOfPackage("Modelica.Magnetic.FluxTubes"), "magnetic");
   assert.equal(domainOfPackage("Modelica.Blocks.Math"), "blocks");
-  assert.equal(domainOfPackage("Modelica.Media.Air"), "media");
+  // Media is a support package, not a physics: it holds fluid properties rather
+  // than fluid models, and the library leaves it uncoloured. So does this.
+  assert.equal(domainOfPackage("Modelica.Media.Air"), "other");
   assert.equal(domainOfPackage("Modelica.StateGraph"), "discrete");
   // No physics at all: services, icons and the obsolete tree.
   assert.equal(domainOfPackage("ModelicaServices"), "other");
@@ -289,5 +290,74 @@ test("a rendered heading actually gets the colour", async () => {
     d["light mode colours it, and differently from its parent"].split(" vs parent ")[0],
     "the two themes must not use the same value"
   );
-  assert.equal(d["every domain renders in a colour of its own"], "11 distinct colours");
+  assert.equal(
+    d["every domain renders in a colour of its own"],
+    `${DOMAINS.length} distinct colours`
+  );
+});
+
+test("the code is the library's, not one invented here", () => {
+  // `Modelica.UsersGuide.Conventions.Icons` publishes a colour per domain. The
+  // point of this module is to USE that convention, so a reader who knows the
+  // library recognises the colours -- magnetic is orange because the library says
+  // orange, not violet because violet looked nice.
+  // Every domain in the legend, and nothing else.
+  assert.equal(DOMAIN_INFO.length, DOMAINS.length);
+  for (const d of DOMAINS) assert.ok(domainInfo(d), `${d} must appear in the legend`);
+
+  // The codes are quoted from the library, so they are the library's values.
+  const expected = {
+    electrical: "rgb(0, 0, 255)",
+    mechanical: "rgb(95, 95, 95)",
+    fluid: "rgb(0, 127, 255)",
+    thermal: "rgb(191, 0, 0)",
+    magnetic: "rgb(255, 127, 0)",
+    blocks: "rgb(0, 0, 127)",
+    discrete: "rgb(0, 0, 0)",
+  };
+  for (const [domain, code] of Object.entries(expected)) {
+    assert.equal(domainInfo(domain).msl, code, `${domain} must quote the library's code`);
+  }
+  // The three the library does not name say so rather than inventing a code.
+  assert.equal(domainInfo("aerospace").msl, null);
+  assert.equal(domainInfo("multiphysics").msl, null);
+  assert.equal(domainInfo("other").msl, null);
+
+  // And where the library's own value is already readable as text, it is used
+  // UNCHANGED -- that is what makes this the library's code rather than a
+  // lookalike. Light mode only: the dark values have to be lighter to be seen.
+  const { light } = coloursFromCss();
+  const keptExactly = { electrical: "#0000ff", thermal: "#bf0000", blocks: "#00007f" };
+  for (const [domain, hex] of Object.entries(keptExactly)) {
+    assert.equal(light[domain], hex, `${domain} should keep the library's value exactly`);
+  }
+});
+
+test("no two domains are close enough to be confused", () => {
+  // Contrast against the background is not enough on its own: two colours can
+  // both be readable and still indistinguishable from each other, which makes the
+  // code useless as a code. Mechanics and StateGraph are both greyscale in the
+  // library -- {95,95,95} and {0,0,0} -- so lightness has to carry that
+  // difference, and this is the check that it actually does.
+  const { light, dark } = coloursFromCss();
+  const distance = (a, b) => {
+    const p = (h) => [0, 2, 4].map((i) => parseInt(h.slice(i + 1, i + 3), 16));
+    const [x, y] = [p(a), p(b)];
+    return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
+  };
+  // 30 out of a possible 441 is a clearly visible difference; a collision like
+  // mechanical #8b8b8b against discrete #8a8a8a scores under 2.
+  const MIN = 30;
+  const tooClose = [];
+  for (let i = 0; i < DOMAINS.length; i++) {
+    for (let j = i + 1; j < DOMAINS.length; j++) {
+      for (const [mode, set] of [["light", light], ["dark", dark]]) {
+        const d = distance(set[DOMAINS[i]], set[DOMAINS[j]]);
+        if (d < MIN) {
+          tooClose.push(`${mode}: ${DOMAINS[i]} ${set[DOMAINS[i]]} vs ${DOMAINS[j]} ${set[DOMAINS[j]]} = ${d.toFixed(0)}`);
+        }
+      }
+    }
+  }
+  assert.deepEqual(tooClose, [], `colours too close to tell apart:\n  ${tooClose.join("\n  ")}`);
 });

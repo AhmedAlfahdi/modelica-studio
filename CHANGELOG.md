@@ -27,6 +27,22 @@ version is 0, a minor bump may include changes that are not backward compatible.
   it takes effect in a fraction of a second — and a stopped run says it was
   stopped rather than reporting that the provider could not be reached.
 
+### Changed
+
+- **The domain colour code now follows the library's own.** MSL publishes a colour
+  per physical domain in `Modelica.UsersGuide.Conventions.Icons` — electrical
+  `{0,0,255}`, thermal `{191,0,0}`, fluid `{0,127,255}`, magnetic `{255,127,0}`,
+  blocks `{0,0,127}`, mechanics `{95,95,95}`, StateGraph `{0,0,0}` — and the Help
+  window now shows that table beside this plugin's colours, with a link to it. The
+  previous palette was chosen by eye and disagreed with the library in three
+  places, most visibly magnetic: the library says orange, and it was violet.
+
+  The library's values are icon FILL colours, so each domain keeps the hue and
+  takes a lightness that reads as text — `{85,170,255}` measures 1.9:1 on a pale
+  background. Where the library's value already clears AA it is used UNCHANGED:
+  electrical is exactly `rgb(0,0,255)`, thermal `rgb(191,0,0)`, blocks
+  `rgb(0,0,127)`. Media joins the uncoloured bucket, as the library leaves it.
+
 ### Added
 
 - **A domain colour code**, in the palette's package headings, the Examples menu's
@@ -121,6 +137,22 @@ version is 0, a minor bump may include changes that are not backward compatible.
 The first beta was a proof that the idea worked. This one is the editor you can
 actually keep a model in: wires can be edited, every pane can be sized, and the
 several ways a saved model could quietly revert have been closed.
+
+### Changed
+
+- **The domain colour code now follows the library's own.** MSL publishes a colour
+  per physical domain in `Modelica.UsersGuide.Conventions.Icons` — electrical
+  `{0,0,255}`, thermal `{191,0,0}`, fluid `{0,127,255}`, magnetic `{255,127,0}`,
+  blocks `{0,0,127}`, mechanics `{95,95,95}`, StateGraph `{0,0,0}` — and the Help
+  window now shows that table beside this plugin's colours, with a link to it. The
+  previous palette was chosen by eye and disagreed with the library in three
+  places, most visibly magnetic: the library says orange, and it was violet.
+
+  The library's values are icon FILL colours, so each domain keeps the hue and
+  takes a lightness that reads as text — `{85,170,255}` measures 1.9:1 on a pale
+  background. Where the library's value already clears AA it is used UNCHANGED:
+  electrical is exactly `rgb(0,0,255)`, thermal `rgb(191,0,0)`, blocks
+  `rgb(0,0,127)`. Media joins the uncoloured bucket, as the library leaves it.
 
 ### Added
 

@@ -159,6 +159,24 @@ test("the help dialog renders its facts, its links and every shortcut", async ()
     "  return links.length + ': ' + links.map(b => b.textContent).join(' | ');",
     "});",
     "window.test('nothing in it would navigate the app away', () => root.querySelectorAll('a[href]').length + ' anchors');",
+    "window.test('the domain colour legend is rendered', () => {",
+    "  const rows = Array.from(root.querySelectorAll('.modelica-studio-help-domain-label, .modelica-studio-domain'));",
+    "  const domains = Array.from(root.querySelectorAll('.modelica-studio-domain'));",
+    "  return domains.length + ' domains: ' + domains.map((d) => d.getAttribute('data-domain')).join(',');",
+    "});",
+    "window.test('each legend row carries its own colour attribute', () => {",
+    "  const cells = Array.from(root.querySelectorAll('.modelica-studio-help-domains .modelica-studio-domain'));",
+    "  const wrong = cells.filter((c) => !c.matches('.modelica-studio-domain[data-domain=\"' + c.getAttribute('data-domain') + '\"]'));",
+    "  return cells.length + ' coloured, ' + wrong.length + ' without a matching rule';",
+    "});",
+    "window.test('every legend row names the library code or says there is none', () => {",
+    "  const codes = Array.from(root.querySelectorAll('.modelica-studio-help-domain-code')).map((c) => c.textContent);",
+    "  return codes.length + ' codes, ' + codes.filter((c) => c === 'no code').length + ' with none';",
+    "});",
+    "window.test('the legend links to the library page', () => {",
+    "  const b = Array.from(root.querySelectorAll('.modelica-studio-help-links button')).find((x) => /icon conventions/i.test(x.textContent));",
+    "  return b ? b.getAttribute('aria-label') : 'MISSING';",
+    "});",
     "window.finish();"
   );
 
@@ -177,6 +195,19 @@ test("the help dialog renders its facts, its links and every shortcut", async ()
   assert.match(d["the documentation links are buttons"], /Modelica library reference/);
   assert.match(d["the documentation links are buttons"], /OpenModelica documentation/);
   assert.equal(d["nothing in it would navigate the app away"], "0 anchors");
+
+  // The colour legend, rendered rather than grepped: the attributes have to reach
+  // the elements, which is exactly what a source-level check could not tell.
+  const legend = /^(\d+) domains: (.+)$/.exec(d["the domain colour legend is rendered"]);
+  assert.ok(legend, `the legend renders rows: ${d["the domain colour legend is rendered"]}`);
+  const legendDomains = legend[2].split(",");
+  assert.equal(Number(legend[1]), legendDomains.length, "every row names a domain");
+  for (const needed of ["electrical", "thermal", "magnetic", "fluid", "mechanical"]) {
+    assert.ok(legendDomains.includes(needed), `${needed} appears in the legend`);
+  }
+  assert.match(d["each legend row carries its own colour attribute"], /^(\d+) coloured, 0 without/, "each row matches its rule");
+  assert.match(d["every legend row names the library code or says there is none"], /^\d+ codes, 3 with none$/, "three domains have no library code");
+  assert.match(d["the legend links to the library page"], /UsersGuide\.Conventions\.Icons/, "and cites the library page");
 });
 
 test("the help dialog names the vault root when no folder is set", async () => {
