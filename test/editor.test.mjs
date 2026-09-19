@@ -1240,7 +1240,7 @@ test("the simulation time is editable in the view, not only in settings", () => 
 });
 
 test("an empty canvas explains itself", () => {
-  // A model can legitimately have no schematic: `BouncingBall` is an equation
+  // A model can legitimately have no schematic: `DampedBounce` is an equation
   // model whose declarations are all variables, so there is no icon, port or
   // wire to draw. An empty grid with no explanation cannot be told apart from a
   // model that failed to load.

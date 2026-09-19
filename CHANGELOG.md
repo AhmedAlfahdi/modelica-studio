@@ -16,6 +16,12 @@ version is 0, a minor bump may include changes that are not backward compatible.
   it takes effect in a fraction of a second — and a stopped run says it was
   stopped rather than reporting that the provider could not be reached.
 
+### Removed
+
+- **The BouncingBall example**, from the built-in catalogue, the example vault and
+  its showcase note. The hybrid-impact ground it covered is still checked:
+  `DampedBounce` reinitialises velocity on contact and is audited numerically.
+
 ### Changed
 
 - **The AI is told to write equations rather than unwired blocks.** A model of

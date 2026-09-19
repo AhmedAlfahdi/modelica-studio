@@ -332,7 +332,7 @@ export class ModelicaStudioView extends ItemView {
     }, 400);
     // An empty canvas is a dead end for a first-time user: nothing to
     // simulate and nothing to drag a wire between. Seed it with an example.
-    // A model of only variables — `BouncingBall`, a pure equation model — is
+    // A model of only variables — `DampedBounce`, a pure equation model — is
     // genuinely without a schematic, so it is not replaced.
     const declaredVariables = this.plugin.model.variables?.length ?? 0;
     if (

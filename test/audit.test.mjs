@@ -30,10 +30,6 @@
  *     is ~5% high.
  *   - MassSpringDamper shares one applied force between two free masses, so the
  *     steady stretch is F*m2/(c*(m1+m2)), not F/c.
- *   - BouncingBall's last contact is the CATCH, not a bounce: the ball arrives
- *     at 0.487 m/s, just under the 0.5 threshold, and is held. Impulses counted
- *     by watching h cross zero therefore exceed rebounds by one (12 vs 13), and
- *     velocity sampled at that instant is the pre-event value.
  *   - DampedBounce's rest time is v0/g plus every ballistic interval after each
  *     bounce. An early script used log(vmin/v0) with the wrong v0, giving 14
  *     impacts against 13 rebounds.
@@ -252,19 +248,6 @@ test("every example matches an independently derived result", { skip: !HAS_OMC }
       Math.max(...w1.map(Math.abs), ...w2.map(Math.abs)) < 100 ? 1 : 0, 0, "");
     check("second link swings faster than the first", 1,
       Math.max(...w2.map(Math.abs)) > Math.max(...w1.map(Math.abs)) ? 1 : 0, 0, "");
-  }
-
-  console.log("\n== BouncingBall: hybrid impact, periods in geometric ratio e ==");
-  {
-    const r = await sim("BouncingBall", { numberOfIntervals: 20000 });
-    const h = S(r, "h").values;
-    const bounce = [];
-    for (let k = 1; k < r.time.length; k++) if (h[k - 1] <= 0 && h[k] > 0) bounce.push(r.time[k]);
-    check("time to first impact sqrt(2h0/g)", Math.sqrt(2 * 1 / 9.81), bounce[0], 1e-3, " s");
-    const peaks = [];
-    for (let k = 1; k < h.length - 1; k++) if (h[k] > h[k - 1] && h[k] >= h[k + 1]) peaks.push(h[k]);
-    check("rebound height e^2 h0", 0.9 * 0.9 * 1, peaks[1], 5e-4, " m");
-    check("second rebound e^4 h0", Math.pow(0.9, 4), peaks[3], 5e-4, " m");
   }
 
   console.log("\n== DampedOscillator: wn=10, zeta=0.1 ==");

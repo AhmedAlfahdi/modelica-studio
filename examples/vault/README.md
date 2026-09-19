@@ -1,6 +1,6 @@
 # Example vault
 
-An Obsidian vault containing the 25 worked examples from Modelica Studio. Open
+An Obsidian vault containing the 29 worked examples from Modelica Studio. Open
 this folder as a vault to try the plugin without setting up your own.
 
 ## Before opening

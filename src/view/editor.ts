@@ -2016,7 +2016,7 @@ export class SchematicEditor {
   /**
    * Explain a canvas with nothing on it.
    *
-   * A model can legitimately have no schematic: `BouncingBall` is an equation
+   * A model can legitimately have no schematic: `DampedBounce` is an equation
    * model whose declarations are all variables, so there is no icon, port or
    * wire to draw. An empty grid with no explanation is indistinguishable from a
    * model that failed to load, so the canvas says which it is and what the model

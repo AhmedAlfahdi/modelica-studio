@@ -363,11 +363,11 @@ test("every built-in example parses and can be re-serialized", async () => {
     assert.ok(cls, `${ex.name}: class parses`);
 
     // Most examples are wired from MSL components, and for those the wiring must
-    // round-trip. `BouncingBall` is deliberately different: a self-contained
+    // round-trip. `DampedBounce` is deliberately different: a self-contained
     // hybrid model whose only declarations are primitive `Real` states, so there
-    // is nothing to place or connect. `BouncingBall` is the reason this
-    // distinction exists — requiring a connection of every example would forbid
-    // a whole legitimate kind.
+    // is nothing to place or connect. That distinction is the reason this filter
+    // exists — requiring a connection of every example would forbid a whole
+    // legitimate kind.
     const PRIMITIVE = new Set(["Real", "Integer", "Boolean", "String", "Time"]);
     const composed = cls.components.filter((c) => !PRIMITIVE.has(c.type));
     if (composed.length === 0) {
@@ -414,8 +414,8 @@ test("example component classes exist in the MSL", { skip: !MSL }, async () => {
     if (!cls) continue;
     for (const c of cls.components) {
       // A primitive is a leaf type of the language, not a library class, so it
-      // is not expected to be in the index. `BouncingBall` declares only `Real`
-      // states and no library components at all.
+      // is not expected to be in the index. `DampedBounce` declares only `Real`
+      // and `Boolean` states and no library components at all.
       if (PRIMITIVE_TYPES.has(c.type)) continue;
       const def = ix.component(c.type);
       if (!def) {

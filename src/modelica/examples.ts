@@ -409,18 +409,6 @@ equation
 end DCMotor;
 `;
 
-const BOUNCINGBALL = `model BouncingBall "A ball bouncing on a floor with a restitution coefficient"
-  parameter Real e=0.9 "Coefficient of restitution";
-  Real h(start=1, fixed=true) "Height above the floor";
-  Real v "Vertical velocity";
-equation
-  der(h) = v;
-  der(v) = -9.81;
-  when h <= 0 then
-    reinit(v, -e*pre(v));
-  end when;
-end BouncingBall;
-`;
 const DAMPEDOSCILLATOR = `model DampedOscillator "A mass on a spring with viscous damping"
   Modelica.Mechanics.Translational.Components.Mass mass(m=1, s(fixed=true, start=0.1), v(fixed=true))
     annotation(Placement(transformation(extent={{0,-10},{20,10}})));
@@ -795,13 +783,6 @@ export const EXAMPLES: ExampleModel[] = [
     stopTime: 20,
     series: ["motor.wMechanical", "motor.tauElectrical"],
     source: DCMOTOR,
-  },
-  {
-    name: "BouncingBall",
-    description: "Mechanical: a ball bouncing with a coefficient of restitution",
-    stopTime: 3,
-    series: ["h", "v"],
-    source: BOUNCINGBALL,
   },
   {
     name: "DampedOscillator",

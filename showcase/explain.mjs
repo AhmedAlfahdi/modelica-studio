@@ -7,22 +7,6 @@
  * the model is doing and why it behaves the way it does.
  */
 export const EXPLAIN = {
-  BouncingBall: {
-    idea:
-      "A ball is dropped from 1 m. Each time it hits the floor it rebounds at 90% of the speed it arrived with, so every bounce is lower than the last. Nothing pushes the ball — the whole model is gravity plus one rule about the floor.",
-    schematic:
-      "**This model has no schematic, and that is correct.** There are no library components in it: no spring, no motor, no mass block. The ball is just two variables — a height and a speed — and the physics is written directly as equations. Other examples (like `MassSpring` or `Electrical`) are built from parts, so they *do* have a diagram. This one is a sentence about a ball.",
-    reading: [
-      ["`Real h(start=1)`", "how high the ball is. `start=1` means it begins 1 metre up."],
-      ["`Real v`", "how fast it is moving, upwards being positive."],
-      ["`der(h) = v`", "the height changes at exactly the speed. If it moves at 2 m/s, the height grows by 2 each second."],
-      ["`der(v) = -9.81`", "the speed changes by −9.81 every second, because gravity pulls down. This is the only force."],
-      ["`when h <= 0 then`", "below this is not an equation — it is an **event**. It fires the instant the ball reaches the floor."],
-      ["`reinit(v, -e*pre(v))`", "at that instant, set the speed to −0.9 × whatever it was. `pre(v)` means 'the value just before the bounce', which is how you read the old speed while replacing it."],
-    ],
-    takeaway:
-      "Because the ball loses 10% of its speed each bounce, it loses 19% of its *height* (0.9² = 0.81). The bounce times get closer and closer together, and in the ideal maths the ball makes infinitely many bounces before coming to rest — which is why the plot's bounces bunch up at the end.",
-  },
   Electrical: {
     idea:
       "A 10 V battery charges a capacitor through a 100 Ω resistor. The capacitor starts empty, so current flows fast at first; as it fills, the current drops and the voltage rises, each approaching its final value but never quite arriving.",

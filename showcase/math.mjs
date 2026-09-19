@@ -300,23 +300,6 @@ export const NOTES = {
     ],
   },
 
-  BouncingBall: {
-    title: "Mechanical — a bouncing ball",
-    domain: "Mechanical",
-    equations: [
-      "\ddot{h} = -g \qquad (h > 0)",
-      "h = 0 \;\Rightarrow\; v \mapsto -e\,v \qquad (\text{state event})",
-      "t_1 = \sqrt{2h_0/g}, \qquad h_{n} = e^{2n} h_0, \qquad \Delta t_{n} = 2e^{n-1}\sqrt{2h_0/g}",
-    ],
-    insight:
-      "This is a **hybrid** system, not a smooth one: between bounces it is ordinary free fall, but at h = 0 a state event flips the velocity and a `when` clause reinitialises it. The periods form a geometric sequence with ratio e, and the ball comes to rest in **finite time** — infinitely many bounces in a finite interval, the Zeno behaviour of an ideal inelastic impact.",
-    checks: [
-      ["time to first impact sqrt(2h0/g)", "0.4515 s", "0.4515 s"],
-      ["rebound height e^2 h0", "0.8100 m", "0.8100 m"],
-      ["second rebound e^4 h0", "0.6561 m", "0.6561 m"],
-      ["speed just before/after first bounce", "4.43 / 3.99 m/s", "ratio 0.9"],
-    ],
-  },
   DampedOscillator: {
     title: "Mechanical — damped harmonic oscillator",
     domain: "Mechanical",
