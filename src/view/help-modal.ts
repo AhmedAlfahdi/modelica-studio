@@ -14,7 +14,7 @@
 
 import { App, Modal, Platform } from "obsidian";
 import type ModelicaStudioPlugin from "../main";
-import { libraryHelpUrl, libraryVersionFrom } from "../modelica/doclinks";
+import { libraryHelpUrl, libraryIconsUrl, libraryVersionFrom } from "../modelica/doclinks";
 import { openInBrowser } from "./studio-view";
 import { DOMAIN_INFO, domainAttributes } from "../render/domains";
 
@@ -52,6 +52,23 @@ export const CODE_SHORTCUTS: Shortcut[] = [
   { keys: "Escape", what: "Dismiss the completion list" },
   { keys: "Home / End, Page Up / Page Down", what: "Move within the file" },
 ];
+
+/**
+ * The installed libraries other than the Modelica Standard Library itself.
+ *
+ * Root directories are named `ModelicaServices 4.1.0+maint.om`, so the library
+ * name is what precedes the version. `Modelica` is matched with its space, or
+ * `ModelicaServices` would count as the standard library.
+ */
+export function otherLibraryNames(rootNames: string[]): string[] {
+  const out = new Set<string>();
+  for (const root of rootNames) {
+    const name = root.trim().split(/\s+/)[0];
+    if (!name || name === "Modelica") continue;
+    out.add(name);
+  }
+  return [...out].sort();
+}
 
 export class HelpModal extends Modal {
   constructor(app: App, private plugin: ModelicaStudioPlugin) {
@@ -93,7 +110,21 @@ export class HelpModal extends Modal {
       info?.available ? "the compiler that runs the model" : "set its path in settings before simulating"
     );
     if (classes) {
-      row("Modelica library", libraryVersionFrom(this.plugin.libraryRootNames()), `${classes} classes indexed`);
+      // The index covers every installed library, not just the Modelica one.
+      // Reporting the whole of it under the library's name overstated the
+      // Modelica Standard Library by 143 classes, and made a figure the reader
+      // could check against the library itself impossible to check.
+      const names = this.plugin.library.allNames();
+      const inModelica = names.filter((n) => n === "Modelica" || n.startsWith("Modelica.")).length;
+      row(
+        "Modelica library",
+        libraryVersionFrom(this.plugin.libraryRootNames()),
+        `${inModelica} classes indexed`
+      );
+      const others = otherLibraryNames(this.plugin.libraryRootNames());
+      if (others.length) {
+        row("Also indexed", others.join(", "), `${classes - inModelica} classes`);
+      }
     } else {
       row("Modelica library", "still indexing…", "the palette fills in when it finishes");
     }
@@ -136,38 +167,46 @@ export class HelpModal extends Modal {
         "this plugin uses the same code — so the palette's groups, the examples and " +
         "these notes are coloured the way the library itself colours its icons.",
     });
-    const legend = el.createDiv({ cls: "modelica-studio-help-domains" });
-    for (const info of DOMAIN_INFO) {
-      const line = legend.createDiv({ cls: "modelica-studio-help-domain" });
-      // The same class the palette and the notes use, so the legend cannot drift
-      // from what it describes.
-      line.createSpan({ ...domainAttributes(info.domain), text: info.label });
-      line.createSpan({
-        cls: "modelica-studio-help-domain-code",
-        text: info.msl ?? "no code",
-      });
-      if (info.from) {
-        line.createSpan({ cls: "modelica-studio-help-domain-from", text: info.from });
+    // TWO tables, because seven of these are the library's own codes and three
+    // are groupings this plugin adds. One list left the reader to work out which
+    // was which from a "no code" repeated down the column, and gave the three
+    // plugin groupings the same standing as a colour the library actually
+    // specifies.
+    const legend = (heading: string, infos: typeof DOMAIN_INFO) => {
+      el.createDiv({ cls: "modelica-studio-help-legend-head", text: heading });
+      const grid = el.createDiv({ cls: "modelica-studio-help-domains" });
+      for (const info of infos) {
+        const line = grid.createDiv({ cls: "modelica-studio-help-domain" });
+        // The same class the palette and the notes use, so the legend cannot
+        // drift from what it describes.
+        line.createSpan({ ...domainAttributes(info.domain), text: info.label });
+        line.createSpan({ cls: "modelica-studio-help-domain-code", text: info.msl ?? "—" });
+        if (info.from) {
+          line.createSpan({ cls: "modelica-studio-help-domain-from", text: info.from });
+        }
       }
-    }
+    };
+    legend(
+      `The library's codes, from Modelica.UsersGuide.Conventions.Icons`,
+      DOMAIN_INFO.filter((d) => d.msl !== null)
+    );
+    legend(
+      "Groupings this plugin adds",
+      DOMAIN_INFO.filter((d) => d.msl === null)
+    );
+
     el.createEl("p", {
       cls: "modelica-studio-muted",
       text:
         "The library's values are icon FILL colours, and a fill that reads well on a " +
-        "white icon can be unreadable as text — rgb(85,170,255) measures 1.9:1 on a " +
-        "pale background. Each domain here keeps the library's hue and takes a " +
-        "lightness that works as text in both light and dark mode, measured against " +
-        "each theme at no less than 4.5:1. Where the library's own value already " +
-        "clears that it is used unchanged: electrical is exactly rgb(0,0,255).",
-    });
-    el.createEl("p", {
-      cls: "modelica-studio-muted",
-      text:
-        "Some domains take several codes in the library — mechanics is grey for " +
-        "rotational and multibody but green for translational, and StateGraph is " +
-        "black — so the table above gives the one covering most of the domain and " +
-        "names the package it comes from. Media, Math, Utilities and Icons are left " +
-        "uncoloured by the library, and are shown as Other.",
+        "white icon can be unreadable as text — rgb(85,170,255) is 1.9:1 against a " +
+        "pale background. Each domain keeps the library's hue at a lightness that " +
+        "works as text in both themes, measured at no less than 4.5:1; where the " +
+        "library's own value already clears that, it is used unchanged, so " +
+        "electrical is exactly rgb(0,0,255). Mechanics is the one domain the library " +
+        "gives two codes — grey for rotational and multibody, green for " +
+        "translational — so the table gives the one covering most of it and names " +
+        "the package it comes from.",
     });
     const codeLinks = el.createDiv({ cls: "modelica-studio-help-links" });
     const codeLink = codeLinks.createEl("button", { cls: "modelica-studio-btn" });
@@ -176,11 +215,38 @@ export class HelpModal extends Modal {
       "aria-label",
       "Open Modelica.UsersGuide.Conventions.Icons, where the library lists these colours"
     );
+    // The indexed version, so an install of an older library opens the tree that
+    // matches it. libraryIconsUrl falls back where no WSM tree was published for
+    // that version, which is the case for 4.1.0.
     codeLink.addEventListener("click", () =>
-      openInBrowser(
-        "https://doc.modelica.org/Modelica%204.1.0/Resources/helpWSM/Modelica/Modelica.UsersGuide.Conventions.Icons.html"
-      )
+      openInBrowser(libraryIconsUrl(libraryVersionFrom(this.plugin.libraryRootNames())))
     );
+
+    /* ---- reading the diagram ---- */
+    //
+    // Behaviour that has no visible affordance: nothing on screen says a hover
+    // will explain a component, or why one connector is dimmed. Both are easy to
+    // discover by accident and impossible to look up, which is what this section
+    // is for.
+    el.createEl("h4", { text: "Reading the diagram" });
+    el.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "Hovering a component shows what its parameters are set to, with the ones " +
+        "that differ from the class default first — reading a diagram's settings " +
+        "otherwise means selecting each component in turn. Switch it off, and set " +
+        "the size of the name under each component, in Settings → Modelica Studio → " +
+        "Diagram labels.",
+    });
+    el.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "A dimmed connector in the inspector is one the class only declares " +
+        "conditionally — a heat port appears only once useHeatPort is true. It " +
+        "cannot be wired until then, so its pin is not drawn either. A connector " +
+        "shown in the error colour has a wire on it already and is no longer " +
+        "available; turn the parameter back on, or remove the wire.",
+    });
 
     /* ---- shortcuts ---- */
     el.createEl("h4", { text: "Diagram" });

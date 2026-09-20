@@ -15,6 +15,25 @@ discrepancy was settled — is in
 
 ---
 
+## New to Modelica?
+
+Modelica describes a physical system by writing down its equations and letting
+the tool work out how to solve them, rather than by writing the steps to solve
+them. Two introductions by Michael Tiller:
+
+- **[Why Would Anybody Care About Modelica?](https://www.youtube.com/watch?v=Hl1vjQWxvOA)**
+  — what the language is for, and why equations are a different way to program.
+- **[Modelica by Example](https://mbe.modelica.university/)** — a book readable
+  online, building the language up from a first-order equation through events,
+  arrays and functions to object-oriented modelling, with every chapter worked
+  through and reviewed.
+
+There is also a ten-minute introduction in this repository —
+[`showcase/notes/00-modelica-intro.md`](showcase/notes/00-modelica-intro.md) —
+written to be read before any of the examples.
+
+---
+
 ## What it does
 
 - **Schematic editor.** Drag components from a library tree onto a canvas, wire
@@ -23,6 +42,12 @@ discrepancy was settled — is in
   search and completion. Drawing follows the Modelica
   specification's graphical annotations, so library icons look as their authors
   drew them.
+- **A diagram that explains itself.** Hovering a component shows what its
+  parameters are set to, with the ones you have changed first — reading a
+  diagram's settings otherwise means selecting each component in turn. A
+  connector the class only declares conditionally, such as a heat port before
+  `useHeatPort` is true, is dimmed and cannot be wired until the parameter is on.
+  Label size is a setting, and the hover readout can be switched off.
 - **Simulation.** Serializes the diagram to Modelica source, compiles and runs it
   with OpenModelica, and reads the results back.
 - **Plots.** Time-series traces with automatic axis grouping, a resizable pane,
@@ -88,7 +113,7 @@ pre-release and BRAT is the intended route.
    Settings → Community plugins.
 
 To pin a version instead of tracking the latest, use BRAT's **frozen** option and
-name the release, for example `0.2.0-beta.2`.
+name the release, for example `0.2.0-beta.3`.
 
 BRAT reports a mismatch if a release's tag, its name and the version inside the
 released `manifest.json` disagree. They are kept identical here on purpose, so an
@@ -113,7 +138,7 @@ To try it without your own vault, `examples/vault/` is a ready-made one — see
 npm install
 npm run build          # typecheck, then bundle to main.js
 npm run dev            # rebuild on change
-npm test               # 504 tests, including a numerical audit of every example
+npm test               # 551 tests, including a numerical audit of every example
 ```
 
 `npm test` runs the real OpenModelica compiler, so it needs `omc` on your PATH
@@ -317,9 +342,12 @@ Experimental, and it wants more testing. Specifically:
   Windows and macOS are untested, and so is every other OpenModelica version.
 - **MSL 4.1.0 is what the examples use.** Other library versions have not been
   tried.
-- **Not all of Modelica is supported.** Array-valued and `conditional`
-  connectors, `redeclare model` refinements, and bitmap icons have known gaps.
-  Unsupported constructs surface as compiler errors rather than silently.
+- **Not all of Modelica is supported.** Array-valued connectors, `redeclare
+  model` refinements, and bitmap icons have known gaps. Conditional connectors
+  are handled — they are dimmed and unwireable until their parameter is on —
+  but an array port is not captured, so a class with one is reported rather than
+  silently mis-drawn. Unsupported constructs surface as compiler errors rather
+  than silently.
 - **The audit covers the built-in examples, not your models.** A hand-built model
   may hit a parser or serializer limitation the examples do not.
 - **No plugin-store review.** Nothing has been checked by anyone but its author.
@@ -371,20 +399,24 @@ OpenModelica 1.27.0, Modelica 4.1.0** — for a small MSL circuit. Every number 
 is a wall-clock measurement, not an estimate.
 
 The one thing worth knowing: **the first launch after installing or upgrading the
-library costs about 2.4 s, and nothing else is slow.** Editing and re-running is
+library costs about 1.2 s, and nothing else is slow.** Editing and re-running is
 milliseconds.
 
 ### Startup
 
 | Stage | Measured | When |
 |---|---|---|
-| Parse the whole MSL into the class index | **2.4 s** | first launch after install/upgrade |
-| Load the index from its cache | **0.3–0.5 s** | every launch after that |
-| Cache file | 28.4 MB | written beside the plugin's data |
+| Parse the whole MSL into the class index | **1.2 s** | first launch after install/upgrade |
+| Load the index from its cache | **~0.3 s** | every launch after that |
+| Cache file | 25 MB | written beside the plugin's data |
 
-6577 classes are parsed out of 148 MB of library source. The palette is built
-while this happens rather than before it, so the index cost is not a delay in
-opening the studio — it is why the palette fills in a moment late on a cold start.
+5984 classes are parsed out of 2424 files — 13 MB of library source. Only the
+newest release of each library is read: OpenModelica keeps every installed
+version side by side, and indexing all of them put three releases of `Modelica`
+into one table keyed by class name, where the definition that won depended on the
+order the filesystem handed the files over. The palette is built while this
+happens rather than before it, so the index cost is not a delay in opening the
+studio — it is why the palette fills in a moment late on a cold start.
 
 ### Editing and running
 
@@ -394,7 +426,7 @@ opening the studio — it is why the palette fills in a moment late on a cold st
 | Change a parameter and re-run | **~30 ms** | applied as a run-time override, not a rebuild |
 | Building the identical source again | **0 ms** | the fingerprint matches and the binary is reused |
 | First build, small equation model | **0.6 s** | translate, generate C, compile, link |
-| First build, 4-component MSL circuit | **1.5 s** | library classes bring their own equations |
+| First build, 4-component MSL circuit | **1.5–1.8 s** | library classes bring their own equations |
 
 The 30 ms row is why parameters are applied as run-time overrides rather than by
 regenerating code, and why editing a value and re-simulating is immediate. Only a
@@ -427,10 +459,10 @@ count does little, because code generation is CPU-bound.
 still parsed — but it decides how much the studio has to offer. Excluding four
 sub-libraries that many models never touch:
 
-| | Classes |
+| | Placeable classes |
 |---|---|
-| Everything indexed | 6577 |
-| After excluding `Magnetic`, `Clocked`, `ComplexBlocks`, `StateGraph` | 1714 placeable |
+| Everything indexed | 1365 |
+| After excluding `Magnetic`, `Clocked`, `ComplexBlocks`, `StateGraph` | 1089 |
 
 A shorter palette is easier to search, and a shorter list in the AI's brief is
 less to choose wrongly from.

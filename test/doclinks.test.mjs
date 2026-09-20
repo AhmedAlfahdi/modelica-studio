@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { buildLibs } from "./helpers/build.mjs";
 
-const { docPageFor, docUrlFor, libraryVersionFrom, libraryHelpUrl } = await import(
+const { docPageFor, docUrlFor, libraryVersionFrom, libraryHelpUrl, libraryIconsUrl, PUBLISHED_VERSIONS, WSM_VERSIONS, WSM_FALLBACK_VERSION } = await import(
   path.join(buildLibs("doclinks", ["src/modelica/doclinks.ts"]), "doclinks.js")
 );
 
@@ -99,4 +99,43 @@ test("the version is normalised to a tree the site publishes", () => {
   const url = docUrlFor("Modelica.Mechanics.Rotational.Sources.Torque", libraryVersionFrom(["Modelica 4.1.0+maint.om"]));
   assert.ok(!/%2B|\+maint/.test(url), `no build metadata in ${url}`);
   assert.match(url, /Modelica%204\.1\.0\//);
+});
+
+test("the icon-conventions page links to a tree the site publishes", () => {
+  // The library reference is generated four times over -- helpDymola, helpOM,
+  // helpWSM, help -- and the four are not published for the same versions. The
+  // conventions page exists only in the WSM tree, and there is NO 4.1.0 WSM tree:
+  // Modelica%204.1.0/Resources/helpWSM/... answers 404 while the helpDymola tree
+  // for the same version answers 200. Verified against the live site.
+  const url = libraryIconsUrl();
+  assert.equal(
+    url,
+    `https://doc.modelica.org/Modelica%20${WSM_FALLBACK_VERSION}/Resources/helpWSM/` +
+      "Modelica/Modelica.UsersGuide.Conventions.Icons.html"
+  );
+  // The page it names is the one this plugin's colour table was read from.
+  assert.match(url, /UsersGuide\.Conventions\.Icons\.html$/);
+  assert.ok(!url.includes(" "), "no raw space");
+});
+
+test("no version produces the dead helpWSM URL", () => {
+  // The regression: the link was written against the indexed library version by
+  // hand, and the indexed library here is 4.1.0, which has no WSM tree.
+  const dead = libraryIconsUrl("4.1.0");
+  assert.ok(!dead.includes("Modelica%204.1.0"), `4.1.0 WSM tree is a 404: ${dead}`);
+
+  // Every published version must land on a WSM tree that exists.
+  for (const version of PUBLISHED_VERSIONS) {
+    const produced = libraryIconsUrl(version);
+    const named = decodeURIComponent(produced.split("/")[3]).replace("Modelica ", "");
+    assert.ok(
+      WSM_VERSIONS.has(named),
+      `libraryIconsUrl(${version}) names ${named}, which has no WSM tree`
+    );
+  }
+  // A version that does have one is kept rather than flattened to the fallback.
+  assert.ok(libraryIconsUrl("3.2.3").includes("Modelica%203.2.3"));
+  // Anything unknown -- including build metadata -- falls back.
+  assert.equal(libraryIconsUrl("9.9.9"), libraryIconsUrl());
+  assert.equal(libraryIconsUrl("4.1.0+maint.om"), libraryIconsUrl());
 });

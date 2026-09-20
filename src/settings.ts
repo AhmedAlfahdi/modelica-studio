@@ -242,6 +242,45 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         })
       );
 
+    /* ---- Diagram labels ---- */
+    containerEl.createEl("h3", { text: "Diagram labels" });
+
+    new Setting(containerEl)
+      .setName("Label size")
+      .setDesc(
+        "Scales the name under each component in the diagram, as a percentage " +
+          "of the default. The label is sized from the component's on-screen " +
+          "size, so this moves that whole curve rather than pinning one size: " +
+          "it still shrinks when you zoom out, and two components side by side " +
+          "do not start overlapping."
+      )
+      .addSlider((sl) =>
+        sl
+          .setLimits(50, 250, 10)
+          .setValue(Math.round(this.plugin.settings.labelScale * 100))
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.labelScale = v / 100;
+            await this.plugin.saveSettings();
+            this.plugin.getView()?.refreshDiagram();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Show parameters when hovering a component")
+      .setDesc(
+        "While the pointer rests on a component, shows what its parameters are " +
+          "set to, with the ones this instance overrides first. Reading a " +
+          "diagram's settings otherwise means selecting each component in turn."
+      )
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.hoverParameters).onChange(async (v) => {
+          this.plugin.settings.hoverParameters = v;
+          await this.plugin.saveSettings();
+          this.plugin.getView()?.refreshDiagram();
+        })
+      );
+
     /* ---- AI assistance ---- */
     containerEl.createEl("h3", { text: "AI assistance" });
     containerEl.createEl("p", {
@@ -687,10 +726,15 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
     // Grouped by WHEN the cost is paid, because that is the distinction a user
     // acts on: the top group is worth configuring for, the bottom group is why
     // the studio feels immediate while you drag a value.
+    //
+    // These are a SNAPSHOT, not a measurement taken here -- the table is built
+    // from literals, so they drift as the code changes. They are re-measured by
+    // hand when something that moves them changes; the two library figures were
+    // corrected when the indexer stopped reading three MSL releases at once.
     containerEl.createDiv({ cls: "modelica-studio-metric-group", text: "Once, or when the structure changes" });
     const slow = containerEl.createDiv({ cls: "modelica-studio-metrics" });
-    metric(slow, "Parse the Modelica library", "2.4 s", "First launch after an install or upgrade", "slow");
-    metric(slow, "Load the library index", "0.3\u20130.5 s", "Every later launch, from a 28 MB cache", "once");
+    metric(slow, "Parse the Modelica library", "1.2 s", "First launch after an install or upgrade", "slow");
+    metric(slow, "Load the library index", "~0.3 s", "Every later launch, from a 25 MB cache", "once");
     metric(slow, "Compile a 4-component circuit", "1.4 s", "With 8 parallel codegen jobs", "slow");
     metric(slow, "The same compile, 1 job", "4.1 s", "Why Parallel compile jobs matters", "slow");
 

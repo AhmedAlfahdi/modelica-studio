@@ -75,9 +75,12 @@ export const DOMAIN_INFO: DomainInfo[] = [
   { domain: "magnetic", label: "Magnetic", msl: "rgb(255, 127, 0)", from: "Magnetic.FluxTubes" },
   { domain: "blocks", label: "Blocks", msl: "rgb(0, 0, 127)", from: "Blocks" },
   { domain: "discrete", label: "Discrete", msl: "rgb(0, 0, 0)", from: "StateGraph" },
-  { domain: "aerospace", label: "Aerospace", msl: null },
-  { domain: "multiphysics", label: "Multiphysics", msl: null },
-  { domain: "other", label: "Other", msl: null, from: "uncoloured in the library" },
+  // The three the library gives no code to. `aerospace` and `multiphysics` are
+  // groupings this plugin adds -- the examples name them -- while `other` is
+  // where the library's own uncoloured packages land.
+  { domain: "aerospace", label: "Aerospace", msl: null, from: "the examples' own subject" },
+  { domain: "multiphysics", label: "Multiphysics", msl: null, from: "a model spanning two domains" },
+  { domain: "other", label: "Other", msl: null, from: "Media, Math, Utilities, Icons" },
 ];
 
 /** The reference row for a domain. */

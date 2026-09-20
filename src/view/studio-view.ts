@@ -16,7 +16,7 @@ import { drawPlot, plotThemeFrom, seriesColor, summarize, type SeriesStyle } fro
 import { defaultSeriesNames } from "./series";
 import { collectParameters } from "./parameters";
 import type { TreeNode as PackageNode } from "../modelica/library";
-import { drawGraphic } from "../render/canvas";
+import { drawGraphic, portIsEnabled } from "../render/canvas";
 import { domainAttributes, domainOfLabel, domainOfPackage } from "../render/domains";
 import { currentTheme } from "../render/theme";
 import { EXAMPLES, findExample } from "../modelica/examples";
@@ -299,6 +299,12 @@ export class ModelicaStudioView extends ItemView {
       onSelectionChange: (ids) => this.onSelectionChanged(ids),
       onStatus: (text) => this.setStatus(text),
       resolveParam: (inst, name) => this.resolveInstanceParam(inst, name),
+      // Read per frame rather than captured, so a settings change shows on the
+      // next redraw instead of after the editor is rebuilt.
+      display: () => ({
+        labelScale: this.plugin.settings.labelScale,
+        hoverParameters: this.plugin.settings.hoverParameters,
+      }),
       readClipboard: () => navigator.clipboard.readText(),
       writeClipboard: (text) => navigator.clipboard.writeText(text),
       // Recorded to the debug log when it is enabled, so a press that behaves
@@ -761,6 +767,13 @@ export class ModelicaStudioView extends ItemView {
       this.codeEditor?.focus();
       this.validateCode();
     } else {
+      // Belt and braces. The canvas and the inspector must be describing the
+      // same object; any path that swaps one without the other is a bug, and the
+      // symptom is silent -- an inspector with no fields for EVERY component.
+      // Re-established here rather than only trusted.
+      if (this.editor && this.editor.currentModel !== this.plugin.model) {
+        this.editor.setModel(this.plugin.model);
+      }
       this.editor?.requestDraw();
     }
     this.setStatus(isCode ? "Code mode. Ctrl+Space completes, Ctrl+Enter simulates." : "Diagram mode.");
@@ -998,6 +1011,9 @@ export class ModelicaStudioView extends ItemView {
       // Adopt silently so Simulate works without a mode switch, but leave the
       // diagram alone until the user asks for it.
       this.plugin.adoptModel(model, text);
+      // The same object into the editor. Adopting into the plugin alone is what
+      // left the canvas drawing one model while the inspector read another.
+      this.editor?.adoptModel(model);
 
       // Structural checks, in the editor, where the mistake is. The compiler
       // catches these too, but only after a Simulate and in its own words: an
@@ -1797,10 +1813,14 @@ export class ModelicaStudioView extends ItemView {
     if (!el) return;
     const tabs = this.inspectorTabsEl;
     const selected = this.editor?.selectedIds ?? [];
+    // Looked up in the model the EDITOR is drawing, not the one the plugin
+    // happens to hold. They are kept identical (see `adoptEditorModel`), but the
+    // symptom of them drifting is silent and total -- a selection that is not in
+    // the model being inspected renders an empty panel, for every component at
+    // once -- so the inspector reads what the user is actually looking at.
+    const drawn = this.editor?.currentModel ?? this.plugin.model;
     const inst =
-      selected.length === 1
-        ? this.plugin.model.components.find((c) => c.id === selected[0])
-        : undefined;
+      selected.length === 1 ? drawn.components.find((c) => c.id === selected[0]) : undefined;
 
 
     if (tabs) {
@@ -1912,14 +1932,44 @@ export class ModelicaStudioView extends ItemView {
 
     if (def.ports.length) {
       parent.createDiv({ cls: "modelica-studio-section", text: "Connectors" });
+      // Which of this component's connectors a wire already reaches. A port can
+      // be switched OFF while a wire is on it -- `useHeatPort` was true when the
+      // wire was drawn -- and the ring disappears with the connector, so the
+      // wire would otherwise be left ending in mid-air with nothing said.
+      const wired = new Set<string>();
+      for (const c of (this.editor?.currentModel ?? this.plugin.model).connections ?? []) {
+        if (c.from.component === inst.id) wired.add(c.from.port);
+        if (c.to.component === inst.id) wired.add(c.to.port);
+      }
       const list = parent.createDiv({ cls: "modelica-studio-portlist" });
       for (const p of def.ports) {
-        const row = list.createDiv({ cls: "modelica-studio-portrow" });
-        row.createSpan({ cls: "modelica-studio-portname", text: p.name });
-        row.createSpan({
-          cls: "modelica-studio-muted",
-          text: `${p.causality === "acausal" ? shortType(p.type) : p.causality}${p.isFlow ? " · flow" : ""}`,
+        // A conditional connector does not exist until its parameter is on, so
+        // it is shown as unavailable rather than offered like the others. This
+        // is the same test the editor applies before letting a wire start or
+        // end here, so the list and the canvas agree.
+        const live = portIsEnabled(inst, def, p);
+        const connected = wired.has(p.name);
+        const kind = p.causality === "acausal" ? shortType(p.type) : p.causality;
+        const detail = live
+          ? `${kind}${p.isFlow ? " · flow" : ""}`
+          : connected
+            ? `${kind} · wired, but it needs ${p.condition} = true`
+            : `${kind} · needs ${p.condition} = true`;
+        const row = list.createDiv({
+          cls:
+            "modelica-studio-portrow" +
+            (live ? "" : connected ? " is-conditional-broken" : " is-conditional-off"),
         });
+        row.createSpan({ cls: "modelica-studio-portname", text: p.name });
+        row.createSpan({ cls: "modelica-studio-muted", text: detail });
+        if (!live) {
+          row.setAttribute(
+            "aria-label",
+            connected
+              ? `${p.name} has a wire on it but does not exist: it is declared only when ${p.condition} is true`
+              : `${p.name} is not available: it is declared only when ${p.condition} is true`
+          );
+        }
       }
     }
 
@@ -2014,17 +2064,48 @@ export class ModelicaStudioView extends ItemView {
       : p.name + (p.unit ? ` (${p.unit})` : "");
     const el = row.createEl("label", { text: label });
     if (p.comment) el.setAttribute("aria-label", p.comment);
-    const input = row.createEl("input", {
-      type: "text",
-      value: inst.params[p.name] ?? p.defaultValue ?? "",
-    });
-    if (p.defaultValue !== undefined) input.placeholder = `default ${p.defaultValue}`;
+
+    const stored = inst.params[p.name];
     // Commit on change/Enter rather than every keystroke: an edit triggers a
     // re-simulation, which must not fire per character.
-    input.addEventListener("change", () => {
-      this.editor?.setParam(inst.id, p.name, input.value.trim());
+    const commit = (value: string) => {
+      this.editor?.setParam(inst.id, p.name, value);
       void this.runSimulation({ silent: true });
+    };
+
+    // A Boolean is one of two values, and a text field let a user write anything
+    // else: `useSupport = yes` is reported by OpenModelica as "Variable yes not
+    // found in scope Force" -- naming neither the parameter nor the type, and
+    // only after a Simulate. A select cannot express the mistake.
+    //
+    // Used only while the binding really is one of the two literals. A model may
+    // legitimately write `useSupport = someFlag`, and a select would render that
+    // as "default" and then silently drop it on the next change, so anything else
+    // keeps the text field it was written in.
+    const isLiteralBoolean = stored === undefined || stored === "true" || stored === "false";
+    if (p.type === "Boolean" && isLiteralBoolean) {
+      const select = row.createEl("select", { cls: "modelica-studio-param-select" });
+      // First, so the panel can say "I have not overridden this" -- which is what
+      // the model means when the modifier is absent, and what an empty value
+      // restores, since `setParam` deletes the key.
+      select.createEl("option", {
+        attr: { value: "" },
+        text: p.defaultValue !== undefined ? `default (${p.defaultValue})` : "default",
+      });
+      for (const value of ["true", "false"]) {
+        select.createEl("option", { attr: { value }, text: value });
+      }
+      select.value = stored ?? "";
+      select.addEventListener("change", () => commit(select.value));
+      return;
+    }
+
+    const input = row.createEl("input", {
+      type: "text",
+      value: stored ?? p.defaultValue ?? "",
     });
+    if (p.defaultValue !== undefined) input.placeholder = `default ${p.defaultValue}`;
+    input.addEventListener("change", () => commit(input.value.trim()));
     input.addEventListener("keydown", (ev) => {
       if (ev.key === "Enter") input.blur();
     });
@@ -2845,7 +2926,12 @@ export class ModelicaStudioView extends ItemView {
 
   /* ---------------- model plumbing ---------------- */
 
-  private onModelChanged(_m: DiagramModel): void {
+  private onModelChanged(m: DiagramModel): void {
+    // The editor may hand over a NEW object — an undo or a redo restores a parsed
+    // copy rather than mutating in place — and the plugin has to take it, or the
+    // two drift apart and the inspector ends up looking the selection up in a
+    // model that no longer contains it.
+    this.plugin.adoptEditorModel(m);
     this.freshModel = false;
     // A drag, a wire or a delete changes the diagram without replacing the source,
     // so the stored source no longer describes the model. Marking it stale is what
@@ -3012,6 +3098,16 @@ export class ModelicaStudioView extends ItemView {
    */
   onLibraryReady(): void {
     this.renderPalette();
+  }
+
+  /**
+   * Redraw the diagram after a display setting changed.
+   *
+   * The label scale and the hover readout are read on every frame, so a redraw
+   * is all it takes -- there is nothing to rebuild and no state to reload.
+   */
+  refreshDiagram(): void {
+    this.editor?.requestDraw();
   }
 
   /** Re-read the plugin's model, e.g. after it was replaced elsewhere. */

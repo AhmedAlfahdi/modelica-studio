@@ -59,6 +59,8 @@ import {
   polylineInBox,
   drawPorts,
   findPortAt,
+  hoverParameterLines,
+  placeReadout,
   handleCursor,
   hitTestComponent,
   hitTestHandle,
@@ -84,6 +86,13 @@ export interface EditorCallbacks {
   resolveParam?: (inst: ComponentInstance, name: string) => string | undefined;
   /** Report transient status text (e.g. "moved 3 components"). */
   onStatus?: (text: string) => void;
+  /**
+   * Text scale and hover readout, from the settings.
+   *
+   * Read on every frame rather than captured at construction, so changing the
+   * setting shows immediately instead of after the editor is rebuilt.
+   */
+  display?: () => { labelScale: number; hoverParameters: boolean };
   /** Read text from the system clipboard. */
   readClipboard?: () => Promise<string>;
   /** Write text to the system clipboard. */
@@ -1881,6 +1890,39 @@ export class SchematicEditor {
     this.scheduleFit();
   }
 
+  /** The model this editor is drawing. See `adoptModel` for why it matters. */
+  get currentModel(): DiagramModel {
+    return this.model;
+  }
+
+  /**
+   * Take a new model object for the SAME document, keeping the viewport.
+   *
+   * `setModel` is for opening a different model: it drops the selection, throws
+   * away the undo stack and refits. This is for a model re-parsed from the text
+   * while the user is in code mode — the canvas must not jump, but the editor
+   * and the plugin MUST hold the same object.
+   *
+   * They did not, and the cost was silent: `validateCode` adopted the parsed
+   * model into the plugin while the editor kept the old one, so switching back
+   * to the diagram drew one model and inspected another. Every component then
+   * reported "1 components selected." with no fields, and any edit made
+   * afterwards went into the model the plugin was no longer holding, so it never
+   * reached the file.
+   */
+  adoptModel(model: DiagramModel): void {
+    if (this.model === model) return;
+    this.model = model;
+    // Ids that the new text no longer declares must leave the selection, or the
+    // inspector reports a component that is not there.
+    const alive = new Set(model.components.map((c) => c.id));
+    this.selection = new Set([...this.selection].filter((id) => alive.has(id)));
+    // The undo stack describes the text that was replaced; stepping back into it
+    // would restore a model the plugin does not hold.
+    this.history.clear();
+    this.requestDraw();
+  }
+
   /* ---------------- viewport ---------------- */
 
   /** Fit the diagram to the canvas. Prefer `scheduleFit` when size may be stale. */
@@ -1962,6 +2004,8 @@ export class SchematicEditor {
       if (picked) drawWireVertices(ctx, points, vp, dpr, theme);
     }
 
+    const display = this.cb.display?.() ?? { labelScale: 1, hoverParameters: false };
+
     for (const inst of this.model.components) {
       drawComponent(ctx, inst, this.cb.lookup(inst.className), vp, dpr, {
         lookup: this.cb.lookup,
@@ -1969,7 +2013,15 @@ export class SchematicEditor {
         selection: this.selection,
         hovered: this.hovered,
         showCentre: this.showProbe,
+        labelScale: display.labelScale,
       });
+    }
+
+    // Last, so the readout sits over the symbols rather than under the ones
+    // drawn after the component it describes.
+    if (display.hoverParameters && this.hovered && this.interaction.kind === "none") {
+      const hovered = this.instanceOf(this.hovered);
+      if (hovered) this.drawHoverReadout(ctx, hovered, display.labelScale);
     }
 
     if (this.selection.size === 1) {
@@ -2011,6 +2063,102 @@ export class SchematicEditor {
     this.drawPendingWire(ctx);
     if (this.showProbe) this.drawViewportReadout(ctx);
     this.drawProbe(ctx);
+  }
+
+  /**
+   * What a component's parameters are set to, while the pointer rests on it.
+   *
+   * Screen-space furniture, drawn with the identity transform like the label it
+   * sits beside, so it does not scale with the zoom and stays readable when the
+   * diagram is zoomed out to see the whole model.
+   *
+   * Placed below the symbol by preference and above it when there is no room, so
+   * it never covers the component being described.
+   */
+  private drawHoverReadout(
+    ctx: CanvasRenderingContext2D,
+    inst: ComponentInstance,
+    labelScale: number
+  ): void {
+    const def = this.cb.lookup(inst.className);
+    const rows = hoverParameterLines(inst, def);
+    const t = this.frameTheme;
+
+    // A parameter whose default is a library EXPRESSION has no value this can
+    // report. Saying so is the honest option; leaving the row out would read as
+    // the parameter not existing.
+    const lines: { text: string; overridden: boolean }[] = rows.map((r) => ({
+      text: r.value === "" ? `${r.name} = library default` : `${r.name} = ${r.value}`,
+      overridden: r.overridden,
+    }));
+    if (lines.length === 0) lines.push({ text: "no parameters", overridden: false });
+
+    const headPx = Math.max(10, Math.min(14, 13 * labelScale));
+    const bodyPx = Math.max(9, Math.min(13, 12 * labelScale));
+    const pad = 6;
+    const gap = 14;
+    const lineH = bodyPx + 4;
+    const margin = 4;
+    const canvasW = this.cssWidth * this.dpr;
+    const canvasH = this.cssHeight * this.dpr;
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.font = `${headPx}px sans-serif`;
+    const title = inst.id;
+    ctx.font = `${bodyPx}px monospace`;
+    let colW = ctx.measureText(title).width;
+    for (const line of lines) colW = Math.max(colW, ctx.measureText(line.text).width);
+
+    // EVERY parameter is shown, so a long list has to be laid out rather than
+    // truncated: the tallest in MSL, `FreeMotionScalarInit`, has 49. Filling
+    // whole columns top-to-bottom keeps the reading order natural, and the panel
+    // is as tall as the canvas allows rather than as tall as the list.
+    const room = canvasH - margin * 2 - pad * 2 - headPx - 2;
+    const perColumn = Math.max(1, Math.floor(room / lineH));
+    const columns = Math.max(1, Math.ceil(lines.length / perColumn));
+    const rowsHere = Math.max(1, Math.ceil(lines.length / columns));
+    const width = columns * colW + (columns - 1) * gap + pad * 2;
+    const height = pad * 2 + headPx + 2 + rowsHere * lineH;
+
+    // Where the symbol actually is, in the same device pixels.
+    const box = transformedBounds(
+      viewportTransform(this.viewport, this.dpr),
+      ...instanceOutlineBounds(inst, def)
+    );
+    const { x, y } = placeReadout(
+      box,
+      { width, height },
+      { width: canvasW, height: canvasH },
+      { margin, labelGap: 18 * labelScale }
+    );
+
+    // Opaque, not the translucent panel the diagnostics use: this one has to sit
+    // over the diagram, and a see-through panel invites clicking what shows
+    // through it. `theme.background` IS the canvas colour, so it reads the same
+    // while hiding what is behind it.
+    ctx.fillStyle = t.background;
+    ctx.fillRect(x, y, width, height);
+    ctx.strokeStyle = t.diagPanelStroke;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
+
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.fillStyle = t.diagText;
+    ctx.font = `${headPx}px sans-serif`;
+    ctx.fillText(title, x + pad, y + pad);
+    ctx.font = `${bodyPx}px monospace`;
+    lines.forEach((line, i) => {
+      const col = Math.floor(i / rowsHere);
+      const row = i % rowsHere;
+      // The value this instance overrides stands out from the ones it inherits,
+      // which is the distinction the readout exists to make.
+      ctx.globalAlpha = line.overridden ? 1 : 0.72;
+      ctx.fillText(line.text, x + pad + col * (colW + gap), y + pad + headPx + 2 + row * lineH);
+    });
+    ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
   /**

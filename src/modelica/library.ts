@@ -38,7 +38,37 @@ interface ConnectorInfo {
  * Bump when the parsed shape changes, so a stale cache is ignored rather than
  * read as if it were current — the same reasoning as the persisted-model schema.
  */
-export const INDEX_CACHE_VERSION = 1;
+export const INDEX_CACHE_VERSION = 6;
+
+/**
+ * Whether a class belongs to the library's own scaffolding rather than to the
+ * set of components a user places.
+ *
+ * Two kinds qualify, for different reasons, and both must be INDEXED:
+ *
+ * `Icons` holds the shared pictures other classes inherit.
+ * `Modelica.Electrical.Analog.Icons.VoltageSource` draws the whole battery symbol
+ * that `Sources.ConstantVoltage` extends, while `ConstantVoltage` itself declares
+ * nothing but a text label. Skipping that directory left every such class with no
+ * graphics at all, drawn blank.
+ *
+ * `Examples` holds runnable demos AND the utility blocks they are built from.
+ * `Modelica.Mechanics.Rotational.Examples.Utilities.DirectInertia` is a real
+ * block -- "Input/output block of a direct inertia model" -- and a model that
+ * references one has to be able to draw it. Skipping that directory left it as a
+ * bare placeholder box.
+ *
+ * Neither must ever be OFFERED. `Icons` classes are `partial`, so placing one
+ * produces a model OpenModelica refuses to instantiate, and `Examples` would add
+ * 511 demo models to a palette that exists to offer components.
+ *
+ * Resolution is untouched: `lookup` and `describe` still see these classes, which
+ * is the whole point.
+ */
+export function isLibraryScaffolding(qualifiedName: string): boolean {
+  const parts = qualifiedName.split(".");
+  return parts.includes("Icons") || parts.includes("Examples");
+}
 
 export class LibraryIndex {
   /** qualified name -> parsed class */
@@ -64,6 +94,10 @@ export class LibraryIndex {
    * that the palette tree, the search results, the browser and completion all
    * agree about what is available. Filtering only the palette left excluded
    * classes reachable by typing their name.
+   *
+   * This is also where inheritance-only classes are held back, for the same
+   * reason: `isLibraryScaffolding` has to hide them from every one of those surfaces
+   * at once, and this is the single predicate they all consult.
    */
   private excluded: string[] = [];
   /** Cached lower-cased names, for the subsequence scan. */
@@ -91,6 +125,11 @@ export class LibraryIndex {
 
   /** True when a class is hidden by the exclusion list. */
   isExcluded(qualifiedName: string): boolean {
+    // Inheritance-only classes are never offered, wherever they are looked for.
+    if (isLibraryScaffolding(qualifiedName)) return true;
+    // Nor are partial ones: they cannot be instantiated, so every surface that
+    // offers a class to place has to agree about leaving them out.
+    if (this.classes.get(qualifiedName)?.isPartial) return true;
     if (!this.excluded.length) return false;
     for (const prefix of this.excluded) {
       if (qualifiedName === prefix || qualifiedName.startsWith(prefix + ".")) return true;
@@ -143,6 +182,7 @@ export class LibraryIndex {
   hasPlaceableClass(prefix: string): boolean {
     for (const [qn, cls] of this.classes) {
       if (!qn.startsWith(prefix)) continue;
+      if (isLibraryScaffolding(qn) || cls.isPartial) continue;
       if (cls.kind !== "model" && cls.kind !== "block") continue;
       if (cls.icon.length > 0 || cls.componentIcons.length > 0) return true;
     }
@@ -187,23 +227,57 @@ export class LibraryIndex {
     return index;
   }
 
-  /** Add every .mo file under a directory tree. */
   /**
    * Packages whose contents are documentation or assets, never components.
    *
    * Indexing them costs time and memory and adds nothing to the palette. In the
    * standard library they account for a large share of the files.
+   *
+   * `Icons` is deliberately NOT in this list even though it is never offered.
+   * Its classes are what other classes INHERIT their picture from —
+   * `Modelica.Electrical.Analog.Icons.VoltageSource` is the whole of
+   * `Sources.ConstantVoltage`'s icon — so skipping the directory left those
+   * classes with no graphics and they were drawn blank. They are kept out of the
+   * palette by `isLibraryScaffolding` instead. Measured over MSL 4.1.0: +50 files,
+   * and the count of model/block classes with no visible shape falls from 277 to
+   * 132.
+   *
+   * `Examples` came out for the third time and the same reason: it is never
+   * offered, but `Examples.Utilities.*` are components models really use. It is
+   * held out of the palette by `isLibraryScaffolding` instead. Measured over MSL
+   * 4.1.0: +617 files and about 70 ms of indexing for 672 classes, with the
+   * palette unchanged.
+   *
+   * `Utilities` came out too, though NOT for the reason it first appeared to.
+   * The rule matches the name at any depth, so it also skipped packages such as
+   * `Modelica.Clocked.RealSignals.Sampler.Utilities`, which hold real components:
+   * indexing it adds 159 classes, 42 of them placeable (`UpSample`,
+   * `AssignClockToTriggerHold`, `Limiter`, ...) and previously absent from the
+   * palette. Measured over MSL 4.1.0: +73 files, no measurable indexing time.
+   *
+   * It does NOT fix `Modelica.Fluid.Dissipation.Utilities.Records.*`, which was
+   * the reason first assumed: measured before and after, the number of unresolved
+   * `extends` targets was 77 either way, because those classes are declared
+   * inline in the file `Fluid/Dissipation.mo`, which was never skipped. They were
+   * in fact missing for an unrelated reason -- a runaway recovery scan after
+   * `annotation (Dialog)` that discarded the rest of the file -- fixed in
+   * `parseValue`. Recorded so this change is not credited with a fix it did not
+   * make.
    */
   private static readonly SKIP_DIRS = new Set([
     "UsersGuide",
     "Resources",
-    "Examples",
-    "Icons",
-    "Utilities",
   ]);
 
+  /** Add every .mo file under a directory tree. */
   addDirectory(root: string, opts: { maxFiles?: number } = {}): number {
-    const maxFiles = opts.maxFiles ?? 5000;
+    // A guard against a pathological tree, not a working limit. It was 5000,
+    // which the standard library alone exceeded the moment more than one release
+    // was installed under one root: 280 files were dropped without a word,
+    // `ModelicaServices` among them. A cap that silently discards a library is
+    // worse than no cap, so this one is far above any real installation AND it
+    // says when it bites -- see `truncatedRoots`.
+    const maxFiles = opts.maxFiles ?? 50000;
     let count = 0;
     const walk = (dir: string) => {
       if (count >= maxFiles) return;
@@ -226,8 +300,19 @@ export class LibraryIndex {
       }
     };
     walk(root);
+    if (count >= maxFiles) this.truncatedRoots.push(root);
     return count;
   }
+
+  /**
+   * Roots whose walk hit the file cap, so the index is incomplete.
+   *
+   * Recorded rather than thrown: a partial index still draws most of a model,
+   * and refusing to open one because a library is enormous would be worse. But
+   * the caller is expected to SAY so -- an index that is quietly missing
+   * `ModelicaServices` is a bug report waiting to happen.
+   */
+  readonly truncatedRoots: string[] = [];
 
   /** Parse one .mo file and register the classes it defines. */
   addFile(file: string): ParsedClass[] {
@@ -369,13 +454,21 @@ export class LibraryIndex {
       prefixes: string[];
       pkg: string;
       center?: [number, number];
+      condition?: string;
     }[];
     parameters: ParameterDef[];
     icons: Graphic[];
   } {
     const ports = new Map<
       string,
-      { name: string; type: string; prefixes: string[]; pkg: string; center?: [number, number] }
+      {
+        name: string;
+        type: string;
+        prefixes: string[];
+        pkg: string;
+        center?: [number, number];
+        condition?: string;
+      }
     >();
     const parameters = new Map<string, ParameterDef>();
     const icons: Graphic[] = [];
@@ -428,6 +521,8 @@ export class LibraryIndex {
             name: comp.name,
             type: comp.type,
             prefixes: comp.prefixes,
+            // A conditional connector only exists once its parameter is true.
+            condition: comp.condition,
             // Package where this declaration lives — needed to resolve
             // relative type names such as `PositivePin`.
             pkg,
@@ -495,6 +590,7 @@ export class LibraryIndex {
         type: p.type,
         isFlow: prefixes.has("flow") || info?.isFlow === true,
         causality,
+        condition: p.condition,
       });
     }
 
@@ -571,13 +667,74 @@ export class LibraryIndex {
     const out: string[] = [];
     for (const c of candidates) {
       try {
-        if (fs.existsSync(c) && fs.statSync(c).isDirectory()) out.push(c);
+        if (!fs.existsSync(c) || !fs.statSync(c).isDirectory()) continue;
+        out.push(...newestLibraries(c));
       } catch {
         /* ignore */
       }
     }
     return out;
   }
+}
+
+/**
+ * One directory per library, the newest release of each.
+ *
+ * OpenModelica keeps every installed version side by side --
+ * `Modelica 3.2.3+maint.om` next to `Modelica 4.0.0+maint.om` next to
+ * `Modelica 4.1.0+maint.om` -- so indexing the directory that holds them indexes
+ * three releases of the same library into ONE table, keyed by qualified name.
+ * Which definition wins is then decided by the order the filesystem happens to
+ * hand the files over: `Modelica.Blocks.Math.Feedback` is a different class in
+ * 3.2.3 and in 4.1.0, and the palette, the inspector and the renderer could each
+ * be describing a different one. The 5,000-file cap finished the job by dropping
+ * 274 files and never reaching `ModelicaServices` at all, which MSL classes
+ * reference.
+ *
+ * A directory that is itself a library (`package.mo` directly inside) is
+ * returned unchanged. Otherwise the subdirectories are grouped by their name
+ * without the version -- `Modelica` for `Modelica 4.1.0+maint.om` -- and the
+ * highest version of each is kept. A directory whose name carries no version is
+ * kept as it is: there is nothing to choose between.
+ */
+export function newestLibraries(dir: string): string[] {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  // A library in its own right, rather than a directory of them.
+  if (entries.some((e) => e.isFile() && e.name === "package.mo")) return [dir];
+
+  const out: string[] = [];
+  const newest = new Map<string, { dir: string; version: number[] }>();
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    const full = path.join(dir, e.name);
+    // `Modelica 4.1.0+maint.om` -> family `Modelica`, version [4, 1, 0].
+    const m = /^(\S+)\s+(\d+(?:\.\d+)*)/.exec(e.name);
+    if (!m) {
+      out.push(full);
+      continue;
+    }
+    const version = m[2].split(".").map(Number);
+    const held = newest.get(m[1]);
+    if (!held || compareVersions(version, held.version) > 0) {
+      newest.set(m[1], { dir: full, version });
+    }
+  }
+  // The kept releases first, then anything unversioned, both in a stable order.
+  return [...newest.values()].map((v) => v.dir).sort().concat(out.sort());
+}
+
+/** Compare dotted numeric versions, newest last. */
+function compareVersions(a: number[], b: number[]): number {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] ?? 0) - (b[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
 }
 
 function isPrimitiveType(t: string): boolean {
@@ -834,6 +991,9 @@ export function buildPackageTree(index: LibraryIndex, root: string): TreeNode {
 
   for (const name of index.allNames()) {
     if (!name.startsWith(prefix)) continue;
+    // Skipped before the parent is created, so no `Icons` folder appears: these
+    // classes are pictures to inherit, not components to browse.
+    if (isLibraryScaffolding(name)) continue;
     const cls = index.get(name);
     if (!cls) continue;
     const parentFull = name.split(".").slice(0, -1).join(".");
@@ -847,7 +1007,7 @@ export function buildPackageTree(index: LibraryIndex, root: string): TreeNode {
         children: [],
         placeable: false,
       };
-      self.placeable = cls.icon.length > 0 || cls.componentIcons.length > 0;
+      self.placeable = !cls.isPartial && (cls.icon.length > 0 || cls.componentIcons.length > 0);
       if (!byFull.has(name)) {
         byFull.set(name, self);
         parent.children.push(self);

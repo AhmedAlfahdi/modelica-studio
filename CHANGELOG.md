@@ -5,6 +5,100 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.3] — 2026-09-20
+
+### Added
+
+- **Hovering a component shows what its parameters are set to.** The values that
+  differ from the class default come first, so what makes one component different
+  from the next is visible without selecting each in turn. Every parameter is
+  listed however many there are — the largest class in MSL has 49 — and a long
+  list fills columns rather than being cut off at the canvas edge. The readout is
+  placed clear of the symbol it describes: below it, above it, or beside it,
+  rather than over it, because painted pixels are not a hit region and a panel
+  lying on a component leaves the component clickable through it.
+- **A label-size setting** (Settings → Diagram labels). A multiplier rather than a
+  pixel size, because the label is already sized from the component's on-screen
+  size; a fixed size would stop it shrinking with the zoom and start labels
+  overlapping on a large model.
+- **A source-versus-parsed icon sweep** over the whole library: every class's own
+  `Icon(...)` is counted in the source it was written in and compared against what
+  the parser produced. It reports 46 classes still short, and fails if that number
+  grows.
+
+### Fixed
+
+- **145 classes were drawn as empty boxes.** The indexer skipped every directory
+  named `Icons`, so a class that inherits its whole picture from one — every
+  voltage and current source, the battery stacks, the rotational clutches, the
+  flux-tube shapes — resolved to no graphics at all. `ConstantVoltage`, whose own
+  annotation is a single text label, drew nothing. `Icons` is now indexed and kept
+  out of the palette instead. The same over-broad rule was dropping whole
+  `Examples` and `Utilities` packages that models reference.
+
+- **No fill or line pattern rendered, anywhere.** Modelica writes these as
+  qualified enumerations and the renderer switched on the bare member name, so
+  every case fell through to the default and nothing failed loudly: hatched fills
+  drew solid, dashed lines drew solid, Bézier curves drew as straight polylines,
+  and `LinePattern.None` — defined as an invisible line — put an outline on 1018
+  graphics that ask for none.
+
+- **Icon labels were drawn at one pixel.** `fontSize` is absent from every in-box
+  label in MSL, and absent was read as zero and clamped to the 1px floor, so a
+  block whose icon is a rectangle plus the word "and" rendered as an empty box.
+  The size now comes from the extent — in both dimensions, since a label wider
+  than its box (`receive`, at 254 units in a 200-unit box) is as wrong as one too
+  small.
+
+- **Two classes of annotation were mis-parsed, and both discarded the rest of the
+  file.** `annotation (Dialog)` made the parser ask for the value of `)`, and the
+  recovery scan then ran to the next `)` in the file — `Blocks/Math.mo` yielded 7
+  nested classes instead of 59, losing `Math.Feedback` and `Math.Add`. And
+  `visible=(use_pder and use_pder2)` was read as a modifier list, producing an
+  object that is neither `true` nor a string, which hid the graphic for good.
+
+- **An `if` expression spanning a line break swallowed the annotation that
+  followed it**, and so did an `else if` inside a `when` block, and an `if`
+  reached mid-statement in an `algorithm` section. Each started a hunt for an
+  `end if` that does not exist; `LogFrequencySweep` parsed 0 of its 12 graphics.
+
+- **The library index held three releases of Modelica at once.** OpenModelica
+  keeps every installed version side by side and the indexer read the directory
+  that contains them, so a class's definition depended on the order the
+  filesystem handed the files over — and a 5,000-file cap then dropped 280 files,
+  losing `ModelicaServices`, `ModelicaReference` and `ObsoleteModelica4`
+  entirely. Only the newest release of each library is indexed now, the cap is a
+  guard that reports rather than a limit that discards, and the first launch got
+  twice as fast as a side effect.
+
+- **The inspector showed nothing for any component**, after a visit to code mode.
+  The code validator adopted a freshly parsed model into the plugin while the
+  editor kept the previous one, and the inspector looked the selection up in the
+  wrong object. The two are now kept identical, the inspector reads the model
+  being drawn, and an edit made after a drift can no longer land in a copy that
+  never reaches the file.
+
+- **A conditional connector could be wired although it does not exist.**
+  `Support support(...) if useSupport` is not an optional connector: with the
+  parameter false the element is absent and a `connect` to it is a model
+  OpenModelica rejects. It is now dimmed in the inspector with the parameter that
+  enables it, and its pin is neither drawn nor grabbable.
+
+- **Light fills glared on the dark theme.** The thermal components fill with
+  `{192,192,192}` and `FixedTemperature` with `{159,159,223}` — values chosen for
+  a white page, which on a dark canvas rendered as opaque pale slabs. They keep
+  the library's hue at a lightness that suits the surface, blended by a fixed
+  fraction so shapes that differ only in lightness keep their shading.
+
+- **The Help window overstated the library by 143 classes**, reporting the whole
+  index under the Modelica library's name.
+
+### Changed
+
+- The Help window's domain-colour legend is split in two: the codes the library
+  itself specifies, with the package each comes from, and the groupings this
+  plugin adds.
+
 ## [0.2.0-beta.2] — 2026-09-19
 
 ### Fixed

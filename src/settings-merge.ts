@@ -122,6 +122,27 @@ export interface ModelicaStudioSettings {
   inspectorWidth: number;
   /** Left-hand palette width in pixels; 0 means the default. */
   paletteWidth: number;
+
+  /**
+   * Scale applied to the diagram's own text -- the name under each component and
+   * the hover readout.
+   *
+   * A multiplier rather than a pixel size, because the label is already sized
+   * from the component's on-screen size: a fixed size would stop it shrinking
+   * with the zoom and start the labels overlapping on a large model. This moves
+   * the whole curve up or down.
+   */
+  labelScale: number;
+
+  /**
+   * Whether resting the pointer on a component shows what its parameters are set
+   * to.
+   *
+   * On by default: the values that make one component different from the next
+   * are otherwise only visible by selecting each in turn, and a diagram of
+   * twenty components is then twenty clicks to read.
+   */
+  hoverParameters: boolean;
   /**
    * Results-pane height in DIAGRAM mode; 0 means the default.
    *
@@ -200,6 +221,8 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   editorMode: "diagram",
   inspectorWidth: 380,
   paletteWidth: 210,
+  labelScale: 1,
+  hoverParameters: true,
   plotHeight: 0,
   codePlotHeight: 0,
   modelStopTimes: {},

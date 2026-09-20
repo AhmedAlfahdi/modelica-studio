@@ -14,7 +14,7 @@ import path from "node:path";
 import { buildLibs, repoRoot, testTmpDir } from "./helpers/build.mjs";
 
 const LIB = buildLibs("library-lib", ["src/modelica/library.ts", "src/modelica/parser.ts", "src/modelica/types.ts"]);
-const { LibraryIndex, loadLibraryIndex, indexRoots, INDEX_CACHE_VERSION } = await import(
+const { LibraryIndex, loadLibraryIndex, indexRoots, buildPackageTree, newestLibraries, INDEX_CACHE_VERSION } = await import(
   path.join(LIB, "library.js")
 );
 
@@ -35,6 +35,34 @@ function makeLibrary(dir) {
   return dir;
 }
 
+/**
+ * A library whose components inherit their picture from an `Icons` sub-package.
+ *
+ * This is how the whole Modelica Standard Library is written: `C` declares no
+ * graphics and extends `Icons.Base`, which draws them.
+ */
+function makeIconLibrary(dir) {
+  fs.mkdirSync(path.join(dir, "P", "Icons"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "P", "package.mo"), "package P\nend P;\n");
+  fs.writeFileSync(path.join(dir, "P", "Own.mo"), `within P;\n${modelSource("Own")}`);
+  fs.writeFileSync(
+    path.join(dir, "P", "Icons", "package.mo"),
+    "package Icons\n  partial model Base\n" +
+      "    annotation(Icon(graphics={Rectangle(extent={{-10,-10},{10,10}})}));\n" +
+      "  end Base;\nend Icons;\n"
+  );
+  // Declares no graphics at all -- only a label, exactly like
+  // Modelica.Electrical.Analog.Sources.ConstantVoltage.
+  fs.writeFileSync(
+    path.join(dir, "P", "C.mo"),
+    "within P;\nmodel C\n  extends Icons.Base;\n" +
+      '  annotation(Icon(graphics={Text(extent={{-10,-40},{10,-30}}, textString="C")}));\n' +
+      "end C;\n"
+  );
+  return dir;
+}
+
+
 test("redundant roots are skipped so the library is not parsed twice", () => {
   // The library directory and a version directory inside it are both offered;
   // indexing both parsed every file twice, doubling the cost of the first open.
@@ -53,14 +81,37 @@ test("documentation and asset packages are not indexed", () => {
   // large share of the files.
   const root = testTmpDir("mo-lib-");
   makeLibrary(root);
-  for (const skip of ["UsersGuide", "Resources", "Examples", "Icons"]) {
+  for (const skip of ["UsersGuide", "Resources"]) {
     fs.mkdirSync(path.join(root, "P", skip), { recursive: true });
-    fs.writeFileSync(path.join(root, "P", skip, "X.mo"), "within P.UsersGuide;\nmodel X\nend X;\n");
+    // The `within` has to name the directory the file is in: writing
+    // `within P.UsersGuide` into every one of them made the Examples copy
+    // register a class called `P.UsersGuide.X` once Examples stopped being
+    // skipped, and the assertion below then failed for the wrong reason.
+    fs.writeFileSync(path.join(root, "P", skip, "X.mo"), `within P.${skip};\nmodel X\nend X;\n`);
   }
+  // A directory that is NOT skipped, to prove the walk still descends.
+  fs.mkdirSync(path.join(root, "P", "Examples"), { recursive: true });
+  fs.writeFileSync(path.join(root, "P", "Examples", "X.mo"), "within P.Examples;\nmodel X\nend X;\n");
   const index = new LibraryIndex();
   index.addDirectory(root);
   assert.ok(index.get("P.A"), "real components are indexed");
   assert.equal(index.get("P.UsersGuide.X"), undefined, "documentation is skipped");
+  assert.equal(index.get("P.Resources.X"), undefined, "assets are skipped");
+  // `Icons`, `Utilities` and `Examples` are NOT among them. None is ever
+  // OFFERED -- Icons classes are pictures other classes inherit, the Utilities
+  // ones that are partial are held back like any other partial class, and
+  // Examples would put 511 demo models in a palette that exists to offer
+  // components -- but all three are real Modelica that something else extends or
+  // places, so all three must be indexed.
+  assert.ok(index.get("P.Examples.X"), "Examples is indexed, just not offered");
+  assert.equal(index.isExcluded("P.Examples.X"), true, "and is hidden from the palette");
+  assert.ok(
+    !index.listPlaceable().some((c) => c.name === "P.Examples.X"),
+    "so it is not offered"
+  );
+  assert.equal(LibraryIndex.SKIP_DIRS.has("Icons"), false, "Icons must be indexed");
+  assert.equal(LibraryIndex.SKIP_DIRS.has("Utilities"), false, "Utilities must be indexed");
+  assert.equal(LibraryIndex.SKIP_DIRS.has("Examples"), false, "Examples must be indexed");
 });
 
 test("the index round-trips through its cache form", () => {
@@ -230,4 +281,201 @@ test("operator records keep their own names", () => {
   const names = index.allNames().sort();
   assert.deepEqual(names, ["P", "P.R", "P.f"], `operator kinds are named correctly, got ${names}`);
   assert.ok(!names.some((n) => n.includes(".record")), "no class is named 'record'");
+});
+
+test("a class that inherits its whole picture from an Icons package is not blank", () => {
+  // MSL keeps the drawing in a sub-package named `Icons` and the class itself
+  // declares none: `Modelica.Electrical.Analog.Sources.ConstantVoltage` extends
+  // `Icons.VoltageSource` and adds only a text label. Skipping the `Icons`
+  // directory therefore left every one of the library's voltage sources,
+  // batteries, clutches and flux tubes with NO graphics at all, drawn as an
+  // empty box. Over MSL 4.1.0 that was 145 of the 277 blank symbols.
+  const root = testTmpDir("mo-lib-");
+  makeIconLibrary(root);
+  const index = new LibraryIndex();
+  index.addDirectory(root);
+
+  assert.ok(index.lookup("P.Icons.Base"), "the icon definition is indexed, or it cannot be inherited");
+  const c = index.describe("P.C");
+  assert.ok(c, "the class resolves");
+  assert.ok(
+    (c.icon ?? []).some((g) => g.kind === "Rectangle"),
+    `the inherited rectangle reaches the component, got ${(c.icon ?? []).map((g) => g.kind).join(",")}`
+  );
+  assert.equal(c.hasIcon, true, "and it counts as having an icon");
+  // The class's own label is all it declares, so before the fix this was the
+  // only graphic and nothing visible was drawn.
+  assert.ok(index.lookup("P.C").icon.every((g) => g.kind === "Text"), "the class really does declare no shapes");
+});
+
+test("icon definitions are indexed but never offered", () => {
+  // They are `partial`, so placing one produces a model OpenModelica refuses to
+  // instantiate, and the palette must not grow an `Icons` folder under every
+  // package. Indexing them is what fixes inheritance; offering them is not.
+  const root = testTmpDir("mo-lib-");
+  makeIconLibrary(root);
+  const index = new LibraryIndex();
+  index.addDirectory(root);
+
+  assert.equal(index.isExcluded("P.Icons.Base"), true, "hidden from every surface that offers a class");
+  assert.ok(index.isExcluded("P.Icons"), "including the package itself");
+  assert.ok(
+    !index.listPlaceable().some((c) => c.name.startsWith("P.Icons")),
+    "not in the palette list"
+  );
+  assert.ok(!index.packages().some((p) => p.includes("Icons")), "no Icons palette group");
+  const tree = JSON.stringify(buildPackageTree(index, "P"));
+  assert.ok(!tree.includes("Icons"), `no Icons folder in the palette tree: ${tree}`);
+
+  // The class that inherits from it is still offered: resolution is untouched.
+  const names = index.listPlaceable().map((c) => c.name);
+  assert.ok(names.includes("P.C"), `P.C is still placeable, got ${names.join(",")}`);
+  assert.ok(names.includes("P.Own"), "and so is the class with its own icon");
+});
+
+test("the index cache version reflects the classes the index holds", () => {
+  // The snapshot is cached for the whole vault, keyed by the library roots and
+  // their mtimes rather than by what the parser produced. Any change to WHICH
+  // classes the index holds -- adding the `Icons` packages, fixing a parse that
+  // discarded two thirds of a file -- therefore has to bump this, or a cache
+  // written by the previous version is read as current and the fix reaches
+  // nobody who has opened the plugin before.
+  assert.equal(INDEX_CACHE_VERSION, 6);
+});
+
+test("a package named Utilities still contributes components", () => {
+  // The skip rule matched a directory NAME at any depth, so it took out
+  // `Modelica.Clocked.RealSignals.Sampler.Utilities` along with MSL's own helper
+  // package. Measured over MSL 4.1.0 that was 159 classes, 42 of them placeable.
+  const root = testTmpDir("mo-lib-");
+  fs.mkdirSync(path.join(root, "P", "Utilities"), { recursive: true });
+  fs.writeFileSync(path.join(root, "P", "package.mo"), "package P\nend P;\n");
+  fs.writeFileSync(
+    path.join(root, "P", "Utilities", "package.mo"),
+    "package Utilities\nend Utilities;\n"
+  );
+  fs.writeFileSync(path.join(root, "P", "Utilities", "U.mo"), `within P.Utilities;\n${modelSource("U")}`);
+  const index = new LibraryIndex();
+  index.addDirectory(root);
+  assert.ok(index.get("P.Utilities.U"), "a component under Utilities is indexed");
+  assert.ok(
+    index.listPlaceable().some((c) => c.name === "P.Utilities.U"),
+    "and is offered in the palette"
+  );
+});
+
+test("a partial class is never offered, but is still inherited from", () => {
+  // A partial class can only be extended. Offering one lets a user drop it on the
+  // canvas and wire it up, and the failure surfaces much later as OpenModelica's
+  // "cannot instantiate partial model". The modifier was parsed and then thrown
+  // away, so 183 of MSL 4.1.0's 1492 palette entries could not be placed at all.
+  const root = testTmpDir("mo-lib-");
+  fs.mkdirSync(path.join(root, "P"), { recursive: true });
+  fs.writeFileSync(path.join(root, "P", "package.mo"), "package P\nend P;\n");
+  fs.writeFileSync(
+    path.join(root, "P", "Base.mo"),
+    "within P;\npartial model Base\n  Real x;\n" +
+      "  annotation(Icon(graphics={Rectangle(extent={{-10,-10},{10,10}})}));\nend Base;\n"
+  );
+  fs.writeFileSync(
+    path.join(root, "P", "Concrete.mo"),
+    "within P;\nmodel Concrete\n  extends Base;\n" +
+      "  annotation(Icon(graphics={Line(points={{0,0},{5,5}})}));\nend Concrete;\n"
+  );
+  const index = new LibraryIndex();
+  index.addDirectory(root);
+
+  assert.equal(index.get("P.Base").isPartial, true, "the modifier is recorded");
+  assert.equal(index.get("P.Concrete").isPartial, false, "and is not inherited as a flag");
+  assert.equal(index.isExcluded("P.Base"), true, "hidden from every surface that offers a class");
+
+  const names = index.listPlaceable().map((c) => c.name);
+  assert.ok(!names.includes("P.Base"), `a partial class is not offered, got ${names.join(",")}`);
+  assert.ok(names.includes("P.Concrete"), "a concrete subclass still is");
+  assert.ok(!JSON.stringify(buildPackageTree(index, "P")).includes("P.Base"), "nor in the tree");
+
+  // Resolution is untouched: the subclass still inherits the base's picture.
+  const shapes = (index.describe("P.Concrete").icon ?? []).map((g) => g.kind);
+  assert.ok(shapes.includes("Rectangle"), `the base icon is inherited, got ${shapes.join(",")}`);
+});
+
+test("only the newest release of each library is indexed", () => {
+  // OpenModelica keeps every installed version side by side. Indexing the
+  // directory that holds them indexed three releases of `Modelica` into ONE
+  // table keyed by qualified name, so which definition won depended on the order
+  // the filesystem handed the files over -- and the palette, the inspector and
+  // the renderer could each be describing a different release.
+  const root = testTmpDir("mo-libs-");
+  for (const [dir, body] of [
+    ["Modelica 3.2.3+maint.om", "model Thing\n  Real x;\nend Thing;\n"],
+    ["Modelica 4.0.0+maint.om", "model Thing\n  Real x;\nend Thing;\n"],
+    ["Modelica 4.1.0+maint.om", "model Thing\n  Real x;\nend Thing;\n"],
+    ["ModelicaServices 4.1.0+maint.om", "model Machine\n  Real x;\nend Machine;\n"],
+    ["MyLib", "model Mine\n  Real x;\nend Mine;\n"],
+  ]) {
+    fs.mkdirSync(path.join(root, dir), { recursive: true });
+    fs.writeFileSync(path.join(root, dir, "package.mo"), `package ${dir.split(" ")[0]}\n${body}end ${dir.split(" ")[0]};\n`);
+  }
+
+  const chosen = newestLibraries(root).map((p) => path.basename(p)).sort();
+  assert.deepEqual(
+    chosen,
+    ["Modelica 4.1.0+maint.om", "ModelicaServices 4.1.0+maint.om", "MyLib"],
+    "one release per family, and the unversioned library untouched"
+  );
+
+  // And the index built from them has no cross-version duplicates: `Modelica`
+  // appears once, from 4.1.0.
+  const index = new LibraryIndex();
+  for (const dir of newestLibraries(root)) index.addDirectory(dir);
+  const modelica = index.allNames().filter((n) => n.startsWith("Modelica."));
+  assert.deepEqual(modelica, ["Modelica.Thing"], "the library is indexed once");
+  assert.ok(index.get("ModelicaServices.Machine"), "and a sibling library is not dropped");
+
+  // A directory that is itself a library is returned as it is.
+  assert.deepEqual(newestLibraries(path.join(root, "MyLib")), [path.join(root, "MyLib")]);
+
+  // The WIRING, not just the helper: `discoverLibraryRoots` has to apply it, or
+  // the selection above is a function nothing calls. Guarded on the library
+  // actually being installed, like the other machine-dependent tests here.
+  const installed = path.join(process.env.HOME ?? "", ".openmodelica", "libraries");
+  if (fs.existsSync(installed)) {
+    const roots = LibraryIndex.discoverLibraryRoots();
+    assert.ok(roots.length > 0, "the installed libraries are discovered");
+    assert.ok(
+      !roots.includes(installed),
+      "the directory of libraries is expanded, not indexed whole"
+    );
+    const families = roots.map((r) => path.basename(r).split(" ")[0]);
+    assert.equal(
+      new Set(families).size,
+      families.length,
+      `one release per library, got ${roots.map((r) => path.basename(r)).join(", ")}`
+    );
+    assert.ok(
+      families.includes("ModelicaServices"),
+      "and every family present is discovered, not just the first"
+    );
+  }
+});
+
+test("an index that hits the file cap says so", () => {
+  // A cap that silently discards a library is worse than no cap: the classes are
+  // simply absent, and every one of them reads as "not in the library" with
+  // nothing to explain why. `ModelicaServices` went missing that way.
+  const root = testTmpDir("mo-cap-");
+  fs.mkdirSync(path.join(root, "P"), { recursive: true });
+  for (let i = 0; i < 12; i++) {
+    fs.writeFileSync(path.join(root, "P", `M${i}.mo`), `within P;\nmodel M${i}\n  Real x;\nend M${i};\n`);
+  }
+
+  const complete = new LibraryIndex();
+  const read = complete.addDirectory(root);
+  assert.equal(read, 12, "everything is read when the cap is not reached");
+  assert.deepEqual(complete.truncatedRoots, [], "and nothing is reported");
+
+  const capped = new LibraryIndex();
+  const partial = capped.addDirectory(root, { maxFiles: 5 });
+  assert.equal(partial, 5, "the cap stops the walk");
+  assert.deepEqual(capped.truncatedRoots, [root], "and the root is reported as incomplete");
 });

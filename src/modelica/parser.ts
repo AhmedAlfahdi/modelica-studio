@@ -63,6 +63,16 @@ export interface ParsedClass {
    * gives its `medium` component the picture instead.
    */
   componentIcons: Graphic[];
+  /**
+   * Whether the class is declared `partial`.
+   *
+   * A partial class can only be extended, never instantiated, so it must never be
+   * offered as a component: dropping one on the canvas produces a model that
+   * OpenModelica refuses to build with "cannot instantiate partial model". The
+   * modifier was parsed and then thrown away, so 183 of the 1492 palette entries
+   * in MSL 4.1.0 were classes that cannot be placed.
+   */
+  isPartial: boolean;
   diagram: Graphic[];
   parameters: ParameterDef[];
   /** Names of classes nested in this class. */
@@ -261,6 +271,7 @@ class Parser {
         kind: kindTok.value,
         name,
         qualifiedName: [...prefix, name].join("."),
+        isPartial: modifiers.includes("partial"),
         extendsTypes: [],
         components: [],
         connections: [],
@@ -285,6 +296,7 @@ class Parser {
       name,
       comment,
       qualifiedName: [...prefix, name].join("."),
+      isPartial: modifiers.includes("partial"),
       extendsTypes: [],
       components: [],
       connections: [],
@@ -429,7 +441,7 @@ class Parser {
         continue;
       }
       if (this.isStatementStart()) {
-        this.skipStatement();
+        this.skipStatement(this.beginsStatement());
         continue;
       }
 
@@ -519,10 +531,33 @@ class Parser {
    * and is not counted. Tokens inside brackets never affect the count either,
    * so a parenthesised `if` expression cannot unbalance it.
    */
-  private skipStatement(): void {
+  private skipStatement(headIsStatement = true): void {
     let blockDepth = 0;
     let bracketDepth = 0;
     let atStatementStart = true;
+    // Whether the STATEMENT's own head is a block keyword. An `if` can only open
+    // a block at the head of a statement, and outside a block that means this
+    // one: `y = if a then b else if c then d else e;` contains two EXPRESSION
+    // ifs and no `end if` at all. Counting the one after `else` started a hunt
+    // for a closing `end if` that never came, so the scan ran past the end of the
+    // class and took its `Icon` annotation with it — `Sources.LogFrequencySweep`
+    // parsed with 0 of its 12 graphics, one equation away from being correct.
+    const headOpensBlock =
+      headIsStatement &&
+      (this.peek().value === "if" ||
+        this.peek().value === "for" ||
+        this.peek().value === "while" ||
+        this.peek().value === "when");
+    // Whether the expression being scanned has passed an `if` that is NOT a
+    // statement. Its `then`/`else` do not begin nested statements, so they must
+    // not arm the next `if` to open a block: `x = if a then 1 else if b then 2
+    // else 3;` is one equation with two expression ifs, and counting the second
+    // sent the scan looking for an `end if` that does not exist. Inside a
+    // `when` or `if` block -- where `then`/`else` really do begin statements --
+    // that made the block appear one level deeper than it is, so its `end when;`
+    // closed the wrong level and the rest of the class, `Icon` included, was
+    // swallowed.
+    let inExpressionIf = false;
 
     while (!this.isEof()) {
       const t = this.peek();
@@ -562,28 +597,42 @@ class Parser {
           }
         }
 
-        // A block opener only when it starts a statement.
+        // A block opener only when it starts a statement -- at the head of this
+        // one, or at the head of a nested statement inside a block.
         if (
           atStatementStart &&
+          (blockDepth > 0 || headOpensBlock) &&
           (v === "if" || v === "for" || v === "while" || v === "when")
         ) {
           blockDepth++;
           atStatementStart = false;
+          inExpressionIf = false;
           this.next();
           continue;
         }
+
+        // An `if` anywhere else is an expression, and its branches are not
+        // statements. Remembered until the statement's `;`.
+        if (v === "if") inExpressionIf = true;
 
         // Statement terminator.
         if (v === ";") {
           this.next();
           if (blockDepth <= 0) return;
           atStatementStart = true;
+          inExpressionIf = false;
           continue;
         }
 
-        // Inside a block, `then`/`else`/`loop` begin a nested statement.
-        if (v === "then" || v === "else" || v === "loop") {
+        // Inside a BLOCK, `then`/`else`/`loop` begin a nested statement. Not
+        // inside an expression if, where they only introduce another branch.
+        if (v === "loop") {
           atStatementStart = true;
+          this.next();
+          continue;
+        }
+        if (v === "then" || v === "else") {
+          if (!inExpressionIf) atStatementStart = true;
           this.next();
           continue;
         }
@@ -621,6 +670,37 @@ class Parser {
     const last = this.tokens[Math.max(0, this.pos - 1)];
     const sliceEnd = last ? Math.max(first.end, last.end) : first.end;
     return this.sourceSlice(sliceStart, sliceEnd).trim();
+  }
+
+  /**
+   * Whether the token at the cursor really begins a statement.
+   *
+   * `isStatementStart` asks about the token alone, and `if` is both a keyword
+   * that opens a block and the head of an expression. This loop reaches `if`
+   * with the rest of a statement already skipped -- `y := if a then b else c;`
+   * in an `algorithm` section arrives with `y` and `:=` behind it -- and treating
+   * that `if` as a block opener began a hunt for an `end if` that does not exist.
+   * The scan then ran through the class's `annotation` and stopped only at its
+   * `end`, so the class kept a placeholder icon: `Electrical.Digital.
+   * InertialDelaySensitive` parsed 0 of its 8 graphics.
+   *
+   * What precedes the keyword decides it. A statement can begin after another
+   * statement, after a section keyword, or at the head of the class body.
+   */
+  private beginsStatement(): boolean {
+    const prev = this.tokens[this.pos - 1];
+    if (!prev) return true;
+    return (
+      prev.value === ";" ||
+      prev.value === "then" ||
+      prev.value === "else" ||
+      prev.value === "loop" ||
+      prev.value === "equation" ||
+      prev.value === "algorithm" ||
+      prev.value === "initial" ||
+      prev.value === "protected" ||
+      prev.value === "public"
+    );
   }
 
   /** Parse a dotted type name, e.g. Modelica.Electrical.Analog.Basic.Resistor */
@@ -1204,6 +1284,16 @@ class Parser {
         out[key] = this.parseValue();
         continue;
       }
+      // A bare name with nothing after it: `annotation (Dialog)` marks a
+      // declaration as having a dialog without configuring one. Treating it as a
+      // value made the parser ask for the value of `)`, and the recovery scan
+      // that followed ran to the next `)` in the FILE — swallowing every class
+      // after it. `Blocks/Math.mo` lost 20 blocks that way, `Math.Feedback`
+      // among them.
+      if (this.at(",") || this.at(")")) {
+        out[key] = true;
+        continue;
+      }
       // positional value
       out[key] = this.parseValue();
     }
@@ -1211,6 +1301,27 @@ class Parser {
     return out;
   }
 
+
+  /**
+   * Whether the parenthesised group at the cursor holds a top-level `=`.
+   *
+   * `(a = 1, b = 2)` is a modifier list; `(a and b)` is an expression. The
+   * distinction is the whole difference between a record and a boolean test.
+   * Lookahead only — the cursor does not move.
+   */
+  private parenGroupHasAssignment(): boolean {
+    let depth = 0;
+    for (let i = this.pos; i < this.tokens.length; i++) {
+      const tk = this.tokens[i];
+      if (tk.type === "eof") return false;
+      if (tk.value === "(" || tk.value === "{" || tk.value === "[") depth++;
+      else if (tk.value === ")" || tk.value === "}" || tk.value === "]") {
+        depth--;
+        if (depth === 0) return false;
+      } else if (tk.value === "=" && depth === 1) return true;
+    }
+    return false;
+  }
 
   /** Parse a value, falling back to raw text for anything unrecognised. */
   private parseValue(): unknown {
@@ -1220,7 +1331,11 @@ class Parser {
     // Unknown construct: capture its raw source text so it can round-trip,
     // then let the caller continue from a sane position.
     const startOff = t.start;
+    const before = this.pos;
     this.skipExpression();
+    // Nothing was consumed, so the token is a separator the value cannot include.
+    // Returning "" would leave a caller's loop with no progress to make.
+    if (this.pos === before) return undefined;
     return this.sourceSlice(startOff, this.peek().start).trim();
   }
 
@@ -1259,6 +1374,25 @@ class Parser {
       return this.parseBraceList();
     }
     if (t.value === "(") {
+      // Modelica writes both a modifier list and a parenthesised EXPRESSION in
+      // this position, and only the first is `name = value`. Reading the second
+      // as the first turned `visible=(use_pder and use_pder2)` into
+      // `{"use_pder": "and use_pder2"}`: an object, which is neither `true` nor a
+      // string, so the graphic failed every visibility test and was hidden. 20
+      // graphics in MSL are written this way, all of them icon labels.
+      const startOff = t.start;
+      if (!this.parenGroupHasAssignment()) {
+        let depth = 0;
+        do {
+          const tk = this.next();
+          if (tk.value === "(") depth++;
+          else if (tk.value === ")") depth--;
+          if (tk.type === "eof") break;
+        } while (depth > 0);
+        // Drop the outer parentheses: the value is the expression inside them.
+        const raw = this.sourceSlice(startOff, this.peek().start).trim();
+        return raw.replace(/^\(([\s\S]*)\)$/, "$1").trim();
+      }
       // A tuple/record value — keep as object
       this.next();
       return this.parseArgumentListRaw();
@@ -1304,7 +1438,9 @@ class Parser {
       return this.sourceSlice(startOff, this.peek().start).trim();
     }
 
-    this.next();
+    // Deliberately does NOT consume the token. Consuming it here left
+    // `skipExpression` starting one token late, from which it ran to the next
+    // separator in the file rather than the end of this value.
     return UNPARSED;
   }
 
@@ -1439,6 +1575,27 @@ function asColor(v: unknown): Color | undefined {
   return [clamp255(c[0]), clamp255(c[1]), clamp255(c[2])];
 }
 
+/**
+ * `LinePattern.Dash` -> `Dash`. The renderer compares the bare literal.
+ *
+ * Modelica writes these attributes as qualified enumerations, and the renderer
+ * switches on the member name alone, so a stored `"FillPattern.Backward"`
+ * matched no case at all and fell through to the default. Nothing failed
+ * loudly: every fill pattern, dash pattern, Bezier smoothing and border pattern
+ * in the library was silently dropped, and `LinePattern.None` -- which MLS
+ * defines as an INVISIBLE line -- was stroked as though it were Solid, putting
+ * an outline on 1018 graphics that ask for none.
+ *
+ * Normalised here, at the single point where an annotation becomes a graphic,
+ * rather than by teaching every renderer both spellings.
+ */
+function enumName(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const dot = v.lastIndexOf(".");
+  const name = dot === -1 ? v : v.slice(dot + 1);
+  return name === "" ? undefined : name;
+}
+
 function clamp255(n: number): number {
   return Math.max(0, Math.min(255, Math.round(n)));
 }
@@ -1459,8 +1616,8 @@ function buildGraphic(kind: string, a: Record<string, unknown>): Graphic | null 
     origin: toPair(a.origin),
     rotation: typeof a.rotation === "number" ? a.rotation : undefined,
     lineColor: asColor(a.lineColor),
-    pattern: a.pattern as LinePattern | undefined,
-    smooth: a.smooth as SmoothKind | undefined,
+    pattern: enumName(a.pattern) as LinePattern | undefined,
+    smooth: enumName(a.smooth) as SmoothKind | undefined,
   };
 
   switch (kind) {
@@ -1468,7 +1625,7 @@ function buildGraphic(kind: string, a: Record<string, unknown>): Graphic | null 
       const arrowArr = a.arrow;
       let arrow: [ArrowKind, ArrowKind] | undefined;
       if (Array.isArray(arrowArr) && arrowArr.length >= 2) {
-        arrow = [String(arrowArr[0]) as ArrowKind, String(arrowArr[1]) as ArrowKind];
+        arrow = [enumName(arrowArr[0]) as ArrowKind, enumName(arrowArr[1]) as ArrowKind];
       }
       const g: LineGraphic = {
         kind: "Line",
@@ -1486,7 +1643,7 @@ function buildGraphic(kind: string, a: Record<string, unknown>): Graphic | null 
         kind: "Polygon",
         points: toFlatPoints(a.points),
         fillColor: asColor(a.fillColor),
-        fillPattern: a.fillPattern as FillPattern | undefined,
+        fillPattern: enumName(a.fillPattern) as FillPattern | undefined,
         lineThickness: typeof a.lineThickness === "number" ? a.lineThickness : undefined,
         ...common,
       };
@@ -1499,9 +1656,9 @@ function buildGraphic(kind: string, a: Record<string, unknown>): Graphic | null 
         kind: "Rectangle",
         extent,
         fillColor: asColor(a.fillColor),
-        fillPattern: a.fillPattern as FillPattern | undefined,
+        fillPattern: enumName(a.fillPattern) as FillPattern | undefined,
         lineThickness: typeof a.lineThickness === "number" ? a.lineThickness : undefined,
-        borderPattern: a.borderPattern as BorderPattern | undefined,
+        borderPattern: enumName(a.borderPattern) as BorderPattern | undefined,
         radius: typeof a.radius === "number" ? a.radius : undefined,
         ...common,
       };
@@ -1514,11 +1671,11 @@ function buildGraphic(kind: string, a: Record<string, unknown>): Graphic | null 
         kind: "Ellipse",
         extent,
         fillColor: asColor(a.fillColor),
-        fillPattern: a.fillPattern as FillPattern | undefined,
+        fillPattern: enumName(a.fillPattern) as FillPattern | undefined,
         lineThickness: typeof a.lineThickness === "number" ? a.lineThickness : undefined,
         startAngle: typeof a.startAngle === "number" ? a.startAngle : undefined,
         endAngle: typeof a.endAngle === "number" ? a.endAngle : undefined,
-        closure: a.closure as EllipseGraphic["closure"],
+        closure: enumName(a.closure) as EllipseGraphic["closure"],
         ...common,
       };
       return g;

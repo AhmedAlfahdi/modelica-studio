@@ -55,7 +55,7 @@ fs.writeFileSync(
     "export class SecretComponent { constructor(app, el) { this.app = app; this.el = el; } " +
     "setValue(v) { this.value = v; return this; } onChange(cb) { this.cb = cb; return this; } }\n"
 );
-const { DEFAULT_SETTINGS } = await import(path.join(staging, "settings.js"));
+const { DEFAULT_SETTINGS, mergeSettings } = await import(path.join(staging, "settings.js"));
 
 test("coordinate diagnostics default to off", () => {
   // They are a debugging aid. Earlier they were always on, which drew boxes,
@@ -109,4 +109,23 @@ test("the simulation span is per model, not shared", () => {
     main.includes("this.settings.modelStopTimes[this.model.name] ??= data.modelStopTime"),
     "an older saved span is migrated rather than dropped"
   );
+});
+
+test("diagram label settings have usable defaults", () => {
+  // Both are read on every frame by the editor, so they must exist on a fresh
+  // install AND on a vault whose data.json predates them -- `mergeSettings`
+  // starts from the defaults, which is what makes the second case work.
+  assert.equal(DEFAULT_SETTINGS.labelScale, 1, "labels are unscaled by default");
+  assert.equal(DEFAULT_SETTINGS.hoverParameters, true, "and the hover readout is on");
+
+  // A stored file from before these existed.
+  const merged = mergeSettings(DEFAULT_SETTINGS, { stopTime: 5 });
+  assert.equal(merged.labelScale, 1, "an older data.json gains the label scale");
+  assert.equal(merged.hoverParameters, true, "and the hover option");
+  assert.equal(merged.stopTime, 5, "without losing what it did store");
+
+  // A stored value wins over the default.
+  const chosen = mergeSettings(DEFAULT_SETTINGS, { labelScale: 1.6, hoverParameters: false });
+  assert.equal(chosen.labelScale, 1.6);
+  assert.equal(chosen.hoverParameters, false);
 });

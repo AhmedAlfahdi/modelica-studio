@@ -154,6 +154,16 @@ export interface PortDef {
   isFlow: boolean;
   /** Primitive-typed scalar connectors carry a direction. */
   causality: "acausal" | "input" | "output";
+  /**
+   * The declaration's enabling condition, e.g. `useSupport` for
+   * `Support support(...) if useSupport`.
+   *
+   * A conditional connector does not EXIST unless the condition holds, so a
+   * wire drawn to one produces a model OpenModelica rejects. Carried here so the
+   * inspector can grey the port out and the editor can refuse the wire, instead
+   * of letting the mistake surface at compile time.
+   */
+  condition?: string;
 }
 
 /** A class taken from the Modelica Standard Library (or user source). */

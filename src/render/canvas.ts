@@ -120,6 +120,269 @@ export function isGraphicVisible(g: Graphic): boolean {
 }
 
 /**
+ * Whether a conditional graphic is visible for a particular INSTANCE.
+ *
+ * `visible` is usually a parameter reference, not a literal -- MSL's fluid
+ * fittings draw every one of their graphics under `showDesignFlowDirection` or
+ * `allowFlowReversal`, and a Rotational Brake draws its support under
+ * `not useSupport`. Reading those as "not the literal true" hid all of them, so
+ * five Fittings classes and a Brake rendered as nothing at all even though the
+ * library's own defaults would show part of the symbol.
+ *
+ * Only the forms that can be decided from a value are evaluated: a literal, a
+ * parameter reference, and `not <one of those>`. Anything else -- a comparison,
+ * an arithmetic expression -- keeps the old answer and stays hidden, because
+ * guessing would put graphics on screen that the model did not ask for.
+ */
+export function isGraphicVisibleFor(
+  g: Graphic,
+  value: (name: string) => string | undefined
+): boolean {
+  return conditionHolds((g as { visible?: boolean | string }).visible, value);
+}
+
+/**
+ * Whether a conditional declaration is enabled for a particular instance.
+ *
+ * Shared by graphics (`Text(..., visible=use_pder)`) and by conditional
+ * connectors (`Support support(...) if useSupport`), because it is the same
+ * question asked about the same parameters: does this expression hold?
+ *
+ * False when it cannot be decided from those values -- `abs(x) > 0`, or
+ * `system.allowFlowReversal`, whose value lives on another component. An
+ * undecidable condition counts as NOT enabled: a connector that may not exist is
+ * not one to hang a wire on, and a wire to a disabled connector is a model
+ * OpenModelica refuses to build.
+ */
+export function conditionHolds(
+  condition: string | boolean | undefined,
+  value: (name: string) => string | undefined
+): boolean {
+  if (condition === undefined || condition === true) return true;
+  if (condition === false) return false;
+  return evalCondition(String(condition), value) === true;
+}
+
+/**
+ * Evaluate a `visible` condition: literals, parameter names, `not`, `and`, `or`
+ * and parentheses, which is what MSL actually writes.
+ *
+ * Returns undefined when the condition depends on something that cannot be read
+ * from the class -- `abs(x) > 0`, or `system.allowFlowReversal`, whose value
+ * lives on another component. Undecidable counts as NOT visible: putting a
+ * graphic on screen that the model did not ask for is worse than leaving one
+ * out, and `useHeatPort` is off in most models.
+ */
+function evalCondition(
+  expr: string,
+  value: (name: string) => string | undefined
+): boolean | undefined {
+  // Names, parentheses and whitespace only. Anything else is refused outright
+  // rather than half-understood: a comparison or a call is not something this
+  // can decide, and guessing at one would be a guess about the model.
+  if (!/^[A-Za-z0-9_.()\s]+$/.test(expr)) return undefined;
+  const tokens = expr.match(/[A-Za-z_][A-Za-z0-9_.]*|[()]/g) ?? [];
+  let i = 0;
+
+  const primary = (): boolean | undefined => {
+    if (tokens[i] === "(") {
+      i++;
+      const inner = orExpr();
+      if (tokens[i] !== ")") return undefined;
+      i++;
+      return inner;
+    }
+    const t = tokens[i];
+    if (t === undefined) return undefined;
+    i++;
+    if (t === "true") return true;
+    if (t === "false") return false;
+    if (t === "and" || t === "or" || t === "not" || t === ")") {
+      i--;
+      return undefined;
+    }
+    const raw = value(t)?.trim();
+    return raw === "true" ? true : raw === "false" ? false : undefined;
+  };
+  const notExpr = (): boolean | undefined => {
+    if (tokens[i] === "not") {
+      i++;
+      const inner = notExpr();
+      return inner === undefined ? undefined : !inner;
+    }
+    return primary();
+  };
+  const andExpr = (): boolean | undefined => {
+    let left = notExpr();
+    while (tokens[i] === "and") {
+      i++;
+      const right = notExpr();
+      // `false and unknown` is false; `true and unknown` is unknown.
+      left = left === false || right === false ? false : left === undefined || right === undefined ? undefined : true;
+    }
+    return left;
+  };
+  function orExpr(): boolean | undefined {
+    let left = andExpr();
+    while (tokens[i] === "or") {
+      i++;
+      const right = andExpr();
+      left = left === true || right === true ? true : left === undefined || right === undefined ? undefined : false;
+    }
+    return left;
+  }
+
+  const result = orExpr();
+  // Anything left over means the expression was not fully understood.
+  return i === tokens.length ? result : undefined;
+}
+
+/**
+ * A parameter's value for an instance: what the instance sets, else the class
+ * default. Undefined when neither declares a plain value.
+ *
+ * Used for `visible` conditions, and deliberately the same order the inspector
+ * shows: an override the user typed wins over the library's default.
+ */
+export function paramValue(
+  inst: ComponentInstance,
+  classDef: ComponentClass | undefined,
+  name: string
+): string | undefined {
+  const own = inst.params?.[name];
+  if (own !== undefined) return own;
+  return classDef?.parameters.find((p) => p.name === name)?.defaultValue;
+}
+
+/**
+ * What a hover readout should say about an instance.
+ *
+ * The DECISION is separated from the drawing so it can be tested without a
+ * canvas: which parameters are worth showing, in what order, and what the values
+ * are is the part that can be wrong.
+ *
+ * Values that DIFFER from the class default come first, because they are what
+ * makes this component different from every other one of its class; the rest are
+ * the defaults, shown so the readout is useful before anything has been set.
+ *
+ * EVERY parameter is returned. An earlier version capped the list at eight and
+ * reported how many it had left out, which is the same silent omission the rest
+ * of this work has been removing: the class with the most parameters in MSL has
+ * 49, and a reader who cannot see them all still has to select the component and
+ * read the inspector, which is what the readout exists to avoid.
+ */
+export function hoverParameterLines(
+  inst: ComponentInstance,
+  classDef: ComponentClass | undefined
+): { name: string; value: string; overridden: boolean }[] {
+  const all = classDef?.parameters ?? [];
+  const rows = all.map((p) => {
+    const own = inst.params?.[p.name];
+    return {
+      name: p.name,
+      // An override may be any expression, so it is shown exactly as written.
+      value: own ?? p.defaultValue ?? "",
+      // Differs from the class default -- NOT merely "is present". Placing a
+      // component fills `inst.params` with every literal default the class
+      // declares, so presence would mark 33 of `FreeMotionScalarInit`'s 49
+      // parameters as "set by you" the moment it lands on the canvas, and the
+      // distinction the readout exists to draw would say nothing at all.
+      overridden: own !== undefined && own !== p.defaultValue,
+    };
+  });
+  // Overridden first, and within each group the class's own order, so the list
+  // does not jump around as values change.
+  const ordered = [...rows.filter((r) => r.overridden), ...rows.filter((r) => !r.overridden)];
+  // Including the 3272 in MSL whose default is an expression rather than a
+  // literal -- `parameter Real k[nin]=ones(nin)`. Those have no value this can
+  // report, and dropping them would leave the reader unable to tell "not set"
+  // from "does not exist". They are shown with an empty value, which the caller
+  // renders as "library default".
+  return ordered;
+}
+
+/**
+ * Where to put a hover readout so it does not sit on what it describes.
+ *
+ * Preference order: clear of the symbol BELOW, then above, then beside it.
+ *
+ * The order matters because the panel is often taller than the space either side
+ * of the component -- the class with the most parameters in MSL carries 49 -- and
+ * simply clamping it into the canvas parks it ON TOP of the symbol. The panel is
+ * painted pixels, not a hit region, so the component underneath stays clickable
+ * and draggable while a rectangle sits over it, which reads as the popup itself
+ * being draggable. Being beside it is worse than being above it, but better than
+ * covering it.
+ *
+ * Exported for its own tests: the preference order is the part that can be
+ * wrong, and it needs no canvas to check.
+ */
+export function placeReadout(
+  box: [number, number, number, number],
+  size: { width: number; height: number },
+  canvas: { width: number; height: number },
+  opts: { margin?: number; gap?: number; labelGap?: number } = {}
+): { x: number; y: number } {
+  const margin = opts.margin ?? 4;
+  const gap = opts.gap ?? 12;
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+  const centred = clamp(
+    (box[0] + box[2]) / 2 - size.width / 2,
+    margin,
+    Math.max(margin, canvas.width - size.width - margin)
+  );
+
+  // Below the caption under the symbol.
+  const below = box[3] + (opts.labelGap ?? 18) + 4;
+  if (below + size.height <= canvas.height - margin) return { x: centred, y: below };
+
+  // Above it.
+  const above = box[1] - size.height - 4;
+  if (above >= margin) return { x: centred, y: above };
+
+  // Beside it, on whichever side has room for the whole panel.
+  const right = box[2] + gap;
+  const left = box[0] - size.width - gap;
+  const side = right + size.width <= canvas.width - margin ? right : left;
+  if (side >= margin && side + size.width <= canvas.width - margin) {
+    return {
+      x: side,
+      y: clamp(
+        (box[1] + box[3]) / 2 - size.height / 2,
+        margin,
+        Math.max(margin, canvas.height - size.height - margin)
+      ),
+    };
+  }
+
+  // Nowhere clear of it. Pinned to the top, which at least keeps the whole panel
+  // readable rather than half of it off the canvas; the caller draws it opaque so
+  // what it covers is not half-visible through it.
+  return { x: centred, y: margin };
+}
+
+/**
+ * Whether a conditional connector exists for this instance.
+ *
+ * `Support support(...) if useSupport` is not a connector that is merely
+ * optional: with the parameter false the element is absent, and a `connect` to
+ * it is a model OpenModelica rejects ("component support not found"). The
+ * question is the same one a conditional graphic asks, about the same
+ * parameters, so it goes through the same evaluator.
+ *
+ * One predicate, used by the port rings, the hit test and the inspector, so the
+ * pin that is drawn, the pin that can be grabbed and the pin listed as available
+ * cannot disagree.
+ */
+export function portIsEnabled(
+  inst: ComponentInstance,
+  classDef: ComponentClass | undefined,
+  port: { condition?: string }
+): boolean {
+  return conditionHolds(port.condition, (n) => paramValue(inst, classDef, n));
+}
+
+/**
  * A pin further than this from its class's artwork gets a connecting stub, in
  * canonical units. Small values tolerate rounding; 10 units is the gap a
  * Capacitor has, so the threshold sits well below that.
@@ -160,10 +423,21 @@ const PIN_STUB_THRESHOLD = 1.5;
 function isInBoxLabel(g: TextGraphic): boolean {
   const e = g.extent;
   if (!e) return false;
-  return (
-    e[0] >= -ICON_EXTENT && e[2] <= ICON_EXTENT &&
-    e[1] >= -ICON_EXTENT && e[3] <= ICON_EXTENT
-  );
+  // Order the sides first: MSL writes extents either way round, and a Reversed
+  // one defeated the positional test entirely. `{{152,-100},{-148,-40}}` is a
+  // 300-unit-wide NAME label, but 152 >= -100 and -148 <= 100 are both true, so
+  // it was accepted as "inside the symbol". 303 of MSL's 1116 in-box labels were
+  // really name labels admitted this way.
+  const x1 = Math.min(e[0], e[2]);
+  const x2 = Math.max(e[0], e[2]);
+  const y1 = Math.min(e[1], e[3]);
+  const y2 = Math.max(e[1], e[3]);
+  if (x1 < -ICON_EXTENT || x2 > ICON_EXTENT || y1 < -ICON_EXTENT || y2 > ICON_EXTENT) return false;
+  // `%name` asks for the instance name, which this renderer already draws
+  // beneath every component. Drawing it inside as well would print it twice,
+  // and without a resolver it would come out as the literal "%name".
+  if ((g.textString ?? "").includes("%name")) return false;
+  return true;
 }
 
 /** Canonical Modelica icon coordinate system: -100..100 on both axes. */
@@ -380,14 +654,19 @@ function dashFor(pattern: LinePattern | undefined, scale: number): number[] {
  * Hatch patterns. Modelica defines several fill patterns; approximating them
  * with canvas strokes is both faithful enough visually and cheap. `Sphere` and
  * the cylinder patterns degrade to a flat fill.
+ *
+ * The strokes take the LINE colour, not the fill colour: MLS says these
+ * attributes "specify fill patterns drawn with the line color over the fill
+ * color". Drawing them in the fill colour would also make them invisible, since
+ * the fill has already been painted underneath in exactly that colour.
  */
 function applyFillPattern(
   ctx: CanvasRenderingContext2D,
   g: Graphic,
-  bounds: [number, number, number, number]
+  bounds: [number, number, number, number],
+  theme: Theme
 ): void {
   const fp = (g as { fillPattern?: FillPattern }).fillPattern ?? "None";
-  const fc = (g as { fillColor?: Color }).fillColor ?? [0, 0, 0];
   const [x1, y1, x2, y2] = bounds;
   const w = x2 - x1;
   const h = y2 - y1;
@@ -395,7 +674,7 @@ function applyFillPattern(
 
   ctx.save();
   ctx.clip();
-  ctx.strokeStyle = rgb(fc);
+  ctx.strokeStyle = rgb(themedColor((g as { lineColor?: Color }).lineColor, theme, "stroke"));
   ctx.lineWidth = Math.max(0.5, Math.min(w, h) / 40);
   const step = Math.max(2, Math.min(w, h) / 8);
 
@@ -496,7 +775,7 @@ function strokeStyleFor(
   totalScale: number,
   theme: Theme,
   strokePx?: number
-): { color: string; width: number; dash: number[] } {
+): { color: string; width: number; dash: number[]; none: boolean } {
   const lc = (g as { lineColor?: Color }).lineColor ?? (g as { color?: Color }).color;
   const px = screenStrokePx(g, totalScale, strokePx);
   // lineWidth is interpreted in pre-transform units, so undo the scale.
@@ -505,6 +784,11 @@ function strokeStyleFor(
     color: rgb(themedColor(lc, theme, "stroke")),
     width: px / scale,
     dash: dashFor(g.pattern, scale),
+    // MLS: "The LinePattern attribute Solid indicates a normal line, None an
+    // invisible line". `dashFor` cannot express this -- it returns [] for both
+    // Solid and None -- so the border is suppressed explicitly. 1018 graphics
+    // in MSL ask for None, most of them filled shapes whose fill IS the symbol.
+    none: g.pattern === "None",
   };
 }
 
@@ -599,10 +883,10 @@ function drawLine(
         p2[1]
       );
     }
-    ctx.stroke();
+    if (!style.none) ctx.stroke();
   } else {
     pathFromPoints(ctx, g.points, t);
-    ctx.stroke();
+    if (!style.none) ctx.stroke();
   }
 
   // Arrowheads at either end.
@@ -697,11 +981,11 @@ function drawPolygon(
   ctx.lineWidth = style.width;
   ctx.lineJoin = "round";
   if (style.dash.length) ctx.setLineDash(style.dash);
-  ctx.stroke();
+  if (!style.none) ctx.stroke();
 
   if (filled && g.fillPattern && g.fillPattern !== "Solid") {
     const b = pointsBounds(flatTransformed(g.points, t));
-    applyFillPattern(ctx, g, b);
+    applyFillPattern(ctx, g, b, theme);
   }
   ctx.restore();
 }
@@ -752,10 +1036,10 @@ function drawRectangle(
   ctx.strokeStyle = style.color;
   ctx.lineWidth = style.width;
   if (style.dash.length) ctx.setLineDash(style.dash);
-  ctx.stroke();
+  if (!style.none) ctx.stroke();
 
   if (hasFill(g) && g.fillPattern && g.fillPattern !== "Solid") {
-    applyFillPattern(ctx, g, b);
+    applyFillPattern(ctx, g, b, theme);
   }
 
   // Raised/sunken/engraved borders are drawn as a lighter inner highlight.
@@ -835,10 +1119,10 @@ function drawEllipse(
   ctx.strokeStyle = style.color;
   ctx.lineWidth = style.width;
   if (style.dash.length) ctx.setLineDash(style.dash);
-  ctx.stroke();
+  if (!style.none) ctx.stroke();
 
   if (hasFill(g) && closure !== "Arc" && g.fillPattern && g.fillPattern !== "Solid") {
-    applyFillPattern(ctx, g, b);
+    applyFillPattern(ctx, g, b, theme);
   }
   ctx.restore();
 }
@@ -867,13 +1151,34 @@ function drawText(
 
   // Canonical font size -> pixels, via the transform's vertical scale.
   const scaleY = Math.hypot(t.b, t.d) || 1;
-  const fontPx = Math.max(1, (g.fontSize ?? 0) * scaleY);
+  const scaleX = Math.hypot(t.a, t.c) || 1;
+  // MLS: "If the fontSize attribute is 0 the text is scaled to fit its extent."
+  // MSL omits it on every in-box label it has -- 1116 of them -- so reading 0
+  // as a literal size drew all of them at the 1px floor, and a block like
+  // `Logical.And`, whose icon is a rectangle plus the word "and", rendered as an
+  // empty box. The extent's height is what the text is meant to fill.
+  const boxHeight = Math.abs(y2 - y1);
+  const size = g.fontSize && g.fontSize > 0 ? g.fontSize : boxHeight > 0 ? boxHeight : ICON_EXTENT * 0.2;
+  let fontPx = Math.max(1, size * scaleY);
 
   ctx.save();
   const flags = g.textStyle ?? [];
   const bold = flags.includes(1) ? "bold " : "";
   const italic = flags.includes(2) ? "italic " : "";
   ctx.font = `${italic}${bold}${fontPx}px sans-serif`;
+  // ... and to fit its extent means the WIDTH too. Sizing from the height alone
+  // made `ObsoleteModelica4...ReceiveBoolean` draw "receive" 254 units wide in a
+  // 200-unit box, spilling over the symbol it labels. MSL sets these extents to
+  // the box the text should occupy, and the two dimensions are both binding.
+  const boxWidthPx = Math.abs(x2 - x1) * scaleX;
+  if (boxWidthPx > 0 && ctx.measureText) {
+    const natural = ctx.measureText(text).width;
+    // Advance width is linear in the font size, so one correction is exact.
+    if (natural > boxWidthPx && natural > 0) {
+      fontPx = Math.max(1, fontPx * (boxWidthPx / natural));
+      ctx.font = `${italic}${bold}${fontPx}px sans-serif`;
+    }
+  }
   ctx.fillStyle = rgb(themedColor(g.textColor, theme, "stroke"), theme.ink);
   ctx.textBaseline = "middle";
   ctx.textAlign =
@@ -974,6 +1279,13 @@ export interface DrawOptions {
   showCentre?: boolean;
   /** Palette to draw with. Resolved from the document when omitted. */
   theme?: Theme;
+  /**
+   * Multiplier on the diagram's own text, from the settings. 1 is the default.
+   *
+   * Applied to the label rather than replacing its size, so the label still
+   * shrinks with zoom and grows with the component.
+   */
+  labelScale?: number;
 }
 
 /**
@@ -1056,10 +1368,21 @@ export function drawComponent(
     }
   }
 
-  if (icon.length === 0) {
+  const placeholder = () =>
     drawPlaceholder(ctx, vb, classDef?.shortName ?? inst.className.split(".").pop() ?? inst.id, theme);
+  if (icon.length === 0) {
+    placeholder();
   } else {
+    let drewSomething = false;
+    let suppressed = 0;
     for (const g of icon) {
+      // Resolve `visible` against THIS instance before drawing: the parameter may
+      // be set on the instance, and the class default decides otherwise.
+      const decision = isGraphicVisibleFor(g, (n) => paramValue(inst, classDef, n));
+      if (!decision) {
+        suppressed++;
+        continue;
+      }
       // Skip the zoom-scaling parametric readouts so the drawn symbol and the
       // clickable symbol are the same shape.
       if (g.kind === "Text" && (!showLabels || !isInBoxLabel(g))) continue;
@@ -1067,8 +1390,18 @@ export function drawComponent(
         g.kind === "Text" && opts.resolveParam
           ? { ...g, textString: substituteMacros(g.textString ?? "", g, (n) => opts.resolveParam!(inst, n)) }
           : g;
-      drawGraphic(ctx, resolved, t, totalScale, theme);
+      // `true`, not the original condition: `drawGraphic` re-checks visibility on
+      // its own and would reject the unresolved expression it just approved.
+      drewSomething = true;
+      drawGraphic(ctx, { ...resolved, visible: true } as Graphic, t, totalScale, theme);
     }
+    // A class whose every graphic is conditional, and off for THIS instance,
+    // would otherwise draw nothing at all: a component that is invisible on the
+    // canvas and cannot be found by looking for it. The placeholder at least
+    // names it. Deliberately not a fallback for "nothing was drawn" in general --
+    // an icon of one out-of-box `%name` label is complete as it is, and the
+    // instance label already carries the name.
+    if (!drewSomething && suppressed === icon.length) placeholder();
   }
 
   // Selection / hover affordance.
@@ -1128,7 +1461,10 @@ export function drawComponent(
     // label (dpr - 1) x its position away from the origin — an offset that grew
     // with zoom and with distance, exactly how the misaimed selection presented.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.font = `${Math.max(9, Math.min(13, onScreenSize / 6))}px sans-serif`;
+    // Sized from the component's on-screen size so labels stay in proportion,
+    // then scaled by the user's setting.
+    const labelPx = Math.max(9, Math.min(13, onScreenSize / 6)) * (opts.labelScale ?? 1);
+    ctx.font = `${labelPx}px sans-serif`;
     ctx.fillStyle = theme.label;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
@@ -1825,6 +2161,7 @@ export function findPortAt(
     if (!def) continue;
     const e = instanceBounds(inst);
     for (const p of def.ports) {
+      if (!portIsEnabled(inst, def, p)) continue;
       const pos = portPosition(inst, def, p.name);
       if (!pos) continue;
       const d = Math.hypot(pos[0] - x, pos[1] - y);
@@ -1877,6 +2214,7 @@ export function drawPorts(
   const emphasised = opts.emphasised === true;
 
   for (const p of classDef.ports) {
+    if (!portIsEnabled(inst, classDef, p)) continue;
     const pos = portPosition(inst, classDef, p.name);
     if (!pos) continue;
     const [px, py] = apply(vt, pos[0], pos[1]);

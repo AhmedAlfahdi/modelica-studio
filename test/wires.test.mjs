@@ -18,6 +18,15 @@ const { distanceToSegment, distanceToPolyline, nearestVertexIndex, polylineInBox
     path.join(buildLibs("wire-geom", ["src/render/canvas.ts"]), "canvas.js")
   );
 
+const PORT_LIB = buildLibs("wire-ports", [
+  "src/render/canvas.ts",
+  "src/render/theme.ts",
+  "src/modelica/library.ts",
+  "src/modelica/parser.ts",
+  "src/modelica/types.ts",
+]);
+const C = await import(path.join(PORT_LIB, "render/canvas.js"));
+
 const editor = fs.readFileSync(path.join(repoRoot, "src/view/editor.ts"), "utf8");
 const studioView = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
 
@@ -392,8 +401,15 @@ test("a reshape is one undoable step, and undo restores the derived route", asyn
       "",
       "// A press on the wire that does NOT move: a selection, and no edit.",
       "const route0 = editor.connectionPoints(editor.getModel().connections[0]);",
-      "fire('pointerdown', 60, 0);",
-      "fire('pointerup', 60, 0);",
+      // The point is taken FROM the route rather than hard-coded. The editor fits
+      // the diagram to the canvas on the next animation frame, so a fixed canvas
+      // coordinate is on the wire only for whichever viewport happened to be in
+      // force when the events were dispatched -- under a loaded machine the frame
+      // sometimes landed first and the press missed, failing about one run in four
+      // with nothing wrong in the editor.
+      "const onWire = [(route0[0] + route0[2]) / 2, (route0[1] + route0[3]) / 2];",
+      "fire('pointerdown', onWire[0], onWire[1]);",
+      "fire('pointerup', onWire[0], onWire[1]);",
       "window.test('a click selects without storing a route', () => JSON.stringify(points()));",
       "",
       "// Now reshape a corner.",
@@ -430,4 +446,57 @@ test("a reshape is one undoable step, and undo restores the derived route", asyn
   assert.equal(d["and the model still has both components"], "2 components");
   assert.equal(d["redo puts the reshape back"], "8 points");
   assert.equal(d["double-click resets the route"], "[]", "the automatic route is restored");
+});
+
+test("a conditional connector cannot be wired until its parameter is on", async () => {
+  // `Support support(...) if useSupport` is not an optional connector: with the
+  // parameter false the element does not exist, and `connect(force.support, ...)`
+  // is a model OpenModelica rejects. The pin was drawn and grabbable anyway, so
+  // the mistake was available to make and only showed up at compile time.
+  const MSL = "/home/para/.openmodelica/libraries/Modelica 4.1.0+maint.om";
+  if (!fs.existsSync(MSL)) return;
+
+  const { LibraryIndex } = await import(path.join(PORT_LIB, "modelica/library.js"));
+  const index = new LibraryIndex();
+  index.addDirectory(MSL);
+  const def = index.describe("Modelica.Mechanics.Translational.Sources.Force");
+  const support = def.ports.find((p) => p.name === "support");
+  assert.ok(support, "MSL still declares the conditional support connector");
+  assert.equal(support.condition, "useSupport", "and the condition reaches the port");
+
+  const inst = (params) => ({
+    id: "force",
+    className: def.name,
+    placement: { extent: [-10, -10, 10, 10], rotation: 0, visible: true },
+    params,
+  });
+  const lookup = (n) => index.describe(n);
+
+  assert.equal(C.portIsEnabled(inst({}), def, support), false, "off by default");
+  assert.equal(C.portIsEnabled(inst({ useSupport: "false" }), def, support), false, "and when set false");
+  assert.equal(C.portIsEnabled(inst({ useSupport: "true" }), def, support), true, "on when the parameter is on");
+
+  // The hit test is what makes a wire possible, and it must agree.
+  const at = C.portPosition(inst({}), def, "support");
+  const model = (params) => ({
+    name: "M",
+    components: [inst(params)],
+    connections: [],
+    graphics: [],
+  });
+  assert.equal(
+    C.findPortAt(model({}), lookup, at[0], at[1], 6),
+    undefined,
+    "the disabled pin cannot be grabbed"
+  );
+  assert.equal(
+    C.findPortAt(model({ useSupport: "true" }), lookup, at[0], at[1], 6)?.port,
+    "support",
+    "and can be once the parameter is on"
+  );
+
+  // An unconditional connector is unaffected.
+  const flange = def.ports.find((p) => p.name === "flange");
+  assert.equal(flange.condition, undefined, "an ordinary connector carries no condition");
+  assert.equal(C.portIsEnabled(inst({}), def, flange), true, "and is always available");
 });

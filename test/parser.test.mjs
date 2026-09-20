@@ -486,6 +486,39 @@ end V;`;
   assert.equal(cls.icon[2].visible, "useHeatPort", "an expression stays a string");
 });
 
+test("graphic enumerations are stored by member name, not qualified", () => {
+  // The renderer switches on the bare member name, so a stored
+  // `"FillPattern.Backward"` matched no case and fell through to the default.
+  // Nothing threw: every hatch, dash pattern, Bezier curve and border pattern in
+  // the library was silently dropped, and `LinePattern.None` -- MLS defines it as
+  // an INVISIBLE line -- was stroked as though it were Solid.
+  const src = `model E
+  annotation(Icon(graphics={
+    Rectangle(extent={{-10,-10},{10,10}}, pattern=LinePattern.None,
+              fillColor={192,192,192}, fillPattern=FillPattern.Backward,
+              borderPattern=BorderPattern.Raised),
+    Line(points={{0,0},{5,5}}, pattern=LinePattern.Dash, smooth=Smooth.Bezier,
+         arrow={Arrow.None,Arrow.Filled}),
+    Ellipse(extent={{-5,-5},{5,5}}, closure=EllipseClosure.Chord,
+            fillPattern=FillPattern.None)}));
+end E;`;
+  const cls = findClass(parseModelica(src), "E");
+  const [rect, line, ellipse] = cls.icon;
+
+  assert.equal(rect.pattern, "None", "LinePattern.None");
+  assert.equal(rect.fillPattern, "Backward", "FillPattern.Backward");
+  assert.equal(rect.borderPattern, "Raised", "BorderPattern.Raised");
+  assert.equal(line.pattern, "Dash", "LinePattern.Dash");
+  assert.equal(line.smooth, "Bezier", "Smooth.Bezier");
+  assert.deepEqual(line.arrow, ["None", "Filled"], "Arrow members");
+  assert.equal(ellipse.closure, "Chord", "EllipseClosure.Chord");
+  assert.equal(ellipse.fillPattern, "None", "FillPattern.None");
+
+  // And no stored value keeps the type prefix, anywhere.
+  const qualified = JSON.stringify(cls.icon).match(/"[A-Za-z]+\.[A-Za-z]+"/g) ?? [];
+  assert.deepEqual(qualified, [], `no qualified enum survived: ${qualified.join(", ")}`);
+});
+
 test("a round trip preserves what makes a declaration compile", async () => {
   // Every one of these was dropped by an earlier version of the serializer, and
   // each loss produces a model that no longer compiles — which is how the fluid
@@ -864,4 +897,30 @@ test("an equation-only model is distinguishable from an empty one", () => {
   );
   assert.equal(sourced.components.length, 0, "no schematic either");
   assert.equal((sourced.equations ?? []).length, 1, "but it does have physics");
+});
+
+test("a bare annotation flag does not swallow the classes after it", () => {
+  // `annotation (Dialog)` marks a declaration as having a dialog without
+  // configuring one, and MSL writes it throughout. Asking for the value of `)`
+  // consumed that token before reporting the value unparsed, so the recovery
+  // scan started one token late and ran to the next `)` in the FILE. Whole
+  // chunks of a file disappeared: `Blocks/Math.mo` yielded 7 nested classes
+  // instead of 59, losing `Math.Feedback` and `Math.Add`, and the library as a
+  // whole lost 986 classes.
+  const src = `package M
+  block A
+    parameter Integer n=1;
+    input Real x[n]=fill(0.0, n) "input" annotation (Dialog);
+    annotation (Dialog(tab="Advanced"));
+  end A;
+  block After
+    Real y;
+  end After;
+end M;`;
+  const pkg = findClass(parseModelica(src), "M");
+  const names = (pkg?.nested ?? []).map((c) => c.name);
+  assert.deepEqual(names, ["A", "After"], `the class after the flag survives, got ${names}`);
+  // The flag itself is recorded rather than dropped.
+  const comp = pkg.nested[0].components.find((c) => c.name === "x");
+  assert.equal(comp.modifiers !== undefined, true, "and the declaration still parses");
 });

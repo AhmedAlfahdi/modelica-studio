@@ -38,6 +38,24 @@ export interface Theme {
    * diagram is exactly what the library asked for.
    */
   minInkLuminance: number;
+  /**
+   * Highest relative luminance a stated FILL colour may have before it is
+   * pulled towards the canvas colour. 0 disables the adjustment.
+   *
+   * The mirror of `minInkLuminance`, and needed for the same reason at the
+   * other end of the scale: a library picks fills for a white page. Measured on
+   * the dark canvas (luminance 0.0151), MSL's {192,192,192} is 0.527 and
+   * {159,159,223} is 0.376 — both far brighter than the surface they sit on,
+   * so a component becomes a lightbox.
+   */
+  fillLuminanceCap: number;
+  /**
+   * How far a fill above `fillLuminanceCap` is moved towards the canvas colour.
+   *
+   * A fraction rather than a ceiling, so fills that differ only in lightness
+   * keep their difference instead of collapsing onto one value.
+   */
+  fillBlend: number;
   /** Minor grid lines. */
   grid: string;
   /** Major grid lines, drawn every fifth cell. */
@@ -142,6 +160,21 @@ function relativeLuminance(c: Color): number {
 }
 
 /**
+ * Blend `c` towards `target` by `t`: 0 keeps `c`, 1 gives `target`.
+ *
+ * Blending preserves hue, so a colour stays recognisably the one the library
+ * chose while its lightness moves to where the surface needs it.
+ */
+function blendToward(c: Color, target: Color, t: number): Color {
+  const mix = (t: number): Color => [
+    Math.round(c[0] + (target[0] - c[0]) * t),
+    Math.round(c[1] + (target[1] - c[1]) * t),
+    Math.round(c[2] + (target[2] - c[2]) * t),
+  ];
+  return mix(t);
+}
+
+/**
  * Lighten a colour until it reads on a dark surface, keeping its hue.
  *
  * Blending towards white preserves the hue, so blue stays recognisably blue and
@@ -149,11 +182,7 @@ function relativeLuminance(c: Color): number {
  */
 function lightenForTheme(c: Color, theme: Theme): Color {
   const target = theme.ink;
-  const mix = (t: number): Color => [
-    Math.round(c[0] + (target[0] - c[0]) * t),
-    Math.round(c[1] + (target[1] - c[1]) * t),
-    Math.round(c[2] + (target[2] - c[2]) * t),
-  ];
+  const mix = (t: number): Color => blendToward(c, target, t);
   // The smallest blend that clears the floor, so the result stays as close to
   // the library's own colour as legibility allows.
   for (let t = 0.2; t <= 0.85; t += 0.05) {
@@ -189,8 +218,23 @@ export function themedColor(
   if (kind === "fill") {
     const [r, g, b] = c;
     const saturation = Math.max(r, g, b) - Math.min(r, g, b);
-    if (theme.dark && saturation < 60 && relativeLuminance(c) < theme.minInkLuminance) {
+    const luminance = relativeLuminance(c);
+    if (theme.dark && saturation < 60 && luminance < theme.minInkLuminance) {
       return theme.paper;
+    }
+    // A LIGHT fill is the mirror problem, and in MSL the common one: the
+    // thermal components fill with {192,192,192} and FixedTemperature with
+    // {159,159,223}. On white those read as a filled body; on black the same
+    // values are opaque pale slabs that glare, which is what the whole
+    // HeatTransfer library looked like in the dark theme.
+    //
+    // Pulled towards the surface by a FIXED fraction rather than clipped to a
+    // ceiling: clipping maps every too-bright colour onto the same value, and
+    // HeatCapacitor draws its body as two polygons, {192,192,192} over
+    // {160,160,164}, whose difference is the only shading it has. A fixed
+    // fraction moves both and keeps the gap between them.
+    if (theme.dark && theme.fillLuminanceCap > 0 && luminance > theme.fillLuminanceCap) {
+      return blendToward(c, theme.paper, theme.fillBlend);
     }
     return c;
   }
@@ -220,6 +264,9 @@ const LIGHT: Theme = {
   background: cssColor(LIGHT_PAPER),
   // Nothing is adapted on a light background.
   minInkLuminance: 0,
+  // Nothing is adapted on a light background -- not the inks, and not the fills.
+  fillLuminanceCap: 0,
+  fillBlend: 0,
   grid: "rgba(120,135,160,0.13)",
   gridMajor: "rgba(120,135,160,0.24)",
 
@@ -271,6 +318,10 @@ const DARK: Theme = {
   paper: DARK_PAPER,
   background: cssColor(DARK_PAPER),
   minInkLuminance: 0.145,
+  // Above this a fill is brighter than the symbol it shades. 0.16 sits just
+  // over the ink floor, so a fill is never darker than the outline drawn on it.
+  fillLuminanceCap: 0.16,
+  fillBlend: 0.6,
   grid: "rgba(150,165,190,0.10)",
   gridMajor: "rgba(150,165,190,0.20)",
 

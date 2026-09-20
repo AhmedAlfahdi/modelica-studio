@@ -1170,6 +1170,56 @@ test("diagram colours follow the light and dark themes", () => {
   }
 });
 
+test("light fills are darkened for the dark theme without losing their shading", () => {
+  // A library picks fills for a white page. MSL's thermal components fill with
+  // {192,192,192} and FixedTemperature with {159,159,223}; passed through
+  // unchanged they were opaque pale slabs on the dark canvas, so the whole
+  // HeatTransfer library rendered as lightboxes.
+  //
+  // Darkened by blending towards the surface rather than clipped to a ceiling,
+  // because HeatCapacitor draws its body as two polygons -- {192,192,192} over
+  // {160,160,164} -- whose difference is the only shading it has. Clipping puts
+  // both on the same value and the body goes flat.
+  const original = globalThis.document;
+  const lum = (c) => {
+    const f = (v) => {
+      const x = v / 255;
+      return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+  };
+  try {
+    globalThis.document = { body: { classList: { contains: () => true } } }; // dark
+    const dark = T.currentTheme();
+    const surface = [30, 33, 39];
+
+    const body = T.themedColor([192, 192, 192], dark, "fill");
+    const shade = T.themedColor([160, 160, 164], dark, "fill");
+    assert.ok(lum(body) < 0.2, `the body fill must not glare, got luminance ${lum(body).toFixed(3)}`);
+    assert.ok(lum(body) > lum(surface), "but it is still a fill, not the background");
+    assert.notDeepEqual(body, shade, "the two polygon greys must stay distinguishable");
+    assert.ok(lum(body) > lum(shade), "and stay in the same order as the library wrote them");
+
+    // Hue survives, so MSL's colour coding still reads: FixedTemperature's fill
+    // is lavender and stays lavender.
+    const ambient = T.themedColor([159, 159, 223], dark, "fill");
+    assert.ok(ambient[2] > ambient[0] + 15, `lavender must stay blue-ish, got ${JSON.stringify(ambient)}`);
+    assert.ok(lum(ambient) < 0.2, `the ambient fill must not glare, got ${JSON.stringify(ambient)}`);
+
+    // A dark saturated accent is already legible and is left exactly alone --
+    // the arrow in the same icon is MSL's red and dimming it would be a loss.
+    assert.deepEqual(T.themedColor([191, 0, 0], dark, "fill"), [191, 0, 0], "the thermal red is untouched");
+
+    // And the light theme is still exactly what the library asked for.
+    globalThis.document = { body: { classList: { contains: () => false } } };
+    const light = T.currentTheme();
+    assert.deepEqual(T.themedColor([192, 192, 192], light, "fill"), [192, 192, 192]);
+    assert.deepEqual(T.themedColor([159, 159, 223], light, "fill"), [159, 159, 223]);
+  } finally {
+    globalThis.document = original;
+  }
+});
+
 
 test("stated colours stay legible on the dark theme without losing their hue", () => {
   // MSL states its colours explicitly and they are semantic, not decorative:
@@ -1225,5 +1275,218 @@ test("stated colours stay legible on the dark theme without losing their hue", (
     assert.deepEqual(T.themedColor([255, 0, 255], theme, "stroke"), [255, 0, 255]);
   } finally {
     globalThis.document = original;
+  }
+});
+
+test("a symbol's own label is sized to fit its extent, not left at 1px", () => {
+  // MLS: "If the fontSize attribute is 0 the text is scaled to fit its extent."
+  // MSL omits fontSize on every in-box label it has -- all 1116 of them -- so
+  // reading 0 as a literal size drew each one at the 1px floor. A block like
+  // `Logical.And`, whose entire icon is a rectangle plus the word "and", came
+  // out as an empty box.
+  const render = (icon, instanceId = "i1") => {
+    const def = { ...classDef("T"), icon, hasIcon: true, portPositions: {} };
+    const inst = { id: instanceId, className: "T", placement: { extent: [-10, -10, 10, 10] }, params: {} };
+    const painted = [];
+    const ctx = new Proxy(
+      { canvas: { width: 9999, height: 9999 }, font: "" },
+      {
+        get(t, k) {
+          if (k in t) return t[k];
+          if (k === "measureText") return () => ({ width: 20 });
+          if (k === "fillText") return (text) => painted.push({ text, font: t.font });
+          return () => {};
+        },
+        set(t, k, v) { t[k] = v; return true; },
+      }
+    );
+    C.drawComponent(ctx, inst, def, { x: 0, y: 0, scale: 13 }, 1, { lookup: () => def });
+    return painted;
+  };
+
+  // The box is 80 canonical units tall inside a 20-unit placement at scale 13,
+  // so the label should come out at 80 * 0.1 * 13 = 104px, not 1.
+  const label = render([{ kind: "Text", extent: [-90, 40, 90, -40], textString: "and" }]);
+  const own = label.filter((p) => p.text === "and");
+  assert.equal(own.length, 1, `the symbol's label is drawn: ${JSON.stringify(label)}`);
+  const px = Number(/([\d.]+)px/.exec(own[0].font)?.[1]);
+  assert.ok(
+    Math.abs(px - 104) < 2,
+    `the label fills its extent box (80 units at 1.3 px/unit = 104px), got ${px}px`
+  );
+  // And the instance label below is still its own, much smaller, size.
+  const inst = label.find((p) => p.text === "i1");
+  assert.ok(inst, "the instance name is still drawn");
+  assert.ok(Number(/([\d.]+)px/.exec(inst.font)?.[1]) < 20, "and stays a caption");
+
+  // A `%name` box written right-to-left is a NAME label, not an in-box label:
+  // {{152,-100},{-148,-40}} is 300 units wide, but the positional test accepted
+  // it because 152 >= -100 and -148 <= 100 are both true. The renderer already
+  // draws the instance name, so it must not be drawn again -- and without a
+  // resolver it would come out as the literal "%name".
+  const wide = render([{ kind: "Text", extent: [152, -100, -148, -40], textString: "%name" }]);
+  assert.deepEqual(
+    wide.map((p) => p.text),
+    ["i1"],
+    "a wide right-to-left %name label is left to the instance label"
+  );
+
+  // A genuinely in-box `%name` is left out for the same reason: drawn twice is
+  // no better than drawn literally.
+  const inside = render([{ kind: "Text", extent: [-44, -24, 30, -46], textString: "%name" }]);
+  assert.deepEqual(inside.map((p) => p.text), ["i1"], "an in-box %name is not duplicated");
+});
+
+test("the label scale moves the label without pinning it to one size", () => {
+  // A settings slider for label size. It is a MULTIPLIER rather than a pixel
+  // size because the label is already sized from the component's on-screen
+  // size: a fixed size would stop it shrinking with the zoom, and labels would
+  // overlap on a large model.
+  const def = { ...classDef("T"), icon: [], hasIcon: true, portPositions: {} };
+  // 6 diagram units: at scale 11 that is a 66px component, so the label lands in
+  // the middle of its 9..13px band. A larger component pins the label to the
+  // 13px cap, where nothing about the zoom is observable.
+  const inst = { id: "t1", className: "T", placement: { extent: [-3, -3, 3, 3] }, params: {} };
+  const fontAt = (labelScale, scale) => {
+    let font = "";
+    const ctx = new Proxy(
+      { canvas: { width: 9999, height: 9999 } },
+      {
+        get(t, k) {
+          if (k in t) return t[k];
+          if (k === "measureText") return () => ({ width: 20 });
+          if (k === "fillText") return (text) => { if (text === "t1") font = t.font; };
+          return () => {};
+        },
+        set(t, k, v) { t[k] = v; return true; },
+      }
+    );
+    C.drawComponent(ctx, inst, def, { x: 0, y: 0, scale }, 1, { lookup: () => def, labelScale });
+    return parseFloat(/([\d.]+)px/.exec(font)?.[1] ?? "0");
+  };
+
+  const base = fontAt(1, 11);
+  assert.ok(base > 0, `the label is drawn at the default scale: ${base}px`);
+  assert.ok(Math.abs(fontAt(1.5, 11) - base * 1.5) < 0.6, "150% is 1.5x the default");
+  assert.ok(Math.abs(fontAt(2, 11) - base * 2) < 0.6, "200% is 2x");
+  assert.ok(Math.abs(fontAt(0.5, 11) - base * 0.5) < 0.6, "50% is half");
+
+  // Still proportional to the zoom, which is the point of scaling rather than
+  // setting a size: at 9/11 of the zoom the label is 9/11 of the size.
+  const zoomedOut = fontAt(1, 9);
+  assert.ok(zoomedOut < base, `it still shrinks with the zoom: ${zoomedOut} < ${base}`);
+  assert.ok(
+    Math.abs(zoomedOut - (base * 9) / 11) < 0.6,
+    `and by the same factor: ${zoomedOut} vs ${((base * 9) / 11).toFixed(1)}`
+  );
+});
+
+test("the hover readout leads with what the instance overrides", () => {
+  // What a hover shows is the decision; drawing it is not. Overridden values
+  // first, because they are what makes this component different from every other
+  // one of its class.
+  const def = {
+    ...classDef("T"),
+    icon: [],
+    hasIcon: true,
+    portPositions: {},
+    parameters: [
+      { name: "a", type: "Real", defaultValue: "1" },
+      { name: "b", type: "Real", defaultValue: "2" },
+      // An expression default: 3272 parameters in MSL are like this, and the
+      // value is not something the plugin can report.
+      { name: "c", type: "Real" },
+      { name: "d", type: "Boolean", defaultValue: "false" },
+    ],
+  };
+  const rows = (params) =>
+    C.hoverParameterLines(
+      { id: "t", className: "T", placement: { extent: [-1, -1, 1, 1] }, params },
+      def
+    );
+
+  const plain = rows({});
+  assert.deepEqual(plain.map((r) => r.name), ["a", "b", "c", "d"], "class order when nothing is set");
+  assert.deepEqual(plain.map((r) => r.value), ["1", "2", "", "false"], "with the values it knows");
+  assert.equal(plain[2].value, "", "an expression default has no value to report, and is still listed");
+  assert.ok(plain.every((r) => !r.overridden), "nothing is marked as overridden");
+
+  // A value equal to the default is NOT an override, even though the instance
+  // carries it: placing a component fills in every literal default, so presence
+  // alone would light up most of the list the moment it lands.
+  const same = rows({ a: "1" });
+  assert.ok(same.every((r) => !r.overridden), "setting a parameter to its default is not an override");
+  assert.equal(same.find((r) => r.name === "a").value, "1", "though the value is still shown");
+
+  const set = rows({ d: "true", c: "7" });
+  // Class order is kept WITHIN the override group, so the list does not
+  // reshuffle as values change; only the group moves.
+  assert.deepEqual(set.map((r) => r.name), ["c", "d", "a", "b"], "overrides come first");
+  assert.ok(set[0].overridden && set[1].overridden, "and are marked");
+  // Looked up by name, since the group's position is what the test above pins.
+  const byName = Object.fromEntries(set.map((r) => [r.name, r]));
+  assert.equal(byName.d.value, "true", "with the value the instance sets");
+  assert.equal(byName.c.value, "7", "including one over a parameter whose default is an expression");
+
+  // EVERY parameter comes back. A cap of eight reported the rest as "+N more",
+  // which left the reader selecting the component to see what the readout was
+  // meant to save them selecting it for.
+  const many = Array.from({ length: 49 }, (_, i) => ({ name: `p${i}`, type: "Real", defaultValue: "0" }));
+  const all = C.hoverParameterLines(
+    { id: "t", className: "T", placement: { extent: [-1, -1, 1, 1] }, params: {} },
+    { ...def, parameters: many }
+  );
+  assert.equal(all.length, 49, "all 49 come back, not the first eight");
+  assert.equal(all[48].name, "p48", "including the last one");
+
+  // A class with no parameters at all is not an error.
+  const none = C.hoverParameterLines(
+    { id: "t", className: "T", placement: { extent: [-1, -1, 1, 1] }, params: {} },
+    { ...def, parameters: [] }
+  );
+  assert.deepEqual(none, [], "no parameters reads as an empty readout");
+});
+
+test("a hover readout is placed clear of the component it describes", () => {
+  // The panel is painted pixels, not a hit region, so a component underneath one
+  // stays clickable and draggable -- which reads as the popup itself being
+  // draggable, and is worse when the panel is translucent enough to see it
+  // through. So the placement tries not to cover the symbol at all.
+  const canvas = { width: 1200, height: 800 };
+
+  // Room below: below, centred, clear of the symbol.
+  const low = C.placeReadout([500, 100, 600, 200], { width: 200, height: 100 }, canvas);
+  assert.equal(low.y, 200 + 18 + 4, "prefers below the caption");
+  assert.equal(low.x, (500 + 600) / 2 - 100, "centred on the symbol");
+  // ...clear of it meaning the panel starts below the box, not over it.
+  assert.ok(low.y >= 200, "and never over the symbol");
+
+  // No room below: goes above.
+  const high = C.placeReadout([500, 600, 600, 700], { width: 200, height: 100 }, canvas);
+  assert.equal(high.y, 600 - 100 - 4, "above when below will not fit");
+  assert.ok(high.y + 100 <= 600, "still clear of the symbol");
+
+  // Neither fits -- the 49-parameter case, a tall panel and a component in the
+  // middle: it goes BESIDE rather than on top.
+  const tall = { width: 260, height: 700 };
+  const beside = C.placeReadout([500, 200, 600, 300], tall, canvas);
+  assert.equal(beside.x, 600 + 12, "to the right of the symbol when there is room");
+  assert.ok(beside.x >= 600, "clear of the symbol horizontally");
+  assert.ok(beside.y >= 4 && beside.y + tall.height <= 800, "and inside the canvas");
+
+  // Room on the right but not the left, near the right edge: picks the left.
+  const leftward = C.placeReadout([1000, 200, 1100, 300], tall, canvas);
+  assert.equal(leftward.x, 1000 - 260 - 12, "to the left when the right is short of room");
+
+  // Nowhere clear at all: pinned to the top, fully on screen.
+  const pinned = C.placeReadout([0, 0, 1200, 800], tall, canvas);
+  assert.equal(pinned.y, 4, "the last resort is the top edge");
+  assert.ok(pinned.x >= 4, "and it stays on the canvas");
+
+  // Never off the canvas, whatever it is given.
+  for (const box of [[0, 0, 10, 10], [1190, 790, 1200, 800], [0, 400, 1200, 800]]) {
+    const p = C.placeReadout(box, tall, canvas);
+    assert.ok(p.x >= 0 && p.x + tall.width <= canvas.width, `x in canvas for ${box}: ${p.x}`);
+    assert.ok(p.y >= 0 && p.y + tall.height <= canvas.height, `y in canvas for ${box}: ${p.y}`);
   }
 });

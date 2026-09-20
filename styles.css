@@ -233,6 +233,19 @@
   width: 100%;
 }
 
+/* A Boolean parameter is a choice, not a value to type. Styled with the input
+   rule so the column stays uniform, and `appearance` is left alone so it keeps
+   the platform's own dropdown affordance. */
+.modelica-studio-field select.modelica-studio-param-select {
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  width: 100%;
+}
+
 .modelica-studio-portlist {
   display: flex;
   flex-direction: column;
@@ -249,6 +262,32 @@
 
 .modelica-studio-portname {
   font-family: var(--font-monospace);
+}
+
+/*
+ * A conditional connector whose parameter is off.
+ *
+ * Dimmed rather than hidden: the row's second column says which parameter to
+ * turn on, and an absent line would leave the user wondering whether the
+ * connector exists at all. Opacity rather than a colour, so it reads the same in
+ * both themes, and no strikethrough -- a struck-through name looks like a value
+ * that was deleted rather than one that is not available yet.
+ */
+.modelica-studio-portrow.is-conditional-off > * {
+  opacity: 0.55;
+}
+
+/*
+ * The same, but a wire is already attached.
+ *
+ * The connector was enabled when the wire was drawn and has since been switched
+ * off, so the model no longer builds. Marked rather than merely dimmed, because
+ * this one is a fault in the model rather than a connector waiting to be turned
+ * on. Uses Obsidian's own error colour so it matches the theme's warning
+ * language, with the plain-text colour as the fallback.
+ */
+.modelica-studio-portrow.is-conditional-broken > * {
+  color: var(--text-error, var(--text-normal));
 }
 
 .modelica-studio-series {
@@ -1826,6 +1865,22 @@ body.modelica-studio-resizing * {
 
 /* The domain legend in Help: one row per domain, the name in its own colour and
    the library's code beside it. Laid out as a grid so the codes line up. */
+/*
+ * A heading over one of the two legend tables.
+ *
+ * The legend is split because seven of its rows are colours the library
+ * specifies and three are groupings this plugin adds; a subject line is what
+ * makes that distinction visible at a glance.
+ */
+.modelica-studio-help-legend-head {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 8px;
+}
+
 .modelica-studio-help-domains {
   display: grid;
   grid-template-columns: max-content max-content 1fr;

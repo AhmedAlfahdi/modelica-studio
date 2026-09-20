@@ -68,6 +68,35 @@ export function libraryHelpUrl(libraryVersion = "4.1.0"): string {
 }
 
 /**
+ * Versions whose *SystemModeler* help tree (`helpWSM`) the site publishes.
+ *
+ * The library reference is generated four times over — `helpDymola`, `helpOM`,
+ * `helpWSM` and plain `help` — and the four are NOT published for the same set of
+ * versions. Measured against the live site: for 4.1.0 only `helpDymola` answers
+ * 200, while `helpWSM` answers 404; for 4.0.0 and 3.2.3 `helpWSM` answers 200.
+ * The icon-conventions page exists only in the WSM tree, so a version that has no
+ * WSM tree has no page to link to, whatever the plugin's library version is.
+ */
+export const WSM_VERSIONS = new Set(["4.0.0", "3.2.3"]);
+
+/** The newest library version whose WSM tree exists. */
+export const WSM_FALLBACK_VERSION = "4.0.0";
+
+/**
+ * The page where the library lists the icon colour scheme this plugin follows.
+ *
+ * Falls back to the newest version that publishes a WSM tree rather than to the
+ * indexed version unconditionally: the colours have not changed across these
+ * releases, whereas naming a tree that does not exist is a dead link — which is
+ * exactly what `Modelica%204.1.0/.../helpWSM/...` is.
+ */
+export function libraryIconsUrl(libraryVersion = WSM_FALLBACK_VERSION): string {
+  const version = WSM_VERSIONS.has(libraryVersion) ? libraryVersion : WSM_FALLBACK_VERSION;
+  const encoded = encodeURIComponent(`Modelica ${version}`);
+  return `${DOC_BASE}/${encoded}/Resources/helpWSM/Modelica/Modelica.UsersGuide.Conventions.Icons.html`;
+}
+
+/**
  * The library version from a name such as "Modelica 4.1.0".
  *
  * The indexed roots are named `Modelica <version>`, so the version is read from

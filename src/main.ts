@@ -1148,6 +1148,18 @@ export default class ModelicaStudioPlugin extends Plugin {
     this.diag(
       `library ready; ${this.excludedLibraries().length} exclusion(s)` 
     );
+    // An index that stopped early is missing whole libraries, and every class in
+    // them then reads as "not in the library" with nothing to explain why. Said
+    // out loud rather than left to be discovered.
+    for (const root of index.truncatedRoots) {
+      new Notice(
+        `Modelica Studio: "${root}" has more files than the indexer will read in ` +
+          `one pass, so some of its classes are missing. Split it into smaller ` +
+          `library folders, or exclude the ones you do not use.`,
+        10000
+      );
+      this.diag(`library TRUNCATED at ${root}`);
+    }
     return index;
   }
 
@@ -1835,6 +1847,26 @@ export default class ModelicaStudioPlugin extends Plugin {
     this.replaceModel(model, source);
     this.traceStep("adopt", model.name);
     this.schedulePersist();
+  }
+
+  /**
+   * The diagram editor replaced the model OBJECT it holds.
+   *
+   * The editor builds a fresh model for an undo, a redo or a re-parse, and each
+   * rebuild is a new object. The plugin has to follow it.
+   *
+   * While the two were allowed to drift, the inspector looked the selected
+   * component up in a model that no longer contained it — so clicking a
+   * component showed "1 components selected." and no fields at all, for every
+   * component in the library, which reads as the plugin being broken rather
+   * than as one stale reference. Worse, edits made after the drift went into
+   * the copy the plugin had forgotten, and `persist` writes `this.model`, so
+   * they never reached the file.
+   */
+  adoptEditorModel(model: DiagramModel): void {
+    if (this.model === model) return;
+    this.model = model;
+    this.markSourceStale();
   }
 
   /**

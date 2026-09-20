@@ -1267,3 +1267,222 @@ test("the empty-state text is readable, not a hairline tone", () => {
   );
   assert.match(block[0], /theme\.placeholderText/, "it uses the readable annotation tone");
 });
+
+test("a rebuilt model is handed to the caller, not kept private", () => {
+  // The editor REPLACES its model object for an undo or a redo -- it restores a
+  // parsed copy rather than mutating in place -- so the model it draws
+  // afterwards is not the object the caller passed in. `onChange` is how the
+  // caller learns that, and for a while the plugin's handler ignored the
+  // argument it was given.
+  //
+  // The two then described different models. Clicking a component looked its id
+  // up in the one the plugin still held, found nothing, and reported
+  // "1 components selected." with no fields at all -- for every component in
+  // the library, which reads as the plugin being broken rather than as one
+  // stale reference. Edits made after that landed in the model the plugin had
+  // forgotten, so they never reached the file.
+  const host = new StubElement("div");
+  const start = { name: "M", components: [inst("r1", 0, 0)], connections: [], graphics: [] };
+  const seen = [];
+  const editor = new SchematicEditor(host, start, {
+    lookup,
+    onChange: (m) => seen.push(m),
+    onSelectionChange: () => {},
+    onStatus: () => {},
+  });
+
+  editor.beginEdit("add");
+  editor.model.components.push(inst("r2", 200, 0));
+  editor.commitEdit();
+  assert.equal(editor.model.components.length, 2, "the add landed");
+  assert.equal(editor.model, start, "an ordinary edit mutates in place");
+
+  editor.undo();
+  assert.equal(editor.model.components.length, 1, "undo removed it again");
+  assert.notEqual(editor.model, start, "but the restored model is a NEW object");
+
+  // The contract: what `onChange` was handed last IS what the editor draws.
+  const last = seen[seen.length - 1];
+  assert.equal(last, editor.currentModel, "onChange reports the model the editor now holds");
+  assert.equal(last, editor.model, "and it is the one being drawn");
+});
+
+test("adopting a re-parsed model keeps the viewport and drops dead selections", () => {
+  // What the code validator does on every keystroke. It must not refit the
+  // canvas -- the user is in code mode and the diagram should not jump -- but it
+  // MUST leave the editor holding the same object the plugin holds, which is the
+  // half that was missing.
+  const { editor } = makeEditor();
+  editor.setSelection(["r1"]);
+  const before = editor.currentModel;
+
+  const reparsed = { name: "M", components: [inst("r1", 0, 0)], connections: [], graphics: [] };
+  editor.adoptModel(reparsed);
+
+  assert.equal(editor.currentModel, reparsed, "the editor takes the new object");
+  assert.notEqual(editor.currentModel, before, "and it really is a different object");
+  assert.deepEqual(editor.selectedIds, ["r1"], "a selection the new text still declares survives");
+
+  // A component the new text no longer declares must leave the selection, or the
+  // inspector reports something that is not there.
+  const fewer = { name: "M", components: [inst("r2", 200, 0)], connections: [], graphics: [] };
+  editor.adoptModel(fewer);
+  assert.deepEqual(editor.selectedIds, [], "a selection that no longer exists is dropped");
+
+  // Adopting the same object again is a no-op rather than a state reset.
+  const kept = editor.currentModel;
+  editor.adoptModel(kept);
+  assert.equal(editor.currentModel, kept);
+});
+
+test("hovering a component paints what its parameters are set to", () => {
+  // The readout is drawn by the editor, in screen space, and only while the
+  // pointer is on a component AND the setting is on. None of that is visible
+  // from the helper it calls, so the paint itself is checked here.
+  const host = new StubElement("div");
+  const model = {
+    name: "M",
+    components: [inst("r1", 0, 0)],
+    connections: [],
+    graphics: [],
+  };
+  const def = {
+    ...classDef("M.R"),
+    parameters: [
+      { name: "R", type: "Real", defaultValue: "1", unit: "Ohm" },
+      { name: "T", type: "Real", defaultValue: "300" },
+    ],
+  };
+  let hoverParameters = true;
+  const editor = new SchematicEditor(host, model, {
+    lookup: () => def,
+    onChange: () => {},
+    onSelectionChange: () => {},
+    onStatus: () => {},
+    display: () => ({ labelScale: 1, hoverParameters }),
+  });
+
+  const painted = [];
+  editor.ctx = new Proxy(
+    { canvas: { width: 800, height: 600 }, measureText: (s) => ({ width: String(s).length * 6 }) },
+    {
+      get(t, k) {
+        if (k in t) return t[k];
+        if (k === "fillText") return (s) => painted.push(String(s));
+        return () => {};
+      },
+      set() {
+        return true;
+      },
+    }
+  );
+  const canvas = canvasOf(editor);
+  layoutTo(canvas, 1200, 800);
+  editor.resize();
+
+  const draw = () => {
+    painted.length = 0;
+    SchematicEditor.prototype.draw.call(editor);
+    return painted.join(" | ");
+  };
+
+  assert.equal(draw().includes("R = 100"), false, "nothing is shown with no pointer on a component");
+
+  editor.hovered = "r1";
+  const shown = draw();
+  assert.match(shown, /r1/, "the component is named");
+  assert.match(shown, /R = 100/, `the value it overrides: ${shown}`);
+  assert.match(shown, /T = 300/, "and one it inherits");
+
+  // The setting turns it off, and it is read per frame rather than captured.
+  hoverParameters = false;
+  assert.ok(!draw().includes("R = 100"), "the setting hides it");
+
+  hoverParameters = true;
+  editor.hovered = null;
+  assert.ok(!draw().includes("R = 100"), "and it goes when the pointer leaves");
+  editor.destroy();
+});
+
+test("a long parameter list is laid out to fit, not cut off", () => {
+  // The class with the most parameters in MSL has 49. A single column of them is
+  // about 800px, taller than the canvas, so the panel would have run off the
+  // bottom and the last parameters -- the ones most likely to be interesting --
+  // would have been the ones lost. It fills columns instead.
+  const host = new StubElement("div");
+  const many = Array.from({ length: 49 }, (_, i) => ({
+    name: `parameter${i}`,
+    type: "Real",
+    defaultValue: String(i),
+  }));
+  const def = { ...classDef("M.R"), parameters: many };
+  const editor = new SchematicEditor(
+    host,
+    { name: "M", components: [inst("r1", 0, 0)], connections: [], graphics: [] },
+    {
+      lookup: () => def,
+      onChange: () => {},
+      onSelectionChange: () => {},
+      onStatus: () => {},
+      display: () => ({ labelScale: 1, hoverParameters: true }),
+    }
+  );
+
+  const texts = [];
+  const rects = [];
+  const fills = [];
+  editor.ctx = new Proxy(
+    {
+      canvas: { width: 2400, height: 1600 },
+      measureText: (s) => ({ width: String(s).length * 6 }),
+      fillStyle: "",
+    },
+    {
+      get(t, k) {
+        if (k in t) return t[k];
+        if (k === "fillText") return (s) => texts.push(String(s));
+        // The style at the moment of the fill: `fillStyle` is set, then used.
+        if (k === "fillRect") return (x, y, w, h) => {
+          rects.push([x, y, w, h]);
+          fills.push(t.fillStyle);
+        };
+        return () => {};
+      },
+      set(t, k, v) {
+        t[k] = v;
+        return true;
+      },
+    }
+  );
+  const canvas = canvasOf(editor);
+  layoutTo(canvas, 1200, 800);
+  editor.resize();
+  editor.hovered = "r1";
+  SchematicEditor.prototype.draw.call(editor);
+
+  const drawn = texts.filter((t) => /^parameter\d+ = /.test(t));
+  assert.equal(drawn.length, 49, `every parameter is painted, got ${drawn.length}`);
+  assert.ok(texts.includes("parameter48 = 48"), "including the last one");
+  assert.ok(texts.includes("r1"), "and the component is named");
+
+  // The first fillRect is the canvas background; the readout is drawn last, on
+  // top of everything.
+  assert.ok(rects.length >= 2, `the panel is painted: ${JSON.stringify(rects)}`);
+  const [x, y, w, h] = rects[rects.length - 1];
+  const W = editor.cssWidth * editor.dpr;
+  const H = editor.cssHeight * editor.dpr;
+  assert.ok(h < H && w < W, `and is a panel, not the background: ${w}x${h} in ${W}x${H}`);
+  assert.ok(h <= H, `the panel fits the canvas height: ${h} <= ${H}`);
+  assert.ok(y >= 0 && y + h <= H, `and sits inside it vertically: y=${y} h=${h}`);
+  assert.ok(x >= 0 && x + w <= W, `and horizontally: x=${x} w=${w}`);
+
+  // Opaque. The panel can end up over the diagram when there is nowhere clear to
+  // put it, and a see-through one both shows the component through it and
+  // invites clicking what shows through.
+  const panelFill = fills[fills.length - 1];
+  assert.ok(
+    /^rgb\(/.test(panelFill) && !/^rgba\(/.test(panelFill),
+    `the panel is opaque, not translucent: ${panelFill}`
+  );
+  editor.destroy();
+});

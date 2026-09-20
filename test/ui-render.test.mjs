@@ -39,7 +39,16 @@ const HEAD = [
   "    settings: Object.assign({ modelFolder: 'Modelica', modelFiles: {} }, opts.settings),",
   "    model: { name: 'Tank', components: [], connections: [], equations: [] },",
   "    backend: null,",
-  "    library: { size: 6577, packages: () => [] },",
+  "    library: {",
+  // 6 Modelica classes and 2 from a sibling library, so the two counts in the",
+  // help window are distinguishable.",
+  "      size: 8,",
+  "      allNames: () => ['Modelica.Blocks.Math.Feedback', 'Modelica.Blocks.Sources.Constant',",
+  "        'Modelica.Electrical.Analog.Basic.Resistor', 'Modelica.Fluid.Sources.Boundary_pT',",
+  "        'Modelica.Mechanics.Translational.Sources.Force', 'Modelica.Thermal.HeatTransfer.Components.HeatCapacitor',",
+  "        'ModelicaServices.Machine', 'ModelicaReference.Annotations'],",
+  "      packages: () => [],",
+  "    },",
   "    libraryRootNames: () => ['Modelica 4.1.0'],",
   "    saveSettings: async () => {},",
   "    loadModelFromPath: async (p) => { window.__opened = p; },",
@@ -142,6 +151,9 @@ test("the help dialog renders its facts, its links and every shortcut", async ()
     "vault.add('Modelica/Tank.mo', 'model Tank');",
     "const plugin = makePlugin(vault, { settings: { modelFiles: { Tank: 'Modelica/Tank.mo' } } });",
     "plugin.backend = { info: { id: 'omc', label: 'OpenModelica', available: true, detail: 'OpenModelica 1.27.0' } };",
+    // A real installation indexes the sibling libraries too, which is what makes
+    // the two counts different.
+    "plugin.libraryRootNames = () => ['Modelica 4.1.0+maint.om', 'ModelicaServices 4.1.0+maint.om', 'ModelicaReference 4.1.0+maint.om'];",
     "",
     "const modal = new HelpModal(plugin.app, plugin);",
     "modal.open();",
@@ -150,6 +162,13 @@ test("the help dialog renders its facts, its links and every shortcut", async ()
     "const keys = Array.from(root.querySelectorAll('.modelica-studio-key-row'));",
     "",
     "window.test('the installation facts are shown', () => facts.map(f => f.textContent).join(' || '));",
+    "window.test('the reading-the-diagram notes are shown', () => {",
+    "  const at = Array.from(root.querySelectorAll('h4')).findIndex((h) => h.textContent === 'Reading the diagram');",
+    "  if (at < 0) return 'NO SECTION';",
+    "  const heads = Array.from(root.querySelectorAll('h4'));",
+    "  const paras = Array.from(root.querySelectorAll('p'));",
+    "  return paras.filter((p) => p.textContent.includes('Hovering a component') || p.textContent.includes('dimmed connector')).map((p) => p.textContent).join(' || ');",
+    "});",
     "window.test('every shortcut is rendered', () => keys.length + ' of ' + (DIAGRAM_SHORTCUTS.length + CODE_SHORTCUTS.length));",
     "window.test('each shortcut has a key and a meaning', () =>",
     "  keys.filter(k => k.querySelector('.modelica-studio-key-combo').textContent.trim() && k.querySelector('.modelica-studio-key-what').textContent.trim()).length + ' complete');",
@@ -171,11 +190,24 @@ test("the help dialog renders its facts, its links and every shortcut", async ()
     "});",
     "window.test('every legend row names the library code or says there is none', () => {",
     "  const codes = Array.from(root.querySelectorAll('.modelica-studio-help-domain-code')).map((c) => c.textContent);",
-    "  return codes.length + ' codes, ' + codes.filter((c) => c === 'no code').length + ' with none';",
+    "  return codes.length + ' codes, ' + codes.filter((c) => c === '\u2014').length + ' with none';",
     "});",
+    "window.test('the legend splits the library codes from the plugin ones', () =>",
+    "  Array.from(root.querySelectorAll('.modelica-studio-help-legend-head')).map((h) => h.textContent).join(' || '));",
     "window.test('the legend links to the library page', () => {",
     "  const b = Array.from(root.querySelectorAll('.modelica-studio-help-links button')).find((x) => /icon conventions/i.test(x.textContent));",
     "  return b ? b.getAttribute('aria-label') : 'MISSING';",
+    "});",
+    "window.test('the legend link opens a URL the site serves', () => {",
+    "  const b = Array.from(root.querySelectorAll('.modelica-studio-help-links button')).find((x) => /icon conventions/i.test(x.textContent));",
+    "  if (!b) return 'MISSING';",
+    "  // openInBrowser builds an anchor and clicks it. Capture the href instead of",
+    "  // letting the click leave the page, so this reads the URL a user would get.",
+    "  const opened = [];",
+    "  const orig = HTMLAnchorElement.prototype.click;",
+    "  HTMLAnchorElement.prototype.click = function () { opened.push(this.href); };",
+    "  try { b.click(); } finally { HTMLAnchorElement.prototype.click = orig; }",
+    "  return opened.length ? opened.join(',') : 'NOTHING OPENED';",
     "});",
     "window.finish();"
   );
@@ -185,7 +217,21 @@ test("the help dialog renders its facts, its links and every shortcut", async ()
 
   assert.match(d["the installation facts are shown"], /OpenModelica 1\.27\.0/, "the toolchain");
   assert.match(d["the installation facts are shown"], /4\.1\.0/, "the library version");
-  assert.match(d["the installation facts are shown"], /6577/, "the class count");
+  // The count under the library's name is the LIBRARY's, not the whole index:
+  // reporting the total there overstated the standard library by the classes
+  // that come from the sibling libraries, and made a figure the reader can check
+  // against their own installation impossible to check.
+  assert.match(d["the installation facts are shown"], /6 classes indexed/, "the library's own count");
+  assert.ok(
+    !/8 classes indexed/.test(d["the installation facts are shown"]),
+    `not the whole-index total: ${d["the installation facts are shown"]}`
+  );
+  assert.match(d["the installation facts are shown"], /Also indexed/, "the sibling libraries are named");
+  assert.match(d["the installation facts are shown"], /2 classes/, "with their own count");
+
+  // The behaviour with no visible affordance is written down.
+  assert.match(d["the reading-the-diagram notes are shown"], /Hovering a component/);
+  assert.match(d["the reading-the-diagram notes are shown"], /dimmed connector/);
 
   const [shown, total] = d["every shortcut is rendered"].split(" of ").map(Number);
   assert.equal(shown, total, `every exported shortcut is rendered: ${d["every shortcut is rendered"]}`);
@@ -207,7 +253,24 @@ test("the help dialog renders its facts, its links and every shortcut", async ()
   }
   assert.match(d["each legend row carries its own colour attribute"], /^(\d+) coloured, 0 without/, "each row matches its rule");
   assert.match(d["every legend row names the library code or says there is none"], /^\d+ codes, 3 with none$/, "three domains have no library code");
+  // Which of the rows are the library's and which are this plugin's is the
+  // distinction the section exists to make, and one list could not make it.
+  const heads = d["the legend splits the library codes from the plugin ones"].split(" || ");
+  assert.equal(heads.length, 2, `two tables: ${heads.join(" | ")}`);
+  assert.match(heads[0], /Conventions\.Icons/, "the library's codes say where they come from");
+  assert.match(heads[1], /this plugin adds/, "and the plugin's own matchings are marked as such");
   assert.match(d["the legend links to the library page"], /UsersGuide\.Conventions\.Icons/, "and cites the library page");
+
+  // The URL the click actually opens, not the one in the source. The link was
+  // hard-coded to the indexed library version, 4.1.0, which publishes no WSM tree
+  // -- so it 404'd on click while every source-level check passed.
+  const opened = d["the legend link opens a URL the site serves"];
+  assert.ok(!/4\.1\.0/.test(opened), `the WSM tree for 4.1.0 does not exist: ${opened}`);
+  assert.match(
+    opened,
+    /^https:\/\/doc\.modelica\.org\/Modelica%204\.0\.0\/Resources\/helpWSM\/Modelica\/Modelica\.UsersGuide\.Conventions\.Icons\.html$/,
+    "the conventions page, on a tree that is published"
+  );
 });
 
 test("the help dialog names the vault root when no folder is set", async () => {
@@ -241,6 +304,8 @@ test("the settings tab renders every section, with the solver's details in its b
     "  solver: 'cvode',",
     "  excludedLibraries: 'Modelica.Magnetic',",
     "  debugLog: false,",
+    "  labelScale: 1.4,",
+    "  hoverParameters: false,",
     "  ai: { secretName: 'modelica-studio-api-key', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-flash', temperature: 0.2, systemPrompt: '', thinking: 'off', style: 'visual', timeoutSeconds: 300 },",
     "  aiModels: [],",
     "} });",
@@ -293,6 +358,21 @@ test("the settings tab renders every section, with the solver's details in its b
     "  const row = Array.from(root.querySelectorAll('.modelica-studio-library-row')).find((r) => r.querySelector('label').textContent === 'Magnetic');",
     "  return row ? row.className + ' checked=' + row.querySelector('input').checked : 'NO MAGNETIC ROW';",
     "});",
+    "window.test('the label controls exist and show the stored values', () => {",
+    "  const item = (n) => Array.from(root.querySelectorAll('.setting-item')).find((i) => i.querySelector('.setting-item-name').textContent === n);",
+    "  const size = item('Label size');",
+    "  const hover = item('Show parameters when hovering a component');",
+    "  if (!size || !hover) return 'MISSING: ' + [!!size, !!hover].join();",
+    // The component carries the value, so the tab is reading the setting rather
+    // than rendering a default.
+    "  const slider = size.components.find((c) => typeof c.setDynamicTooltip === 'function');",
+    "  const toggle = hover.components.find((c) => typeof c.setValue === 'function' && typeof c.setDynamicTooltip !== 'function');",
+    "  return 'size=' + (slider ? slider.value : '?') + ' hover=' + (toggle ? toggle.value : '?');",
+    "});",
+    "window.test('both label controls are in their own section', () => {",
+    "  const at = headings.indexOf('Diagram labels');",
+    "  return at < 0 ? 'NO SECTION' : headings.slice(at, at + 2).join(' > ');",
+    "});",
     "window.test('the performance figures are a table, not a sentence', () => {",
     "  const rows = root.querySelectorAll('.modelica-studio-metric');",
     "  const groups = root.querySelectorAll('.modelica-studio-metric-group');",
@@ -331,6 +411,15 @@ test("the settings tab renders every section, with the solver's details in its b
 
   assert.match(d["the performance figures are a table, not a sentence"], /^7 metrics in 2 groups$/);
   assert.equal(d["every metric has a value and a note"], "7 of 7 complete");
+
+  // The two diagram-label settings, rendered with stored values that are not the
+  // defaults, so a tab that ignored the setting would show 100/true and fail.
+  assert.equal(
+    d["the label controls exist and show the stored values"],
+    "size=140 hover=false",
+    "both controls exist and reflect the stored settings"
+  );
+  assert.match(d["both label controls are in their own section"], /^Diagram labels/, "under one heading");
 });
 
 test("the palette renders, respects exclusions, and can be driven by keyboard", async () => {
@@ -625,4 +714,263 @@ test("the view uses the tab helper, and no tab switches the mode", () => {
   assert.ok(!/setMode/.test(click[0]), "clicking a tab must not switch the mode");
   // The field is typed to the two-tab union, so a third cannot be assigned.
   assert.match(view, /private bottomTab: ResultsTab = "plot"/, "the active tab is typed to the union");
+});
+
+test("the inspector lists fields for a component the plugin's model no longer holds", async () => {
+  // The symptom was total and silent: click any component and the panel said
+  // "1 components selected." with nothing under it. Not because the component
+  // had no parameters, but because the inspector looked the selected id up in
+  // the model the PLUGIN held while the canvas drew a different object -- after
+  // the code validator adopted a re-parsed model, or after an undo restored one.
+  //
+  // The two are kept identical now, and the inspector reads the model being
+  // drawn, so this pins the behaviour that matters: the panel describes what is
+  // on the canvas.
+  const out = page(
+    `import { ModelicaStudioView } from "${ROOT}/src/view/studio-view";`,
+    "const vault = new StubVault();",
+    "const plugin = makePlugin(vault);",
+    // The plugin is holding a model that does NOT contain the selection.
+    "plugin.model = { name: 'Other', components: [], connections: [], graphics: [] };",
+    "plugin.library.component = () => ({",
+    "  name: 'Modelica.Blocks.Logical.And',",
+    "  shortName: 'And',",
+    "  comment: 'Logical and',",
+    "  ports: [],",
+    "  parameters: [",
+    "    { name: 'u1', type: 'Boolean', defaultValue: 'false', comment: 'Initial value of input 1' },",
+    "    { name: 'u2', type: 'Boolean', defaultValue: 'false', comment: 'Initial value of input 2' },",
+    "  ],",
+    "});",
+    // ... while the editor, which is what the user is looking at, does.
+    "const drawn = { name: 'M', components: [",
+    "  { id: 'and1', className: 'Modelica.Blocks.Logical.And',",
+    "    placement: { extent: [-10,-10,10,10], rotation: 0, visible: true }, params: {} },",
+    "], connections: [], graphics: [] };",
+    "const view = Object.create(ModelicaStudioView.prototype);",
+    "view.plugin = plugin;",
+    "view.editor = { selectedIds: ['and1'], currentModel: drawn };",
+    "const host = document.createElement('div');",
+    "view.inspectorEl = host;",
+    "view.inspectorTabsEl = document.createElement('div');",
+    "view.inspectorTab = 'component';",
+    "view.renderPlotPane = () => {};",
+    // The real entry point, so the lookup that was wrong is the one under test.
+    "view.renderInspector();",
+    "window.test('the panel names the component', () => host.textContent.includes('and1') ? 'named' : 'MISSING');",
+    "window.test('and lists its fields', () => {",
+    "  const labels = Array.from(host.querySelectorAll('label')).map((l) => l.textContent);",
+    "  return labels.join(' | ') || 'NO FIELDS';",
+    "});",
+    "window.finish();"
+  );
+
+  if (out.skip) return;
+  const d = passed(out);
+  assert.equal(d["the panel names the component"], "named", "the selected component is identified");
+  assert.match(d["and lists its fields"], /u1/, "the first parameter is offered");
+  assert.match(d["and lists its fields"], /u2/, "and the second");
+});
+
+test("the plugin takes the model object the editor hands it", async () => {
+  // An undo restores a PARSED COPY, so the editor is then drawing an object the
+  // plugin has never seen. `onChange` carries it, and the view has to take it --
+  // the handler used to ignore the argument, which is how the canvas and the
+  // inspector came to describe different models. Everything the user did
+  // afterwards was written into the copy the plugin had forgotten.
+  const out = page(
+    `import { ModelicaStudioView } from "${ROOT}/src/view/studio-view";`,
+    "const vault = new StubVault();",
+    "const plugin = makePlugin(vault);",
+    "const start = { name: 'M', components: [], connections: [], graphics: [] };",
+    "plugin.model = start;",
+    "plugin.markSourceStale = () => { plugin.stale = true; };",
+    "plugin.persist = async () => {};",
+    // A RECORDER rather than a reimplementation: what was broken is that the
+    // view threw the model away instead of passing it on, and that is what this
+    // asserts. `adoptEditorModel` itself is three lines and type-checked.
+    "const adopted = [];",
+    "plugin.adoptEditorModel = (m) => { adopted.push(m); };",
+    "const view = Object.create(ModelicaStudioView.prototype);",
+    "view.plugin = plugin;",
+    "view.renderInspector = () => {};",
+    "view.updateToolbarState = () => {};",
+    // What an undo delivers: a different object with the same document.
+    "const restored = { name: 'M', components: [], connections: [], graphics: [] };",
+    "view.onModelChanged(restored);",
+    "window.test('the plugin is handed the new object', () =>",
+    "  adopted.length === 1 && adopted[0] === restored ? 'handed over' : `WRONG: ${adopted.length}`);",
+    "window.test('and the source is marked stale', () => String(plugin.stale === true));",
+    "window.finish();"
+  );
+
+  if (out.skip) return;
+  const d = passed(out);
+  assert.equal(
+    d["the plugin is handed the new object"],
+    "handed over",
+    "the view passes the editor's model on, rather than dropping the argument"
+  );
+  assert.equal(d["and the source is marked stale"], "true", "so a save regenerates the text");
+});
+
+test("the connector list says which connectors do not exist yet", async () => {
+  // `Support support(...) if useSupport` is listed like any other connector, so
+  // the panel offered a port that is not there. It now says what to switch on,
+  // and says something different when a wire is already attached -- that case is
+  // a fault in the model rather than a connector waiting to be enabled.
+  const out = page(
+    `import { ModelicaStudioView } from "${ROOT}/src/view/studio-view";`,
+    "const vault = new StubVault();",
+    "const plugin = makePlugin(vault);",
+    "const def = {",
+    "  name: 'Modelica.Mechanics.Translational.Sources.Force',",
+    "  shortName: 'Force',",
+    "  comment: 'External force',",
+    "  parameters: [],",
+    "  ports: [",
+    "    { name: 'flange', type: 'Flange_b', isFlow: true, causality: 'acausal' },",
+    "    { name: 'support', type: 'Support', isFlow: true, causality: 'acausal', condition: 'useSupport' },",
+    "    { name: 'f', type: 'RealInput', isFlow: false, causality: 'input' },",
+    "  ],",
+    "};",
+    "plugin.library.component = () => def;",
+    "const inst = (params) => ({ id: 'force', className: def.name,",
+    "  placement: { extent: [-10,-10,10,10], rotation: 0, visible: true }, params });",
+    "const rows = (params, connections) => {",
+    "  const drawn = { name: 'M', components: [inst(params)], connections, graphics: [] };",
+    "  plugin.model = drawn;",
+    "  const view = Object.create(ModelicaStudioView.prototype);",
+    "  view.plugin = plugin;",
+    "  view.editor = { selectedIds: ['force'], currentModel: drawn };",
+    "  const host = document.createElement('div');",
+    "  view.renderComponentTab(host, drawn.components[0], ['force']);",
+    "  return Array.from(host.querySelectorAll('.modelica-studio-portrow')).map((r) =>",
+    "    r.className.replace('modelica-studio-portrow', '').trim() + ' :: ' + r.textContent);",
+    "};",
+    "window.test('support is off by default', () => rows({}, []).join(' || '));",
+    "window.test('and on when the parameter is true', () => rows({ useSupport: 'true' }, []).join(' || '));",
+    "window.test('a wire on a switched-off connector is called out', () =>",
+    "  rows({}, [{ id: 'c1', from: { component: 'force', port: 'support' },",
+    "              to: { component: 'gnd', port: 'flange' }, points: [] }]).join(' || '));",
+    "window.finish();"
+  );
+
+  if (out.skip) return;
+  const d = passed(out);
+
+  // Asserted per ROW: the joined string would let `flange ... needs` match across
+  // two different connectors.
+  const rowFor = (joined, name) =>
+    joined.split(" || ").find((r) => r.includes(`:: ${name}`)) ?? "";
+
+  const off = d["support is off by default"];
+  assert.match(rowFor(off, "support"), /needs useSupport = true/, `the reason is given: ${off}`);
+  assert.match(rowFor(off, "support"), /is-conditional-off/, "and the row is marked unavailable");
+  assert.match(rowFor(off, "flange"), /Flange_b · flow/, "an unconditional connector reads normally");
+  assert.ok(!/needs/.test(rowFor(off, "flange")), `flange carries no condition: ${off}`);
+  assert.ok(!/is-conditional/.test(rowFor(off, "f")), `nor does the signal input: ${off}`);
+
+  const on = d["and on when the parameter is true"];
+  assert.ok(!/is-conditional-off/.test(on), `nothing is marked off: ${on}`);
+  assert.ok(!/needs useSupport/.test(on), `and nothing asks for a parameter: ${on}`);
+
+  const broken = d["a wire on a switched-off connector is called out"];
+  assert.match(rowFor(broken, "support"), /is-conditional-broken/, "a wired-but-absent connector is marked as a fault");
+  assert.match(
+    rowFor(broken, "support"),
+    /wired, but it needs useSupport = true/,
+    `and says so plainly: ${broken}`
+  );
+});
+
+test("a Boolean parameter is a choice, and anything else is still typed", async () => {
+  // A text field for a Boolean let a user write `useSupport = yes`, which
+  // OpenModelica reports as "Variable yes not found in scope Force" -- naming
+  // neither the parameter nor the type, and only after a Simulate. A select
+  // cannot express the mistake.
+  const out = page(
+    `import { ModelicaStudioView } from "${ROOT}/src/view/studio-view";`,
+    "const vault = new StubVault();",
+    "const plugin = makePlugin(vault);",
+    "const calls = [];",
+    "const def = {",
+    "  name: 'M.R', shortName: 'R', comment: '', ports: [],",
+    "  parameters: [",
+    "    { name: 'useSupport', type: 'Boolean', defaultValue: 'false', comment: 'support' },",
+    "    { name: 'R', type: 'Real', defaultValue: '100', unit: 'Ohm' },",
+    "  ],",
+    "};",
+    "plugin.library.component = () => def;",
+    "const render = (params) => {",
+    "  const inst = { id: 'r1', className: def.name,",
+    "    placement: { extent: [-10,-10,10,10], rotation: 0, visible: true }, params };",
+    "  const drawn = { name: 'M', components: [inst], connections: [], graphics: [] };",
+    "  plugin.model = drawn;",
+    "  const view = Object.create(ModelicaStudioView.prototype);",
+    "  view.plugin = plugin;",
+    "  view.runSimulation = () => {};",
+    "  view.editor = {",
+    "    selectedIds: ['r1'], currentModel: drawn,",
+    "    setParam: (id, name, value) => calls.push(`${id}.${name}=${value}`),",
+    "  };",
+    "  const host = document.createElement('div');",
+    "  view.renderComponentTab(host, inst, ['r1']);",
+    "  return host;",
+    "};",
+    "const controlFor = (host, labelText) => {",
+    "  const field = Array.from(host.querySelectorAll('.modelica-studio-field'))",
+    "    .find((f) => f.querySelector('label').textContent.startsWith(labelText));",
+    "  return field ? field.querySelector('select, input') : null;",
+    "};",
+    "const host = render({});",
+    "window.test('the Boolean is a select', () => controlFor(host, 'useSupport')?.tagName ?? 'MISSING');",
+    "window.test('its options are the two literals plus the default', () =>",
+    "  Array.from(controlFor(host, 'useSupport').options).map((o) => o.value + ':' + o.textContent).join(' | '));",
+    "window.test('and it shows that nothing is overridden yet', () =>",
+    "  JSON.stringify(controlFor(host, 'useSupport').value));",
+    "window.test('choosing a value is committed', () => {",
+    "  const s = controlFor(host, 'useSupport');",
+    "  s.value = 'true';",
+    "  s.dispatchEvent(new Event('change'));",
+    "  return calls.join(',') || 'NOTHING';",
+    "});",
+    "window.test('a number is still a text field', () => controlFor(host, 'R')?.tagName ?? 'MISSING');",
+    "window.test('and keeps its unit in the label', () => {",
+    "  const field = Array.from(host.querySelectorAll('.modelica-studio-field'))",
+    "    .find((f) => f.querySelector('label').textContent.startsWith('R'));",
+    "  return field.querySelector('label').textContent;",
+    "});",
+    // A model may legitimately bind a Boolean to an expression. A select would
+    // show that as "default" and drop it on the next change, so it stays typed.
+    "const expr = render({ useSupport: 'system.allowFlowReversal' });",
+    "window.test('an expression binding is not put in a select', () =>",
+    "  controlFor(expr, 'useSupport')?.tagName ?? 'MISSING');",
+    "window.test('and its text is preserved', () => controlFor(expr, 'useSupport').value);",
+    "window.finish();"
+  );
+
+  if (out.skip) return;
+  const d = passed(out);
+
+  assert.equal(d["the Boolean is a select"], "SELECT", "a Boolean parameter gets a select");
+  assert.equal(
+    d["its options are the two literals plus the default"],
+    ":default (false) | true:true | false:false",
+    "the two literals, plus the un-overridden state first"
+  );
+  assert.equal(d["and it shows that nothing is overridden yet"], '""', "default selected when unset");
+  assert.equal(d["choosing a value is committed"], "r1.useSupport=true", "the choice reaches the editor");
+  assert.equal(d["a number is still a text field"], "INPUT", "a Real stays a text field");
+  assert.match(d["and keeps its unit in the label"], /R \(Ohm\)/, "units still shown");
+  assert.equal(
+    d["an expression binding is not put in a select"],
+    "INPUT",
+    "a non-literal Boolean binding keeps the field it was written in"
+  );
+  assert.equal(
+    d["and its text is preserved"],
+    "system.allowFlowReversal",
+    "so the expression is neither hidden nor dropped"
+  );
 });
