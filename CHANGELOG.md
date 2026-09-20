@@ -5,6 +5,30 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.12] — 2026-09-29
+
+### Fixed
+
+- **The palette's search count read as a component count.** `Matches (200 of 434)`
+  invited, reasonably, *"how come out of 434? how many components are there?"*. The
+  number in the parentheses is how many NAMES the query matched, and a fuzzy match
+  lets the query's letters land anywhere in a qualified path — which is what makes
+  `cvs` find `ConstantVoltage` and also what makes a five-letter query match
+  hundreds of unrelated paths. Measured over the index this installation holds:
+
+  | | |
+  |---|---|
+  | Classes in the index | 6,127 |
+  | Components the palette can place | **1,365** |
+  | Paths `force` matches | 544 |
+  | …of those, with `force` anywhere in the path | 81 |
+  | …of those, with `force` in the class name | 64 |
+
+  The label now says `Showing 200 of 544 matches` — the same fact with the noun
+  attached — and `544 matches` when nothing is held back. The figure for what the
+  palette offers was already in the README's exclusion table as "placeable
+  classes"; it is unchanged.
+
 ## [0.2.0-beta.11] — 2026-09-28
 
 ### Added

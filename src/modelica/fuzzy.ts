@@ -277,6 +277,24 @@ export function fuzzyFilter(
 }
 
 /**
+ * What a search reports above its results.
+ *
+ * "Matches (200 of 434)" read as "200 of 434 components" — asked, reasonably,
+ * "how come out of 434? how many components are there?". The number in the
+ * parentheses is how many names the query MATCHED, and a fuzzy search lets the
+ * query's letters be scattered anywhere in a qualified path: in a 6,127-class
+ * index `force` matches 544 paths, of which 64 have the word in the class name
+ * and 81 anywhere in the path at all. Saying "matches" is the whole fix; the
+ * count itself is right and worth keeping, because it is what tells the reader
+ * there are more results than the list is showing.
+ */
+export function formatMatchCount(shown: number, total: number): string {
+  if (total <= 0) return "No matches";
+  if (total > shown) return `Showing ${shown} of ${total} matches`;
+  return total === 1 ? "1 match" : `${total} matches`;
+}
+
+/**
  * True when `name` belongs to one of `prefixes`.
  *
  * Used for excluding whole libraries from search. The comparison is on segment

@@ -35,7 +35,7 @@ import type {
   ParameterDef,
 } from "../modelica/types";
 import { serializeDiagram } from "../modelica/serializer";
-import { fuzzyFilter } from "../modelica/fuzzy";
+import { formatMatchCount, fuzzyFilter } from "../modelica/fuzzy";
 import { docUrlFor, libraryVersionFrom } from "../modelica/doclinks";
 import { acceptsFileDrag, droppedVaultFile } from "./drop";
 import { RESULTS_TABS, resultsTabState, tabLabel, type ResultsTab } from "./bottom-tabs";
@@ -1468,11 +1468,9 @@ export class ModelicaStudioView extends ItemView {
       const group = this.paletteEl.createDiv({ cls: "modelica-studio-palette-group" });
       group.createDiv({
         cls: "modelica-studio-palette-group-head",
-        text: total
-          ? total > hits.length
-            ? `Matches (${hits.length} of ${total})`
-            : `Matches (${total})`
-          : "No matches",
+        // Worded by `formatMatchCount`, which says MATCHES rather than leaving a
+        // bare "200 of 434" that reads as a component count.
+        text: formatMatchCount(hits.length, total),
       });
       const list = group.createDiv({ cls: "modelica-studio-palette-group-list" });
       for (const { item, positions } of hits) {

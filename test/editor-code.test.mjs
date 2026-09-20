@@ -347,7 +347,7 @@ test("the migration secret name is valid for SecretStorage", () => {
 const fuzzyMod = await import(
   path.join(buildLibs("fuzzy-lib", ["src/modelica/fuzzy.ts"]), "fuzzy.js")
 );
-const { fuzzyMatch, fuzzyFilter, isUnderAny } = fuzzyMod;
+const { fuzzyMatch, fuzzyFilter, isUnderAny, formatMatchCount } = fuzzyMod;
 
 const LIB = [
   "Modelica.Electrical.Analog.Basic.Resistor",
@@ -578,5 +578,37 @@ test("the rules ask for a diagram where the structure is the point", () => {
   assert.ok(
     !/Prefer equations to components/.test(src),
     "the 'prefer equations' rule is replaced, not left alongside"
+  );
+});
+
+test("a search says MATCHES, so its count is not read as a component count", () => {
+  // Reported from the palette: "MATCHES (200 OF 434)" invited "how come out of
+  // 434? how many components are there?". The count was right and the wording was
+  // not: it is how many names the query matched, and a fuzzy match lets the
+  // query's letters land anywhere in a qualified path, so it is far larger than
+  // the number of components the results actually name.
+  assert.equal(formatMatchCount(200, 434), "Showing 200 of 434 matches", "a capped list says what it is showing");
+  assert.equal(formatMatchCount(544, 544), "544 matches", "an uncapped list just counts");
+  assert.equal(formatMatchCount(1, 1), "1 match", "and reads as English for one");
+  assert.equal(formatMatchCount(0, 0), "No matches", "and for none");
+  // The cap is the only reason to mention two numbers, so it is the only case
+  // that mentions two.
+  assert.doesNotMatch(formatMatchCount(12, 12), /of/, "no 'of' when nothing is held back");
+
+  // The count is over NAMES, not over placeable components: a five-letter query
+  // is a subsequence of hundreds of unrelated paths, which is exactly why the
+  // wording matters.
+  const winding =
+    "Modelica.Magnetic.QuasiStatic.FundamentalWave.BasicMachines.Components.SymmetricMultiPhaseCageWinding";
+  assert.doesNotMatch(winding, /force/i, "the name has nothing to do with force");
+  const names = ["Modelica.Mechanics.Translational.Sources.Force", winding];
+  const matches = fuzzyFilter(names, "force", 0);
+  assert.ok(
+    matches.some((m) => m.name === winding),
+    "a path with no 'force' in it still matches the letters f-o-r-c-e"
+  );
+  assert.ok(
+    matches.length > names.filter((n) => /force/i.test(n)).length,
+    "so the count exceeds the number of things named force"
   );
 });
