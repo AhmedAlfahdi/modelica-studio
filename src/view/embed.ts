@@ -153,6 +153,34 @@ export function parseDirective(source: string): { opts: Partial<EmbedOptions>; b
 const plotChoice = new Map<string, boolean>();
 
 /**
+ * Models whose block has already simulated itself once, this session.
+ *
+ * A block is destroyed and rebuilt every time its note re-renders, and editing a
+ * diagram writes the note back -- so a single drag mounted the block four times
+ * and ran four simulations, which reads as the block flashing while you move
+ * something. One automatic run per model is what a reader needs; after that the
+ * button is the only thing that starts one.
+ */
+const autoSimulated = new Set<string>();
+
+/**
+ * The last result per model, so a block rebuilt by a re-render is not blank.
+ *
+ * Without this, "never simulate twice" would mean an edit emptied the plot until
+ * the reader pressed Simulate. The result is kept with the source it came from,
+ * so a block whose model has changed since can say so rather than presenting a
+ * stale curve as current.
+ *
+ * Bounded: a vault may hold any number of blocks, and a result is the largest
+ * thing this plugin keeps in memory.
+ */
+const lastResults = new Map<
+  string,
+  { result: SimResult; styles: Record<string, SeriesStyle>; source: string }
+>();
+const LAST_RESULTS_MAX = 6;
+
+/**
  * Which pane a block shows, given what its directive asks for and what the user
  * last chose.
  *
@@ -224,6 +252,10 @@ export class EmbeddedDiagram {
   private readonly resizeHandler = () => this.drawPlot();
   /** The data x under the pointer on the plot, or undefined when it is away. */
   private cursorX: number | undefined;
+  /** The block's own t_end field, so it can be reset when a value is refused. */
+  private timeInput: HTMLInputElement | null = null;
+  /** True when the result on screen came from an earlier version of the source. */
+  private stale = false;
   /** Watches the plot pane's width; a window resize does not cover it. */
   private plotObserver?: ResizeObserver;
 
@@ -250,6 +282,70 @@ export class EmbeddedDiagram {
   private readonly opts: EmbedOptions;
 
   /** Build the DOM and load the model. */
+  /**
+   * Whether this block may run itself, recording that it did.
+   *
+   * Keyed by model rather than by instance, because the instance is exactly what
+   * a re-render throws away.
+   */
+  private claimAutoSimulation(): boolean {
+    const name = this.modelName();
+    if (!name) return true;
+    if (autoSimulated.has(name)) return false;
+    autoSimulated.add(name);
+    return true;
+  }
+
+  /** Repaint the last result for this model, if there is one. */
+  private restoreLastResult(): void {
+    const name = this.modelName();
+    const kept = name ? lastResults.get(name) : undefined;
+    if (!kept || this.result) return;
+    this.result = kept.result;
+    this.styles = { ...kept.styles };
+    // Whether the run still describes the model in front of the reader. The
+    // block is rebuilt on every edit, so the alternative to saying this is
+    // showing a curve that no longer matches the source without a word.
+    this.stale = kept.source !== this.source;
+    this.drawPlot();
+    this.reportResultStatus();
+  }
+
+  /** Remember a finished run for the next time this model's block is rebuilt. */
+  private rememberResult(): void {
+    const name = this.modelName();
+    if (!name || !this.result) return;
+    lastResults.delete(name);
+    lastResults.set(name, {
+      result: this.result,
+      styles: { ...this.styles },
+      source: this.source,
+    });
+    while (lastResults.size > LAST_RESULTS_MAX) {
+      const oldest = lastResults.keys().next().value;
+      if (oldest === undefined) break;
+      lastResults.delete(oldest);
+    }
+    this.stale = false;
+  }
+
+  /** The samples/varying line, saying so when the run predates the source. */
+  private reportResultStatus(): void {
+    const r = this.result;
+    if (!r) return;
+    const varying = r.series.filter((s) => {
+      const v = (s.values ?? []).filter(Number.isFinite);
+      return v.length > 1 && Math.max(...v) - Math.min(...v) > 1e-9;
+    }).length;
+    const counts =
+      varying === 0
+        ? `${r.time.length} samples · nothing varies`
+        : `${r.time.length} samples · ${varying} varying`;
+    this.setStatus(
+      this.stale ? `${counts} · from the previous run, press Simulate` : `${counts} · ${r.simulateMs} ms`
+    );
+  }
+
   mount(): void {
     const root = this.container;
     root.empty();
@@ -270,6 +366,27 @@ export class EmbeddedDiagram {
       return { b, span };
     };
     button("Simulate", "mod-cta", () => void this.simulate());
+    // The span the block runs over, as a field. The Studio has had one in its
+    // results row all along; a block's span was reachable only by editing the
+    // directive text, which is not something to ask of someone reading a note.
+    const time = toolbar.createDiv({ cls: "modelica-studio-embed-time" });
+    time.createSpan({ cls: "modelica-studio-muted", text: "t_end" });
+    const endInput = time.createEl("input", {
+      type: "number",
+      cls: "modelica-studio-embed-time-input",
+      attr: { step: "any", min: "0" },
+    });
+    endInput.value = String(this.span());
+    this.timeInput = endInput;
+    const applyTime = () => this.applyStopTime(Number(endInput.value));
+    endInput.addEventListener("change", applyTime);
+    endInput.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        applyTime();
+      }
+    });
+    time.createSpan({ cls: "modelica-studio-muted", text: "s" });
     // The editing surface belongs to the main view, so the block links to it
     // rather than trying to reproduce an editor inside a note.
     const open = toolbar.createEl("button", { cls: "modelica-studio-btn" });
@@ -347,7 +464,10 @@ export class EmbeddedDiagram {
       this.diag("after 250 ms");
     }, 250);
 
-    if (this.opts.autoSimulate) void this.simulate();
+    if (this.opts.autoSimulate && this.claimAutoSimulation()) void this.simulate();
+    // A block that has already run this session repaints what it last had, so a
+    // re-render does not blank the pane while the reader is editing something.
+    else this.restoreLastResult();
   }
 
   /** Report the embed's own geometry, for diagnosing a blank diagram. */
@@ -366,6 +486,27 @@ export class EmbeddedDiagram {
         ` editor=${ed?.cssWidth ?? -1}x${ed?.cssHeight ?? -1} dpr=${ed?.dpr ?? -1}` +
         ` draws=${ed?.drawCount ?? -1}`
     );
+  }
+
+  /**
+   * Adopt a span typed into the block's own field.
+   *
+   * The value goes into the block's directive rather than the shared per-model
+   * setting: a block's own span beats the model's, so writing it anywhere else
+   * would leave the field showing one number while the block ran another.
+   */
+  private applyStopTime(value: number): void {
+    if (!Number.isFinite(value) || value <= 0) {
+      if (this.timeInput) this.timeInput.value = String(this.span());
+      return;
+    }
+    this.opts.stopTime = value;
+    this.blockStopTime = value;
+    // Into the note, so the number survives a reload the same way a moved
+    // component does.
+    const model = this.editor?.getModel() ?? this.parse();
+    if (model) this.persist(model);
+    void this.simulate();
   }
 
   /** The pane this model was last left showing, if the user has chosen. */
@@ -553,17 +694,11 @@ export class EmbeddedDiagram {
           visible: seed.has(s.name),
         };
       });
-      // A result whose every variable is constant plots as a flat line, which
-      // reads as a failure; say so rather than presenting it as success.
-      const varying = result.series.filter((s) => {
-        const v = (s.values ?? []).filter(Number.isFinite);
-        return v.length > 1 && Math.max(...v) - Math.min(...v) > 1e-9;
-      }).length;
-      this.setStatus(
-        varying === 0
-          ? `${result.time.length} samples · nothing varies · ${result.simulateMs} ms`
-          : `${result.time.length} samples · ${varying} varying · ${result.simulateMs} ms`
-      );
+      // Kept for the next time this block is rebuilt, then reported: a result
+      // whose every variable is constant plots as a flat line, which reads as a
+      // failure, so that is said rather than presented as success.
+      this.rememberResult();
+      this.reportResultStatus();
       void summarize;
       // A simulation is only useful if its result is visible -- but a user who
       // has switched to the diagram has said they want the diagram, and this
@@ -593,7 +728,10 @@ export class EmbeddedDiagram {
     // right edge. The canvas is hidden while the diagram shows, so fall back to
     // the container for the width in that state.
     const width = Math.max(200, Math.floor(host.clientWidth || this.container.clientWidth || 480));
-    const height = Math.max(200, Math.round((this.container.clientWidth || 480) * 0.42));
+    // The height the block asked for, for whichever pane is showing. A fraction
+    // of the width stood here instead, so `height=...` appeared to do nothing at
+    // all whenever the plot was the pane on show -- which is the default.
+    const height = Math.max(120, Math.round(this.opts.height));
     let canvas = this.plotCanvas;
     if (!canvas) {
       canvas = host.createEl("canvas", { cls: "modelica-studio-embed-plot-canvas" });

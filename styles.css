@@ -662,6 +662,19 @@ body.modelica-studio-resizing * {
   border-bottom: 1px solid var(--background-modifier-border);
 }
 
+.modelica-studio-embed-time {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 4px;
+}
+
+.modelica-studio-embed-time-input {
+  width: 76px;
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
 .modelica-studio-embed-status {
   margin-left: auto;
   font-size: 11px;

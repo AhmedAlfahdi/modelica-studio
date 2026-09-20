@@ -1173,3 +1173,185 @@ test("a block's diagram and its plot both answer the pointer", async () => {
     "the readout does not linger"
   );
 });
+
+test("a block runs itself once, and its height and span are its own", async () => {
+  // Three things a reader of a note can see, all of them wrong before.
+  //
+  // The block ran again every time the note re-rendered, and an edit made in its
+  // own diagram writes the note back -- so one drag mounted it four times and ran
+  // four simulations, which reads as the block flashing while you move something.
+  //
+  // `height=` was honoured by the diagram pane and ignored by the plot, which is
+  // the pane on show by default -- so the directive appeared to do nothing.
+  //
+  // And the span was reachable only by editing the directive text.
+  //
+  // The page yields MICROTASKS only: Electron reports the page loaded once its
+  // module has finished evaluating, and a timer here would mean the results were
+  // read before the tests had run.
+  const SETTLE = "for (let i = 0; i < 50; i++) { await Promise.resolve(); }";
+  const out = page(
+    `import { EmbeddedDiagram } from "${ROOT}/src/view/embed";`,
+    "let runs = 0;",
+    "let lastRequest = null;",
+    "const time = Array.from({ length: 101 }, (_, i) => i / 10);",
+    "const result = { time, series: [{ name: 'r1.v', values: time.map((t) => t), unit: 'V' }],",
+    "  compileMs: 1, simulateMs: 1, reusedBinary: true, warnings: [] };",
+    "const DEF = (name) => ({",
+    "  name, shortName: name.split('.').pop(),",
+    "  icon: [{ kind: 'Rectangle', extent: [-40, -40, 40, 40], lineColor: [0, 0, 0],",
+    "    fillColor: [255, 255, 255], linePattern: 'Solid', fillPattern: 'Solid', visible: true }],",
+    "  diagram: [], ports: [{ name: 'p', type: 'Pin', isFlow: true, causality: 'acausal' }],",
+    "  portPositions: { p: [0, 0] }, parameters: [], hasIcon: true,",
+    "});",
+    "const SOURCE = ['model Two',",
+    "  '  //@ time=3 height=420',",
+    "  '  Modelica.Electrical.Analog.Basic.Resistor r1;',",
+    "  '  Modelica.Electrical.Analog.Basic.Resistor r2;',",
+    "  'equation', '  connect(r1.p, r2.p);', 'end Two;'].join('\\n');",
+    "const EDITED = SOURCE.replace('r1;', 'r1(R = 5);');",
+    "function mount(source) {",
+    "  const el = document.body.createDiv();",
+    "  el.style.width = '800px';",
+    "  const host = {",
+    "    app: {},",
+    "    library: { component: (n) => DEF(n) },",
+    "    backend: { simulate: async (req) => { runs++; lastRequest = req; return result; } },",
+    "    settings: { labelScale: 1, hoverParameters: true, startTime: 0, stopTime: 1,",
+    "      numberOfIntervals: 100, tolerance: 1e-6, solver: '' },",
+    "    stopTimeFor: () => 1,",
+    "    showSetupHelp: () => {},",
+    "  };",
+    "  const embed = new EmbeddedDiagram(host, el, source || SOURCE,",
+    "    { showPlot: true, height: 320, autoSimulate: true, stopTime: 0 }, () => {});",
+    "  embed.mount();",
+    "  const at = (sel) => { const n = el.querySelector(sel); return n ? n.textContent : 'MISSING'; };",
+    "  const input = () => el.querySelector('.modelica-studio-embed-time input');",
+    "  const simulateButton = () => el.querySelector('.modelica-studio-embed-toolbar button.mod-cta');",
+    "  return { embed, el, at, input, simulateButton, status: () => at('.modelica-studio-embed-status') };",
+    "}",
+    "",
+    "// 1. Opening the note: one run, over the span the block declares.",
+    "const first = mount();",
+    "window.test('opening the note runs the block once', () => String(runs));",
+    "window.test('over the span the block declares', () => String(lastRequest.stopTime));",
+    SETTLE,
+    "window.test('and the run lands', () => String(!!first.embed.result));",
+    "",
+    "// 2. The same block rebuilt by a re-render, as Obsidian does on every edit.",
+    "first.embed.destroy();",
+    "const second = mount();",
+    "window.test('a re-render runs nothing', () => String(runs));",
+    "window.test('the pane is not blanked', () => String(!!second.embed.result));",
+    "window.test('and the kept run is reported as it was', () => second.status());",
+    "",
+    "// 3. The button, which is now the only way a run starts.",
+    "window.test('the button runs it', () => { second.simulateButton().click(); return String(runs); });",
+    SETTLE,
+    "window.test('and the run lands again', () => String(!!second.embed.result));",
+    "",
+    "// 4. The model edited in the note: the kept curve is shown, and said to be old.",
+    "second.embed.destroy();",
+    "const edited = mount(EDITED);",
+    "window.test('an edited model runs nothing by itself', () => String(runs));",
+    "window.test('it still shows the run it had', () => String(!!edited.embed.result));",
+    "window.test('and says that run is out of date', () => edited.status());",
+    "window.test('the button runs the edit', () => { edited.simulateButton().click(); return String(runs); });",
+    SETTLE,
+    "window.test('after which it is current again', () => edited.status());",
+    "",
+    "// 5. Height, which the plot pane ignored.",
+    "window.test('the plot pane is as tall as the directive asked', () => {",
+    "  const c = edited.embed.plotCanvas;",
+    "  return c.style.height + ' / bitmap ' + c.height;",
+    "});",
+    "window.test('and so is the diagram pane',",
+    "  () => edited.el.querySelector('.modelica-studio-embed-canvas').style.height);",
+    "",
+    "// 6. The span field.",
+    "window.test('the toolbar carries a t_end field showing the block span',",
+    "  () => edited.el.querySelector('.modelica-studio-embed-time').textContent.trim().replace(/\\s+/g, ' ') + ' = ' + edited.input().value);",
+    "window.test('typing a span runs the block over it', () => {",
+    "  runs = 0;",
+    "  const i = edited.input();",
+    "  i.value = '7.5';",
+    "  i.dispatchEvent(new Event('change'));",
+    "  return String(runs);",
+    "});",
+    SETTLE,
+    "window.test('and writes it into the block directive',",
+    "  () => edited.embed.source.split('\\n').slice(0, 2).map((l) => l.trim()).join(' | '));",
+    "window.test('a span that is not a span is refused', () => {",
+    "  const i = edited.input();",
+    "  i.value = '-2';",
+    "  i.dispatchEvent(new Event('change'));",
+    "  return i.value + ' after ' + runs + ' runs';",
+    "});",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  const d = passed(out);
+
+  assert.equal(d["opening the note runs the block once"], "1", "a block previews its result on open");
+  assert.equal(d["over the span the block declares"], "3", "time=3 is honoured");
+  assert.equal(d["and the run lands"], "true", "the run completes");
+
+  assert.equal(
+    d["a re-render runs nothing"],
+    "1",
+    "an edit that writes the note back must not start a second simulation"
+  );
+  assert.equal(d["the pane is not blanked"], "true", "the kept result is repainted instead");
+  assert.match(
+    d["and the kept run is reported as it was"],
+    /^101 samples · 1 varying · 1 ms$/,
+    `an unchanged model reports its run: ${d["and the kept run is reported as it was"]}`
+  );
+
+  assert.equal(d["the button runs it"], "2", "the button is how a run starts after the first");
+  assert.equal(d["and the run lands again"], "true", "and it lands");
+
+  assert.equal(d["an edited model runs nothing by itself"], "2", "editing the source runs nothing");
+  assert.equal(d["it still shows the run it had"], "true", "the pane keeps its curve");
+  assert.match(
+    d["and says that run is out of date"],
+    /from the previous run, press Simulate/,
+    `a curve that no longer matches the source says so: ${d["and says that run is out of date"]}`
+  );
+  assert.equal(d["the button runs the edit"], "3", "the button runs the edited model");
+  assert.match(
+    d["after which it is current again"],
+    /^101 samples · 1 varying · 1 ms$/,
+    `and the warning goes: ${d["after which it is current again"]}`
+  );
+
+  // The plot is the pane that shows by default, and it ignored `height` entirely.
+  assert.match(
+    d["the plot pane is as tall as the directive asked"],
+    /^420px \/ bitmap \d+$/,
+    `height=420 reaches the plot: ${d["the plot pane is as tall as the directive asked"]}`
+  );
+  assert.doesNotMatch(
+    d["the plot pane is as tall as the directive asked"],
+    /bitmap 0$/,
+    "and the bitmap is allocated for it"
+  );
+  assert.equal(d["and so is the diagram pane"], "420px", "the same height for both panes");
+
+  assert.equal(
+    d["the toolbar carries a t_end field showing the block span"],
+    "t_ends = 3",
+    "the field shows the span the block actually runs"
+  );
+  assert.equal(d["typing a span runs the block over it"], "1", "a typed span re-runs the block");
+  assert.match(
+    d["and writes it into the block directive"],
+    /\/\/@ time=7\.5 height=420/,
+    `the typed span reaches the note: ${d["and writes it into the block directive"]}`
+  );
+  assert.equal(
+    d["a span that is not a span is refused"],
+    "7.5 after 1 runs",
+    "a nonsensical span changes nothing and runs nothing"
+  );
+});

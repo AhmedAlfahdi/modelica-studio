@@ -5,6 +5,44 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.6] — 2026-09-23
+
+### Fixed
+
+- **Moving a component in a block ran a simulation, four times over.** An edit
+  made in a block's own diagram is written back into the note, and a note that
+  re-renders rebuilds the block from scratch — and every rebuild simulated itself
+  again. Measured in the vault: one drag mounted the block four times and ran four
+  simulations, which is the flicker while dragging. A block now runs itself once,
+  when the note is opened; after that **Simulate** is the only thing that starts a
+  run.
+
+- **A rebuilt block repaints the result it already had**, so "never run twice"
+  does not mean the plot empties on every edit. Each model's last result is kept,
+  together with the source it came from — and when the model has changed since
+  that run, the status line says `from the previous run, press Simulate` rather
+  than letting a stale curve pass itself off as current.
+
+- **`height=` did nothing in the plot view.** The directive's height was applied
+  to the diagram's canvas and ignored by the plot, which sized itself to 42% of
+  the pane's width instead — and the plot is the pane that shows by default, so
+  the directive looked inert. Both panes now use it, which is what "height" means
+  for a box that shows one at a time.
+
+- **The status line stuck on "Simulating…"** after a run finished, because the
+  samples/varying report had been moved into the shared helper that a rebuilt
+  block uses and was no longer called on the fresh-run path.
+
+### Added
+
+- **A `t_end` field on an embedded block**, the same control the Studio keeps in
+  its results row. A block's span was reachable only by editing the directive
+  text. The field shows the span the block actually runs — its own directive if it
+  has one, otherwise the model's — and typing a new one re-runs the block over it
+  and writes it into the directive, so it survives a reload the way a moved
+  component does. A value that is not a span is refused and the field goes back to
+  what the block is running.
+
 ## [0.2.0-beta.5] — 2026-09-22
 
 ### Added

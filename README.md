@@ -113,7 +113,7 @@ pre-release and BRAT is the intended route.
    Settings → Community plugins.
 
 To pin a version instead of tracking the latest, use BRAT's **frozen** option and
-name the release, for example `0.2.0-beta.5`.
+name the release, for example `0.2.0-beta.6`.
 
 BRAT reports a mismatch if a release's tag, its name and the version inside the
 released `manifest.json` disagree. They are kept identical here on purpose, so an
@@ -138,7 +138,7 @@ To try it without your own vault, `examples/vault/` is a ready-made one — see
 npm install
 npm run build          # typecheck, then bundle to main.js
 npm run dev            # rebuild on change
-npm test               # 560 tests, including a numerical audit of every example
+npm test               # 561 tests, including a numerical audit of every example
 ```
 
 `npm test` runs the real OpenModelica compiler, so it needs `omc` on your PATH
@@ -172,9 +172,21 @@ end Divider;
 ````
 
 The first line is an optional **directive**: `time` sets the simulation span,
-`height` the canvas height, `result`/`edit` whether the plot starts open. It lives
-inside the block because Obsidian does not pass a fenced block's info string to a
+`height` the height of the pane (the plot and the diagram are the same box, shown
+one at a time), `result`/`edit` which of the two starts open, and
+`noauto`/`manual` to keep the block from running itself at all. It lives inside
+the block because Obsidian does not pass a fenced block's info string to a
 plugin, so a fence reading `modelica time=2` never reaches the code.
+
+**A block runs itself once**, when the note is opened. After that the **Simulate**
+button is what starts a run — the plot has a `t_end` field beside it, and typing a
+span there re-runs the block over it and records it in the directive. The reason is
+that an edit made in a block's own diagram writes the note back, and a note that
+re-renders rebuilds the block: without the rule, dragging one component ran four
+simulations, which is the flicker you would see while moving something. A rebuilt
+block repaints the result it already had; if the model has changed since that run,
+the line above the plot says so rather than the stale curve passing itself off as
+current.
 
 Blocks follow the studio: change the plot scale, the visible traces or the
 simulation span there and the blocks follow. Parameter values travel with it, and
