@@ -1396,3 +1396,142 @@ test("a block runs itself once, and its height and span are its own", async () =
     "a nonsensical span changes nothing and runs nothing"
   );
 });
+
+test("the embed picker finds a model, follows its span, and places the block", async () => {
+  // The command surface for putting a simulation into a note. Worth driving in a
+  // real DOM because everything about it is interaction: what the search leaves
+  // in the list, which row the keyboard is on, and what text the chosen row puts
+  // at the cursor.
+  //
+  // Placing a block is asynchronous — a vault file has to be read — so the page
+  // yields MICROTASKS between acting and asserting. Timers are not available: the
+  // runner reads the results as soon as the page's module has finished
+  // evaluating.
+  const SETTLE = "for (let i = 0; i < 10; i++) { await Promise.resolve(); }";
+  const out = page(
+    `import { EmbedPickerModal, buildEmbedCandidates } from "${ROOT}/src/view/embed-insert";`,
+    "const cand = (label, group, detail, stopTime, source) => ({",
+    "  label, group, detail, stopTime, load: () => source || ('model ' + label + '\\nend ' + label + ';'),",
+    "});",
+    "const candidates = buildEmbedCandidates({",
+    "  current: { name: 'Mine', detail: 'from Modelica Studio', stopTime: 4, load: () => 'model Mine\\nend Mine;' },",
+    "  examples: [",
+    "    cand('RLC', 'Examples', 'Electrical: series RLC step response', 0.05),",
+    "    cand('Tank', 'Examples', 'Fluid: a tank draining', 20),",
+    "  ],",
+    "  saved: [cand('Drain', 'In this vault', 'Modelica/tank-drain.mo', 20)],",
+    "});",
+    "",
+    "// The editor the block lands in: the three methods insertEmbedBlock uses.",
+    "let placed = null;",
+    "const editor = {",
+    "  getCursor: () => ({ line: 2, ch: 0 }),",
+    "  getLine: () => '',",
+    "  replaceSelection: (t) => { placed = t; },",
+    "};",
+    "",
+    "function mount(over) {",
+    "  placed = null;",
+    "  const modal = new EmbedPickerModal(Object.assign({ app: {}, candidates, editor }, over || {}));",
+    "  modal.open();",
+    "  const el = modal.contentEl;",
+    "  const rows = () => Array.from(el.querySelectorAll('.modelica-studio-embed-item'));",
+    "  const labels = () => rows().map((r) => r.querySelector('.modelica-studio-embed-item-label').textContent).join(',');",
+    "  const groups = () => Array.from(el.querySelectorAll('.modelica-studio-embed-group')).map((g) => g.textContent).join(' | ');",
+    "  const search = el.querySelector('.modelica-studio-embed-search');",
+    "  const type = (q) => { search.value = q; search.dispatchEvent(new Event('input')); };",
+    "  const key = (k) => search.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));",
+    "  const stop = () => el.querySelectorAll('.modelica-studio-embed-number')[0].value;",
+    "  return { modal, el, rows, labels, groups, type, key, stop, search };",
+    "}",
+    "",
+    "const lists = mount();",
+    "window.test('the picker lists the sections and selects the first row',",
+    "  () => lists.groups() + ' :: ' + lists.labels() + ' :: selected=' + lists.rows()[0].className.includes('is-selected'));",
+    "",
+    "const narrowed = mount();",
+    "narrowed.type('rlc');",
+    "window.test('typing narrows it to what matched', () => narrowed.labels() + ' | groups=' + narrowed.groups());",
+    "const byPath = mount();",
+    "byPath.type('modelica/');",
+    "window.test('a path match is found too', () => byPath.labels());",
+    "const nothing = mount();",
+    "nothing.type('zzzz');",
+    "window.test('a query that matches nothing says so',",
+    "  () => nothing.rows().length + ' rows, ' + (nothing.el.querySelector('.modelica-studio-embed-empty') ? 'noted' : 'NOT NOTED'));",
+    "",
+    "const keyboard = mount();",
+    "const firstSpan = keyboard.stop();",
+    "keyboard.key('ArrowDown');",
+    "const secondSpan = keyboard.stop();",
+    "keyboard.key('ArrowUp');",
+    "window.test('the span follows the row the keyboard moves to',",
+    "  () => firstSpan + ' -> ' + secondSpan + ' -> ' + keyboard.stop());",
+    "const searched = mount();",
+    "searched.type('rlc');",
+    "window.test('the span goes back to the row when it is searched for', () => searched.stop());",
+    "",
+    "const entered = mount();",
+    "entered.type('tank');",
+    "entered.key('Enter');",
+    SETTLE,
+    "window.test('Enter places the selected row at the cursor',",
+    "  () => (placed === null ? 'NOTHING PLACED' : placed));",
+    "",
+    "const clicked = mount();",
+    "clicked.rows()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));",
+    SETTLE,
+    "window.test('clicking a row places it too',",
+    "  () => (placed === null ? 'NOTHING PLACED' : placed.split('\\n')[0] + ' / ' + placed.split('\\n')[1]));",
+    "",
+    "const nowhere = mount({ editor: undefined, noEditorHint: 'open a note first' });",
+    "window.test('with nowhere to put it, Insert is offered but refuses', () => {",
+    "  const insert = Array.from(nowhere.el.querySelectorAll('button')).find((b) => b.textContent === 'Insert');",
+    "  return 'disabled=' + insert.disabled + ' label=' + insert.getAttribute('aria-label');",
+    "});",
+    "nowhere.key('Enter');",
+    SETTLE,
+    "window.test('and Enter there places nothing', () => String(placed));",
+    "",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  const d = passed(out);
+
+  assert.equal(
+    d["the picker lists the sections and selects the first row"],
+    "The model you have open | Examples | In this vault :: Mine,RLC,Tank,Drain :: selected=true",
+    "sections, rows and the first selection"
+  );
+  assert.equal(
+    d["typing narrows it to what matched"],
+    "RLC | groups=Examples",
+    "the search filters and keeps the section heading"
+  );
+  assert.equal(d["a path match is found too"], "Drain", "a model is found by where its file lives");
+  assert.equal(d["a query that matches nothing says so"], "0 rows, noted", "an empty result says so");
+  assert.equal(
+    d["the span follows the row the keyboard moves to"],
+    "4 -> 0.05 -> 4",
+    "the field tracks the selection, and a fiftieth of a second keeps its digits"
+  );
+  assert.equal(d["the span goes back to the row when it is searched for"], "0.05", "including after a search");
+
+  const block = d["Enter places the selected row at the cursor"];
+  assert.equal(
+    block,
+    "```modelica\n//@ time=20\nmodel Tank\nend Tank;\n```\n",
+    `the block that landed: ${block}`
+  );
+  assert.equal(
+    d["clicking a row places it too"],
+    "```modelica / //@ time=4",
+    "a click places the row it landed on, with that model's span"
+  );
+  assert.equal(
+    d["with nowhere to put it, Insert is offered but refuses"],
+    "disabled=true label=open a note first",
+    "the button says why it cannot be used"
+  );
+  assert.equal(d["and Enter there places nothing"], "null", "and nothing is silently dropped");
+});

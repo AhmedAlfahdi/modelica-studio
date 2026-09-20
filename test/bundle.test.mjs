@@ -248,7 +248,14 @@ test("bundle instantiates and its lifecycle runs", { skip: !HAS_BUNDLE }, async 
 
   assert.ok(commands.length >= 2, `expected commands, got ${commands.length}`);
   const ids = commands.map((c) => c.id);
-  for (const want of ["open-modelica-studio", "simulate-current-model"]) {
+  for (const want of [
+    "open-modelica-studio",
+    "simulate-current-model",
+    // Embedding a simulation in a note. Asserted here as well as driven in the
+    // DOM test, because a command that is not registered is not offered at all.
+    "embed-simulation",
+    "embed-current-model",
+  ]) {
     assert.ok(ids.includes(want), `command "${want}" registered (got ${ids.join(",")})`);
   }
 

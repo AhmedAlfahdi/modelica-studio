@@ -5,6 +5,44 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.9] — 2026-09-26
+
+### Added
+
+- **Commands that put a simulation into a note.** *Embed a simulation in the
+  current note* asks which model — the one open in the studio, one of the built-in
+  examples, or a saved `.mo` file, in one searchable list — and writes the block at
+  the cursor. *Embed the open model in the current note* skips the question. The
+  same dialog copies the block to the clipboard instead, for pasting anywhere.
+
+  The dialog exists because of the directive. A block's options live on its first
+  line — `//@ time=20 height=400 edit` — because Obsidian does not pass a code
+  block's info string to a plugin, so they cannot live in the fence. That makes
+  them the one part of embedding a model that has to be remembered, and the part
+  where being wrong is invisible: a block that runs for a twentieth of the time its
+  model needs draws a plausible, useless line. So the dialog writes them: the span
+  follows the model you pick, and the height and the pane it opens on are fields
+  rather than syntax. The chosen span is written into the block, so a later change
+  to the plugin's own default cannot re-scale a note written against a
+  3000-second thermal model.
+
+  A vault file is offered by path and read only when it is chosen, and a model
+  whose recorded file is missing is left out rather than offered as a row that
+  produces nothing.
+
+- The Help window explains the two commands, and the README's block section says
+  how to get a block into a note.
+
+### Fixed
+
+- **A test of the save rule had anchored itself on the first mention of a method's
+  name** rather than its definition, so adding a caller earlier in the file made it
+  read the wrong text. It now anchors on the definition.
+- The reshape test pins the diagram's viewport instead of leaving it to an
+  automatic fit. It reasons about where a wire is on the canvas, and a fit landing
+  between that reasoning and the pointer events would invalidate it; the test is
+  about the undo history, not the framing.
+
 ## [0.2.0-beta.8] — 2026-09-25
 
 ### Fixed

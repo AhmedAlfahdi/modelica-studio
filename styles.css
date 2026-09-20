@@ -1014,6 +1014,72 @@ body.modelica-studio-resizing * {
 }
 
 /* ------------------------------------------------------------------ *
+ * Embed picker (command palette → insert a simulation block)
+ * ------------------------------------------------------------------ */
+
+.modelica-studio-embed-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modelica-studio-embed-search {
+  width: 100%;
+}
+
+/* The list is the part that scrolls; the options and buttons stay put. */
+.modelica-studio-embed-list {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+}
+
+.modelica-studio-embed-group {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.modelica-studio-embed-item {
+  padding: 6px 10px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+
+.modelica-studio-embed-item.is-selected {
+  background-color: var(--background-modifier-hover);
+  border-left-color: var(--interactive-accent);
+}
+
+.modelica-studio-embed-item-label {
+  font-size: 13px;
+}
+
+.modelica-studio-embed-item-detail {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.modelica-studio-embed-empty {
+  padding: 14px 10px;
+  color: var(--text-muted);
+}
+
+.modelica-studio-embed-number {
+  width: 90px;
+}
+
+.modelica-studio-embed-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+/* ------------------------------------------------------------------ *
  * Source editor
  *
  * The textarea and the highlighted layer behind it must agree exactly on

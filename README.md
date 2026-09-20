@@ -113,7 +113,7 @@ pre-release and BRAT is the intended route.
    Settings → Community plugins.
 
 To pin a version instead of tracking the latest, use BRAT's **frozen** option and
-name the release, for example `0.2.0-beta.8`.
+name the release, for example `0.2.0-beta.9`.
 
 BRAT reports a mismatch if a release's tag, its name and the version inside the
 released `manifest.json` disagree. They are kept identical here on purpose, so an
@@ -138,7 +138,7 @@ To try it without your own vault, `examples/vault/` is a ready-made one — see
 npm install
 npm run build          # typecheck, then bundle to main.js
 npm run dev            # rebuild on change
-npm test               # 562 tests, including a numerical audit of every example
+npm test               # 569 tests, including a numerical audit of every example
 ```
 
 `npm test` runs the real OpenModelica compiler, so it needs `omc` on your PATH
@@ -170,6 +170,14 @@ equation
 end Divider;
 ```
 ````
+
+To put one in a note, use the command palette: **Embed a simulation in the current
+note** asks which model — the one open in the studio, a built-in example, or a saved
+`.mo` file — and writes the block at the cursor with its options filled in (how long
+to run for, how tall it is, and whether it opens on the plot or the diagram). The
+span follows whichever model you pick. The same dialog will copy the block to the
+clipboard instead, and **Embed the open model in the current note** skips the
+question and uses the model in the studio.
 
 The first line is an optional **directive**: `time` sets the simulation span,
 `height` the height of the pane (the plot and the diagram are the same box, shown

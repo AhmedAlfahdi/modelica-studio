@@ -255,6 +255,28 @@ export class HelpModal extends Modal {
         "available; turn the parameter back on, or remove the wire.",
     });
 
+    /* ---- putting one in a note ---- */
+    el.createEl("h4", { text: "Embedding in a note" });
+    el.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "“Embed a simulation in the current note”, from the command palette, puts a " +
+        "model into the note you are writing — the one open in the Studio, a built-in " +
+        "example, or a saved .mo file — as a block that simulates and plots where it " +
+        "sits. The dialog writes the block's options for you: how long to run for, how " +
+        "tall it is, and whether it opens on the plot or the diagram. The span follows " +
+        "the model you pick, because a fifty-millisecond RLC circuit and a " +
+        "three-thousand-second thermal model are not interchangeable. The same dialog " +
+        "copies the block to the clipboard instead, for pasting anywhere.",
+    });
+    el.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "Once embedded, a block runs itself once when the note is opened and then only " +
+        "when you press Simulate; its own t_end field re-runs it over a new span and " +
+        "records that in the block.",
+    });
+
     /* ---- shortcuts ---- */
     el.createEl("h4", { text: "Diagram" });
     this.shortcutTable(el, DIAGRAM_SHORTCUTS);

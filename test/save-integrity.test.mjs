@@ -34,7 +34,14 @@ test("saving writes the source, not a re-serialisation of the diagram", () => {
 });
 
 test("the source wins while it is current, and the diagram when it is not", () => {
-  const rule = /sourceForSave\(\): string \{[\s\S]*?return serializeDiagram\(this\.model\);\n  \}/.exec(main);
+  // Anchored on the DEFINITION, not on the first mention of the name: the method
+  // is called from several places, and a caller that happens to sit earlier in the
+  // file made this read the wrong 1400 characters above it.
+  const at = main.indexOf("sourceForSave(): string {");
+  assert.ok(at > 0, "the rule is defined");
+  const rule = /sourceForSave\(\): string \{[\s\S]*?return serializeDiagram\(this\.model\);\n  \}/.exec(
+    main.slice(at)
+  );
   assert.ok(rule, "the rule is present");
   assert.match(rule[0], /if \(this\.modelSource\.trim\(\) && !this\.modelOutdated\) return this\.modelSource/);
   assert.match(rule[0], /return serializeDiagram\(this\.model\)/, "with the serializer as a fallback");
@@ -42,7 +49,7 @@ test("the source wins while it is current, and the diagram when it is not", () =
   // regenerated from the diagram -- not for one that came from a file. The
   // explanation lives in the doc comment ABOVE the method, which is where a reader
   // meets it, so it is looked for there rather than inside the body.
-  const above = main.slice(Math.max(0, main.indexOf("sourceForSave()") - 1400), main.indexOf("sourceForSave()"));
+  const above = main.slice(Math.max(0, at - 1400), at);
   assert.match(above, /assembled by dragging/, "and the rule says when it applies");
 });
 

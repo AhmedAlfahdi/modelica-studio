@@ -403,6 +403,13 @@ test("a reshape is one undoable step, and undo restores the derived route", asyn
       "  connections: [{ id: 'a.p|b.p', from: { component:'a', port:'p' }, to: { component:'b', port:'p' }, points: [] }],",
       "  equations: [], graphics: [], variables: [], parameters: [] };",
       "const editor = new SchematicEditor(host, model, { lookup: (n) => DEFS[n] });",
+      // No auto-fit. The viewport is read to work out where a route is on the
+      // canvas, so a fit landing between that read and the pointer events would
+      // leave the press at coordinates the route no longer occupies -- which reads
+      // as this test failing with nothing wrong in the editor. It is about the
+      // history, not the framing, so the viewport is pinned instead.
+      "editor.autoFit = false;",
+      "editor.resize();",
       "const canvas = editor.canvasEl;",
       "const rect = canvas.getBoundingClientRect();",
       "// A DIAGRAM point to a screen point: +y is up in the diagram, down on the canvas.",

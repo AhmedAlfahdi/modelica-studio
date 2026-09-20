@@ -9,7 +9,17 @@
  * Obsidian loads plugins synchronously during startup.
  */
 
-import { App, Modal, Notice, Plugin, TFile, WorkspaceLeaf, type MarkdownPostProcessorContext } from "obsidian";
+import {
+  App,
+  MarkdownView,
+  Modal,
+  Notice,
+  Plugin,
+  TFile,
+  WorkspaceLeaf,
+  type Editor,
+  type MarkdownPostProcessorContext,
+} from "obsidian";
 import { LibraryIndex, loadLibraryIndex } from "./modelica/library";
 import {
   EmbeddedDiagram,
@@ -22,13 +32,23 @@ import { detectOmc, installHint, type OmcInstallation } from "./omc/locate";
 import { emptyDiagram, type DiagramModel } from "./modelica/types";
 import { findClass, parseModelica, toDiagramModel } from "./modelica/parser";
 import { serializeDiagram } from "./modelica/serializer";
-import { findExample } from "./modelica/examples";
+import { EXAMPLES, findExample } from "./modelica/examples";
 import { AiError, chat, listModels } from "./ai/client";
 import { RunLog } from "./ai/run-log";
 import { AiEnvironment, describeAvailableClasses, describeEnvironment, describeLog } from "./ai/context";
 import { LEGACY_SECRET_NAME, buildMessages, legacyKeyOf, secretNameOf } from "./ai/prompts";
 import { describeSaveState, type SaveDescription } from "./modelica/save-state";
 import { TextModal } from "./view/saved-models-modal";
+import { describeSavedModels } from "./modelica/saved-models";
+import {
+  EMBED_DEFAULTS,
+  EmbedPickerModal,
+  buildEmbedCandidates,
+  embedBlockText,
+  insertEmbedBlock,
+  type EmbedCandidate,
+  type EmbedCandidateSource,
+} from "./view/embed-insert";
 import {
   formatExchanges,
   formatSummary,
@@ -193,6 +213,106 @@ export default class ModelicaStudioPlugin extends Plugin {
    */
   refreshEmbeds(): void {
     for (const embed of this.embeds.values()) embed.refreshDiagram();
+  }
+
+  /**
+   * The editor in front of the user, if there is one.
+   *
+   * `activeEditor` covers source mode and live preview. The view lookup is the
+   * fallback for reading mode, where the note is still the active view but has no
+   * editor to insert into.
+   */
+  private activeEditor(): Editor | undefined {
+    const active = this.app.workspace.activeEditor;
+    if (active?.editor) return active.editor;
+    return this.app.workspace.getActiveViewOfType(MarkdownView)?.editor ?? undefined;
+  }
+
+  /**
+   * Everything that can be embedded, nearest first.
+   *
+   * A vault's `.mo` files are offered by PATH and read only when one is chosen:
+   * there may be hundreds, and reading them all to fill a list would cost more
+   * than the list is worth.
+   */
+  private embedCandidates(): EmbedCandidate[] {
+    const vault = this.app.vault;
+    const view = describeSavedModels({
+      modelFolder: this.settings.modelFolder,
+      modelFiles: this.settings.modelFiles,
+      exists: (p) => vault.getAbstractFileByPath(p) instanceof TFile,
+      allModelFiles: vault
+        .getFiles()
+        .filter((f) => f.extension === "mo")
+        .map((f) => f.path),
+    });
+    const file = (path: string): EmbedCandidateSource => {
+      const name = path.split("/").pop()?.replace(/\.mo$/, "") ?? path;
+      return {
+        label: name,
+        group: "In this vault",
+        detail: path,
+        // The span recorded for the model, or its example's, or the default --
+        // the same rule the block itself resolves a span with.
+        stopTime: this.stopTime(name),
+        load: async () => {
+          const f = vault.getAbstractFileByPath(path);
+          if (!(f instanceof TFile)) throw new Error(`${path} is not in the vault`);
+          return vault.read(f);
+        },
+      };
+    };
+    const source = this.sourceForSave();
+    const name = this.model.name;
+    return buildEmbedCandidates({
+      current:
+        source.trim() && name
+          ? {
+              name,
+              detail: "from Modelica Studio",
+              stopTime: this.stopTime(name),
+              // The text that would be saved, not a re-serialisation of the
+              // diagram: anything the code editor holds is part of the model.
+              load: () => source,
+            }
+          : undefined,
+      examples: EXAMPLES.map((e) => ({
+        label: e.name,
+        group: "Examples",
+        detail: e.description,
+        stopTime: e.stopTime,
+        load: () => e.source,
+      })),
+      // A tracked model whose file is missing is left out: every row here has to
+      // be loadable, or choosing it produces nothing.
+      saved: [
+        ...view.rows.filter((r) => r.status !== "missing").map((r) => file(r.path)),
+        ...view.untracked.map(file),
+      ],
+    });
+  }
+
+  /** Ask which model, then place the block at the cursor. */
+  embedIntoNote(): void {
+    const editor = this.activeEditor();
+    new EmbedPickerModal({
+      app: this.app,
+      candidates: this.embedCandidates(),
+      editor,
+      noEditorHint: "open a note and put the cursor where the block should go",
+    }).open();
+  }
+
+  /** Place the model the Studio has open, without asking which. */
+  embedCurrent(editor: Editor): void {
+    const source = this.sourceForSave();
+    if (!source.trim()) {
+      new Notice("Modelica: there is no model to embed.");
+      return;
+    }
+    const name = this.model.name;
+    insertEmbedBlock(editor, embedBlockText(source, { ...EMBED_DEFAULTS, stopTime: this.stopTime(name) }));
+    new Notice(`Modelica: ${name} embedded in the note.`);
   }
 
   /** Show a model's diagram in the main view, opening it if necessary. */
@@ -874,6 +994,25 @@ export default class ModelicaStudioPlugin extends Plugin {
       id: "open-modelica-studio",
       name: "Open Modelica Studio",
       callback: () => void this.activateView(),
+    });
+
+    this.addCommand({
+      id: "embed-simulation",
+      name: "Embed a simulation in the current note",
+      callback: () => this.embedIntoNote(),
+    });
+
+    this.addCommand({
+      id: "embed-current-model",
+      name: "Embed the open model in the current note",
+      // Offered only where there is somewhere to put it: a command that quietly
+      // does nothing is worse than one that is not in the list.
+      checkCallback: (checking) => {
+        const editor = this.activeEditor();
+        if (!editor) return false;
+        if (!checking) this.embedCurrent(editor);
+        return true;
+      },
     });
 
     this.addCommand({
