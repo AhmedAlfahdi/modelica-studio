@@ -5,6 +5,24 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.11] — 2026-09-28
+
+### Added
+
+- **A Copy button on the logs.** The AI prompt log is a read-only dialog, and
+  getting its text out meant selecting it by hand from a scrolling block — which
+  is the part people get wrong when they want to paste a failure into a prompt or
+  a bug report. The same dialog shows a saved revision of a model, so one button
+  serves both. The run log in the results pane already had one.
+
+  All three now go through one helper, which is also a fix: the run log's button
+  wrote to the clipboard and announced "Run log copied." unconditionally.
+  `navigator.clipboard.writeText` rejects for reasons that have nothing to do with
+  the plugin — an unfocused window, a platform that wants a gesture — and a button
+  that claims a copy that did not happen is worse than one that fails loudly,
+  because the paste lands somewhere else, or nowhere. A refusal now says why, and
+  an empty log says there is nothing to copy instead of copying an empty string.
+
 ## [0.2.0-beta.10] — 2026-09-27
 
 ### Fixed

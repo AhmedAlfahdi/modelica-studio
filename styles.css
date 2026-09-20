@@ -1879,6 +1879,14 @@ body.modelica-studio-resizing * {
   color: var(--text-accent);
 }
 /* A revision's text, for reading rather than editing. */
+/* The footer under a read-only text dialog, holding its copy button. */
+.modelica-studio-text-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+}
+
 .modelica-studio-revision-text {
   max-height: 60vh;
   overflow: auto;

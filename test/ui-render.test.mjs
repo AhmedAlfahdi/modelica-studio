@@ -1595,3 +1595,87 @@ test("the embed picker finds a model, follows its span, and places the block", a
   );
   assert.equal(d["and Enter there places nothing"], "null", "and nothing is silently dropped");
 });
+
+test("a read-only log can be copied, and says so either way", async () => {
+  // The AI prompt log had no way to get its text out except selecting it by hand
+  // from a scrolling block, which is the part people get wrong. The same dialog
+  // shows a saved revision, so one button serves both.
+  const out = page(
+    `import { TextModal } from "${ROOT}/src/view/saved-models-modal";`,
+    `import { copyText } from "${ROOT}/src/view/clipboard";`,
+    `import { Notice } from "${ROOT}/test/helpers/obsidian-stub";`,
+    "const copied = [];",
+    "let refuse = null;",
+    "Object.defineProperty(navigator, 'clipboard', {",
+    "  configurable: true,",
+    "  value: { writeText: async (t) => { if (refuse) throw new Error(refuse); copied.push(t); } },",
+    "});",
+    "const notices = () => Notice.messages.slice();",
+    "",
+    "function open(text) {",
+    "  copied.length = 0;",
+    "  const modal = new TextModal({}, 'AI prompt log', text);",
+    "  modal.open();",
+    "  const button = Array.from(modal.contentEl.querySelectorAll('button')).find((b) => b.textContent === 'Copy');",
+    "  return { modal, button };",
+    "}",
+    "",
+    "const full = open('13 exchanges recorded.\\ncompile-error: 1');",
+    "window.test('the log dialog offers a copy button', () => String(!!full.button));",
+    "window.test('and it is not offered as the primary action', () => full.button.className);",
+    "",
+    "Notice.messages.length = 0;",
+    "full.button.click();",
+    "for (let i = 0; i < 10; i++) { await Promise.resolve(); }",
+    "window.test('clicking it copies the text the dialog is showing', () => JSON.stringify(copied));",
+    "window.test('and says so', () => JSON.stringify(notices()));",
+    "window.test('and the dialog stays open', () => String(full.modal.opened));",
+    "",
+    "// A write can be refused for reasons that have nothing to do with the plugin --",
+    "// an unfocused window, a platform that wants a gesture. Claiming success there",
+    "// is how a paste ends up somewhere else, or nowhere.",
+    "const refused = open('some log');",
+    "refuse = 'Document is not focused.';",
+    "Notice.messages.length = 0;",
+    "refused.button.click();",
+    "for (let i = 0; i < 10; i++) { await Promise.resolve(); }",
+    "window.test('a refused write copies nothing', () => JSON.stringify(copied));",
+    "window.test('and the refusal is reported, not claimed as a copy', () => JSON.stringify(notices()));",
+    "refuse = null;",
+    "",
+    "// An empty log should not be presented as something to copy.",
+    "let emptyOk = null;",
+    "Notice.messages.length = 0;",
+    "copyText('', 'the run log').then((v) => { emptyOk = v; });",
+    "for (let i = 0; i < 10; i++) { await Promise.resolve(); }",
+    "window.test('an empty log is not copied as an empty string', () => String(emptyOk) + ' ' + JSON.stringify(notices()));",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  const d = passed(out);
+
+  assert.equal(d["the log dialog offers a copy button"], "true", "there is a Copy button");
+  assert.doesNotMatch(
+    d["and it is not offered as the primary action"],
+    /mod-cta/,
+    "copying is not the primary action of reading a log"
+  );
+  assert.equal(
+    d["clicking it copies the text the dialog is showing"],
+    JSON.stringify(["13 exchanges recorded.\ncompile-error: 1"]),
+    "the exact text on screen reaches the clipboard"
+  );
+  assert.equal(d["and the dialog stays open"], "true", "copying does not close the log");
+  assert.match(d["and says so"], /Run log copied|copied\./, `success is reported: ${d["and says so"]}`);
+  assert.equal(d["a refused write copies nothing"], "[]", "a refused write is not reported as a copy");
+  assert.match(
+    d["and the refusal is reported, not claimed as a copy"],
+    /could not be copied — Document is not focused\./,
+    `the reason reaches the user: ${d["and the refusal is reported, not claimed as a copy"]}`
+  );
+  assert.match(
+    d["an empty log is not copied as an empty string"],
+    /^false \["Modelica: there is nothing in the run log to copy\."\]$/,
+    `nothing to copy is said, not done: ${d["an empty log is not copied as an empty string"]}`
+  );
+});

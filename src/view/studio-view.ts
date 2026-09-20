@@ -12,6 +12,7 @@
 import { App, ItemView, Modal, Notice, Platform, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import type ModelicaStudioPlugin from "../main";
 import { SchematicEditor } from "./editor";
+import { copyText } from "./clipboard";
 import {
   drawPlot,
   plotThemeFrom,
@@ -2334,8 +2335,9 @@ export class ModelicaStudioView extends ItemView {
       setIcon(copyBtn, "clipboard-copy");
       copyBtn.createSpan({ text: "Copy log" });
       copyBtn.addEventListener("click", () => {
-        void navigator.clipboard.writeText(this.plugin.runLog.toText());
-        new Notice("Run log copied.");
+        // Through the shared helper, which reports a refused write instead of
+        // claiming a copy that did not happen.
+        void copyText(this.plugin.runLog.toText() || "No simulations have been run yet.", "the run log");
       });
       const clearBtn = logBar.createEl("button", { cls: "modelica-studio-btn" });
       setIcon(clearBtn, "trash");

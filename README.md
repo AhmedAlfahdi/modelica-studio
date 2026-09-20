@@ -113,7 +113,7 @@ pre-release and BRAT is the intended route.
    Settings → Community plugins.
 
 To pin a version instead of tracking the latest, use BRAT's **frozen** option and
-name the release, for example `0.2.0-beta.10`.
+name the release, for example `0.2.0-beta.11`.
 
 BRAT reports a mismatch if a release's tag, its name and the version inside the
 released `manifest.json` disagree. They are kept identical here on purpose, so an
@@ -323,6 +323,12 @@ modelicaStudio.runLog        // every simulation this session
 modelicaStudio.setVerbose(true)   // print every diagnostic line
 modelicaStudio.trace()            // what the plugin held, step by step
 ```
+
+The **run log** (the Run log tab under the results) and the **AI prompt log**
+(Show the AI prompt log in the command palette) each have a **Copy** button, which
+puts exactly what the pane is showing on the clipboard — for a bug report, or for
+pasting into a prompt. A copy that the platform refuses says so rather than
+claiming success.
 
 `trace()` is the one for a suspected loss. The file log records what the plugin
 **did**; the trace records what it **held** at each moment that changed — which

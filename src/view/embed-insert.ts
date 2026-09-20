@@ -19,6 +19,7 @@
 
 import { App, Editor, Modal, Notice, Setting } from "obsidian";
 import { fuzzyFilter } from "../modelica/fuzzy";
+import { copyText } from "./clipboard";
 
 /* ------------------------------------------------------------------ */
 /* The block                                                          */
@@ -460,18 +461,9 @@ export class EmbedPickerModal extends Modal {
         new Notice(`Modelica: ${this.host.noEditorHint}`);
         return;
       }
-      try {
-        await navigator.clipboard.writeText(text);
-      } catch (err) {
-        // A clipboard write can be refused (no permission, no gesture). Saying so
-        // beats a notice that claims success and a block that is nowhere.
-        new Notice(
-          `Modelica: the clipboard refused the write — ${err instanceof Error ? err.message : err}`
-        );
-        return;
-      }
-      new Notice(`Modelica: ${row.candidate.label} copied as a block.`);
-      this.close();
+      // A refused write is reported by the helper rather than swallowed: a notice
+      // that claims success and a block that is nowhere is the worst outcome.
+      if (await copyText(text, `${row.candidate.label} as a block`)) this.close();
       return;
     }
 

@@ -15,6 +15,7 @@ import { App, Menu, Modal, Notice, Setting, TFile, setIcon } from "obsidian";
 import type ModelicaStudioPlugin from "../main";
 import { describeRow, describeSavedModels, repairModelFiles, type SavedModelRow } from "../modelica/saved-models";
 import type { Revision } from "../modelica/revisions";
+import { copyText } from "./clipboard";
 
 export class SavedModelsModal extends Modal {
   private plugin: ModelicaStudioPlugin;
@@ -392,6 +393,14 @@ export class TextModal extends Modal {
     this.titleEl.setText(this.title);
     const pre = this.contentEl.createEl("pre", { cls: "modelica-studio-revision-text" });
     pre.setText(this.text);
+    // The whole reason to open one of these is to get the text OUT — into a bug
+    // report, a prompt, a diff against the current model. Selecting it by hand
+    // from a scrolling block is the part people get wrong.
+    const actions = this.contentEl.createDiv({ cls: "modelica-studio-text-actions" });
+    const copy = actions.createEl("button", { cls: "modelica-studio-btn" });
+    setIcon(copy, "clipboard-copy");
+    copy.createSpan({ text: "Copy" });
+    copy.addEventListener("click", () => void copyText(this.text, `the ${this.title.toLowerCase()}`));
   }
 
   onClose(): void {
