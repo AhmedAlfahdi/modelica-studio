@@ -5,6 +5,25 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.10] — 2026-09-27
+
+### Fixed
+
+- **Highlighting a model in the embed picker did not stay highlighted.** Every
+  hover rebuilt the list, so the row the pointer was resting on was replaced —
+  the highlight blinked — and the scroll that came with the rebuild could reflow
+  the dialog and leave a *different* row under the pointer, which then
+  highlighted in turn. Measured in the test: hovering the twenty-ninth of thirty
+  rows scrolled the list from 66 to 1038 pixels, and the row element was a new
+  one each time.
+
+  The list is now painted once per search and the highlight is moved by toggling a
+  class on the existing rows, so the element under the pointer is never replaced.
+  A hover never scrolls at all — the row under the pointer is by definition
+  visible — and the keyboard, which can walk to a row that is out of view, moves
+  the list's own scroll offset rather than calling `scrollIntoView`, which also
+  scrolls the dialog the list sits in.
+
 ## [0.2.0-beta.9] — 2026-09-26
 
 ### Added

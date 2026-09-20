@@ -333,6 +333,7 @@ export class EmbedPickerModal extends Modal {
     this.rows = filterCandidates(this.host.candidates, query);
     this.selected = 0;
     this.renderList();
+    this.select(0, false);
     this.followSelection();
   }
 
@@ -352,9 +353,7 @@ export class EmbedPickerModal extends Modal {
         group = row.candidate.group;
         list.createDiv({ cls: "modelica-studio-embed-group", text: group });
       }
-      const item = list.createDiv({
-        cls: `modelica-studio-embed-item${i === this.selected ? " is-selected" : ""}`,
-      });
+      const item = list.createDiv({ cls: "modelica-studio-embed-item" });
       item.tabIndex = 0;
       item.setAttribute("role", "button");
       item.setAttribute("aria-label", `${row.candidate.label} — ${row.candidate.detail}`);
@@ -364,20 +363,56 @@ export class EmbedPickerModal extends Modal {
         this.select(i);
         void this.place(false);
       });
-      item.addEventListener("pointerenter", () => this.select(i));
+      // No scrolling on hover, deliberately: scrolling the list under a resting
+      // pointer moves a different row beneath it, which highlights in turn, which
+      // scrolls again. The row the pointer is on is by definition visible.
+      item.addEventListener("pointerenter", () => this.select(i, false));
     });
   }
 
-  private select(index: number): void {
+  /**
+   * Move the highlight.
+   *
+   * The rows are patched, never rebuilt. Rebuilding them replaced the element the
+   * pointer was resting on — so the highlight blinked, and the scroll that came
+   * with the rebuild could reflow the dialog and leave a different row under the
+   * pointer, which then highlighted in turn. That is what "highlighting a model
+   * does not stay highlighted" was: the list was fighting the mouse.
+   *
+   * `scroll` is for the keyboard, which can walk to a row that is out of view. It
+   * moves the LIST's own scroll offset rather than calling `scrollIntoView`, which
+   * also scrolls the dialog the list sits in and would shift every row.
+   */
+  private select(index: number, scroll = true): void {
     if (index < 0 || index >= this.rows.length) return;
     this.selected = index;
-    // Repainted rather than patched: the list is small, and the group headings
-    // mean a row's element is not at a fixed offset from its index.
-    const scroll = this.listEl?.scrollTop ?? 0;
-    this.renderList();
-    if (this.listEl) this.listEl.scrollTop = scroll;
+    const items = this.itemElements();
+    items.forEach((el, i) => el.toggleClass("is-selected", i === this.selected));
+    if (scroll) this.scrollRowIntoView(items[this.selected]);
     this.followSelection();
-    this.listEl?.querySelector(".is-selected")?.scrollIntoView({ block: "nearest" });
+  }
+
+  /**
+   * The row elements, in the order of {@link rows}.
+   *
+   * One element per row, built in one pass, with the group headings as siblings —
+   * which is what makes the index of a row and the index of its element the same
+   * number.
+   */
+  private itemElements(): HTMLElement[] {
+    if (!this.listEl) return [];
+    return Array.from(this.listEl.querySelectorAll<HTMLElement>(".modelica-studio-embed-item"));
+  }
+
+  private scrollRowIntoView(el: HTMLElement | undefined): void {
+    const list = this.listEl;
+    if (!list || !el) return;
+    const top = el.offsetTop;
+    const bottom = top + el.offsetHeight;
+    if (top < list.scrollTop) list.scrollTop = top;
+    else if (bottom > list.scrollTop + list.clientHeight) {
+      list.scrollTop = bottom - list.clientHeight;
+    }
   }
 
   /** Point the span field at whatever is selected. */

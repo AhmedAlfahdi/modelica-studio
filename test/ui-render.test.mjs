@@ -1442,7 +1442,9 @@ test("the embed picker finds a model, follows its span, and places the block", a
     "  const type = (q) => { search.value = q; search.dispatchEvent(new Event('input')); };",
     "  const key = (k) => search.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));",
     "  const stop = () => el.querySelectorAll('.modelica-studio-embed-number')[0].value;",
-    "  return { modal, el, rows, labels, groups, type, key, stop, search };",
+    "  const hover = (i) => rows()[i].dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }));",
+    "  const list = () => el.querySelector('.modelica-studio-embed-list');",
+    "  return { modal, el, rows, labels, groups, type, key, stop, hover, list, search };",
     "}",
     "",
     "const lists = mount();",
@@ -1483,6 +1485,39 @@ test("the embed picker finds a model, follows its span, and places the block", a
     SETTLE,
     "window.test('clicking a row places it too',",
     "  () => (placed === null ? 'NOTHING PLACED' : placed.split('\\n')[0] + ' / ' + placed.split('\\n')[1]));",
+    "",
+    "// Hovering. The list is given a height of its own so that scrolling is a real",
+    "// possibility: without one the container never scrolls and the assertion below",
+    "// would hold for any implementation at all.",
+    "const many = buildEmbedCandidates({",
+    "  examples: Array.from({ length: 30 }, (_, i) => cand('M' + i, 'Examples', 'machine ' + i, 1)),",
+    "  saved: [],",
+    "});",
+    "const hovered = mount({ candidates: many });",
+    "hovered.list().style.maxHeight = '60px';",
+    "hovered.list().style.overflowY = 'auto';",
+    "const hoverTarget = hovered.rows()[2];",
+    "hovered.hover(2);",
+    "window.test('hovering a row keeps that row highlighted', () => {",
+    "  const now = hovered.rows();",
+    "  const still = now[2];",
+    "  return 'sameElement=' + (hoverTarget === still) +",
+    "    ' selected=' + still.className.includes('is-selected') +",
+    "    ' others=' + now.filter((r, i) => i !== 2 && r.className.includes('is-selected')).length;",
+    "});",
+    "const scrolledBefore = hovered.list().scrollTop;",
+    "hovered.hover(29);",
+    "window.test('and hovering does not scroll the list out from under the pointer',",
+    "  () => scrolledBefore + ' -> ' + hovered.list().scrollTop);",
+    "window.test('and the highlight moved to the row under the pointer', () => {",
+    "  const now = hovered.rows();",
+    "  return 'last=' + now[29].className.includes('is-selected') +",
+    "    ' first=' + now[0].className.includes('is-selected');",
+    "});",
+    "const keyboardScroll = hovered.list().scrollTop;",
+    "hovered.key('ArrowUp');",
+    "window.test('the keyboard can still walk into view, scrolling the list only',",
+    "  () => 'before=' + keyboardScroll + ' after=' + hovered.list().scrollTop + ' selected=' + hovered.rows()[28].className.includes('is-selected'));",
     "",
     "const nowhere = mount({ editor: undefined, noEditorHint: 'open a note first' });",
     "window.test('with nowhere to put it, Insert is offered but refuses', () => {",
@@ -1528,6 +1563,31 @@ test("the embed picker finds a model, follows its span, and places the block", a
     "```modelica / //@ time=4",
     "a click places the row it landed on, with that model's span"
   );
+  // The reported fault: the highlight did not stay where the pointer was. Every
+  // hover rebuilt the list, so the element under the cursor was replaced, and the
+  // scroll that followed could reflow the modal and move a different row beneath
+  // the pointer -- which then highlighted in turn.
+  assert.equal(
+    d["hovering a row keeps that row highlighted"],
+    "sameElement=true selected=true others=0",
+    "the row under the pointer keeps the highlight, and keeps its element"
+  );
+  assert.equal(
+    d["and hovering does not scroll the list out from under the pointer"],
+    "0 -> 0",
+    "a hover never scrolls the list"
+  );
+  assert.equal(
+    d["and the highlight moved to the row under the pointer"],
+    "last=true first=false",
+    "and the highlight follows the pointer rather than sticking to the first row"
+  );
+  assert.match(
+    d["the keyboard can still walk into view, scrolling the list only"],
+    /^before=0 after=\d+ selected=true$/,
+    `the keyboard still reaches rows out of view: ${d["the keyboard can still walk into view, scrolling the list only"]}`
+  );
+
   assert.equal(
     d["with nowhere to put it, Insert is offered but refuses"],
     "disabled=true label=open a note first",
