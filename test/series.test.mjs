@@ -14,7 +14,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { buildLibs, repoRoot } from "./helpers/build.mjs";
 
-const LIB = buildLibs("series-lib", ["src/view/series.ts"]);
+const LIB = buildLibs("series-lib", ["src/view/series.ts", "src/view/plot.ts"]);
+const plotMod = await import(path.join(LIB, "plot.js"));
 const { defaultSeriesNames, summarizeSeries } = await import(path.join(LIB, "series.js"));
 
 /** Build a SimResult-shaped object from name -> values. */
@@ -201,4 +202,89 @@ test("exactly one place decides which traces are shown", () => {
       `every style is seeded from the chosen set or hidden, got: ${c[0].replace(/\s+/g, " ")}`
     );
   }
+});
+
+/* ------------------------------------------------------------------ */
+
+/** A result over `0..10` with one trace. */
+function rampResult() {
+  const time = Array.from({ length: 101 }, (_, i) => i / 10);
+  return {
+    time,
+    series: [{ name: "x", values: time.map((t) => t), unit: "" }],
+    compileMs: 1,
+    simulateMs: 1,
+    reusedBinary: true,
+    warnings: [],
+  };
+}
+
+test("the time under the pointer is read off the layout the plot is drawn with", () => {
+  // The crosshair is only honest if the pointer-to-time mapping inverts the
+  // mapping `drawPlot` placed the pixels with. The Studio kept a second copy of
+  // the margins for this, and they had drifted -- left 62 against the renderer's
+  // 56 -- so the time under the crosshair was not the time at that pixel.
+  const result = rampResult();
+  const styles = { x: { color: "#888", visible: true } };
+  const W = 800;
+  const H = 300;
+  const lay = plotMod.layoutForResult(W, H, result, styles);
+  const view = { xMin: 0, xMax: 10 };
+
+  // The same layout the renderer paints with, asserted rather than assumed.
+  assert.deepEqual(
+    plotMod.plotLayout(W, H, true),
+    lay,
+    "the layout the readout uses is the one the renderer draws with"
+  );
+
+  // The ends of the axes are the ends of the range, and the mapping is linear
+  // across the plot area -- not across the canvas, which is what a mapping that
+  // ignored the margins would give.
+  assert.equal(plotMod.timeAtPlotX(lay.left, W, H, result, styles, view), 0, "the left axis is xMin");
+  assert.equal(
+    plotMod.timeAtPlotX(lay.left + lay.width, W, H, result, styles, view),
+    10,
+    "the right axis is xMax"
+  );
+  assert.equal(
+    plotMod.timeAtPlotX(lay.left + lay.width / 2, W, H, result, styles, view),
+    5,
+    "and the middle is the middle"
+  );
+  // Across the whole canvas rather than the plot area would put these wrong by
+  // the margins: 25% of 800 is not 25% of the 730 pixels between the axes.
+  assert.ok(
+    Math.abs(plotMod.timeAtPlotX(lay.left + lay.width * 0.25, W, H, result, styles, view) - 2.5) < 1e-9,
+    "a quarter of the way across the axes is a quarter of the range"
+  );
+
+  // The margins belong to the axis labels and the legend, not to the data.
+  assert.equal(plotMod.timeAtPlotX(2, W, H, result, styles, view), undefined, "left of the axes: no reading");
+  assert.equal(
+    plotMod.timeAtPlotX(W - 2, W, H, result, styles, view),
+    undefined,
+    "right of the axes: none either"
+  );
+
+  // A zoomed view reads off the VISIBLE window: using the run's own range would
+  // put the readout behind the crosshair.
+  const zoomed = { xMin: 4, xMax: 6 };
+  assert.equal(plotMod.timeAtPlotX(lay.left, W, H, result, styles, zoomed), 4, "the left axis follows the zoom");
+  assert.equal(
+    plotMod.timeAtPlotX(lay.left + lay.width / 2, W, H, result, styles, zoomed),
+    5,
+    "and so does the middle"
+  );
+
+  // Hiding every trace drops the legend, which widens the plot area. The readout
+  // has to follow, or it would be reading the layout of a plot nobody is looking at.
+  const allHidden = { x: { color: "#888", visible: false } };
+  const noLegend = plotMod.layoutForResult(W, H, result, allHidden);
+  assert.notEqual(noLegend.width, lay.width, "the legend changes the plot width");
+  assert.equal(
+    plotMod.timeAtPlotX(noLegend.left + noLegend.width, W, H, result, allHidden, view),
+    10,
+    "and the readout uses the width that is actually drawn"
+  );
 });

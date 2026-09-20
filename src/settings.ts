@@ -252,7 +252,8 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           "of the default. The label is sized from the component's on-screen " +
           "size, so this moves that whole curve rather than pinning one size: " +
           "it still shrinks when you zoom out, and two components side by side " +
-          "do not start overlapping."
+          "do not start overlapping. Applies to the Studio and to diagrams " +
+          "embedded in notes."
       )
       .addSlider((sl) =>
         sl
@@ -262,7 +263,12 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           .onChange(async (v) => {
             this.plugin.settings.labelScale = v / 100;
             await this.plugin.saveSettings();
+            // Both surfaces, because the setting is read while drawing: the
+            // Studio repaints itself, and the embeds in any open note repaint
+            // here. Telling only the Studio left a note's diagrams at the old
+            // size until something else happened to redraw them.
             this.plugin.getView()?.refreshDiagram();
+            this.plugin.refreshEmbeds();
           })
       );
 
@@ -271,13 +277,16 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
       .setDesc(
         "While the pointer rests on a component, shows what its parameters are " +
           "set to, with the ones this instance overrides first. Reading a " +
-          "diagram's settings otherwise means selecting each component in turn."
+          "diagram's settings otherwise means selecting each component in turn. " +
+          "Applies to the Studio and to diagrams embedded in notes; a large " +
+          "list fills columns rather than being cut off."
       )
       .addToggle((t) =>
         t.setValue(this.plugin.settings.hoverParameters).onChange(async (v) => {
           this.plugin.settings.hoverParameters = v;
           await this.plugin.saveSettings();
           this.plugin.getView()?.refreshDiagram();
+          this.plugin.refreshEmbeds();
         })
       );
 

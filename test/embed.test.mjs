@@ -43,6 +43,9 @@ fs.writeFileSync(
 const { parseEmbedOptions, replaceFencedBlock } = await import(path.join(staging, "embed.js"));
 const { parseDirective } = await import(path.join(staging, "embed.js"));
 const { shouldRevealPlot, effectiveShowPlot } = await import(path.join(staging, "embed.js"));
+const plotMod = await import(
+  path.join(buildLibs("embed-plot", ["src/view/plot.ts"]), "plot.js")
+);
 // The directive formatter lives with the language helpers, which have no
 // Obsidian dependency.
 const langMod = await import(

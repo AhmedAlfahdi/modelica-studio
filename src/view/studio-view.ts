@@ -12,7 +12,14 @@
 import { App, ItemView, Modal, Notice, Platform, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import type ModelicaStudioPlugin from "../main";
 import { SchematicEditor } from "./editor";
-import { drawPlot, plotThemeFrom, seriesColor, summarize, type SeriesStyle } from "./plot";
+import {
+  drawPlot,
+  plotThemeFrom,
+  seriesColor,
+  summarize,
+  timeAtPlotX,
+  type SeriesStyle,
+} from "./plot";
 import { defaultSeriesNames } from "./series";
 import { collectParameters } from "./parameters";
 import type { TreeNode as PackageNode } from "../modelica/library";
@@ -2815,18 +2822,24 @@ export class ModelicaStudioView extends ItemView {
       const rect = canvas.getBoundingClientRect();
       const x = ev.clientX - rect.left;
       const y = ev.clientY - rect.top;
-      const lay = plotLayoutFor(rect.width, rect.height, this.result);
-      if (x < lay.left || x > lay.left + lay.width) {
-        this.cursorX = undefined;
-      } else {
-        const view = this.zoom ?? {
-          xMin: this.result.time[0],
-          xMax: this.result.time[this.result.time.length - 1],
-        };
-        // Read the time off the VISIBLE window, not the whole run: after a
-        // zoom the two differ and the readout would lag the crosshair.
-        this.cursorX = view.xMin + ((x - lay.left) / lay.width) * (view.xMax - view.xMin);
-      }
+      // The time at that pixel, computed from the layout `drawPlot` paints with,
+      // so the readout cannot drift from the drawing. This used to be a second,
+      // hand-kept copy of the margins and it had already drifted -- left 62
+      // against the renderer's 56 -- putting the readout beside its own crosshair.
+      // Read off the VISIBLE window, not the whole run: after a zoom the two
+      // differ and the readout would lag.
+      const view = this.zoom ?? {
+        xMin: this.result.time[0],
+        xMax: this.result.time[this.result.time.length - 1],
+      };
+      this.cursorX = timeAtPlotX(
+        x,
+        rect.width,
+        rect.height,
+        this.result,
+        this.seriesStyles,
+        view
+      );
       void y;
       redraw();
     });
@@ -3761,15 +3774,6 @@ function clampToRange(z: { xMin: number; xMax: number }, lo: number, hi: number)
 }
 
 /** Layout used by the plot event handlers; mirrors plot.ts. */
-function plotLayoutFor(w: number, h: number, result: SimResult) {
-  const left = 62;
-  const showLegend = result.series.length > 0;
-  const right = showLegend ? Math.min(220, Math.max(120, w * 0.28)) : 16;
-  const top = 14;
-  const bottom = 34;
-  return { left, right, top, bottom, width: Math.max(10, w - left - right), height: Math.max(10, h - top - bottom) };
-}
-
 /**
  * Best-effort line number from a parse error message.
  *

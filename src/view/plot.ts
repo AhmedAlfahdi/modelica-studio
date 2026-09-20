@@ -137,6 +137,60 @@ export function plotLayout(w: number, h: number, showLegend: boolean): PlotLayou
   };
 }
 
+/**
+ * The traces a plot will actually draw, given the per-trace styles.
+ *
+ * Exported because the layout depends on whether the legend is drawn, and the
+ * pointer-to-time mapping has to use the SAME layout the pixels were drawn with.
+ */
+export function visibleSeries(
+  series: SimSeries[],
+  styles: Record<string, SeriesStyle> = {}
+): SimSeries[] {
+  return series.filter((s) => styles[s.name]?.visible !== false);
+}
+
+/**
+ * The layout `drawPlot` will use for a result.
+ *
+ * One rule in one place. The Studio used to map the pointer to a time with its
+ * own margins -- left 62 rather than 56, top 14 rather than 12, a different
+ * legend allowance -- so the time under the crosshair disagreed with the axis it
+ * was pointing at, and by more the narrower the pane.
+ */
+export function layoutForResult(
+  w: number,
+  h: number,
+  result: SimResult,
+  styles: Record<string, SeriesStyle> = {}
+): PlotLayout {
+  return plotLayout(w, h, visibleSeries(result.series, styles).length > 0);
+}
+
+/**
+ * The time under a pointer at canvas x, or undefined when it is off the axes.
+ *
+ * The inverse of the mapping `drawPlot` used to place the pixels, and it lives
+ * here so it cannot drift from it. Both surfaces had their own copy of the
+ * margins; the Studio's had already drifted (left 62 against the renderer's 56),
+ * so the time under its crosshair was not the time at that pixel.
+ *
+ * `view` is the range actually drawn, which is not always the run's own range:
+ * a zoomed plot reads off its visible window.
+ */
+export function timeAtPlotX(
+  x: number,
+  width: number,
+  height: number,
+  result: SimResult,
+  styles: Record<string, SeriesStyle> = {},
+  view: { xMin: number; xMax: number }
+): number | undefined {
+  const lay = layoutForResult(width, height, result, styles);
+  if (x < lay.left || x > lay.left + lay.width) return undefined;
+  return view.xMin + ((x - lay.left) / lay.width) * (view.xMax - view.xMin);
+}
+
 /** How many legend rows fit, and whether the legend is drawn at all. */
 export function legendPlan(lay: PlotLayout, w: number): { show: boolean; rows: number } {
   const show = w - lay.left - lay.width - 14 >= 100;
@@ -211,7 +265,7 @@ export function drawPlot(
   ctx.fillStyle = theme.background;
   ctx.fillRect(0, 0, cssWidth, cssHeight);
 
-  const visible = result.series.filter((s) => opts.styles[s.name]?.visible !== false);
+  const visible = visibleSeries(result.series, opts.styles);
   const lay = plotLayout(cssWidth, cssHeight, visible.length > 0);
 
   if (result.time.length === 0) {

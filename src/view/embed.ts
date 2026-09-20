@@ -16,7 +16,15 @@
 import { Notice, type App } from "obsidian";
 import type ModelicaStudioPlugin from "../main";
 import { SchematicEditor } from "./editor";
-import { drawPlot, plotThemeFrom, seriesColor, summarize, type SeriesStyle } from "./plot";
+import {
+  drawPlot,
+  layoutForResult,
+  plotThemeFrom,
+  seriesColor,
+  summarize,
+  timeAtPlotX,
+  type SeriesStyle,
+} from "./plot";
 import { currentTheme } from "../render/theme";
 import { parseModelica, findClass, toDiagramModel } from "../modelica/parser";
 import { serializeDiagram } from "../modelica/serializer";
@@ -214,6 +222,8 @@ export class EmbeddedDiagram {
   /** The parameter values the current result was produced with. */
   private lastParameters: Record<string, string> | null = null;
   private readonly resizeHandler = () => this.drawPlot();
+  /** The data x under the pointer on the plot, or undefined when it is away. */
+  private cursorX: number | undefined;
   /** Watches the plot pane's width; a window resize does not cover it. */
   private plotObserver?: ResizeObserver;
 
@@ -297,6 +307,15 @@ export class EmbeddedDiagram {
       lookup: (n) => this.host.library.component(n),
       onChange: (m) => this.persist(m),
       onStatus: (t) => this.setStatus(t),
+      // The same two settings the Studio passes. Without a `display` callback
+      // the editor falls back to its own default -- label scale 1, no hover
+      // readout -- so the setting existed, said it applied to hovering a
+      // component, and did nothing in a note, which is the surface most people
+      // read a diagram on.
+      display: () => ({
+        labelScale: this.host.settings.labelScale,
+        hoverParameters: this.host.settings.hoverParameters,
+      }),
     });
     // Paint now, and fit once the element has been measured.
     //
@@ -581,22 +600,39 @@ export class EmbeddedDiagram {
       this.plotCanvas = canvas;
       window.addEventListener("resize", this.resizeHandler);
       this.observePlotHost(host);
+      canvas.addEventListener("pointermove", this.plotPointerMove);
+      canvas.addEventListener("pointerleave", this.plotPointerLeave);
     }
     const dpr = window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
-    canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+    // Assigning width or height reallocates the backing store and clears the
+    // canvas, so it is done only when the size actually changed: the hover
+    // readout repaints on every pointer move.
+    const pixelW = Math.floor(width * dpr);
+    const pixelH = Math.floor(height * dpr);
+    if (canvas.width !== pixelW || canvas.height !== pixelH) {
+      canvas.width = pixelW;
+      canvas.height = pixelH;
+    }
+    if (canvas.style.width !== `${width}px`) canvas.style.width = `${width}px`;
+    if (canvas.style.height !== `${height}px`) canvas.style.height = `${height}px`;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const theme = currentTheme();
+    // The layout the renderer is about to paint with, so the readout is sized to
+    // the box that exists rather than to a guess.
+    const lay = layoutForResult(width, height, this.result, this.styles);
     drawPlot(ctx, width, height, this.result, {
       theme: plotThemeFrom(theme),
       legendBackground: theme.plotLegendBackground,
       styles: this.styles,
       view: this.plotView(),
       dpr,
+      cursorX: this.cursorX,
+      // As many traces as the box has room for rather than a fixed six: the pane
+      // is as tall as the note makes it, and a readout taller than the plot runs
+      // off the bottom.
+      cursorRows: Math.max(1, Math.floor((height - lay.top - 16) / 14) - 1),
     });
   }
 
@@ -684,6 +720,43 @@ export class EmbeddedDiagram {
     this.plotObserver.observe(host);
   }
 
+  /**
+   * Track the pointer across the plot and read the values off the crosshair.
+   *
+   * The same readout the Studio's plots have. It is bound to the canvas rather
+   * than to the pane so it goes quiet by itself when the diagram is the pane on
+   * show -- a hidden canvas receives no pointer events.
+   */
+  private readonly plotPointerMove = (ev: PointerEvent) => {
+    const canvas = this.plotCanvas;
+    if (!this.result || !canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const next = timeAtPlotX(
+      ev.clientX - rect.left,
+      rect.width,
+      rect.height,
+      this.result,
+      this.styles,
+      this.plotView()
+    );
+    // Redrawing only when the reading changed keeps a pointer sweeping the
+    // margins from repainting the plot on every event.
+    if (next === undefined && this.cursorX === undefined) return;
+    this.cursorX = next;
+    this.drawPlot();
+  };
+
+  private readonly plotPointerLeave = () => {
+    if (this.cursorX === undefined) return;
+    this.cursorX = undefined;
+    this.drawPlot();
+  };
+
+  /** Repaint after a settings change that the diagram reads while drawing. */
+  refreshDiagram(): void {
+    this.editor?.requestDraw();
+  }
+
   /** Release listeners and the editor. */
   destroy(): void {
     this.destroyed = true;
@@ -694,6 +767,11 @@ export class EmbeddedDiagram {
     this.plotObserver = undefined;
     this.editor?.destroy();
     this.editor = null;
+    const canvas = this.plotCanvas;
+    if (canvas) {
+      canvas.removeEventListener("pointermove", this.plotPointerMove);
+      canvas.removeEventListener("pointerleave", this.plotPointerLeave);
+    }
     this.plotCanvas = null;
     this.plotHost = null;
     this.result = null;

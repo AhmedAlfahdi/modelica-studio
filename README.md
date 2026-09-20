@@ -113,7 +113,7 @@ pre-release and BRAT is the intended route.
    Settings → Community plugins.
 
 To pin a version instead of tracking the latest, use BRAT's **frozen** option and
-name the release, for example `0.2.0-beta.4`.
+name the release, for example `0.2.0-beta.5`.
 
 BRAT reports a mismatch if a release's tag, its name and the version inside the
 released `manifest.json` disagree. They are kept identical here on purpose, so an
@@ -138,7 +138,7 @@ To try it without your own vault, `examples/vault/` is a ready-made one — see
 npm install
 npm run build          # typecheck, then bundle to main.js
 npm run dev            # rebuild on change
-npm test               # 558 tests, including a numerical audit of every example
+npm test               # 560 tests, including a numerical audit of every example
 ```
 
 `npm test` runs the real OpenModelica compiler, so it needs `omc` on your PATH
@@ -179,6 +179,13 @@ plugin, so a fence reading `modelica time=2` never reaches the code.
 Blocks follow the studio: change the plot scale, the visible traces or the
 simulation span there and the blocks follow. Parameter values travel with it, and
 a block re-simulates when a value it ran with changes.
+
+A block answers the pointer the way the studio does. Resting on a component shows
+what its parameters are set to — the ones the instance overrides first — which is
+the **Show parameters when hovering a component** setting under
+**Settings → Modelica Studio → Diagram labels**, and it applies to embedded
+diagrams as well as the studio. Moving the pointer across the plot reads the time
+and every visible trace's value at that point, with a crosshair on it.
 
 ## AI assistance
 

@@ -183,6 +183,18 @@ export default class ModelicaStudioPlugin extends Plugin {
     for (const embed of this.embeds.values()) embed.applyChart();
   }
 
+  /**
+   * Repaint every open embed.
+   *
+   * Needed by the settings the diagram READS while drawing -- the label size and
+   * the hover readout -- because those are consulted per frame rather than
+   * captured at construction. The Studio is told separately; a note holds any
+   * number of blocks and they are not part of its view.
+   */
+  refreshEmbeds(): void {
+    for (const embed of this.embeds.values()) embed.refreshDiagram();
+  }
+
   /** Show a model's diagram in the main view, opening it if necessary. */
   async openDiagram(source: string): Promise<void> {
     await this.setModelFromSource(source);

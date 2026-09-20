@@ -5,6 +5,36 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.5] — 2026-09-22
+
+### Added
+
+- **Embedded diagrams show a component's parameters on hover.** This is the
+  Studio's readout, on the surface most people actually read a diagram from. The
+  setting already existed and said it applied to hovering a component, but the
+  editor was only ever handed it by the Studio: a block fell back to the editor's
+  own default of no readout at all, so the setting was invisible in every note.
+  The label size was ignored in notes for the same reason. Both now reach the
+  embed, and changing either repaints the blocks already on screen rather than
+  waiting for something else to redraw them.
+
+- **Embedded plots read the values off a crosshair.** Moving the pointer across a
+  block's plot now shows the time under it and each visible trace's value at that
+  moment, the same readout the Studio's plots have had. The margin beside the axes
+  reports nothing rather than extrapolating, and the readout clears when the
+  pointer leaves.
+
+### Fixed
+
+- **A Studio plot's crosshair did not agree with its own axis.** The pointer was
+  mapped to a time with a second, hand-kept copy of the plot's margins — left 62
+  against the renderer's 56, a different legend allowance, different top and
+  bottom — so the value under the crosshair belonged to a slightly different pixel
+  than the one being pointed at, and by more the narrower the pane. Both surfaces
+  now invert the mapping the renderer actually drew with, from one shared
+  function, and the readout lists as many traces as its box has room for instead
+  of a fixed six.
+
 ## [0.2.0-beta.4] — 2026-09-21
 
 ### Fixed

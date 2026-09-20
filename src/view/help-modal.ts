@@ -236,7 +236,14 @@ export class HelpModal extends Modal {
         "that differ from the class default first — reading a diagram's settings " +
         "otherwise means selecting each component in turn. Switch it off, and set " +
         "the size of the name under each component, in Settings → Modelica Studio → " +
-        "Diagram labels.",
+        "Diagram labels. Both apply to the Studio and to diagrams embedded in notes.",
+    });
+    el.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "Moving the pointer across a result plot reads off the time under it and " +
+        "each trace's value at that moment, with a crosshair marking the position. " +
+        "The Studio's plots and an embedded block's plot work the same way.",
     });
     el.createEl("p", {
       cls: "modelica-studio-muted",
