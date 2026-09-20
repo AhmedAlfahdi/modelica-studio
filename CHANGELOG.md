@@ -19,15 +19,22 @@ version is 0, a minor bump may include changes that are not backward compatible.
   | | |
   |---|---|
   | Classes in the index | 6,127 |
+  | `Icons`/`Examples` scaffolding (1,046) and partial classes (472), never offered | −1,407 |
+  | Names the search looks at | 4,720 |
   | Components the palette can place | **1,365** |
-  | Paths `force` matches | 544 |
-  | …of those, with `force` anywhere in the path | 81 |
-  | …of those, with `force` in the class name | 64 |
+  | Paths `force` matches | 434 |
+  | …of those, with `force` anywhere in the path | 55 |
+  | …of those, with `force` in the class name | 38 |
 
-  The label now says `Showing 200 of 544 matches` — the same fact with the noun
-  attached — and `544 matches` when nothing is held back. The figure for what the
+  The label now says `Showing 200 of 434 matches` — the same fact with the noun
+  attached — and `434 matches` when nothing is held back. The figure for what the
   palette offers was already in the README's exclusion table as "placeable
   classes"; it is unchanged.
+
+  *Corrected the same day:* this entry first carried 544 / 81 / 64, measured over
+  every name in the index rather than over the 4,720 the search actually looks at.
+  The count the palette reports — 434 — is the one in the table now, checked
+  against the running app as well as offline.
 
 ## [0.2.0-beta.11] — 2026-09-28
 
