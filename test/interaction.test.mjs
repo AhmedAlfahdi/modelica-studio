@@ -680,10 +680,27 @@ test("the visible selection box hugs the symbol, and its handles sit on it", () 
     "the visible box is smaller than the canonical extent"
   );
 
-  // Handles are positioned from the same bounds.
+  // Handles are positioned from the same bounds, and named for where they are
+  // DRAWN. A diagram's +y points up while a canvas's points down, so the corner
+  // drawn at the top left is (smaller x, LARGER y) -- `nw` here. Getting this
+  // backwards left the resize cursors pointing at the wrong diagonals and made a
+  // corner drag resize the opposite edge.
   const pts = C.handlePoints(outline);
-  assert.deepEqual(pts.nw.map((v) => +v.toFixed(1)), [-12, 2], "NW handle on the symbol");
-  assert.deepEqual(pts.se.map((v) => +v.toFixed(1)), [12, 18], "SE handle on the symbol");
+  assert.deepEqual(pts.nw.map((v) => +v.toFixed(1)), [-12, 18], "the nw handle is the drawn top left");
+  assert.deepEqual(pts.se.map((v) => +v.toFixed(1)), [12, 2], "the se handle is the drawn bottom right");
+  assert.deepEqual(pts.n.map((v) => +v.toFixed(1)), [0, 18], "n is the top edge, at the larger y");
+  assert.deepEqual(pts.s.map((v) => +v.toFixed(1)), [0, 2], "s is the bottom edge, at the smaller y");
+
+  // Pinned against the screen, not just against the model: after the viewport
+  // has flipped y, `nw` must be ABOVE `se`.
+  const vp = C.viewportTransform({ x: 0, y: 0, scale: 1 }, 1);
+  const [, nwScreenY] = C.apply(vp, ...pts.nw);
+  const [, seScreenY] = C.apply(vp, ...pts.se);
+  assert.ok(nwScreenY < seScreenY, `nw is drawn above se (${nwScreenY} < ${seScreenY})`);
+  assert.ok(
+    C.handleCursor("nw").startsWith("nw") && C.handleCursor("se").startsWith("nw"),
+    "and both take the nwse cursor"
+  );
 
   // And the click target tracks that artwork, with only a small margin — not
   // the whole canonical box, which is invisible empty space.

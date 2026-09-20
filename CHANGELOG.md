@@ -5,6 +5,65 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.4] — 2026-09-21
+
+### Fixed
+
+- **Every symbol was drawn upside down.** A Modelica diagram's `+y` points up and
+  a canvas's `+y` points down, and nothing flipped between the two: the picture
+  was a vertical mirror of the model. It is not subtle once seen — a Ground had
+  its bars above its terminal, and a voltage source's arrow pointed the wrong way
+  — and it was wrong for all 30 examples and every icon in the library.
+
+  The flip now happens in exactly one place, `viewportTransform`, which every
+  drawing already went through, so the symbols, the wires, the pins, the labels
+  and the hit-testing all agree by construction. The model keeps Modelica
+  coordinates throughout, so the source on disk, the serializer, an OMEdit
+  round-trip and the AI context all still mean the same thing.
+
+  One consequence is deliberate and visible: dragging a component **down** now
+  writes a **smaller** `y` in the source, because that is what "down" is in a
+  diagram. Before, the source and the picture disagreed about it.
+
+- **The marquee was painted below the gesture that made it.** The selection band's
+  rect was anchored at the smaller diagram `y`, which is the bottom edge once the
+  viewport negates `y` — and a canvas rect grows downward from the corner it is
+  given, so the band hung at twice the drag's distance below the pointer.
+
+- **A connector pin could be drawn in the middle of its own symbol.** A
+  placement's `origin` was being dropped. MLS §18.6.2 applies the transformation
+  in the order `extent`, `rotation`, `origin`: the icon is mapped onto the extent
+  rectangle, rotated about `{0,0}`, and then shifted by `origin`, so the pin's
+  position is the extent's centre **plus** the origin. Every one of the 393 MSL pin
+  placements that gives an origin writes a symmetric extent, so every one of them
+  collapsed to the icon's centre; 284 landed strictly inside the artwork they
+  belong on the edge of. `Ground`'s pin resolved to the icon origin instead of the
+  top of its stem, and wires met it there. OpenModelica's own
+  `getComponentAnnotations` was used to check the reading.
+
+- **The resize handles were named for a y-down reading**, so `nw` and `se` pointed
+  at the wrong diagonals and dragging a corner resized the opposite edge. Cursors
+  and the resize itself now follow the corner that is actually drawn.
+
+- **A block's pane kept switching back on its own.** An embedded diagram is
+  rebuilt every time its note re-renders — a keystroke, a metadata change, a theme
+  switch — and each rebuild constructed a fresh block whose directive default is
+  "plot open", so a switch to the diagram lasted only until the next re-render.
+  And because a block simulates on open, a result arriving seconds later re-opened
+  the plot over a user who had just closed it. A pane the user chose is now
+  remembered by model name, and a finished simulation reveals its result only when
+  nobody has said otherwise.
+
+### Added
+
+- **`test/orientation.test.mjs`** pins which way is up against the library's own
+  source rather than against the code: the coordinates are read out of `Ground.mo`
+  with a regex and never touch the parser, so the expectation cannot drift along
+  with the bug. It asserts the terminal is the highest thing painted, the bars and
+  the name label descend beneath it, and that every painted `y` is a negated
+  source `y` and none is missing. Reverting the flip fails three of its five
+  tests; dropping the `origin` again fails the fourth.
+
 ## [0.2.0-beta.3] — 2026-09-20
 
 ### Added

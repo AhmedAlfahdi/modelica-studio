@@ -42,6 +42,7 @@ fs.writeFileSync(
 );
 const { parseEmbedOptions, replaceFencedBlock } = await import(path.join(staging, "embed.js"));
 const { parseDirective } = await import(path.join(staging, "embed.js"));
+const { shouldRevealPlot, effectiveShowPlot } = await import(path.join(staging, "embed.js"));
 // The directive formatter lives with the language helpers, which have no
 // Obsidian dependency.
 const langMod = await import(
@@ -409,4 +410,27 @@ test("a block keeps its span through a full read/write cycle", async () => {
   assert.equal(again.opts.stopTime, 6, "the span survives the round trip");
   assert.ok(!again.body.includes("//@"), "and the directive is not left inside the Modelica");
   assert.match(again.body, /^model FluidReservoir/, "the model starts the block");
+});
+
+test("a finished simulation does not overrule a reader who chose the diagram", () => {
+  // The pane used to switch on its own. The rule was "the plot is not showing,
+  // so show it" -- and since a block simulates on open and Obsidian rebuilds it
+  // on every re-render, that fired seconds after a click on "Switch to diagram"
+  // and looked random.
+  assert.equal(shouldRevealPlot(false, undefined), true, "with no choice recorded, a result is shown");
+  assert.equal(shouldRevealPlot(false, true), true, "and again once the reader has asked for the plot");
+  assert.equal(
+    shouldRevealPlot(false, false),
+    false,
+    "but a reader who switched to the diagram is not overruled"
+  );
+  assert.equal(shouldRevealPlot(true, false), false, "nothing to reveal when it is already showing");
+  assert.equal(shouldRevealPlot(true, true), false, "nor then");
+
+  // The other half: the block is rebuilt on every re-render, so a directive
+  // asking for the plot must not reopen it each time.
+  assert.equal(effectiveShowPlot(true, false), false, "the reader's choice beats the directive");
+  assert.equal(effectiveShowPlot(false, true), true, "in both directions");
+  assert.equal(effectiveShowPlot(true, undefined), true, "and the directive stands before any choice");
+  assert.equal(effectiveShowPlot(false, undefined), false, "including when it asks for the diagram");
 });

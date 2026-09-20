@@ -570,9 +570,29 @@ export function placementTransform(inst: ComponentInstance): Transform {
   return mul(translate, mul(rotate, scale));
 }
 
-/** The viewport transform: diagram coordinates to canvas pixels. */
+/**
+ * The viewport transform: diagram coordinates to canvas pixels.
+ *
+ * THE Y AXIS IS NEGATED HERE, and this is the only place it happens. Modelica's
+ * diagram coordinates have +y UP -- `Placement(transformation(extent={{20,20},
+ * {40,40}}))` puts a component above one at y 0-20, and an icon's own
+ * `coordinateSystem(extent={{-100,-100},{100,100}})` has -100 at the bottom.
+ * Canvas y is DOWN. Mapping one to the other without a sign leaves every diagram
+ * mirrored vertically: a `Ground` placed below its circuit was drawn above it,
+ * and the ground symbol itself was drawn upside down, its three bars above the
+ * terminal instead of below.
+ *
+ * Everything that converts between the two spaces goes through this transform or
+ * its inverse, so the flip cannot disagree with itself. The places that map by
+ * hand -- the wire drawing, the rubber band, the fit -- negate y themselves, and
+ * they are the reason this is worth a comment rather than a bare minus sign.
+ *
+ * `vp.x`/`vp.y` remain the canvas position of diagram (0,0), so panning still
+ * moves the content with the pointer in both axes.
+ */
 export function viewportTransform(vp: Viewport, dpr: number): Transform {
-  return { a: vp.scale * dpr, b: 0, c: 0, d: vp.scale * dpr, e: vp.x * dpr, f: vp.y * dpr };
+  const s = vp.scale * dpr;
+  return { a: s, b: 0, c: 0, d: -s, e: vp.x * dpr, f: vp.y * dpr };
 }
 
 /** Bounding box in diagram coordinates, after a transform. */
@@ -1695,13 +1715,19 @@ export function handlePoints(
   const [x1, y1, x2, y2] = b;
   const mx = (x1 + x2) / 2;
   const my = (y1 + y2) / 2;
+  // `n` is the LARGER y, because Modelica's diagram coordinates have +y up: the
+  // northern corner of a box is the one with the greater y, and it is drawn at
+  // the TOP of the canvas once the viewport negates it. Naming these the other
+  // way round -- which is what a y-down reading gives -- points the resize
+  // cursors at the wrong diagonals and makes a corner drag resize the opposite
+  // edge.
   return {
-    nw: [x1, y1],
-    n: [mx, y1],
-    ne: [x2, y1],
+    nw: [x1, y2],
+    n: [mx, y2],
+    ne: [x2, y2],
     e: [x2, my],
-    se: [x2, y2],
-    s: [mx, y2],
+    se: [x2, y1],
+    s: [mx, y1],
     sw: [x1, y2],
     w: [x1, my],
   };
@@ -1709,6 +1735,9 @@ export function handlePoints(
 
 /** CSS cursor for a handle, so the affordance reads correctly. */
 export function handleCursor(h: ResizeHandle, rotation = 0): string {
+  // The diagonals are what the flip changes: `nw` is now the corner drawn at the
+  // top LEFT, so it takes the nwse cursor -- which it already did, because the
+  // table was written for a y-down reading of the same names.
   const base: Record<ResizeHandle, number> = {
     n: 0, ne: 45, e: 90, se: 135, s: 180, sw: 225, w: 270, nw: 315,
   };
@@ -1833,8 +1862,9 @@ export function resizeExtent(
 
   if (handle.includes("w")) x1 = Math.min(px, x2 - minSize);
   if (handle.includes("e")) x2 = Math.max(px, x1 + minSize);
-  if (handle.includes("n")) y1 = Math.min(py, y2 - minSize);
-  if (handle.includes("s")) y2 = Math.max(py, y1 + minSize);
+  // North is the larger y: see `handlePoints`.
+  if (handle.includes("n")) y2 = Math.max(py, y1 + minSize);
+  if (handle.includes("s")) y1 = Math.min(py, y2 - minSize);
 
   // Normalise in case a drag inverted the box.
   if (x2 < x1) [x1, x2] = [x2, x1];

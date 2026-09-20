@@ -291,8 +291,11 @@ function makeEditor(components = [inst("r1", 0, 0), inst("r2", 200, 0)]) {
       onStatus: (t) => events.statuses.push(t),
     }
   );
-  // Diagram(0,0) is at screen(0,0) with the default viewport, so screen and
-  // diagram coordinates coincide in these tests.
+  // The default viewport maps a diagram point (x, y) to the canvas point
+  // (x, -y): the two axes agree in x and are MIRRORED in y, because a diagram's
+  // +y points up and a canvas's points down. `press`/`move`/`release` below take
+  // canvas points, so a test that means a particular diagram point has to go
+  // through `viewportTransform` to say so.
   return { editor, host, events };
 }
 
@@ -377,7 +380,11 @@ test("dragging a component moves it and records one undo step", () => {
   release(editor, 60, 40);
 
   const c = editor.getModel().components[0];
-  assert.deepEqual(c.placement.extent, [40, 20, 80, 60], "snapped to the grid");
+  // Dragged 60 across and 40 DOWN the screen. Modelica's diagram coordinates have
+  // +y UP, so moving down the canvas LOWERS y: the extent goes to -60..-20, not
+  // 20..60. That is the convention the file is written in, and the numbers a
+  // reader of the source expects to see. Snapped to the 20-unit grid.
+  assert.deepEqual(c.placement.extent, [40, -60, 80, -20], "snapped to the grid");
   assert.equal(editor.history.depth, 1, "one undo step for the whole drag");
   assert.ok(events.changes > 0, "the view was told about the change");
 });
@@ -601,6 +608,61 @@ test("dragging on empty space rubber-band selects the enclosed components", () =
   release(editor, 300, 300);
 });
 
+test("the rubber band is painted over the drag, not mirrored below it", () => {
+  // The band's TOP edge is the LARGER diagram y once the viewport negates y, and
+  // a canvas rect grows downward from the corner it is given. Anchoring at the
+  // smaller y -- the reading you get if you forget the flip -- draws the band as
+  // far below the gesture as it belongs above it, so it no longer covers the
+  // pointer that made it.
+  const { editor } = makeEditor();
+  const canvas = canvasOf(editor);
+  layoutTo(canvas, 1200, 800);
+  editor.resize();
+
+  const band = [];
+  let dash = "";
+  editor.ctx = new Proxy(
+    {
+      canvas: { width: 2400, height: 1600 },
+      measureText: (s) => ({ width: String(s).length * 6 }),
+    },
+    {
+      get(t, k) {
+        if (k in t) return t[k];
+        // The dashes are what mark the band out from the other stroked rects.
+        if (k === "setLineDash") {
+          return (d) => {
+            dash = d && d.length ? d.join(",") : "";
+          };
+        }
+        if (k === "strokeRect") {
+          return (x, y, w, h) => {
+            if (dash) band.push([x, y, w, h]);
+          };
+        }
+        return () => {};
+      },
+      set(t, k, v) {
+        t[k] = v;
+        return true;
+      },
+    }
+  );
+
+  // A drag from the upper left toward the lower right, in CANVAS pixels.
+  press(editor, 100, 120);
+  move(editor, 300, 280);
+  SchematicEditor.prototype.draw.call(editor);
+
+  assert.equal(band.length, 1, `exactly one band is stroked: ${JSON.stringify(band)}`);
+  // The half pixel is the crisp-line offset the stroke itself applies.
+  assert.deepEqual(
+    band[0],
+    [100.5, 120.5, 200, 160],
+    "the band spans the drag, from the press down to the pointer"
+  );
+});
+
 test("a rubber band only picks up what it covers", () => {
   const { editor } = makeEditor();
   press(editor, -400, -400);
@@ -781,7 +843,12 @@ test("handles are grabbable on the symbol's own corners", () => {
   // The SE handle sits on the visible box's corner.
   const inst0 = editor.getModel().components[0];
   const outline = C0.instanceOutlineBounds(inst0, DEFS["M.R"]);
-  const se = C0.handlePoints(outline).se;
+  // `handlePoints` answers in DIAGRAM units; a press is in canvas pixels, and
+  // the two differ by the viewport -- including its sign, since diagram +y is up
+  // and canvas y is down. Mapped through the editor's own transform so the press
+  // lands on the handle the test means, rather than on its mirror image.
+  const at = (x, y) => C0.apply(C0.viewportTransform(editor.viewport, 1), x, y);
+  const se = at(...Object.values(C0.handlePoints(outline).se));
 
   press(editor, se[0], se[1]);
   move(editor, se[0] + 30, se[1] + 30);
@@ -789,7 +856,18 @@ test("handles are grabbable on the symbol's own corners", () => {
 
   const after = editor.getModel().components[0].placement.extent;
   assert.notDeepEqual(after, before, "dragging the corner handle resizes");
-  assert.ok(after[2] > before[2] && after[3] > before[3], "the dragged corner moved out");
+
+  // Orientation pin. The SE handle is the corner DRAWN at the bottom right, and
+  // bottom right in diagram coordinates is (larger x, smaller y) because diagram
+  // +y points up. So dragging it further right and further down must push the
+  // east edge out and the south edge out, and must leave the west and north
+  // edges exactly where they were. Asserting `after[3] > before[3]` here -- the
+  // reading you get if you assume canvas y-down -- passed only while the
+  // viewport was silently mirroring every drawing.
+  assert.equal(after[0], before[0], "the west edge stays put");
+  assert.equal(after[3], before[3], "the north edge stays put");
+  assert.ok(after[2] > before[2], "the east edge moved out");
+  assert.ok(after[1] < before[1], "the south edge moved out, i.e. to a smaller y");
 });
 
 test("pressing a pin and releasing without moving selects the component", () => {

@@ -222,10 +222,12 @@ test("the real editor selects, deletes and re-routes a wire", async () => {
       "window.__wireIds = () => editor.selectedWireIds;",
       "window.__compIds = () => editor.selectedIds;",
       "",
-      "/** Dispatch a pointer event at a DIAGRAM position, as the browser would. */",
+      "/** The SCREEN position of a DIAGRAM point. */",
       "function at(dx, dy) {",
-      "  // Screen = viewport * scale + offset; the viewport starts at 0,0 with scale 1.",
-      "  return { clientX: rect.left + dx, clientY: rect.top + dy };",
+      "  // Screen = viewport * scale + offset, and the y is negated on the way: a",
+      "  // diagram's +y points UP, a canvas's points down. The viewport starts at 0,0",
+      "  // with scale 1, so the flip is all that is left of the transform here.",
+      "  return { clientX: rect.left + dx, clientY: rect.top - dy };",
       "}",
       "function press(dx, dy, opts) {",
       "  const o = Object.assign({ bubbles: true, button: 0, pointerId: 1, isPrimary: true }, at(dx, dy), opts || {});",
@@ -256,21 +258,24 @@ test("the real editor selects, deletes and re-routes a wire", async () => {
       "editor.deleteSelection();",
       "// Put a wire back: the Delete above removed the only one.",
       "editor.getModel().connections.push({ id: 'a.p|b.n', from: { component: 'a', port: 'p' }, to: { component: 'b', port: 'n' }, points: [] });",
-      "// Reshape: grab the first interior corner and drag it down. The corner is",
+      "// Reshape: grab the first interior corner and drag it 60px DOWN the screen.",
       "// READ from the editor rather than assumed -- hard-coding the midpoint put the",
       "// press 20 units away from the real vertex, which the 8px grab radius",
-      "// correctly refused, and the test blamed the code.",
+      "// correctly refused, and the test blamed the code. Screen-down is diagram",
+      "// MINUS y, so the waypoint the editor stores is expected at cy - 60 and the",
+      "// sign is asserted rather than assumed.",
       "const route = editor.connectionPoints(editor.getModel().connections[0]);",
       "const cx = route[2];",
       "const cy = route[3];",
       "press(cx, cy);",
-      "move(cx, cy + 60);",
-      "up(cx, cy + 60);",
+      "move(cx, cy - 60);",
+      "up(cx, cy - 60);",
       "window.test('dragging a corner stores the route', () => JSON.stringify(window.__points()));",
       "window.test('the corner moved', () => {",
       "  const p = window.__points();",
-      "  return JSON.stringify([p[2], p[3]]) + ' vs ' + JSON.stringify([cx, cy + 60]);",
+      "  return JSON.stringify([p[2], p[3]]) + ' vs ' + JSON.stringify([cx, cy - 60]);",
       "});",
+      "window.test('which side of the corner it landed on', () => window.__points()[3] < cy ? 'below' : 'above');",
       "window.test('the ends stay on the pins', () => {",
       "  const p = window.__points();",
       "  return JSON.stringify([p[0], p[1], p[p.length - 2], p[p.length - 1]]) +",
@@ -278,8 +283,8 @@ test("the real editor selects, deletes and re-routes a wire", async () => {
       "});",
       "",
       "// And the wire is still deletable afterwards.",
-      "press(cx, cy + 60);",
-      "up(cx, cy + 60);",
+      "press(cx, cy - 60);",
+      "up(cx, cy - 60);",
       "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));",
       "editor.deleteSelection();",
       "window.test('Delete removes the wire', () => editor.getModel().connections.length + ' left');",
@@ -301,7 +306,13 @@ test("the real editor selects, deletes and re-routes a wire", async () => {
   assert.equal(stored.length, 8, `stored as a full route: ${d["dragging a corner stores the route"]}`);
   const [moved, wanted] = d["the corner moved"].split(" vs ").map(JSON.parse);
   assert.deepEqual(moved, wanted, "the corner is where it was dragged to");
-  assert.equal(moved[1] % 10, 0, "and snapped to the grid");
+  // Orientation pin: a downward drag on the screen must DECREASE the diagram y.
+  assert.equal(
+    d["which side of the corner it landed on"],
+    "below",
+    "60px down the screen lands on a smaller diagram y"
+  );
+  assert.equal(Math.abs(moved[1] % 10), 0, "and snapped to the grid");
   // Both sides are parsed, so this compares the stored ends against the derived
   // ones rather than trusting a string that could match for the wrong reason.
   const [ends, derived] = d["the ends stay on the pins"].split(" vs ").map(JSON.parse);
@@ -394,7 +405,8 @@ test("a reshape is one undoable step, and undo restores the derived route", asyn
       "const editor = new SchematicEditor(host, model, { lookup: (n) => DEFS[n] });",
       "const canvas = editor.canvasEl;",
       "const rect = canvas.getBoundingClientRect();",
-      "const at = (dx, dy) => ({ clientX: rect.left + dx, clientY: rect.top + dy });",
+      "// A DIAGRAM point to a screen point: +y is up in the diagram, down on the canvas.",
+      "const at = (dx, dy) => ({ clientX: rect.left + dx, clientY: rect.top - dy });",
       "const fire = (t, dx, dy) => canvas.dispatchEvent(new PointerEvent(t,",
       "  Object.assign({ bubbles: true, button: 0, pointerId: 1, isPrimary: true }, at(dx, dy))));",
       "const points = () => editor.getModel().connections[0].points;",

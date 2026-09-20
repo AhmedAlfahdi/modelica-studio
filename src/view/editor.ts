@@ -586,9 +586,15 @@ export class SchematicEditor {
    * the device ratio on top); hit testing inverts it. Because both derive from
    * one function, they cannot drift apart.
    */
-  sceneTransform(): { scale: number; x: number; y: number } {
+  sceneTransform(): { scale: number; yScale: number; x: number; y: number } {
     return {
       scale: this.viewport.scale,
+      // Negative, because Modelica's diagram coordinates have +y UP and canvas y
+      // is down. Drawing multiplies a diagram y by this, hit testing divides by
+      // it, and both get the sign from here -- the same reason the scales share
+      // one function, since a sign that lived in two places is exactly how the
+      // drawing and the clicking came apart before.
+      yScale: -this.viewport.scale,
       x: this.viewport.x,
       y: this.viewport.y,
     };
@@ -610,7 +616,7 @@ export class SchematicEditor {
   private toDiagram(ev: { clientX: number; clientY: number }): [number, number] {
     const [px, py] = this.pointerLocal(ev);
     const t = this.sceneTransform();
-    return [(px - t.x) / t.scale, (py - t.y) / t.scale];
+    return [(px - t.x) / t.scale, (py - t.y) / t.yScale];
   }
 
   /* ---------------- pointer handling ---------------- */
@@ -650,7 +656,7 @@ export class SchematicEditor {
       /** Where the conversion chain puts the press, back in canvas-local px. */
       reconstructed: [
         dx * this.viewport.scale + this.viewport.x,
-        dy * this.viewport.scale + this.viewport.y,
+        -dy * this.viewport.scale + this.viewport.y,
       ] as [number, number],
       /** The same point derived directly from the pointer, for comparison. */
       pointerLocal: [ev.clientX - rect.left, ev.clientY - rect.top] as [number, number],
@@ -690,7 +696,7 @@ export class SchematicEditor {
 
     if (this.showProbe) {
       const t = this.sceneTransform();
-      this.probePoint = { x: dx * t.scale + t.x, y: dy * t.scale + t.y, at: Date.now() };
+      this.probePoint = { x: dx * t.scale + t.x, y: dy * t.yScale + t.y, at: Date.now() };
       if (this.probeTimer !== null) window.clearTimeout(this.probeTimer);
       this.probeTimer = window.setTimeout(() => {
         this.probePoint = null;
@@ -1374,9 +1380,10 @@ export class SchematicEditor {
     const [x1, y1, x2, y2] = inst.placement.extent;
     const s = this.viewport.scale;
     const left = x1 * s + this.viewport.x;
-    const top = y1 * s + this.viewport.y;
     const right = x2 * s + this.viewport.x;
-    const bottom = y2 * s + this.viewport.y;
+    // y1 is the extent's LOWER edge in Modelica, which is the LARGER canvas y.
+    const top = -y2 * s + this.viewport.y;
+    const bottom = -y1 * s + this.viewport.y;
     const margin = 40;
     let dx = 0;
     let dy = 0;
@@ -1941,7 +1948,7 @@ export class SchematicEditor {
     const scale = clamp(Math.min(this.cssWidth / w, this.cssHeight / h), MIN_ZOOM, 2);
     this.viewport.scale = scale;
     this.viewport.x = this.cssWidth / 2 - ((x1 + x2) / 2) * scale;
-    this.viewport.y = this.cssHeight / 2 - ((y1 + y2) / 2) * scale;
+    this.viewport.y = this.cssHeight / 2 + ((y1 + y2) / 2) * scale;
     this.requestDraw();
   }
 
@@ -2364,7 +2371,12 @@ export class SchematicEditor {
     const vp = this.viewport;
     const [bx1, by1, bx2, by2] = rubberBox(inter);
     const x = bx1 * vp.scale + vp.x;
-    const y = by1 * vp.scale + vp.y;
+    // `by2` is the LARGER diagram y, which is the TOP of the band on screen
+    // because the viewport negates y -- and a canvas rect grows downward from the
+    // corner it is given, so the top is the corner to anchor at. Anchoring at
+    // `by1` instead draws the band as far below the gesture as it belongs above
+    // it: detached from the pointer, and over whatever is on the other side.
+    const y = -by2 * vp.scale + vp.y;
     const w = (bx2 - bx1) * vp.scale;
     const h = (by2 - by1) * vp.scale;
     if (w < 0.5 && h < 0.5) return;
@@ -2397,8 +2409,8 @@ export class SchematicEditor {
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 4]);
     ctx.beginPath();
-    ctx.moveTo(ax * vp.scale + vp.x, ay * vp.scale + vp.y);
-    ctx.lineTo(bx * vp.scale + vp.x, by * vp.scale + vp.y);
+    ctx.moveTo(ax * vp.scale + vp.x, -ay * vp.scale + vp.y);
+    ctx.lineTo(bx * vp.scale + vp.x, -by * vp.scale + vp.y);
     ctx.stroke();
     ctx.restore();
   }

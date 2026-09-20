@@ -340,6 +340,12 @@ test("the index cache version reflects the classes the index holds", () => {
   // discarded two thirds of a file -- therefore has to bump this, or a cache
   // written by the previous version is read as current and the fix reaches
   // nobody who has opened the plugin before.
+  //
+  // Note what does NOT need a bump: the snapshot holds the PARSED classes, not
+  // the resolved ones, so a change to a value that is derived on the way out --
+  // a pin's position from its placement's `origin`, say -- reaches every user
+  // without one. Check `toJSON` before bumping for a fix like that: a needless
+  // bump costs every existing user a full reindex of the library.
   assert.equal(INDEX_CACHE_VERSION, 6);
 });
 

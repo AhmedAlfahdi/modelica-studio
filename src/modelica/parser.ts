@@ -1963,13 +1963,31 @@ function isVisibleGraphic(g: Graphic): boolean {
 }
 
 /**
- * Centre of a component's Placement extent, in the enclosing class's canonical
- * icon coordinates. Used to locate connector pins inside a component symbol.
+ * Where a component's Placement puts the CENTRE of its icon, in the enclosing
+ * class's canonical icon coordinates. Used to locate connector pins inside a
+ * component symbol.
+ *
+ * MLS 18.6.2 applies the transformation in the order `extent`, `rotation`,
+ * `origin`: the icon is mapped onto the `extent` rectangle, rotated about
+ * `{0, 0}` -- explicitly NOT about `origin` -- and then shifted by `origin`.
+ * The centre of the icon therefore lands on the centre of the extent PLUS the
+ * origin.
+ *
+ * Dropping the origin is not a rounding error. Every one of the 393 MSL pin
+ * placements that gives an origin writes the extent symmetrically
+ * (`extent={{-20,-20},{20,20}}, origin={-120,60}`), so its centre is exactly
+ * `{0,0}` and the pin was placed at the middle of the symbol: 284 of them land
+ * strictly inside the artwork they are supposed to sit on the edge of. A Ground
+ * pin, declared at `origin={0,100}`, resolved to the icon origin instead of the
+ * top of its stem, and wires met it there.
  */
 export function placementCenter(
-  p: { extent: [number, number, number, number] } | undefined
+  p:
+    | { extent: [number, number, number, number]; origin?: [number, number] }
+    | undefined
 ): [number, number] | undefined {
   if (!p?.extent) return undefined;
   const [x1, y1, x2, y2] = p.extent;
-  return [(x1 + x2) / 2, (y1 + y2) / 2];
+  const [ox, oy] = p.origin ?? [0, 0];
+  return [(x1 + x2) / 2 + ox, (y1 + y2) / 2 + oy];
 }

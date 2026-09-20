@@ -130,6 +130,47 @@ export function parseDirective(source: string): { opts: Partial<EmbedOptions>; b
   return { opts, body: source.replace(DIRECTIVE, "").replace(/^\n+/, "") };
 }
 
+/**
+ * Which pane a block was left showing, by model name.
+ *
+ * Obsidian rebuilds a code block's DOM on every re-render -- a keystroke in the
+ * note, a metadata change, a theme switch -- and each rebuild constructs a fresh
+ * embed whose directive default is "plot open". Without somewhere to keep the
+ * choice, it lasted only until the note next re-rendered, which reads as the
+ * view switching on its own.
+ *
+ * Module scope rather than per instance, because the instance is what is thrown
+ * away. Keyed by model name: two blocks of the same model are the same diagram.
+ */
+const plotChoice = new Map<string, boolean>();
+
+/**
+ * Which pane a block shows, given what its directive asks for and what the user
+ * last chose.
+ *
+ * The choice wins: a block is rebuilt on every re-render, so a directive that
+ * reopens the plot each time is the same fault as the automatic reveal below,
+ * arriving by a different route.
+ *
+ * Exported for its own tests -- the rule is the part that can be wrong.
+ */
+export function effectiveShowPlot(directiveDefault: boolean, remembered: boolean | undefined): boolean {
+  return remembered ?? directiveDefault;
+}
+
+/**
+ * Whether a finished simulation should open the plot by itself.
+ *
+ * A user who has switched to the diagram means it, so a result must not overrule
+ * them. It used to: the rule was "the plot is not showing", the block simulates
+ * on open and re-renders re-open it, so the plot came back seconds after the
+ * click and the pane looked like it was switching on its own. With no choice
+ * recorded yet, a result is worth showing.
+ */
+export function shouldRevealPlot(showPlot: boolean, remembered: boolean | undefined): boolean {
+  return !showPlot && remembered !== false;
+}
+
 export interface EmbedHost {
   /** Diagnostic sink; the plugin writes it to the debug log when enabled. */
   report?: (message: string) => void;
@@ -189,6 +230,10 @@ export class EmbeddedDiagram {
     this.blockStopTime = fromBlock.stopTime;
     this.source = body;
     this.opts = { ...opts, ...fromBlock };
+    // What the user last chose wins over the directive: the block is rebuilt on
+    // every re-render, and a directive that reopens the plot each time is the
+    // same fault as the automatic reveal below, arriving by a different route.
+    this.opts.showPlot = effectiveShowPlot(this.opts.showPlot, this.rememberedPlotChoice());
   }
 
   private source: string;
@@ -227,7 +272,7 @@ export class EmbeddedDiagram {
     const toggle = button(
       this.opts.showPlot ? "Switch to diagram" : "Switch to plot",
       "",
-      () => this.setPlotVisible(!this.opts.showPlot)
+      () => this.setPlotVisible(!this.opts.showPlot, true)
     );
     this.plotButton = toggle.span;
     this.plotButtonBtn = toggle.b;
@@ -304,6 +349,12 @@ export class EmbeddedDiagram {
     );
   }
 
+  /** The pane this model was last left showing, if the user has chosen. */
+  private rememberedPlotChoice(): boolean | undefined {
+    const name = this.modelName();
+    return name ? plotChoice.get(name) : undefined;
+  }
+
   /** The class name declared in the source, for the heading. */
   private modelName(): string | undefined {
     const m = /^\s*model\s+([A-Za-z_]\w*)/m.exec(this.source);
@@ -368,9 +419,18 @@ export class EmbeddedDiagram {
     if (this.statusEl) this.statusEl.setText(text);
   }
 
-  /** Show or hide the plot. The diagram is never hidden. */
-  private setPlotVisible(visible: boolean): void {
+  /**
+   * Show or hide the plot. The diagram is never hidden.
+   *
+   * `byUser` distinguishes a click from the automatic reveal below: a click is a
+   * decision to keep, an automatic reveal is only a default.
+   */
+  private setPlotVisible(visible: boolean, byUser = false): void {
     this.opts.showPlot = visible;
+    if (byUser) {
+      const name = this.modelName();
+      if (name) plotChoice.set(name, visible);
+    }
     this.applyPlotVisibility();
   }
 
@@ -486,8 +546,12 @@ export class EmbeddedDiagram {
           : `${result.time.length} samples · ${varying} varying · ${result.simulateMs} ms`
       );
       void summarize;
-      // A simulation is only useful if its result is visible.
-      if (!this.opts.showPlot) this.setPlotVisible(true);
+      // A simulation is only useful if its result is visible -- but a user who
+      // has switched to the diagram has said they want the diagram, and this
+      // line used to overrule them the moment any simulation finished. Since the
+      // block simulates on open, and re-renders re-open it, that was often
+      // seconds after the click: the pane appeared to switch by itself.
+      if (shouldRevealPlot(this.opts.showPlot, this.rememberedPlotChoice())) this.setPlotVisible(true);
       else this.drawPlot();
     } catch (err) {
       if (this.destroyed) return;
