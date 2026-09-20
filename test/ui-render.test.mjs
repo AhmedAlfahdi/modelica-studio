@@ -1004,11 +1004,13 @@ test("a block's diagram and its plot both answer the pointer", async () => {
     "const DEF = (name) => ({",
     "  name, shortName: name.split('.').pop(),",
     "  icon: [{ kind: 'Rectangle', extent: [-40, -40, 40, 40], lineColor: [0, 0, 0],",
-    "    fillColor: [255, 255, 255], linePattern: 'Solid', fillPattern: 'Solid', visible: true }],",
+    "    fillColor: [255, 255, 255], linePattern: 'Solid', fillPattern: 'Solid', visible: true },",
+    "    // The bare `%C` form MSL uses, e.g. a HeatCapacitor's `textString=\"%C\"`.",
+    "    { kind: 'Text', extent: [-30, -12, 30, 12], textString: '%C', textColor: [0, 0, 0] }],",
     "  diagram: [],",
     "  ports: [{ name: 'p', type: 'Pin', isFlow: true, causality: 'acausal' }],",
     "  portPositions: { p: [0, 0] },",
-    "  parameters: [{ name: 'R', type: 'Real', defaultValue: '100' }],",
+    "  parameters: [{ name: 'C', type: 'Real', defaultValue: '2500' }],",
     "  hasIcon: true,",
     "});",
     "const lookup = (n) => DEF(n);",
@@ -1088,6 +1090,13 @@ test("a block's diagram and its plot both answer the pointer", async () => {
     "  return String(painted.some((p) => p.text.indexOf('R = ') === 0));",
     "});",
     "",
+    "window.test('an icon macro is substituted, not painted', () => {",
+    "  painted.length = 0;",
+    "  on.editor.draw();",
+    "  const texts = painted.filter((p) => p.cls.includes('modelica-studio-canvas')).map((p) => p.text);",
+    "  return texts.join(',') + ' || hasValue=' + texts.includes('2500') + ' hasMacro=' + texts.includes('%C');",
+    "});",
+    "",
     "window.test('the value shown is the one the instance overrides', () => {",
     "  painted.length = 0;",
     "  const canvas = on.editor.canvasEl;",
@@ -1153,6 +1162,13 @@ test("a block's diagram and its plot both answer the pointer", async () => {
     d["the value shown is the one the instance overrides"],
     "R = 100",
     "another component reports its own value"
+  );
+  // A macro with no resolver is painted exactly as written -- which is a `%C`
+  // where the heat capacity should be, in every HeatCapacitor in the library.
+  assert.match(
+    d["an icon macro is substituted, not painted"],
+    /hasValue=true hasMacro=false/,
+    `the icon's %C resolves to the parameter: ${d["an icon macro is substituted, not painted"]}`
   );
   assert.equal(
     d["and what it reads is the time at that pixel"],
@@ -1256,6 +1272,14 @@ test("a block runs itself once, and its height and span are its own", async () =
     "window.test('an edited model runs nothing by itself', () => String(runs));",
     "window.test('it still shows the run it had', () => String(!!edited.embed.result));",
     "window.test('and says that run is out of date', () => edited.status());",
+    "window.test('the stale note is short and marked', () => {",
+    "  const n = edited.el.querySelector('.modelica-studio-embed-status');",
+    "  return n.textContent + ' || ' + n.className + ' || ' + (n.getAttribute('title') || '').slice(0, 24);",
+    "});",
+    "window.test('and it does not squeeze the t_end label', () => {",
+    "  const r = edited.el.querySelector('.modelica-studio-embed-time span').getBoundingClientRect();",
+    "  return Math.round(r.width) + 'x' + Math.round(r.height);",
+    "});",
     "window.test('the button runs the edit', () => { edited.simulateButton().click(); return String(runs); });",
     SETTLE,
     "window.test('after which it is current again', () => edited.status());",
@@ -1315,9 +1339,25 @@ test("a block runs itself once, and its height and span are its own", async () =
   assert.equal(d["it still shows the run it had"], "true", "the pane keeps its curve");
   assert.match(
     d["and says that run is out of date"],
-    /from the previous run, press Simulate/,
+    /previous run/,
     `a curve that no longer matches the source says so: ${d["and says that run is out of date"]}`
   );
+  // Short, because it shares a row with the controls; the explanation is in the
+  // tooltip and the colour carries the warning.
+  assert.match(
+    d["the stale note is short and marked"],
+    /^502|^\d+ samples.*previous run \|\| .*is-stale \|\| .+/,
+    `the stale status is short, marked and explained: ${d["the stale note is short and marked"]}`
+  );
+  assert.ok(
+    d["the stale note is short and marked"].length < 120,
+    `and short enough not to break the toolbar: ${d["the stale note is short and marked"].length} chars`
+  );
+  // One line tall and wide enough to read: "t_end" wrapped one letter per line
+  // was the visible breakage.
+  const label = d["and it does not squeeze the t_end label"].split("x").map(Number);
+  assert.ok(label[1] < 20, `the t_end label is one line tall: ${label[1]}px`);
+  assert.ok(label[0] > 25, `and as wide as its text: ${label[0]}px`);
   assert.equal(d["the button runs the edit"], "3", "the button runs the edited model");
   assert.match(
     d["after which it is current again"],

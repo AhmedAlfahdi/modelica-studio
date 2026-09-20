@@ -27,6 +27,7 @@ import {
 } from "./plot";
 import { currentTheme } from "../render/theme";
 import { parseModelica, findClass, toDiagramModel } from "../modelica/parser";
+import type { ComponentInstance } from "../modelica/types";
 import { serializeDiagram } from "../modelica/serializer";
 import { DirectiveOptions, withDirective } from "./modelica-lang";
 import { EXAMPLES, findExample } from "../modelica/examples";
@@ -341,8 +342,12 @@ export class EmbeddedDiagram {
       varying === 0
         ? `${r.time.length} samples · nothing varies`
         : `${r.time.length} samples · ${varying} varying`;
+    // Short, because this shares a row with the controls and a sentence here
+    // squeezes them: the whole explanation goes in the tooltip, and the marker
+    // class colours it, so a stale curve is obvious without being wordy.
     this.setStatus(
-      this.stale ? `${counts} · from the previous run, press Simulate` : `${counts} · ${r.simulateMs} ms`
+      this.stale ? `${counts} · previous run` : `${counts} · ${r.simulateMs} ms`,
+      this.stale
     );
   }
 
@@ -433,6 +438,13 @@ export class EmbeddedDiagram {
         labelScale: this.host.settings.labelScale,
         hoverParameters: this.host.settings.hoverParameters,
       }),
+      // Without this the editor draws `%C` where the heat capacity should be:
+      // the icon says `textString="%C"`, and a macro with no resolver to ask is
+      // painted exactly as written. The Studio has passed one all along, so the
+      // same symbol read correctly there and wrongly in a note.
+      resolveParam: (inst, name) => resolveInstanceParam(this.host, inst, name),
+      readClipboard: () => navigator.clipboard.readText(),
+      writeClipboard: (text) => navigator.clipboard.writeText(text),
     });
     // Paint now, and fit once the element has been measured.
     //
@@ -575,8 +587,17 @@ export class EmbeddedDiagram {
     }, 400);
   }
 
-  private setStatus(text: string): void {
-    if (this.statusEl) this.statusEl.setText(text);
+  private setStatus(text: string, stale = false): void {
+    const el = this.statusEl;
+    if (!el) return;
+    el.setText(text);
+    el.toggleClass("is-stale", stale);
+    el.setAttr(
+      "title",
+      stale
+        ? "This curve is from an earlier run. The model has changed since; press Simulate to run it again."
+        : text
+    );
   }
 
   /**
@@ -914,6 +935,27 @@ export class EmbeddedDiagram {
     this.plotHost = null;
     this.result = null;
   }
+}
+
+/**
+ * A parameter's value for one instance, for substituting an icon's `%` macros.
+ *
+ * The bare form (`%C`) means the same as `%{C}`, and MSL uses it: a
+ * `HeatCapacitor`'s icon is a circle with `textString="%C"` in it.
+ *
+ * Exported for its own tests -- the fallback order is the part that can be
+ * wrong, and getting it wrong paints the macro itself into the symbol.
+ */
+export function resolveInstanceParam(
+  host: Pick<EmbedHost, "library">,
+  inst: ComponentInstance,
+  name: string
+): string | undefined {
+  if (name === "class") return inst.className.split(".").pop();
+  const own = inst.params[name];
+  if (own !== undefined) return own;
+  const def = host.library.component(inst.className);
+  return def?.parameters.find((p) => p.name === name)?.defaultValue;
 }
 
 /**

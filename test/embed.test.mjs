@@ -42,7 +42,12 @@ fs.writeFileSync(
 );
 const { parseEmbedOptions, replaceFencedBlock } = await import(path.join(staging, "embed.js"));
 const { parseDirective } = await import(path.join(staging, "embed.js"));
-const { shouldRevealPlot, effectiveShowPlot } = await import(path.join(staging, "embed.js"));
+const { shouldRevealPlot, effectiveShowPlot, resolveInstanceParam } = await import(
+  path.join(staging, "embed.js")
+);
+const canvasMod = await import(
+  path.join(buildLibs("embed-canvas", ["src/render/canvas.ts"]), "canvas.js")
+);
 const plotMod = await import(
   path.join(buildLibs("embed-plot", ["src/view/plot.ts"]), "plot.js")
 );
@@ -436,4 +441,35 @@ test("a finished simulation does not overrule a reader who chose the diagram", (
   assert.equal(effectiveShowPlot(false, true), true, "in both directions");
   assert.equal(effectiveShowPlot(true, undefined), true, "and the directive stands before any choice");
   assert.equal(effectiveShowPlot(false, undefined), false, "including when it asks for the diagram");
+});
+
+test("an icon's parameter macro resolves in a block, and is not painted raw", () => {
+  // `textString="%C"` is how MSL labels a HeatCapacitor's symbol. The renderer
+  // substitutes the bare form, but only if the editor was given a resolver to ask:
+  // a block was not, so the same symbol read `2500` in the Studio and `%C` in a
+  // note. This is the substitution the embed now feeds.
+  const { substituteMacros } = canvasMod;
+  const def = {
+    name: "M.H",
+    shortName: "H",
+    parameters: [{ name: "C", type: "Real", defaultValue: "2500" }],
+  };
+  const host = { library: { component: () => def } };
+  const inst = { id: "hot", className: "M.H", params: {} };
+  const g = { kind: "Text", extent: [-10, -10, 10, 10], textString: "%C" };
+  const paint = (text, i) => substituteMacros(text, g, (n) => resolveInstanceParam(host, i, n));
+
+  assert.equal(paint("%C", inst), "2500", "the class default is used");
+  assert.equal(paint("%{C}", inst), "2500", "and the braced form agrees with it");
+  assert.equal(paint("C=%C", { ...inst, params: { C: "1000" } }), "C=1000", "an instance overrides it");
+
+  // The macro the renderer cannot know about: an unknown name is left as written
+  // rather than blanked, so a wrong-looking symbol still says what it wanted.
+  assert.equal(paint("%nosuch", inst), "%nosuch", "an unknown macro survives");
+  assert.equal(paint("%%", inst), "%", "and an escaped percent is still one percent");
+
+  // `%name` and `%class` are not parameters, and resolving them here would put a
+  // parameter's value where the instance's name belongs.
+  assert.equal(resolveInstanceParam(host, inst, "name"), undefined, "%name is not a parameter");
+  assert.equal(resolveInstanceParam(host, inst, "class"), "H", "but %class is the class name");
 });

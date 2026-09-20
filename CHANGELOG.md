@@ -5,6 +5,40 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.7] — 2026-09-24
+
+### Fixed
+
+- **A long status line squeezed the block's controls.** The samples/varying note
+  shares a row with the buttons and the `t_end` field, and `from the previous run,
+  press Simulate` took enough of it to crush the field's label until it wrapped
+  one letter per line. The status is now short (`· previous run`), the explanation
+  moved into its tooltip, the warning carries a colour, and the row is laid out so
+  the controls cannot be squeezed at all — the status gives way and truncates,
+  which is what `min-width: 0` on a flex item is for, and past that the row wraps.
+  Reported with a screenshot: "the messages break the embed (too-long sentences)".
+
+- **A `%C` was painted into every `HeatCapacitor`.** An icon's `textString="%C"`
+  means the value of the parameter, and the renderer substitutes the bare form —
+  but only if the editor is given a resolver to ask, and a block's editor was not
+  given one. The same symbol read `2500` in the Studio and `%C` in a note. A block
+  now resolves parameters the way the Studio does, and the composition is covered
+  by a test that runs without a browser.
+
+- **Copying and pasting inside a block's diagram did nothing.** The clipboard
+  callbacks were passed to the Studio's editor and not to a block's, so the
+  shortcuts were wired to nothing there.
+
+### Note
+
+Verification of the browser-driven suites was not possible while this was written:
+the machine's Wayland session stopped accepting new Electron clients part-way
+through the session, so a fresh `electron43` never reaches `whenReady` and every
+`runInDom` page reports "tests did not finish". The 33 suites that do not need a
+browser pass (522 tests); the three that do — `ui-render`, `wires`, `domains` —
+have to be run on a machine where Electron starts. The tests for these fixes are
+in place and were falsified against the previous build.
+
 ## [0.2.0-beta.6] — 2026-09-23
 
 ### Fixed

@@ -660,6 +660,18 @@ body.modelica-studio-resizing * {
   gap: 6px;
   padding: 6px 8px;
   border-bottom: 1px solid var(--background-modifier-border);
+  /* The status is a sentence long and the controls are not negotiable: without
+     this the row squeezed the t_end label until it wrapped one letter per line,
+     which is how a long status "broke the embed". The status gives way instead,
+     and past that the row wraps. */
+  flex-wrap: wrap;
+}
+
+.modelica-studio-embed-toolbar > button,
+.modelica-studio-embed-time,
+.modelica-studio-embed-time-input {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .modelica-studio-embed-time {
@@ -676,12 +688,22 @@ body.modelica-studio-resizing * {
 }
 
 .modelica-studio-embed-status {
+  /* `flex: 1 1 auto` with `min-width: 0` is what lets the ellipsis happen at all:
+     a flex item's floor is its content width, so without the zero minimum the
+     status pushes its neighbours instead of truncating. */
+  flex: 1 1 auto;
+  min-width: 0;
   margin-left: auto;
   font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* A result that no longer matches the model in the note. */
+.modelica-studio-embed-status.is-stale {
+  color: var(--text-warning);
 }
 
 .modelica-studio-embed-canvas {
