@@ -5,6 +5,24 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.8] — 2026-09-25
+
+### Fixed
+
+- **A test fixture, and nothing else.** `0.2.0-beta.7` could not run the three
+  suites that drive a browser, because this machine's Wayland session had stopped
+  accepting new Electron clients part-way through that session. On a machine where
+  Electron starts, one of those suites then failed — on the fixture, not the code:
+  adding the `%C` case replaced the class's `R` parameter with `C`, so the test
+  that reads a hover readout back off the canvas was looking for `R = 250` in a
+  class that no longer declared `R`. Both parameters are now declared, and the
+  assertion holds.
+
+  The full suite passes: **562 tests, including the browser-driven `ui-render`,
+  `wires` and `domains`**. No behaviour changed, which is why this release's
+  `main.js` is byte-for-byte the same as the previous one — only `manifest.json`
+  carries the new version.
+
 ## [0.2.0-beta.7] — 2026-09-24
 
 ### Fixed
