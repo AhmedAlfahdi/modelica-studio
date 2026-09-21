@@ -69,17 +69,26 @@ function sameGrid(a: number[], b: number[]): boolean {
 /**
  * The current run with the family folded in.
  *
- * Returns the names it added, so the caller can style them as the past — muted
- * and dashed — rather than as another measurement of the same thing.
+ * `currentLabel` names the run on screen after the value it used — `source.V=15`
+ * — so that it can be told from the family behind it. Without it the legend says
+ * `source.V=10` for the dashed curves and nothing at all for the solid ones, and
+ * working out which is which means remembering that the last value of a sweep
+ * became the current run. Every curve in a family should carry its own number.
+ *
+ * Returns the names it added, so the caller can style them as the past — dashed —
+ * rather than as another measurement of the same thing.
  */
 export function overlayResults(
   current: SimResult,
-  family: FamilyRun[]
+  family: FamilyRun[],
+  currentLabel?: string
 ): { result: SimResult; familyNames: Set<string> } {
   const familyNames = new Set<string>();
   if (family.length === 0) return { result: current, familyNames };
 
-  const series = [...current.series];
+  const series = current.series.map((s) =>
+    currentLabel ? { ...s, name: `${s.name} · ${currentLabel}` } : s
+  );
   for (const run of family) {
     for (const s of run.result.series) {
       const name = `${s.name} · ${run.label}`;

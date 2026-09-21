@@ -161,6 +161,16 @@ export class ModelicaStudioView extends ItemView {
    * "Keep as before". One list, because they are one picture.
    */
   private family: FamilyRun[] = [];
+  /**
+   * What the family's current run was made with, so the legend can name it.
+   *
+   * Cleared by a plain run: after Simulate the run on screen is not the sweep's
+   * last value any more, and labelling it as if it were is worse than not
+   * labelling it at all.
+   */
+  private lastSweep: { parameter: string; value: string } | null = null;
+  /** The sweep controls as they were left, so a rebuild does not blank them. */
+  private sweepField = { parameter: "", values: "" };
   /** Identifies the result the current trace choices belong to. */
   private seriesSignature = "";
   private cursorX: number | undefined;
@@ -2479,10 +2489,22 @@ export class ModelicaStudioView extends ItemView {
           param.createEl("option", { text: n, value: n });
         }
         param.disabled = names.length === 0;
+        // Restored from the last sweep, because this row is rebuilt after every
+        // run: a field that empties itself loses the only record of what was
+        // asked for, which is what you want to look at WHILE reading the curves.
+        if (names.includes(this.sweepField.parameter)) param.value = this.sweepField.parameter;
+        else if (names.length) this.sweepField.parameter = names[0];
+        param.addEventListener("change", () => {
+          this.sweepField.parameter = param.value;
+        });
         const values = family.createEl("input", {
           type: "text",
           cls: "modelica-studio-family-values",
           attr: { placeholder: "100, 200, 400", "aria-label": "Values to sweep the parameter over" },
+        });
+        values.value = this.sweepField.values;
+        values.addEventListener("input", () => {
+          this.sweepField.values = values.value;
         });
         const sweep = family.createEl("button", { cls: "modelica-studio-btn", text: "Sweep" });
         sweep.setAttribute("aria-label", "Run once for each value and draw them together");
@@ -2494,6 +2516,7 @@ export class ModelicaStudioView extends ItemView {
           const clear = family.createEl("button", { cls: "modelica-studio-btn", text: "Clear family" });
           clear.addEventListener("click", () => {
             this.family = [];
+            this.lastSweep = null;
             this.drawResults();
             this.renderPlotPane();
           });
@@ -2855,8 +2878,14 @@ export class ModelicaStudioView extends ItemView {
     // The family is folded into the result BEFORE anything reads it, so the axes,
     // the legend, the cursor readout and the extents all account for the other
     // runs without knowing they exist.
-    const { result, familyNames } = overlayResults(this.result, this.family);
+    const { result, familyNames } = overlayResults(
+      this.result,
+      this.family,
+      this.lastSweep ? `${this.lastSweep.parameter}=${this.lastSweep.value}` : undefined
+    );
     const styled: Record<string, SeriesStyle> = { ...this.seriesStyles };
+    // Under the CURRENT name as well as the family names: an overlay renames the
+    // run on screen too, and a style looked up by the old name is not found.
     for (const name of familyNames) {
       const base = this.seriesStyles[name.split(" · ")[0]];
       styled[name] ??= {
@@ -2866,6 +2895,13 @@ export class ModelicaStudioView extends ItemView {
         visible: base?.visible !== false,
         dashed: true,
       };
+    }
+    // A renamed series falls back to the style of the series it came from, which
+    // is what keeps a family member the same colour as its current twin.
+    for (const s of result.series) {
+      if (styled[s.name] || !s.name.includes(" · ")) continue;
+      const base = this.seriesStyles[s.name.split(" · ")[0]];
+      if (base) styled[s.name] = { ...base, dashed: familyNames.has(s.name) };
     }
     const drawn = result.series.filter((s) => styled[s.name]?.visible === true);
     if (drawn.length === 0) {
@@ -3046,9 +3082,11 @@ export class ModelicaStudioView extends ItemView {
       return;
     }
     this.busy = false;
+    this.sweepField = { parameter, values: valuesText };
     // The last run becomes the current one, so the cursor, the trace list and the
     // inspector all describe something real; the rest are drawn behind it.
     const last = runs.pop();
+    this.lastSweep = last ? { parameter, value: String(values[values.length - 1]) } : null;
     if (last) this.result = last.result;
     this.family = runs;
     // The traces are chosen by the ONE seeder, exactly as a single run chooses
@@ -3838,6 +3876,9 @@ export class ModelicaStudioView extends ItemView {
       });
 
       this.result = result;
+      // A plain run replaces the run on screen, so the sweep's label no longer
+      // describes it.
+      this.lastSweep = null;
       this.lastSimulationError = null;
       this.setCodeStatus("");
       // A successful run clears the failure marker, so the tab only carries one

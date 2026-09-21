@@ -440,6 +440,17 @@ test("a family is one result, with each member named after its run", () => {
   const resampled = family.overlayResults(current, [{ label: "before", result: coarse }]);
   assert.deepEqual(resampled.result.series[1].values, [0, 2, 4], "interpolated onto the current grid");
 
+  // The run on screen is named after its own value too, or the legend says
+  // `source.V=10` for the dashed curves and nothing for the solid one.
+  const named = family.overlayResults(current, [{ label: "source.V=10", result: other }], "source.V=15");
+  assert.deepEqual(
+    named.result.series.map((s) => s.name),
+    ["v · source.V=15", "v · source.V=10"],
+    "both curves carry their own number"
+  );
+  assert.deepEqual(named.result.series[0].values, [0, 1, 2], "and the current run is still the current run");
+  assert.deepEqual([...named.familyNames], ["v · source.V=10"], "only the family is styled as the past");
+
   // Two members of the same sweep do not collide.
   const two = family.overlayResults(current, [
     { label: "R=100", result: other },
@@ -487,4 +498,41 @@ test("a dashed series is dashed in the legend too", () => {
   });
   assert.ok(dashes.includes("solid"), "the current run's swatch is solid");
   assert.ok(dashes.includes("5,4"), `a dashed series gets a dashed swatch, got ${JSON.stringify(dashes)}`);
+});
+
+test("a legend names the run on screen as well as the family", () => {
+  // Reported from a screenshot: two curves, and no way to tell 10 V from 15 V.
+  const rows = [];
+  const ctx = new Proxy(
+    { canvas: { width: 900, height: 400 }, font: "", fillStyle: "", strokeStyle: "", globalAlpha: 1, textAlign: "", textBaseline: "" },
+    {
+      get(t, k) {
+        if (k in t) return t[k];
+        if (k === "measureText") return (s2) => ({ width: String(s2).length * 6 });
+        if (k === "fillText") return (text) => rows.push(String(text));
+        return () => {};
+      },
+      set(t, k, v) { t[k] = v; return true; },
+    }
+  );
+  const time = [0, 1, 2];
+  const mk = (scale) => ({
+    time,
+    series: [{ name: "capacitor.v", values: [0, scale, 2 * scale], unit: "V" }],
+    compileMs: 1, simulateMs: 1, reusedBinary: true, warnings: [],
+  });
+  const merged = family.overlayResults(mk(1.5), [{ label: "source.V=10", result: mk(1) }], "source.V=15");
+  plotMod.drawPlot(ctx, 900, 400, merged.result, {
+    styles: {
+      "capacitor.v · source.V=15": { color: "#c00", visible: true },
+      "capacitor.v · source.V=10": { color: "#c00", visible: true, dashed: true },
+    },
+    view: { xMin: 0, xMax: 2 },
+    dpr: 1,
+    theme: plotMod.plotThemeFrom(false),
+  });
+  const legend = rows.filter((r) => r.includes("source.V="));
+  assert.equal(legend.length, 2, `both curves are named in the legend, got ${JSON.stringify(rows)}`);
+  assert.ok(legend.some((r) => r.endsWith("source.V=15")), "including the one on screen");
+  assert.ok(legend.some((r) => r.endsWith("source.V=10")), "and the one behind it");
 });

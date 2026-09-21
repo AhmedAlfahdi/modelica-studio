@@ -5,6 +5,22 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.18] — 2026-10-05
+
+### Fixed
+
+- **A swept plot did not say which curve was which.** The legend named the family
+  after its value (`capacitor.v · source.V=10`) and said nothing at all about the
+  run on screen, so telling 10 V from 15 V meant remembering that the last value
+  of a sweep becomes the current run. Every curve in a family now carries its own
+  number — `capacitor.v · source.V=15` for the solid one, `· source.V=10` for the
+  dashed. Reported from a screenshot of an RLC sweep.
+
+- **The sweep field emptied itself after every run**, taking with it the only
+  record of what had been asked for — while the curves it produced were still on
+  screen. The parameter and the values are now remembered and restored when the
+  results row is rebuilt after a run.
+
 ## [0.2.0-beta.17] — 2026-10-04
 
 ### Fixed
