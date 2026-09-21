@@ -5,6 +5,37 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.33] — 2026-10-14
+
+### Added
+
+- **A busy indication wherever the plugin is working.** Asked for as "whenever
+  doing something, show that it is busy", and built so it cannot disturb the
+  layout: the bar is the app's own `.is-loading` — an absolutely positioned 3px
+  accent strip along the top edge of whatever carries it, which Obsidian uses for
+  its search results and PDF view — so nothing here creates an element, resizes
+  anything, or starts a timer.
+  - **Simulating and checking**: the results pane carries an indeterminate bar,
+    and the button that started it turns its icon (a fixed 14px box, so the
+    button cannot change size).
+  - **A sweep** is *determinate*: the width is the progress, so 2 of 5 values
+    fills to 40% rather than sweeping forever, and it eases to each step.
+  - **Waiting for the AI**: the request row carries the bar, and Generate or Fix
+    — whichever was pressed — turns its icon. Cleared in a `finally`, so a
+    stopped, failed or timed-out request leaves nothing running.
+  - **The library index on first launch**, when the palette is empty for a second
+    or two with nothing saying why.
+  - **A simulation block embedded in a note**: the bar goes on the block's own
+    toolbar, so a note of five blocks animates exactly the one that is working.
+- Every one of them also sets `aria-busy`, because a sliding bar is decoration
+  and that is what says "being computed" to a screen reader.
+
+### Accessibility
+
+- Under `prefers-reduced-motion: reduce` a sliding bar is motion, so the bar
+  becomes one that is simply THERE, and the determinate one keeps its width —
+  that is information rather than movement. The turning icons stop turning.
+
 ## [0.2.0-beta.32] — 2026-10-14
 
 ### Fixed

@@ -29,6 +29,7 @@ import { currentTheme } from "../render/theme";
 import { parseModelica, findClass, toDiagramModel } from "../modelica/parser";
 import type { ComponentInstance } from "../modelica/types";
 import { copyCanvasImage } from "./figure";
+import { setBusy } from "./busy";
 import { serializeDiagram } from "../modelica/serializer";
 import { DirectiveOptions, withDirective } from "./modelica-lang";
 import { EXAMPLES, findExample } from "../modelica/examples";
@@ -242,6 +243,14 @@ export class EmbeddedDiagram {
   private busy = false;
   private destroyed = false;
   private statusEl: HTMLElement | null = null;
+  /**
+   * The block's control row, which carries the busy bar.
+   *
+   * The TOOLBAR rather than the block itself: `.is-loading` sets `position:
+   * relative`, and the canvas inside a block is absolutely positioned — making the
+   * block a containing block would move the plot.
+   */
+  private toolbarEl: HTMLElement | null = null;
   private plotHost: HTMLElement | null = null;
   /** Label of the plot toggle, so its wording can change with the state. */
   private plotButton: { setText(text: string): void } | null = null;
@@ -431,6 +440,7 @@ export class EmbeddedDiagram {
     );
     this.plotButton = toggle.span;
     this.plotButtonBtn = toggle.b;
+    this.toolbarEl = toolbar;
     this.statusEl = toolbar.createDiv({ cls: "modelica-studio-embed-status" });
 
     const canvasHost = root.createDiv({ cls: "modelica-studio-embed-canvas" });
@@ -632,6 +642,17 @@ export class EmbeddedDiagram {
     this.noteBody = this.source;
   }
 
+  /**
+   * Show, or stop showing, that this block is working.
+   *
+   * The app's own `.is-loading` bar, on the toolbar, so a note of five blocks
+   * animates exactly the one that is simulating. The same helper the studio uses,
+   * so the two cannot disagree about what working looks like.
+   */
+  private markBusy(busy: boolean): void {
+    setBusy(this.toolbarEl, busy);
+  }
+
   private setStatus(text: string, stale = false): void {
     const el = this.statusEl;
     if (!el) return;
@@ -722,6 +743,10 @@ export class EmbeddedDiagram {
 
     this.busy = true;
     this.setStatus("Simulating…");
+    // The block's own toolbar carries the bar, so a note of five blocks animates
+    // exactly the one that is working. Same class the app uses for its own busy
+    // states, and it rides the block's top edge without moving anything.
+    this.markBusy(true);
     // The studio's values win: the block follows the shared configuration, so it
     // must run with what the studio is showing rather than its own reading of
     // the source it was written with.
@@ -780,6 +805,9 @@ export class EmbeddedDiagram {
       new Notice(`Modelica: ${message.split("\n")[0]}`, 8000);
     } finally {
       this.busy = false;
+      // In the `finally`: a block that failed to simulate must not leave a bar
+      // running in the note.
+      this.markBusy(false);
     }
   }
 

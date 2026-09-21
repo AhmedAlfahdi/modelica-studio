@@ -25,6 +25,26 @@ export const PLUGIN_CSS = fs.readFileSync(path.join(repoRoot, "styles.css"), "ut
  * The variables are given the values the default dark theme gives them.
  */
 export const THEME_CSS = `
+/* The app's busy bar. The plugin USES this rather than defining its own — it is
+   what Obsidian draws for its search results and PDF view — so a test that
+   measured a bar without it would be measuring nothing. */
+.is-loading { position: relative; }
+.is-loading:before {
+  content: ' ';
+  position: absolute;
+  top: 0;
+  width: 0;
+  height: 3px;
+  background-color: var(--interactive-accent);
+  animation: 1000ms ease-in-out 300ms infinite progress-bar;
+}
+@keyframes progress-bar {
+  0% { width: 0; left: 0; }
+  5% { width: 0; left: 0; }
+  50% { width: 100%; right: 0; }
+  95% { width: 0; right: 0; }
+  100% { width: 0; right: 0; }
+}
 /* app.css sets this on EVERYTHING, and geometry depends on it: without it a box
    with \`width: 100%\` plus padding and a border is wider than its container, which
    is how the trace list's filter was overflowing the panel and costing the list a

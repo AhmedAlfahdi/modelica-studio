@@ -2257,3 +2257,58 @@ body.modelica-studio-resizing * {
   font-size: 11px;
   color: var(--text-faint);
 }
+
+/* ------------------------------------------------------------------ *
+ * Busy
+ *
+ * The app carries the vocabulary for this, so nothing new is invented: its
+ * `.is-loading` draws an animated 3px accent bar along the TOP edge of whatever
+ * carries it. It is absolutely positioned, so it cannot move anything — the host
+ * only needs `position: relative`, which is also layout-neutral. Obsidian uses it
+ * for its own search results and PDF view.
+ *
+ * What is added here is a determinate variant, the reduced-motion case, and the
+ * rotation for an icon. Every one of them is a class on an element that already
+ * exists: no element is created, nothing is resized, and no timer is started.
+ * ------------------------------------------------------------------ */
+
+/* A step of a known length — a sweep of five values, say — rather than an endless
+   sweep: the width IS the progress, and it eases to the next step. */
+.is-loading.is-progress::before {
+  animation: none;
+  width: var(--ms-progress, 0%);
+  transition: width 200ms ease;
+}
+
+/* An icon that turns while its work is in flight. `.svg-icon` is a fixed 14px
+   box, so a button whose icon is replaced does not change size. */
+.modelica-studio-spin .svg-icon {
+  animation: modelica-studio-turn 900ms linear infinite;
+}
+
+@keyframes modelica-studio-turn {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* A bar that slides is motion. What is left is a bar that is simply THERE: its
+   presence says work is in flight, and the status line says which work. The
+   determinate one keeps its width, since that is information rather than
+   movement. */
+@media (prefers-reduced-motion: reduce) {
+  .is-loading::before {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+
+  .is-loading.is-progress::before {
+    width: var(--ms-progress, 0%);
+    opacity: 1;
+    transition: none;
+  }
+
+  .modelica-studio-spin .svg-icon {
+    animation: none;
+  }
+}

@@ -54,6 +54,7 @@ import { acceptsFileDrag, droppedVaultFile } from "./drop";
 import { RESULTS_TABS, resultsTabState, tabLabel, type ResultsTab } from "./bottom-tabs";
 import { buildPlotActions } from "./plot-actions";
 import { noLabelTooltip } from "./a11y";
+import { setBusy, setButtonBusy } from "./busy";
 import { savePrompt } from "../modelica/save-state";
 import { keptSourceNote, reasonDetail, stopMessage } from "../ai/stop-message";
 import { formatExchanges, formatSummary, summarise } from "../ai/interaction-log";
@@ -119,6 +120,14 @@ export class ModelicaStudioView extends ItemView {
   private codeEditor: CodeEditorHandle | null = null;
   private codeToolbar!: HTMLElement;
   private aiRow!: HTMLElement;
+  /**
+   * The buttons that start a compile or a check, in both toolbars.
+   *
+   * Kept so their icons can turn while the work is in flight: one button per mode
+   * exists at a time, and the hidden one costs nothing.
+   */
+  private runBtns: HTMLElement[] = [];
+  private checkBtns: HTMLElement[] = [];
   private modeButtons: Record<string, HTMLElement> = {};
   private statusEl!: HTMLElement;
   private plotCanvas: HTMLCanvasElement | null = null;
@@ -266,6 +275,9 @@ export class ModelicaStudioView extends ItemView {
       this.renderPalette();
     });
     this.paletteEl = paletteCol.createDiv({ cls: "modelica-studio-palette-list" });
+    // The index is parsed in the background and the palette is empty until it
+    // arrives — for a second or two on a first launch, with nothing saying why.
+    if (!this.plugin.hasLibrary) setBusy(this.paletteEl, true);
 
     // The palette is resizable too. It was the one pane with no divider, so its
     // width was a constant and a long class name in the list was cut off with no
@@ -543,13 +555,15 @@ export class ModelicaStudioView extends ItemView {
 
     // ---- Run ----
     const run = addGroup(bar, "Run", "both");
-    addBtn(
-      run,
-      "play",
-      "Simulate",
-      `Compile and run the model (${mod}+Enter)`,
-      () => void this.runSimulation(),
-      "mod-cta"
+    this.runBtns.push(
+      addBtn(
+        run,
+        "play",
+        "Simulate",
+        `Compile and run the model (${mod}+Enter)`,
+        () => void this.runSimulation(),
+        "mod-cta"
+      )
     );
     addBtn(
       run,
@@ -680,16 +694,22 @@ export class ModelicaStudioView extends ItemView {
       return b;
     };
 
-    mk("play", "Simulate", "Compile and run the source in the editor (Ctrl+Enter)", () => void this.runSimulation());
+    this.runBtns.push(
+      mk("play", "Simulate", "Compile and run the source in the editor (Ctrl+Enter)", () =>
+        void this.runSimulation()
+      )
+    );
     mk("git-compare", "Apply to diagram", "Re-parse the source and rebuild the schematic", () =>
       this.applyCodeToDiagram(true)
     );
     mk("sparkles", "AI", "Describe what you want, or ask for a repair", () => this.toggleAiRow());
-    mk(
-      "clipboard-check",
-      "Check",
-      "Look for wiring mistakes and ask the compiler about the model, without running it",
-      () => void this.checkModel()
+    this.checkBtns.push(
+      mk(
+        "clipboard-check",
+        "Check",
+        "Look for wiring mistakes and ask the compiler about the model, without running it",
+        () => void this.checkModel()
+      )
     );
 
     const diagEl = bar.createDiv({ cls: "modelica-studio-code-diag" });
@@ -1294,6 +1314,17 @@ export class ModelicaStudioView extends ItemView {
 
     this.aiBusy = true;
     this.aiCancel = false;
+    // The wait that most needs saying: a request can legitimately take minutes,
+    // and the text beside it is a countdown the eye has to read. The bar is on the
+    // element that already exists to report the run, and the button that started
+    // it turns while it waits.
+    const pressed = repair ? this.aiFixBtn : this.aiGoBtn;
+    // On the ROW, not on the progress text: the text is a short element at the end
+    // of the row, and a bar across it reads as a line drawn over the sentence. The
+    // row is the full width of the panel and has no absolutely positioned children,
+    // so `position: relative` from the busy class moves nothing.
+    setBusy(this.aiRow, true);
+    setButtonBusy(pressed, true, repair ? "wrench" : "sparkles");
     this.aiGoBtn?.setAttribute("disabled", "true");
     this.aiFixBtn?.setAttribute("disabled", "true");
     if (this.aiStopBtn) this.aiStopBtn.style.display = "";
@@ -1382,6 +1413,11 @@ export class ModelicaStudioView extends ItemView {
       }
       this.aiCancel = false;
       this.aiAbort = null;
+      // In the `finally`, so a request that fails, is stopped, or times out leaves
+      // nothing running.
+      setBusy(this.aiRow, false);
+      setButtonBusy(this.aiGoBtn, false, "sparkles");
+      setButtonBusy(this.aiFixBtn, false, "wrench");
     }
   }
 
@@ -2997,6 +3033,11 @@ export class ModelicaStudioView extends ItemView {
     this.setStatus("Checking…");
     let diagnostics: Array<{ severity: string; message: string; line?: number }> = [];
     let checked = false;
+    // Asking the compiler is the other wait long enough to need saying: the status
+    // line is one line of text in the corner, and the bar rides the surface whose
+    // contents are being worked out.
+    setBusy(this.resultsEl, true);
+    for (const b of this.checkBtns) setButtonBusy(b, true, "clipboard-check");
     try {
       const outcome = await backend.compile({
         modelName: this.plugin.model.name,
@@ -3021,6 +3062,11 @@ export class ModelicaStudioView extends ItemView {
         }`
       ).open();
       return;
+    } finally {
+      // In a `finally`, because the catch above returns: a bar left running after
+      // the work has stopped is worse than no bar at all.
+      setBusy(this.resultsEl, false);
+      for (const b of this.checkBtns) setButtonBusy(b, false, "clipboard-check");
     }
     const report = formatLint(findings, diagnostics, checked);
     new TextModal(this.app, "Check", report, {
@@ -3061,11 +3107,17 @@ export class ModelicaStudioView extends ItemView {
     const source = serializeDiagram(this.plugin.model);
     const base = collectParameters(this.plugin.model);
     const runs: FamilyRun[] = [];
+    // Determinate, because the count is known: a bar that fills to 2 of 5 says
+    // more than a bar that sweeps forever, and the sweep is the one run that can
+    // take a minute. Set before the first run, so the bar is there from the click.
+    setBusy(this.resultsEl, true, 0);
+    for (const b of this.runBtns) setButtonBusy(b, true, "play");
     try {
       for (const [i, value] of values.entries()) {
         this.setStatus(
           `Sweeping ${this.plugin.model.name}: ${parameter}=${value} (${i + 1} of ${values.length})…`
         );
+        setBusy(this.resultsEl, true, (i / values.length) * 100);
         const result = await this.plugin.backend.simulate({
           modelName: this.plugin.model.name,
           source,
@@ -3076,6 +3128,7 @@ export class ModelicaStudioView extends ItemView {
           tolerance: this.plugin.settings.tolerance,
           solver: this.plugin.settings.solver || undefined,
         });
+        setBusy(this.resultsEl, true, ((i + 1) / values.length) * 100);
         runs.push({ label: `${parameter}=${value}`, result });
       }
     } catch (err) {
@@ -3087,9 +3140,11 @@ export class ModelicaStudioView extends ItemView {
           `${err instanceof Error ? err.message : err}`
       );
       this.busy = false;
+      this.clearBusy();
       return;
     }
     this.busy = false;
+    this.clearBusy();
     this.sweepField = { parameter, values: valuesText };
     // The last run becomes the current one, so the cursor, the trace list and the
     // inspector all describe something real; the rest are drawn behind it.
@@ -3523,6 +3578,7 @@ export class ModelicaStudioView extends ItemView {
    * filled in when the index arrives.
    */
   onLibraryReady(): void {
+    setBusy(this.paletteEl, false);
     this.renderPalette();
   }
 
@@ -3803,6 +3859,10 @@ export class ModelicaStudioView extends ItemView {
    * palette and fills in as soon as the index is ready.
    */
   async refreshLibrary(): Promise<void> {
+    // Belt and braces with `onLibraryReady`: whichever arrives first, the bar
+    // stops. An index that failed to build leaves it running, which is honest —
+    // the palette really is empty — and the status line says what happened.
+    setBusy(this.paletteEl, false);
     this.renderPalette();
     this.renderInspector();
     this.editor?.requestDraw();
@@ -3827,6 +3887,25 @@ export class ModelicaStudioView extends ItemView {
       this.statusEl.setText(desc.state === "saved" ? text : `${text} — ${desc.label}`);
       this.statusEl.toggleClass("is-unsaved", desc.state !== "saved");
     }
+  }
+
+  // `setBusy` and `setButtonBusy` are imported from `./busy`, so the studio and an
+  // embedded block cannot drift apart on what "working" looks like.
+
+  /**
+   * Stop every indication that a run or a check is in flight.
+   *
+   * One call rather than four, because they always end together: a bar left
+   * running after the work has stopped is worse than no bar at all, and it is the
+   * failure mode of doing this at each exit by hand.
+   *
+   * Not the palette: the library index is a different wait, with a different
+   * lifetime, and it ends when the index is ready rather than when a run is.
+   */
+  private clearBusy(): void {
+    setBusy(this.resultsEl, false);
+    for (const b of this.runBtns) setButtonBusy(b, false, "play");
+    for (const b of this.checkBtns) setButtonBusy(b, false, "clipboard-check");
   }
 
   /**
@@ -3886,6 +3965,10 @@ export class ModelicaStudioView extends ItemView {
     }
 
     this.busy = true;
+    // Indeterminate: a compile is one opaque wait, and a bar that fills to a
+    // number nobody knows would be a lie. The status line says what it is doing.
+    setBusy(this.resultsEl, true);
+    for (const b of this.runBtns) setButtonBusy(b, true, "play");
     const previous = this.statusEl?.textContent ?? "";
     this.setStatus("Simulating…");
     const t0 = performance.now();
@@ -4012,6 +4095,7 @@ export class ModelicaStudioView extends ItemView {
       void previous;
     } finally {
       this.busy = false;
+      this.clearBusy();
     }
   }
 

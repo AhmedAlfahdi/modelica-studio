@@ -455,6 +455,9 @@ test("a sweep of fewer than two values is refused, and says why", async () => {
       "  },",
       "};",
       "view.busy = false;",
+      // Fields are initialised in the class body, which `Object.create` skips.
+      "view.runBtns = [];",
+      "view.checkBtns = [];",
       "view.family = [];",
       "view.seriesStyles = {};",
       "view.setStatus = () => {};",
