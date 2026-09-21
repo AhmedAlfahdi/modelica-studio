@@ -31,23 +31,24 @@ const HEAD = [
   "document.body.classList.add('theme-dark');",
   "",
   "/** A result with `n` variables, named as a real motor model names them. */",
-  "function makeResult(n) {",
+  "function makeResult(n, longName) {",
   "  const names = ['motor.friction.heatPort.T', 'motor.friction.phi', 'motor.friction.tau',",
   "    'motor.friction.w', 'motor.ie.v', 'motor.inertiaStator.a', 'motor.inertiaStator.w',",
   "    'motor.internalThermalPort.heatPortPermanentMagnet.Q_flow', 'motor.la.v', 'motor.phiMechanical'];",
   "  const series = [];",
   "  for (let i = 0; i < n; i++) {",
-  "    series.push({ name: names[i % names.length] + (i >= names.length ? '_' + i : ''), values: [0, 1, 2, 3, 4], unit: '' });",
+  "    const name = i === 0 && longName ? longName : names[i % names.length] + (i >= names.length ? '_' + i : '');",
+  "    series.push({ name, values: [0, 1, 2, 3, 4], unit: '' });",
   "  }",
   "  return { time: [0, 5, 10, 15, 20], series, warnings: [], compileMs: 0, simulateMs: 81, reusedBinary: true };",
   "}",
   "",
   "/** The Traces tab as the view builds it: tabs, body, and the real renderer. */",
-  "function mount(n) {",
+  "function mount(n, height, longName) {",
   "  const pane = document.createElement('div');",
   "  pane.className = 'modelica-studio-col modelica-studio-inspector';",
   "  pane.style.width = '380px';",
-  "  pane.style.height = '520px';",
+  "  pane.style.height = (height || 520) + 'px';",
   "  document.body.appendChild(pane);",
   "  const tabs = pane.createDiv({ cls: 'modelica-studio-tabs' });",
   "  const body = pane.createDiv({ cls: 'modelica-studio-inspector-body' });",
@@ -66,7 +67,7 @@ const HEAD = [
   "  view.seriesStyles = {};",
   "  view.seriesFilter = '';",
   "  view.publishChart = () => {};",
-  "  view.adoptResult(makeResult(n));",
+  "  view.adoptResult(makeResult(n, longName));",
   "  view.renderInspector();",
   "  return { view, pane, body };",
   "}",
@@ -129,8 +130,110 @@ test("the trace list is its own surface, separated from the filter above it", as
   // 8px from the list plus the filter's own 4: an input is inline-block, so its
   // margin does not collapse with the block below it. It was 4px in total.
   assert.match(d["there is a real gap between the filter and the list"], /gap=12/, "a real gap, not 4px");
-  assert.match(d["the list still scrolls rather than growing without limit"], /maxHeight=190px/);
+  assert.match(
+    d["the list still scrolls rather than growing without limit"],
+    /maxHeight=none/,
+    "no fixed cap: the pane decides how tall the box is"
+  );
   assert.match(d["the list still scrolls rather than growing without limit"], /scrollable=true/);
+});
+
+test("the list box takes the height that is left, not a fixed 190px", async () => {
+  // "The list box is not all the way to the end": the box stopped at 190px in a
+  // pane with several hundred pixels of room, so most of the panel was empty
+  // below it and the box looked as if it had floated loose.
+  //
+  // Measured, because every part of this is geometry: what the box is worth
+  // depends on the pane's height, which no source-level assertion can see.
+  const out = await runInDom(
+    [
+      HEAD,
+      "const { pane, body } = mount(173);",
+      "const list = body.querySelector('.modelica-studio-series');",
+      "const short = mount(173, 200);",
+      "const shortList = short.body.querySelector('.modelica-studio-series');",
+      "// One name long enough that it cannot fit, as a derivative of a deeply",
+      "// nested variable is: it must be ellipsised, not left to stretch the row.",
+      "const long = mount(20, 520, 'der(' + Array(12).fill('motor.internalThermalPort').join('.') + '.Q_flow)');",
+      "const longList = long.body.querySelector('.modelica-studio-series');",
+      "const longName = longList.querySelector('.modelica-studio-series-name');",
+      "",
+      "window.test('geometry', () => {",
+      "  const l = list.getBoundingClientRect();",
+      "  const p = pane.getBoundingClientRect();",
+      "  const rows = Array.from(list.querySelectorAll('.modelica-studio-series-row'));",
+      "  const name = list.querySelector('.modelica-studio-series-name');",
+      "  const widest = rows.reduce((a, r) => Math.max(a, r.getBoundingClientRect().width), 0);",
+      "  const sl = shortList.getBoundingClientRect();",
+      "  return [",
+      "    'paneHeight=' + Math.round(p.height),",
+      "    'listHeight=' + Math.round(l.height),",
+      "    'bottomGap=' + Math.round(p.bottom - l.bottom),",
+      "    'listScrolls=' + (list.scrollHeight > list.clientHeight),",
+      "    'paneScrollsX=' + (pane.scrollWidth > pane.clientWidth),",
+      "    'paneScrollsY=' + (pane.scrollHeight > pane.clientHeight),",
+      "    'bodyX=' + body.scrollWidth + ':' + body.clientWidth,",
+      "    'listX=' + list.scrollWidth + ':' + list.clientWidth,",
+      "    'widestRow=' + Math.round(widest) + ':' + Math.round(list.clientWidth),",
+      "    'nameEllipsised=' + (name.scrollWidth > name.clientWidth),",
+      "    'longNameEllipsised=' + (longName.scrollWidth > longName.clientWidth),",
+      "    'longListX=' + longList.scrollWidth + ':' + longList.clientWidth,",
+      "    'longNameWidth=' + Math.round(longName.getBoundingClientRect().width) + ':' + longList.clientWidth,",
+      "    'shortHeight=' + Math.round(sl.height),",
+      "    'shortRows=' + shortList.querySelectorAll('.modelica-studio-series-row').length,",
+      "  ].join(' ');",
+      "});",
+      "window.test('the Selection tab is left alone', () => {",
+      "  // The fill is scoped to the Traces tab: pinning the Selection tab's body to",
+      "  // the pane would leave the lower half of a long form unreachable.",
+      "  const withClass = getComputedStyle(pane).display;",
+      "  const overflow = getComputedStyle(body).overflowY;",
+      "  body.classList.remove('is-results');",
+      "  const without = getComputedStyle(pane).display;",
+      "  const overflowWithout = getComputedStyle(body).overflowY;",
+      "  body.classList.add('is-results');",
+      "  return 'traces=' + withClass + '/' + overflow + ' selection=' + without + '/' + overflowWithout;",
+      "});",
+      "window.finish();",
+    ].join("\n")
+  );
+
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const g = out.results[0].detail;
+  const num = (key) => Number(new RegExp(key + "=(-?\\d+)").exec(g)?.[1]);
+
+  assert.equal(num("paneHeight"), 520, "the pane the test gives it");
+  // The box is the leftover height — most of the pane — not a 190px cap.
+  assert.ok(num("listHeight") > 280, `the box fills the pane, got ${num("listHeight")}px`);
+  // And it ends at the body's padding, not hundreds of pixels above it.
+  assert.ok(num("bottomGap") <= 20, `the box reaches the bottom, gap ${num("bottomGap")}px :: ${g}`);
+  assert.match(g, /listScrolls=true/, "the rows scroll inside the box");
+  assert.match(g, /paneScrollsY=false/, "the pane itself does not scroll");
+  assert.match(g, /paneScrollsX=false/, "and there is no stray horizontal scrollbar");
+  assert.match(g, /bodyX=(\d+):\1/, "the body is not wider than it is");
+  assert.match(g, /listX=(\d+):\1/, "nor is the list: a sideways scrollbar there costs a row");
+  assert.ok(
+    num("widestRow") <= num("listHeight") * 100 && num("widestRow") <= num("paneHeight") * 100,
+    "sanity"
+  );
+  // A name too long for the column is ellipsised rather than stretching the row
+  // and giving the list a sideways scrollbar.
+  assert.match(g, /longNameEllipsised=true/, "an over-long name is ellipsised, not cut off");
+  assert.match(g, /longListX=(\d+):\1/, "and it does not widen the list");
+  const [nameW, listW] = g.match(/longNameWidth=(\d+):(\d+)/).slice(1).map(Number);
+  assert.ok(nameW < listW, `the name fits the column: ${nameW} < ${listW}`);
+  // A pane too short for the content keeps the box usable.
+  assert.ok(num("shortHeight") >= 100, `a floor of about six rows, got ${num("shortHeight")}`);
+  assert.ok(num("shortRows") > 0, "with rows in it");
+
+  assert.equal(
+    out.results[1].detail,
+    "traces=flex/auto selection=block/visible",
+    "the fill applies to the Traces tab only"
+  );
 });
 
 test("how much of the list is off screen is stated where it can be read", async () => {

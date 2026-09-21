@@ -25,6 +25,11 @@ export const PLUGIN_CSS = fs.readFileSync(path.join(repoRoot, "styles.css"), "ut
  * The variables are given the values the default dark theme gives them.
  */
 export const THEME_CSS = `
+/* app.css sets this on EVERYTHING, and geometry depends on it: without it a box
+   with \`width: 100%\` plus padding and a border is wider than its container, which
+   is how the trace list's filter was overflowing the panel and costing the list a
+   horizontal scrollbar's worth of height. */
+* { box-sizing: border-box; }
 :root {
   --input-height: 30px;
   --input-padding: 4px 8px;

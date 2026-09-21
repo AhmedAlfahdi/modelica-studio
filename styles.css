@@ -190,6 +190,40 @@
   min-width: 0;
 }
 
+/* The Traces tab: the list of variables IS the content, so it takes the height
+   that is left rather than stopping at a fixed 190px with dead space below it —
+   reported as "the list box is not all the way to the end".
+   The pane becomes a column and hands the body everything below the tabs; the
+   body then hands the list everything below the heading, the filter and the
+   count. `height: 100%` on the body would be 100% of the PANE, which ignores the
+   tab strip above it and pushes the body that much past the bottom.
+   Only this tab: the Selection tab is a long form, and pinning its body to the
+   pane's height would leave its lower fields unreachable. */
+.modelica-studio-inspector:has(> .modelica-studio-inspector-body.is-results) {
+  display: flex;
+  flex-direction: column;
+  /* The list scrolls, not the pane, so the heading and the filter stay put and
+     no stray scrollbar appears along the bottom. */
+  overflow: hidden;
+}
+
+.modelica-studio-inspector > .modelica-studio-inspector-body.is-results {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* A pane too short even for the list's floor scrolls here rather than hiding
+     the bottom of the list. */
+  overflow-y: auto;
+}
+
+.modelica-studio-inspector-body.is-results .modelica-studio-series {
+  flex: 1 1 auto;
+  /* About six rows: below this it stops being a list and becomes a slit. */
+  min-height: 108px;
+  max-height: none;
+}
+
 .modelica-studio-inspector-head {
   margin-bottom: 8px;
   padding-bottom: 6px;
@@ -1076,10 +1110,24 @@ body.modelica-studio-resizing * {
   opacity: 1;
 }
 
+/* A variable name is one long unbreakable word, and as a flex item its automatic
+   minimum size is that whole word — so the row could not shrink, the list grew a
+   horizontal scrollbar, and the name was cut off with no ellipsis. That scrollbar
+   also took height from the list, which is why the box stopped short of the
+   bottom of the pane. `min-width: 0` lets it shrink, which is what makes the
+   ellipsis work at all. */
 .modelica-studio-series-name {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Nothing in a row may spill sideways: the list is a vertical window, and a
+   horizontal scrollbar inside it costs a line of rows. */
+.modelica-studio-series-row {
+  overflow: hidden;
 }
 
 .modelica-studio-swatch.is-off {
@@ -1088,7 +1136,11 @@ body.modelica-studio-resizing * {
 
 .modelica-studio-series + .modelica-studio-search,
 .modelica-studio-inspector-body > .modelica-studio-search {
-  margin-bottom: 4px;
+  /* Its own side margins are part of the width. `width: 100%` with the base
+     rule's 6px each side made the filter wider than the panel it sits in: the
+     body grew a horizontal scrollbar, and that bar took a row's worth of height
+     off the list below it. */
+  margin: 6px 0 4px;
   width: 100%;
 }
 

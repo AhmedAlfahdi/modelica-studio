@@ -5,6 +5,33 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.32] — 2026-10-14
+
+### Fixed
+
+- **The list of traces stopped short of the bottom of the panel.** It had a fixed
+  190px cap, so in a tall pane it floated with a hand's width of empty space
+  below it — reported as "the list box is not all the way to the end". The pane is
+  a column for that tab now and the list takes the height left below the heading,
+  the filter and the count, with the rows scrolling inside it. A floor of about
+  six rows keeps a short pane from turning it into a slit, and the Selection tab
+  is untouched: pinning its body to the pane would leave the lower half of a long
+  form unreachable.
+- **Two things were stealing size from that box.** The filter was `width: 100%`
+  *plus* 6px of side margins, so it was wider than the panel it sits in: the
+  inspector grew a horizontal scrollbar, and that bar took a row's worth of height
+  off the list below it. And a variable name could not shrink — a flex item's
+  automatic minimum size is its whole unbreakable word — so a long name stretched
+  the row past the box and was cut off with no ellipsis, as
+  `der(motor.airGapDC.vai…` shows. The filter's margins are part of its width now,
+  and the name has `min-width: 0`, which is what makes an ellipsis possible at all.
+
+### Changed
+
+- The DOM harness's theme now carries app.css's global `* { box-sizing: border-box }`.
+  Without it every box in a test was measured content-box, which hid the overflow
+  above: the harness was wrong, not the plugin.
+
 ## [0.2.0-beta.31] — 2026-10-14
 
 ### Fixed

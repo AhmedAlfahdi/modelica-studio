@@ -1944,6 +1944,11 @@ export class ModelicaStudioView extends ItemView {
     }
 
     el.empty();
+    // Which tab this body holds, so the stylesheet can let the trace list take the
+    // height that is left over. The Selection tab is a long form whose content has
+    // to be able to scroll the pane; the Traces tab is a list, and a list should
+    // fill the space it is given.
+    el.toggleClass("is-results", this.inspectorTab === "results");
     if (this.inspectorTab === "results") {
       this.renderResultSummary(el);
     } else {
