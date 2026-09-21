@@ -329,8 +329,11 @@ export class StubButton {
 
 export class StubSlider {
   value = 0;
+  /** The limits it was given, so a test can assert the RANGE and not only the value. */
+  limits: [number, number, number] | null = null;
   constructor(public inputEl: HTMLElement) {}
-  setLimits(): this {
+  setLimits(min: number, max: number, step: number): this {
+    this.limits = [min, max, step];
     return this;
   }
   setValue(v: number): this {

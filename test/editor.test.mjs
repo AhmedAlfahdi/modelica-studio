@@ -1289,12 +1289,21 @@ test("the wire-thickness setting reaches the drawing, and the click area", () =>
 
   const standard = recording(1);
   const heavy = recording(2.5);
+  // And the top of the setting's range: the weight is multiplied AFTER the
+  // standard's own clamps, so ten times really is ten times rather than a
+  // clamped 8px — which is what the range is for.
+  const tenfold = recording(10);
   assert.equal(standard.length, heavy.length, "the same frame, drawn twice");
+  assert.equal(standard.length, tenfold.length, "and again");
   const changed = standard
     .map((w, i) => (Math.abs(w - heavy[i]) > 1e-9 ? i : -1))
     .filter((i) => i >= 0);
   assert.ok(changed.length > 0, "something in the frame responds to the setting");
   const ratio = heavy[changed[0]] / standard[changed[0]];
+  assert.ok(
+    Math.abs(tenfold[changed[0]] / standard[changed[0]] - 10) < 0.01,
+    `ten times as heavy at the top of the range (${standard[changed[0]]} -> ${tenfold[changed[0]]})`
+  );
   assert.ok(
     Math.abs(ratio - 2.5) < 0.01,
     `the wire is drawn 2.5x as heavy (${standard[changed[0]]} -> ${heavy[changed[0]]})`

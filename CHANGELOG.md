@@ -5,6 +5,17 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.38] — 2026-10-14
+
+### Changed
+
+- **Wire thickness now goes up to 1000%**, from 300%: ten times the standard
+  weight, as asked for. The weight is multiplied after the standard's own clamps,
+  so ten times really is ten times rather than a clamped 8px — which is what the
+  wider range is for. The area a wire can be clicked in follows it, so a very
+  heavy wire is grabbable across its face; components and pins still take a click
+  before a wire does.
+
 ## [0.2.0-beta.37] — 2026-10-14
 
 ### Added

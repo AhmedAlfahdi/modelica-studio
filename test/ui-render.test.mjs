@@ -372,10 +372,14 @@ test("the settings tab renders every section, with the solver's details in its b
     "    const c = item(n).components.find((x) => typeof x.setDynamicTooltip === 'function');",
     "    return c ? c.value : '?';",
     "  };",
+    "  // The stub records `setLimits` so a range can be asserted, not just a value.",
+    "  const wire = item('Wire thickness').components.find((x) => typeof x.setDynamicTooltip === 'function');",
+    "  window.__wireLimits = wire && wire.limits ? wire.limits.join('-') : 'not recorded';",
     "  const toggle = item('Show parameters when hovering a component').components",
     "    .find((c) => typeof c.setValue === 'function' && typeof c.setDynamicTooltip !== 'function');",
     "  return 'label=' + sliderAt('Label size') + ' wire=' + sliderAt('Wire thickness')",
-    "    + ' popup=' + sliderAt('Parameter popup size') + ' hover=' + (toggle ? toggle.value : '?');",
+    "    + ' popup=' + sliderAt('Parameter popup size') + ' hover=' + (toggle ? toggle.value : '?')",
+    "    + ' wireLimits=' + window.__wireLimits;",
     "});",
     "window.test('the plot readout has its own size, in the plot section', () => {",
     "  const item = Array.from(root.querySelectorAll('.setting-item')).find((i) => i.querySelector('.setting-item-name').textContent === 'Readout size');",
@@ -432,8 +436,8 @@ test("the settings tab renders every section, with the solver's details in its b
   // defaults, so a tab that ignored the setting would show 100/true and fail.
   assert.equal(
     d["the diagram controls exist and show the stored values"],
-    "label=140 wire=160 popup=130 hover=false",
-    "every diagram control reflects its own stored setting"
+    "label=140 wire=160 popup=130 hover=false wireLimits=50-1000-10",
+    "every diagram control reflects its own stored setting, and the wire weight reaches 1000%"
   );
   assert.equal(
     d["the plot readout has its own size, in the plot section"],

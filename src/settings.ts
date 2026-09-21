@@ -279,15 +279,16 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Wire thickness")
       .setDesc(
-        "Scales the strokes of the wires, as a percentage of the default. The " +
-          "default is a fixed fraction of a symbol's size, so wires and symbols " +
-          "keep their relationship at every zoom; this moves that whole curve, " +
-          "and the area a wire can be clicked in follows, or a thick wire would " +
-          "look right and be hard to grab. Symbols and grid are unaffected."
+        "Scales the strokes of the wires, as a percentage of the default: 100% is " +
+          "the standard weight, 1000% is ten times it. The default is a fixed " +
+          "fraction of a symbol's size, so wires and symbols keep their " +
+          "relationship at every zoom; this moves that whole curve, and the area a " +
+          "wire can be clicked in follows, or a thick wire would look right and be " +
+          "hard to grab. Symbols and grid are unaffected."
       )
       .addSlider((sl) =>
         sl
-          .setLimits(50, 300, 10)
+          .setLimits(50, 1000, 10)
           .setValue(Math.round(this.plugin.settings.wireScale * 100))
           .setDynamicTooltip()
           .onChange(async (v) => {
