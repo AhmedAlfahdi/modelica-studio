@@ -5,6 +5,32 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.30] — 2026-10-14
+
+### Fixed
+
+- **"Why is there a box hiding the list of traces?"** Nothing was covering it. The
+  list is a 190px window onto up to forty rows, so it is scrolled constantly, and a
+  freshly scrolled row is cut off at the list's top edge — which was 4px below the
+  filter box, with nothing to mark where the list began. Measured from the
+  screenshot, the cut is 4px *below* the box's border: that is the list's own top
+  edge, and the row was simply scrolled out of it. The list now has its own
+  bordered, inset surface and a real gap from the filter, so the boundary is
+  visible and a cut row reads as a scrolled list rather than as something the box
+  is doing.
+- **How much of the list is off screen is now stated above it** — "Showing the
+  first 40 of 173 — type to narrow the list" — instead of at the foot of the
+  scroll area, where it could only be found by scrolling to the end of the set the
+  reader is trying to search.
+
+### Changed
+
+- **Checking a trace no longer throws the list back to the top.** The list is
+  rebuilt on every check and a fresh element starts at the first row, so ticking
+  the thirtieth trace meant finding the thirty-first all over again. The reader's
+  offset is kept across a rebuild, and dropped when the filter or the result
+  changes, because then the list is of something else.
+
 ## [0.2.0-beta.29] — 2026-10-14
 
 ### Fixed

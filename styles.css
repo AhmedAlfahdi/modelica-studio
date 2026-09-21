@@ -290,10 +290,27 @@
   color: var(--text-error, var(--text-normal));
 }
 
+/* The list is a WINDOW onto up to forty rows in about ten rows' height, so it is
+   scrolled constantly — and a freshly scrolled row is cut off at the list's top
+   edge. With the filter box sitting 4px above that edge and nothing marking where
+   the list begins, the cut row read as the box covering the traces: reported as
+   "why is there a box hiding the list of traces". Its own surface and a real gap
+   make the list's boundary the obvious cause of the cut. */
 .modelica-studio-series {
   max-height: 190px;
   overflow-y: auto;
-  margin-bottom: 6px;
+  margin: 8px 0 6px;
+  padding: 2px 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+}
+
+/* Above the list, where it can be read without scrolling: how much of the list is
+   not on screen. At the foot of a 190px window it could only be found by
+   scrolling to the end of the set the reader is trying to search. */
+.modelica-studio-series-more {
+  margin: 0 0 4px;
 }
 
 .modelica-studio-series-row {

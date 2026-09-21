@@ -134,6 +134,27 @@ export class ModelicaStudioView extends ItemView {
   private inspectorTab: "component" | "results" = "component";
   /** Filter text for the variable list. */
   private seriesFilter = "";
+  /**
+   * Where the reader had scrolled to in the variable list.
+   *
+   * The list is rebuilt on every check, and a fresh element starts at the top:
+   * clicking the thirtieth trace threw the list back to the first, so every box
+   * after it had to be found again. Kept here rather than read back off the
+   * element, which is gone by the time the next one is built.
+   */
+  private seriesScroll = 0;
+
+  /**
+   * Take a result as the one being shown.
+   *
+   * The list of traces describes a different set of variables after this, so the
+   * reader's place in the old one means nothing: it is reset here rather than at
+   * each of the four places a result arrives or goes away.
+   */
+  private adoptResult(result: SimResult | null): void {
+    this.result = result;
+    this.seriesScroll = 0;
+  }
   /** Which bottom tab is showing. */
   private bottomTab: ResultsTab = "plot";
   /** Header of the bottom pane, whose actions depend on the tab. */
@@ -2306,6 +2327,9 @@ export class ModelicaStudioView extends ItemView {
     filter.addEventListener("input", () => {
       this.seriesFilter = filter.value;
       const caret = filter.selectionStart ?? filter.value.length;
+      // A new filter is a new list, so it opens at the top: keeping the old
+      // offset would show the middle of a set the reader has not seen.
+      this.seriesScroll = 0;
       this.renderInspector();
       const next = this.inspectorEl?.querySelector<HTMLInputElement>(
         'input[placeholder="Filter variables…"]'
@@ -2316,21 +2340,34 @@ export class ModelicaStudioView extends ItemView {
       }
     });
 
-    const list = parent.createDiv({ cls: "modelica-studio-series" });
     const needle = this.seriesFilter.trim().toLowerCase();
     const matching = (s: SimSeries) => !needle || s.name.toLowerCase().includes(needle);
     // Simulation order, filtered — not checked-first, so a click never moves a row.
     const ordered = this.result.series.filter(matching);
-    for (const s of ordered.slice(0, SERIES_PAGE)) this.renderSeriesRow(list, s);
+
+    // How much of the list is not on screen, ABOVE the list rather than at its
+    // foot: the list is a 190px window onto up to forty rows, and a note at the
+    // end of it can only be read by scrolling to the end — which is the one thing
+    // a reader looking for a variable is not doing.
     if (ordered.length > SERIES_PAGE) {
-      list.createDiv({
-        cls: "modelica-studio-muted",
-        text: `…${ordered.length - SERIES_PAGE} more — narrow with the filter`,
+      parent.createDiv({
+        cls: "modelica-studio-muted modelica-studio-series-more",
+        text: `Showing the first ${SERIES_PAGE} of ${ordered.length} — type to narrow the list.`,
       });
     }
+
+    const list = parent.createDiv({ cls: "modelica-studio-series" });
+    for (const s of ordered.slice(0, SERIES_PAGE)) this.renderSeriesRow(list, s);
     if (ordered.length === 0) {
       list.createDiv({ cls: "modelica-studio-muted", text: "No variable matches that filter." });
     }
+    // Rebuilt after every check, so the reader's place is put back: clicking the
+    // thirtieth trace used to throw the list back to the top, and every box after
+    // it had to be found again.
+    list.scrollTop = this.seriesScroll;
+    list.addEventListener("scroll", () => {
+      this.seriesScroll = list.scrollTop;
+    });
   }
 
   /** One trace toggle, with its colour and current value range. */
@@ -3042,7 +3079,7 @@ export class ModelicaStudioView extends ItemView {
     // inspector all describe something real; the rest are drawn behind it.
     const last = runs.pop();
     this.lastSweep = last ? { parameter, value: String(values[values.length - 1]) } : null;
-    if (last) this.result = last.result;
+    if (last) this.adoptResult(last.result);
     this.family = runs;
     // The traces are chosen by the ONE seeder, exactly as a single run chooses
     // them: a second rule here would override it, which is the fault the seeding
@@ -3446,7 +3483,7 @@ export class ModelicaStudioView extends ItemView {
     this.editor?.setModel(this.plugin.model);
     // Anything derived from the previous model goes with it: a result would plot
     // traces that no longer match the source.
-    this.result = null;
+    this.adoptResult(null);
     this.lastSimulationError = null;
     this.clearCodeProblem();
     // The exact source when there is one, and the serialised diagram only as a
@@ -3485,7 +3522,7 @@ export class ModelicaStudioView extends ItemView {
 
   /** Re-read the plugin's model, e.g. after it was replaced elsewhere. */
   reloadFromPlugin(): void {
-    this.result = null;
+    this.adoptResult(null);
     this.editor?.setModel(this.plugin.model);
     this.renderInspector();
     // Loading a model replaces the source too, or code mode keeps showing the
@@ -3854,7 +3891,7 @@ export class ModelicaStudioView extends ItemView {
         solver: this.plugin.settings.solver || undefined,
       });
 
-      this.result = result;
+      this.adoptResult(result);
       // A plain run replaces the run on screen, so the sweep's label no longer
       // describes it.
       this.lastSweep = null;

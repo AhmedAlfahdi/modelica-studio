@@ -178,10 +178,16 @@ test("checking a trace does not move it", () => {
   // different trace. A list that rearranges itself as you use it is worse than
   // one you have to scroll.
   const src = view;
-  const list = /const list = parent\.createDiv\(\{ cls: "modelica-studio-series" \}\)[\s\S]*?for \(const s of ordered/.exec(src);
+  // From the filter to the end of the list's build, which is the whole of how the
+  // rows are chosen and placed.
+  const list = /const needle = this\.seriesFilter[\s\S]*?list\.addEventListener\("scroll"/.exec(src);
   assert.ok(list, "the trace list is found");
-  assert.match(list[0], /this\.result\.series\.filter\(matching\)/, "the order is the simulation's");
-  assert.ok(!/\bselected\.filter\(matching\)/.test(list[0]), "checked traces are not hoisted");
+  assert.match(
+    list[0],
+    /const ordered = this\.result\.series\.filter\(matching\)/,
+    "the order is the simulation's"
+  );
+  assert.ok(!/\bselected\b/.test(list[0]), "checked traces are not consulted for the order");
   assert.ok(!/\.\.\.rest\.filter/.test(list[0]), "and there is no second, reordered list");
 });
 

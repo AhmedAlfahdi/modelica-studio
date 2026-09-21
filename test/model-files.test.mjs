@@ -68,7 +68,8 @@ test("a new model clears the code editor as well as the canvas", () => {
   assert.match(load[0], /this\.codeEditor\.setValue\(/, "and so is the source");
   assert.match(load[0], /modelSourceText\(\)/, "taken from the stored source");
   // Results from the previous model would plot traces that no longer match.
-  assert.match(load[0], /this\.result = null/, "the previous result is dropped");
+  // Adopted rather than assigned, so the trace list's scroll offset goes with it.
+  assert.match(load[0], /this\.adoptResult\(null\)/, "the previous result is dropped");
 });
 
 test("a new model is not replaced by an example", () => {
