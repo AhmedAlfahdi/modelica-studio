@@ -2476,13 +2476,21 @@ export class ModelicaStudioView extends ItemView {
           .addEventListener("click", () => this.autoScale());
         // The delta toggle: on, the cursor readout says how far each family curve
         // is from the run on screen.
+        // `is-active` is the visible state and `is-idle` says the effect has
+        // nothing to work on yet: without both, pressing it looked like pressing
+        // nothing, which is exactly how it was reported.
+        const hasFamily = this.family.length > 0;
+        const on = this.plugin.settings.plotDeltas;
         const deltas = actions.createEl("button", {
-          cls: `modelica-studio-btn${this.plugin.settings.plotDeltas ? " is-active" : ""}`,
+          cls: `modelica-studio-btn${on ? " is-active" : ""}${hasFamily ? "" : " is-idle"}`,
           text: "Δ",
         });
+        deltas.setAttribute("aria-pressed", on ? "true" : "false");
         deltas.setAttribute(
           "aria-label",
-          "Show how far each swept curve is from the run on screen, at the cursor"
+          hasFamily
+            ? "Show how far each swept curve is from the run on screen, at the cursor"
+            : "Differences are shown when there is a family to compare with — sweep a parameter, or Keep as before"
         );
         deltas.addEventListener("click", () => void this.toggleDeltas());
         // The figure buttons. A canvas cannot be selected or dragged out, so
@@ -3124,10 +3132,16 @@ export class ModelicaStudioView extends ItemView {
   private async toggleDeltas(): Promise<void> {
     this.plugin.settings.plotDeltas = !this.plugin.settings.plotDeltas;
     await this.plugin.saveSettings();
+    // The effect lives in the hover readout, so the message says where to look —
+    // and says when there is nothing to compare, which is the case where a toggle
+    // legitimately changes nothing on screen.
+    const on = this.plugin.settings.plotDeltas;
     this.setStatus(
-      this.plugin.settings.plotDeltas
-        ? "Cursor readout: differences shown"
-        : "Cursor readout: differences hidden"
+      !on
+        ? "Cursor readout: differences hidden"
+        : this.family.length > 0
+          ? "Cursor readout: differences shown — rest the cursor on the plot"
+          : "Differences are on, but there is nothing to compare yet: sweep a parameter or press Keep as before"
     );
     this.drawResults();
     this.renderPlotPane();

@@ -675,6 +675,19 @@ body.modelica-studio-resizing * {
 }
 
 /* The family controls: a parameter, the values to try, and one button. */
+/* A toggle in a row of buttons has to LOOK toggled: the delta button did its work
+   invisibly, which read as a button that does nothing. */
+.modelica-studio-btn.is-active {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+}
+
+/* Nothing to compare against yet: the effect is real but has no input. */
+.modelica-studio-btn.is-idle {
+  opacity: 0.6;
+}
+
 .modelica-studio-family {
   display: flex;
   align-items: center;

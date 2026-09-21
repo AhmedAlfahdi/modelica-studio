@@ -5,6 +5,23 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.20] — 2026-10-07
+
+### Fixed
+
+- **The delta button did nothing you could see.** It toggled the setting and
+  repainted, but it had no visible on/off state — a plain button among plain
+  buttons — and its effect lives in the hover readout, which only exists while the
+  cursor is over the plot AND there is a family to compare against. Pressing it on
+  a single run therefore changed exactly nothing on screen. Reported as "when
+  pressing the delta button nothing happens".
+
+  It now carries `is-active` while on (accent border and background) and
+  `is-idle` while there is nothing to compare, with a tooltip that says so. The
+  status line names where to look — "differences shown — rest the cursor on the
+  plot" — or says plainly that there is nothing to compare yet and what to do
+  about it.
+
 ## [0.2.0-beta.19] — 2026-10-06
 
 ### Added
