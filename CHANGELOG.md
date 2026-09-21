@@ -5,6 +5,21 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.26] — 2026-10-13
+
+### Fixed
+
+- **The cursor snap did nothing on a plot with two y-axes.** The snap searched for
+  two curves whose VALUES are equal, and the curves it was written for —
+  `capacitor.v` on 0…15 and `inductor.i` on −0.1…0.1 — are two magnitudes that get
+  two axes, so their values are never equal while the lines cross plainly on screen.
+  It searched for an equality that could not happen. The search now runs in the
+  space the lines are DRAWN in, through the same per-series scaling the renderer
+  uses, so "the lines cross" means what the reader sees.
+
+  Reported as "the cursor snaps to crossings is not working", on the RLC plot the
+  feature was written for.
+
 ## [0.2.0-beta.25] — 2026-10-12
 
 ### Added

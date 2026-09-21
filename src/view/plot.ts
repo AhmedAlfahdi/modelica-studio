@@ -524,14 +524,16 @@ export function drawPlot(
     let cursorAt = opts.cursorX;
     let snappedToCrossing = false;
     if (opts.snapIntersections !== false && visible.length > 1) {
+      // In the space the lines are DRAWN in — pixels — and not in their values.
+      // `capacitor.v` and `inductor.i` are two magnitudes and get two y-axes, so
+      // their values are never equal while the lines cross plainly on screen: the
+      // snap searched for an equality that could not happen and never fired.
+      const drawn = visible.map((s) =>
+        s.values.map((v) => (Number.isFinite(v) ? scaleFor(s.name)(v) : Number.NaN))
+      );
       // A hundredth of the visible span: about seven pixels on a plot this wide,
       // so it is a magnet rather than a move.
-      const crossing = nearestCrossing(
-        result.time,
-        visible.map((s) => s.values),
-        cursorAt,
-        (xMax - xMin) * 0.01
-      );
+      const crossing = nearestCrossing(result.time, drawn, cursorAt, (xMax - xMin) * 0.01);
       if (crossing !== undefined) {
         cursorAt = crossing;
         snappedToCrossing = true;

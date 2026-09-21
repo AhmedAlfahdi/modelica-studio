@@ -593,3 +593,29 @@ test("the cursor snaps to the instant two curves cross", () => {
     "a gap does not stop the search"
   );
 });
+
+test("the snap works on the lines as drawn, not on their values", () => {
+  // The report that it "does not work": capacitor.v on 0..15 and inductor.i on
+  // -0.1..0.1 are two axes, so their values are never equal -- while the two lines
+  // cross plainly on screen. Searching for an equality that cannot happen is why
+  // nothing snapped.
+  const time = [0, 1, 2, 3, 4];
+  const volts = [0, 4, 8, 12, 15];      // big numbers
+  const amps = [0.1, 0.06, 0.02, -0.02, -0.05]; // tiny, and never equal to volts
+  assert.ok(
+    volts.every((v, i) => v !== amps[i]),
+    "the values never meet, which is the situation being fixed"
+  );
+
+  // Drawn: volts maps to 0..100 pixels, amps to 100..0 -- they cross at t = 1.5.
+  const px = (v, lo, hi) => 100 - ((v - lo) / (hi - lo)) * 100;
+  const voltsPx = volts.map((v) => px(v, 0, 15));
+  const ampsPx = amps.map((v) => px(v, -0.05, 0.1));
+  const crossing = plotMod.nearestCrossing(time, [voltsPx, ampsPx], 1.4, 0.5);
+  assert.ok(crossing !== undefined, "the drawn lines cross and are found");
+  // Between i=1 and i=2: 46.67 / (46.67 + 6.67) = 0.875 of the way, so t = 1.875.
+  assert.ok(Math.abs(crossing - 1.875) < 1e-6, `interpolated between samples, got ${crossing}`);
+
+  // And in value space there is nothing to find, which is the bug in one line.
+  assert.equal(plotMod.nearestCrossing(time, [volts, amps], 1.4, 0.5), undefined);
+});
