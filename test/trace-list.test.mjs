@@ -31,7 +31,7 @@ const HEAD = [
   "document.body.classList.add('theme-dark');",
   "",
   "/** A result with `n` variables, named as a real motor model names them. */",
-  "function makeResult(n, longName) {",
+  "function makeResult(n, longName, extras) {",
   "  const names = ['motor.friction.heatPort.T', 'motor.friction.phi', 'motor.friction.tau',",
   "    'motor.friction.w', 'motor.ie.v', 'motor.inertiaStator.a', 'motor.inertiaStator.w',",
   "    'motor.internalThermalPort.heatPortPermanentMagnet.Q_flow', 'motor.la.v', 'motor.phiMechanical'];",
@@ -40,11 +40,18 @@ const HEAD = [
   "    const name = i === 0 && longName ? longName : names[i % names.length] + (i >= names.length ? '_' + i : '');",
   "    series.push({ name, values: [0, 1, 2, 3, 4], unit: '' });",
   "  }",
+  "  // A constant and a derivative, so the Varying and Derivatives presets have",
+  "  // something to exclude and something to keep. Left out when a test needs a",
+  "  // result with neither.",
+  "  if (extras !== false) {",
+  "    series.push({ name: 'motor.R_s', values: [287, 287, 287, 287, 287], unit: '' });",
+  "    series.push({ name: 'der(motor.phiMechanical)', values: [0, 1, 2, 3, 4], unit: '' });",
+  "  }",
   "  return { time: [0, 5, 10, 15, 20], series, warnings: [], compileMs: 0, simulateMs: 81, reusedBinary: true };",
   "}",
   "",
   "/** The Traces tab as the view builds it: tabs, body, and the real renderer. */",
-  "function mount(n, height, longName) {",
+  "function mount(n, height, longName, extras) {",
   "  const pane = document.createElement('div');",
   "  pane.className = 'modelica-studio-col modelica-studio-inspector';",
   "  pane.style.width = '380px';",
@@ -66,8 +73,11 @@ const HEAD = [
   "  view.resultsEl = null;",
   "  view.seriesStyles = {};",
   "  view.seriesFilter = '';",
+  "  // Fields are initialised in the class body, which `Object.create` skips.",
+  "  view.seriesPreset = 'all';",
+  "  view.varyingCache = { result: null, names: new Set() };",
   "  view.publishChart = () => {};",
-  "  view.adoptResult(makeResult(n, longName));",
+  "  view.adoptResult(makeResult(n, longName, extras));",
   "  view.renderInspector();",
   "  return { view, pane, body };",
   "}",
@@ -104,7 +114,10 @@ test("the trace list is its own surface, separated from the filter above it", as
       "const small = mount(6);",
       "const smallList = small.body.querySelector('.modelica-studio-series');",
       "const smallFilter = small.body.querySelector('.modelica-studio-search');",
-      "const gap = Math.round(smallList.getBoundingClientRect().top - smallFilter.getBoundingClientRect().bottom);",
+      "// Whatever sits directly above the list: the filter, the count line, or",
+      "// the preset strip. The list must not touch it.",
+      "const above = smallList.previousElementSibling;",
+      "const gap = Math.round(smallList.getBoundingClientRect().top - above.getBoundingClientRect().bottom);",
       "",
       "window.test('the list is a bounded, inset surface', () =>",
       "  'border=' + s.borderTopWidth + ' radius=' + s.borderTopLeftRadius + ' bg=' + s.backgroundColor + ' pane=' + paneStyle.backgroundColor + ' overflowY=' + s.overflowY);",
@@ -127,9 +140,14 @@ test("the trace list is its own surface, separated from the filter above it", as
     "border=1px radius=4px bg=rgb(30, 30, 30) pane=rgb(38, 38, 38) overflowY=auto",
     "a bordered, darker box against the pane, so where it starts is obvious"
   );
-  // 8px from the list plus the filter's own 4: an input is inline-block, so its
-  // margin does not collapse with the block below it. It was 4px in total.
-  assert.match(d["there is a real gap between the filter and the list"], /gap=12/, "a real gap, not 4px");
+  // The list's own 8px margin. This was 4px in total, with nothing between the
+  // filter and the box, which is what made a scrolled row look like it was being
+  // covered by the filter.
+  // 6px from the preset strip's own margin plus the list's 8px: they are flex
+  // items, so the margins do not collapse. This was 4px in total, with nothing
+  // between the filter and the box, which is what made a scrolled row look like
+  // it was being covered by the filter.
+  assert.match(d["there is a real gap between the filter and the list"], /gap=14/, "a real gap, not 4px");
   assert.match(
     d["the list still scrolls rather than growing without limit"],
     /maxHeight=none/,
@@ -236,6 +254,138 @@ test("the list box takes the height that is left, not a fixed 190px", async () =
   );
 });
 
+test("the list can be narrowed by preset, not only by typing", async () => {
+  // Asked for as "filter presets, like showing only the active traces": the list
+  // is every variable the model has, and the question asked of it is nearly
+  // always one of four. A preset is a named predicate, not a filter string --
+  // "Active" is not a substring of anything.
+  const out = await runInDom(
+    [
+      HEAD,
+      "const { body } = mount(173);",
+      "// Two traces drawn, the way a reader picks them.",
+      "const rows = body.querySelectorAll('.modelica-studio-series-row');",
+      "check(rows[1]);",
+      "check(rows[2]);",
+      "",
+      "const pills = () => Array.from(body.querySelectorAll('.modelica-studio-preset'));",
+      "const names = () => Array.from(body.querySelectorAll('.modelica-studio-series-name')).map((n) => n.textContent);",
+      "const pick = (label) => {",
+      "  const b = pills().find((p) => p.textContent === label);",
+      "  if (!b) throw new Error('no pill ' + label);",
+      "  b.dispatchEvent(new MouseEvent('click', { bubbles: true }));",
+      "};",
+      "",
+      "window.test('the pills are there, with one showing', () => {",
+      "  return pills().map((p) => p.textContent + (p.getAttribute('aria-pressed') === 'true' ? '*' : '')).join(' ')",
+      "    + ' hints=' + pills().every((p) => !!p.getAttribute('aria-label'));",
+      "});",
+      "window.test('Active keeps only what is drawn', () => {",
+      "  pick('Active');",
+      "  const shown = names();",
+      "  const pressed = pills().find((p) => p.textContent === 'Active').getAttribute('aria-pressed');",
+      "  return shown.length + ' rows: ' + shown.join(', ') + ' pressed=' + pressed;",
+      "});",
+      "window.test('and combines with what is typed', () => {",
+      "  const filter = body.querySelector('.modelica-studio-search');",
+      "  filter.value = 'phi';",
+      "  filter.dispatchEvent(new Event('input', { bubbles: true }));",
+      "  return names().join(', ') || 'NONE';",
+      "});",
+      "window.test('Varying drops the constants', () => {",
+      "  const filter = body.querySelector('.modelica-studio-search');",
+      "  filter.value = '';",
+      "  filter.dispatchEvent(new Event('input', { bubbles: true }));",
+      "  pick('Varying');",
+      "  const shown = names();",
+      "  const note = body.querySelector('.modelica-studio-series-more');",
+      "  return 'constant=' + shown.includes('motor.R_s') + ' first=' + shown[0]",
+      "    + ' note=' + (note ? note.textContent : 'none');",
+      "});",
+      "window.test('Derivatives keeps only der(...)', () => {",
+      "  pick('Derivatives');",
+      "  const shown = names();",
+      "  return 'rows=' + shown.length + ' allDer=' + shown.every((n) => n.includes('der('));",
+      "});",
+      "window.test('All puts everything back', () => {",
+      "  pick('All');",
+      "  return 'rows=' + names().length + ' pressed=' + pills().map((p) => p.getAttribute('aria-pressed')).join(',');",
+      "});",
+      "window.finish();",
+    ].join("\n")
+  );
+
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const d = Object.fromEntries(out.results.map((r) => [r.name, r.detail]));
+
+  assert.equal(
+    d["the pills are there, with one showing"],
+    "All* Active Varying Derivatives hints=true",
+    "four presets, one of them showing, each with its own explanation"
+  );
+  assert.equal(
+    d["Active keeps only what is drawn"],
+    "2 rows: motor.friction.phi, motor.friction.tau pressed=true",
+    "exactly the traces being plotted"
+  );
+  assert.equal(
+    d["and combines with what is typed"],
+    "motor.friction.phi",
+    "the preset and the text narrow together"
+  );
+  assert.match(d["Varying drops the constants"], /constant=false/, "a flat variable is not varying");
+  assert.match(
+    d["Varying drops the constants"],
+    /note=Showing the first 40 of 174/,
+    "175 series in the fixture, one of them flat"
+  );
+  assert.equal(
+    d["Derivatives keeps only der(...)"],
+    "rows=1 allDer=true",
+    "the fixture writes one derivative"
+  );
+  assert.equal(
+    d["All puts everything back"],
+    "rows=40 pressed=true,false,false,false",
+    "the page caps the rows; that all 175 are back is what the count line says"
+  );
+});
+
+test("a preset with nothing to show says which, and how to get back", async () => {
+  // The trap: "Active" with nothing drawn is an empty list, and an empty list has
+  // no checkboxes to click. The message names the way out, and the pills are
+  // still above it.
+  const out = await runInDom(
+    [
+      HEAD,
+      "const { body } = mount(40, 520, undefined, false);",
+      "const pill = (label) => Array.from(body.querySelectorAll('.modelica-studio-preset')).find((p) => p.textContent === label);",
+      "pill('Active').dispatchEvent(new MouseEvent('click', { bubbles: true }));",
+      "const active = body.querySelector('.modelica-studio-series').textContent;",
+      "const stillThere = body.querySelectorAll('.modelica-studio-preset').length;",
+      "pill('Derivatives').dispatchEvent(new MouseEvent('click', { bubbles: true }));",
+      "const derived = body.querySelector('.modelica-studio-series').textContent;",
+      "window.test('each empty preset explains itself', () =>",
+      "  'active=[' + active + '] derivatives=[' + derived + '] pills=' + stillThere);",
+      "window.finish();",
+    ].join("\n")
+  );
+
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  assert.equal(
+    out.results[0].detail,
+    "active=[No trace is being drawn yet — choose All to pick some.] " +
+      "derivatives=[This result has no derivatives.] pills=4",
+    "the way out is named, and the pills are still there to take it"
+  );
+});
+
 test("how much of the list is off screen is stated where it can be read", async () => {
   // It was a line at the FOOT of the scroll area, which can only be found by
   // scrolling to the end of the set the reader is searching.
@@ -270,7 +420,7 @@ test("how much of the list is off screen is stated where it can be read", async 
 
   assert.equal(
     d["the count is stated, and above the list"],
-    "text=Showing the first 40 of 173 — type to narrow the list. insideList=false aboveList=true rows=40"
+    "text=Showing the first 40 of 175 — type to narrow the list. insideList=false aboveList=true rows=40"
   );
   assert.equal(d["a result that fits says nothing about narrowing"], "no note for 6 variables");
 });

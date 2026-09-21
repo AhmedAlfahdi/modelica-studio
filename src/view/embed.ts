@@ -36,7 +36,7 @@ import { EXAMPLES, findExample } from "../modelica/examples";
 import type { DiagramModel } from "../modelica/types";
 import type { SimResult } from "../omc/backend";
 import { collectParameters } from "./parameters";
-import { defaultSeriesNames } from "./series";
+import { defaultSeriesNames, summarizeSeries } from "./series";
 import type { ChartState } from "../settings";
 
 /** Options parsed from the code block's info line. */
@@ -360,10 +360,10 @@ export class EmbeddedDiagram {
   private reportResultStatus(): void {
     const r = this.result;
     if (!r) return;
-    const varying = r.series.filter((s) => {
-      const v = (s.values ?? []).filter(Number.isFinite);
-      return v.length > 1 && Math.max(...v) - Math.min(...v) > 1e-9;
-    }).length;
+    // Through `summarizeSeries`, which walks the samples in a loop: `Math.max(...
+    // values)` throws "Maximum call stack size exceeded" once the output
+    // resolution is high enough, and the resolution is a setting.
+    const varying = summarizeSeries(r).filter((s) => s.varies).length;
     const counts =
       varying === 0
         ? `${r.time.length} samples · nothing varies`

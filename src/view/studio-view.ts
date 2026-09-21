@@ -34,7 +34,8 @@ import {
   timeAtPlotX,
   type SeriesStyle,
 } from "./plot";
-import { defaultSeriesNames } from "./series";
+import { defaultSeriesNames, seriesPreset, SERIES_PRESETS, summarizeSeries } from "./series";
+import type { SeriesPreset, SeriesPresetId } from "./series";
 import { collectParameters, sweepableParameters } from "./parameters";
 import type { TreeNode as PackageNode } from "../modelica/library";
 import { drawGraphic, portIsEnabled, substituteMacros } from "../render/canvas";
@@ -144,6 +145,23 @@ export class ModelicaStudioView extends ItemView {
   private inspectorTab: "component" | "results" = "component";
   /** Filter text for the variable list. */
   private seriesFilter = "";
+  /**
+   * Which preset narrows the variable list.
+   *
+   * Kept like the filter text, rather than reset per run: someone working through
+   * a model's derivatives wants that again after the next simulation.
+   */
+  private seriesPreset: SeriesPresetId = "all";
+  /**
+   * The variables that change over the run, for the "Varying" preset.
+   *
+   * Cached against the result object: `summarizeSeries` walks every sample of
+   * every variable, and the list is rebuilt on every keystroke in the filter.
+   */
+  private varyingCache: { result: SimResult | null; names: Set<string> } = {
+    result: null,
+    names: new Set(),
+  };
   /**
    * Where the reader had scrolled to in the variable list.
    *
@@ -2382,15 +2400,45 @@ export class ModelicaStudioView extends ItemView {
       }
     });
 
+    // Presets, because the list is every variable the model has — a hundred and
+    // seventy for a small motor — and the question asked of it is nearly always
+    // one of four. They combine with the text: pick Varying, then type "phi".
+    const presets = parent.createDiv({ cls: "modelica-studio-presets" });
+    for (const preset of SERIES_PRESETS) {
+      const on = this.seriesPreset === preset.id;
+      const b = presets.createEl("button", {
+        cls: `modelica-studio-preset${on ? " is-active" : ""}`,
+        text: preset.label,
+      });
+      // A pill is a toggle, so it says which one is showing rather than relying
+      // on the colour alone.
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+      b.setAttribute("aria-label", preset.hint);
+      b.addEventListener("click", () => {
+        if (this.seriesPreset === preset.id) return;
+        this.seriesPreset = preset.id;
+        // A different set of rows: the reader's place in the old one means nothing.
+        this.seriesScroll = 0;
+        this.renderInspector();
+      });
+    }
+
     const needle = this.seriesFilter.trim().toLowerCase();
-    const matching = (s: SimSeries) => !needle || s.name.toLowerCase().includes(needle);
+    const preset = seriesPreset(this.seriesPreset);
+    const varying = this.varyingNames();
+    const matching = (s: SimSeries) =>
+      (!needle || s.name.toLowerCase().includes(needle)) &&
+      preset.keeps(s.name, {
+        visible: this.seriesStyles[s.name]?.visible === true,
+        varies: varying.has(s.name),
+      });
     // Simulation order, filtered — not checked-first, so a click never moves a row.
     const ordered = this.result.series.filter(matching);
 
     // How much of the list is not on screen, ABOVE the list rather than at its
-    // foot: the list is a 190px window onto up to forty rows, and a note at the
-    // end of it can only be read by scrolling to the end — which is the one thing
-    // a reader looking for a variable is not doing.
+    // foot: the list is a window onto up to forty rows, and a note at the end of
+    // it can only be read by scrolling to the end — which is the one thing a
+    // reader looking for a variable is not doing.
     if (ordered.length > SERIES_PAGE) {
       parent.createDiv({
         cls: "modelica-studio-muted modelica-studio-series-more",
@@ -2401,7 +2449,7 @@ export class ModelicaStudioView extends ItemView {
     const list = parent.createDiv({ cls: "modelica-studio-series" });
     for (const s of ordered.slice(0, SERIES_PAGE)) this.renderSeriesRow(list, s);
     if (ordered.length === 0) {
-      list.createDiv({ cls: "modelica-studio-muted", text: "No variable matches that filter." });
+      list.createDiv({ cls: "modelica-studio-muted", text: emptySeriesMessage(preset, needle) });
     }
     // Rebuilt after every check, so the reader's place is put back: clicking the
     // thirtieth trace used to throw the list back to the top, and every box after
@@ -2410,6 +2458,18 @@ export class ModelicaStudioView extends ItemView {
     list.addEventListener("scroll", () => {
       this.seriesScroll = list.scrollTop;
     });
+  }
+
+  /** The names of the traces whose values move over the run on screen. */
+  private varyingNames(): Set<string> {
+    if (this.varyingCache.result !== this.result) {
+      const names = new Set<string>();
+      if (this.result) {
+        for (const s of summarizeSeries(this.result)) if (s.varies) names.add(s.name);
+      }
+      this.varyingCache = { result: this.result, names };
+    }
+    return this.varyingCache.names;
   }
 
   /** One trace toggle, with its colour and current value range. */
@@ -4236,6 +4296,27 @@ const SEARCH_LIMIT = 200;
 
 /** Variables listed before the filter must be used to narrow them. */
 const SERIES_PAGE = 40;
+
+/**
+ * What an empty trace list says.
+ *
+ * "No variable matches that filter" was the only answer, and it is the wrong one
+ * for a preset that has nothing to show: nothing is drawn yet, or nothing in this
+ * model moves, or it has no derivatives. Each of those has its own way out.
+ */
+function emptySeriesMessage(preset: SeriesPreset, needle: string): string {
+  if (needle) return "No variable matches that filter.";
+  switch (preset.id) {
+    case "active":
+      return "No trace is being drawn yet — choose All to pick some.";
+    case "varying":
+      return "Nothing in this result changes over the run.";
+    case "derivative":
+      return "This result has no derivatives.";
+    default:
+      return "The result holds no variables.";
+  }
+}
 
 /** Palette thumbnail edge, in CSS pixels. */
 const THUMB_SIZE = 56;

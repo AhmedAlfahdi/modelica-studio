@@ -179,3 +179,57 @@ export function defaultSeriesNames(result: SimResult, limit = 4): string[] {
   }
   return chosen.map((s) => s.name);
 }
+
+/**
+ * A filter preset for the list of traces.
+ *
+ * The list holds every variable the model has — a hundred and seventy for a
+ * small motor — and the question being asked of it is nearly always one of four.
+ * A preset is a NAMED PREDICATE rather than a magic filter string: "Active" is
+ * not a substring of anything.
+ *
+ * `name` plus two facts about the series, so this stays a pure function of the
+ * result and can be tested without a DOM.
+ */
+export interface SeriesPreset {
+  id: SeriesPresetId;
+  /** The word on the pill. */
+  label: string;
+  /** Its tooltip: what the preset keeps, said in full. */
+  hint: string;
+  keeps(name: string, facts: { visible: boolean; varies: boolean }): boolean;
+}
+
+export type SeriesPresetId = "all" | "active" | "varying" | "derivative";
+
+export const SERIES_PRESETS: SeriesPreset[] = [
+  {
+    id: "all",
+    label: "All",
+    hint: "Every variable in the result",
+    keeps: () => true,
+  },
+  {
+    id: "active",
+    label: "Active",
+    hint: "Only the traces being drawn on the plot",
+    keeps: (_name, facts) => facts.visible,
+  },
+  {
+    id: "varying",
+    label: "Varying",
+    hint: "Only the variables whose value changes over the run",
+    keeps: (_name, facts) => facts.varies,
+  },
+  {
+    id: "derivative",
+    label: "Derivatives",
+    hint: "Only derivatives, whose names are written der(…)",
+    keeps: (name) => name.includes("der("),
+  },
+];
+
+/** The preset with this id, or the first one — never undefined. */
+export function seriesPreset(id: SeriesPresetId): SeriesPreset {
+  return SERIES_PRESETS.find((p) => p.id === id) ?? SERIES_PRESETS[0];
+}

@@ -5,6 +5,36 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.34] — 2026-10-14
+
+### Added
+
+- **Filter presets for the list of traces** — asked for as "like showing only the
+  active traces". A result holds every variable in the model, a hundred and
+  seventy for a small motor, and the question asked of that list is nearly always
+  one of four:
+  - **All** — every variable.
+  - **Active** — exactly the traces being drawn, which is how you check what you
+    have chosen without hunting through the list.
+  - **Varying** — only the variables whose value moves over the run, so the
+    constants (an `R_s`, a `p`, a `T`) stop filling the list.
+  - **Derivatives** — only `der(…)`, which for a mechanical model is where the
+    speeds and accelerations are.
+
+  A preset is a named predicate rather than a filter string — "Active" is not a
+  substring of anything — and it **combines with what you type**: pick Varying,
+  then type `phi`. The pills sit above the list, one click each, and say which is
+  showing with `aria-pressed` as well as colour. An empty preset explains itself
+  and names the way out ("No trace is being drawn yet — choose All to pick some"),
+  because an empty list has no checkboxes to click.
+
+### Fixed
+
+- **The embed's "N varying" count could throw on a large output resolution.** It
+  used `Math.max(...values)`, which overflows the argument stack once a result has
+  enough samples — and the number of intervals is a setting. Both it and the new
+  preset now go through `summarizeSeries`, which walks the samples in a loop.
+
 ## [0.2.0-beta.33] — 2026-10-14
 
 ### Added

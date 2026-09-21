@@ -2312,3 +2312,43 @@ body.modelica-studio-resizing * {
     animation: none;
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * Filter presets for the list of traces
+ *
+ * The list holds every variable the model has, and the question asked of it is
+ * nearly always one of four. Pills rather than a second dropdown: one click, no
+ * menu over the list, and the state of the filter is visible without opening
+ * anything. They sit above the list, which takes the height that is left.
+ * ------------------------------------------------------------------ */
+.modelica-studio-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 6px;
+}
+
+.modelica-studio-preset {
+  height: 20px;
+  padding: 0 9px;
+  font-size: 11px;
+  line-height: 18px;
+  border-radius: 10px;
+  border: 1px solid var(--background-modifier-border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.modelica-studio-preset:hover {
+  background: var(--interactive-hover);
+  color: var(--text-normal);
+}
+
+.modelica-studio-preset.is-active {
+  color: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+  font-weight: 600;
+}
