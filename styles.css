@@ -688,6 +688,28 @@ body.modelica-studio-resizing * {
   opacity: 0.6;
 }
 
+/* A boxed group of controls that belong to one subject: the plot's scaling, what
+   is being compared, and the figure buttons. As nine buttons in a row, which of
+   them belonged together was a guess. */
+.modelica-studio-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background-color: var(--background-secondary-alt);
+}
+
+/* One height for everything in the row. The delta button was a small square
+   beside full-height buttons, which read as a different kind of control. */
+.modelica-studio-plotbar-actions button,
+.modelica-studio-plotbar-actions input,
+.modelica-studio-plotbar-actions select {
+  height: 26px;
+  box-sizing: border-box;
+}
+
 .modelica-studio-family {
   display: flex;
   align-items: center;

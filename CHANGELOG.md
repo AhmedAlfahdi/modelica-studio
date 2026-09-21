@@ -5,6 +5,21 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.23] — 2026-10-10
+
+### Changed
+
+- **The results bar is grouped.** Nine buttons in one row said nothing about which
+  belonged together — the Δ toggle, the sweep parameter, the values field, Sweep and
+  Keep as before were a flat run of controls beside the scale buttons and the figure
+  buttons. They are now three boxed groups: how the plot is scaled, what is being
+  compared, and the plot as a picture — each with its own `aria-label`, so the
+  grouping is stated rather than only implied by a border.
+
+- **One control height across the row.** The Δ button was a small square beside
+  full-height buttons, which made it read as a different kind of control rather than
+  the toggle it is.
+
 ## [0.2.0-beta.22] — 2026-10-09
 
 ### Fixed
