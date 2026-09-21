@@ -51,3 +51,25 @@ export function collectParameters(model: DiagramModel): Record<string, string> {
   }
   return out;
 }
+
+/**
+ * The parameters worth offering to a sweep.
+ *
+ * `collectParameters` answers a different question — "what values does this model
+ * have?" — and its answer includes the initial-state entries (`h.start`,
+ * `h.fixed`, `atRest.start`, …). Those cannot be swept: measured on a
+ * bouncing-ball model, overriding `h.start` is silently ignored and the family
+ * comes back as two identical curves, so the picture says "nothing changed"
+ * about a value that never changed. `h.fixed` is a Boolean the values field
+ * cannot even express.
+ *
+ * What is left is the parameters proper: a name that is not an attribute, with a
+ * numeric value the run can be given.
+ */
+export function sweepableParameters(values: Record<string, string>): string[] {
+  const attributes = /(\.|^)(start|fixed|nominal|min|max|unit|displayUnit|stateSelect)$/;
+  return Object.keys(values)
+    .filter((name) => !attributes.test(name))
+    .filter((name) => Number.isFinite(Number(values[name])))
+    .sort((a, b) => a.localeCompare(b));
+}

@@ -35,7 +35,7 @@ import {
   type SeriesStyle,
 } from "./plot";
 import { defaultSeriesNames } from "./series";
-import { collectParameters } from "./parameters";
+import { collectParameters, sweepableParameters } from "./parameters";
 import type { TreeNode as PackageNode } from "../modelica/library";
 import { drawGraphic, portIsEnabled, substituteMacros } from "../render/canvas";
 import { domainAttributes, domainOfLabel, domainOfPackage } from "../render/domains";
@@ -2471,7 +2471,10 @@ export class ModelicaStudioView extends ItemView {
         // count is capped in `parseSweepValues` rather than in the UI.
         const family = actions.createDiv({ cls: "modelica-studio-family" });
         const param = family.createEl("select", { cls: "dropdown modelica-studio-family-param" });
-        const names = Object.keys(collectParameters(this.plugin.model));
+        // Only what can actually be swept: `collectParameters` also reports the
+        // initial-state entries, and overriding one of those is silently ignored
+        // -- a family of identical curves for a value that never changed.
+        const names = sweepableParameters(collectParameters(this.plugin.model));
         for (const n of names.length ? names : ["—"]) {
           param.createEl("option", { text: n, value: n });
         }
@@ -3016,7 +3019,9 @@ export class ModelicaStudioView extends ItemView {
     const runs: FamilyRun[] = [];
     try {
       for (const [i, value] of values.entries()) {
-        this.setStatus(`Sweeping ${parameter}=${value} (${i + 1} of ${values.length})…`);
+        this.setStatus(
+          `Sweeping ${this.plugin.model.name}: ${parameter}=${value} (${i + 1} of ${values.length})…`
+        );
         const result = await this.plugin.backend.simulate({
           modelName: this.plugin.model.name,
           source,
@@ -3031,7 +3036,12 @@ export class ModelicaStudioView extends ItemView {
       }
     } catch (err) {
       this.setStatus("Sweep failed");
-      new Notice(`Modelica: the sweep stopped — ${err instanceof Error ? err.message : err}`);
+      // Named, because a sweep of the wrong model is the failure that looks like
+      // a physics problem: the error quotes components the user did not draw.
+      new Notice(
+        `Modelica: the sweep of ${this.plugin.model.name} stopped — ` +
+          `${err instanceof Error ? err.message : err}`
+      );
       this.busy = false;
       return;
     }
@@ -3056,7 +3066,7 @@ export class ModelicaStudioView extends ItemView {
     }
     this.drawResults();
     this.renderPlotPane();
-    this.setStatus(`Swept ${parameter} over ${values.length} values`);
+    this.setStatus(`Swept ${parameter} over ${values.length} values of ${this.plugin.model.name}`);
     this.plugin.diag(`sweep ${this.plugin.model.name}: ${parameter} = ${values.join(", ")}`);
   }
 

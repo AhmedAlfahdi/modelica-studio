@@ -5,6 +5,25 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.16] — 2026-10-03
+
+### Fixed
+
+- **The sweep offered parameters that cannot be swept.** `collectParameters`
+  answers "what values does this model have?", which includes the initial-state
+  entries — `h.start`, `h.fixed`, `atRest.start`. Overriding one of those is
+  silently ignored, so a sweep of `h.start` came back as two identical curves: the
+  picture said "nothing changed" about a value that never changed. The list is now
+  the parameters proper — a name that is not an attribute, with a numeric value —
+  which for a bouncing ball is `e` and `v_min`.
+
+- **A sweep did not say which model it was sweeping.** Its status line and the
+  notice when it stops now name the model: `Sweeping DampedBounce: e=0.6 (1 of
+  3)…`, and `the sweep of DampedBounce stopped — …`. A run of the wrong model is
+  the failure that reads as a physics problem, because the error quotes components
+  the user did not draw; naming the model is what makes that visible in one line
+  rather than three exchanges.
+
 ## [0.2.0-beta.15] — 2026-10-02
 
 ### Added

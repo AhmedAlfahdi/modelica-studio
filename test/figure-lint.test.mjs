@@ -43,6 +43,9 @@ const figure = await import(path.join(staging, "figure.js"));
 
 const lintLib = buildLibs("figure-lint", ["src/modelica/lint.ts", "src/ai/generate.ts"]);
 const lint = await import(path.join(lintLib, "modelica/lint.js"));
+const { sweepableParameters } = await import(
+  path.join(buildLibs("figure-params", ["src/view/parameters.ts"]), "parameters.js")
+);
 
 /* ------------------------------------------------------------------ */
 
@@ -151,4 +154,31 @@ test("the repair prompt says which problem it is", () => {
   assert.match(loose, /None of the 2 components/, "the finding is quoted, not paraphrased");
   assert.match(loose, /connect\(\.\.\.\)/, "and the wiring requirement is stated up front");
   assert.match(loose, /schematic/, "with the reason: this is a schematic, not an equations answer");
+});
+
+test("a sweep offers only parameters that can be overridden", () => {
+  // Measured on a bouncing-ball model: overriding `h.start` is silently ignored,
+  // so the family came back as two identical curves. The list has to be the
+  // parameters proper, not everything the model records a value for.
+  assert.deepEqual(
+    sweepableParameters({
+      e: "0.9",
+      v_min: "0.1",
+      "h.start": "1",
+      "h.fixed": "true",
+      "atRest.start": "false",
+      "r1.R": "100",
+      "r1.T_ref": "293.15",
+    }),
+    ["e", "r1.R", "r1.T_ref", "v_min"],
+    "attributes and Booleans are out; numbers are in"
+  );
+
+  // A parameter whose value is not a number cannot be swept by a numeric field.
+  assert.deepEqual(sweepableParameters({ kind: "Modelica.Blocks.Types.Init.SteadyState" }), []);
+  assert.deepEqual(sweepableParameters({}), [], "and a model with none offers none");
+  // A bare `start` is treated as the attribute: a parameter that shares the name
+  // is rarer than the attribute, and offering one that silently does nothing is
+  // the failure being fixed here.
+  assert.deepEqual(sweepableParameters({ start: "1", startup: "2" }), ["startup"]);
 });
