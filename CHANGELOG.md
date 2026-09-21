@@ -5,6 +5,18 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.27] — 2026-10-14
+
+### Fixed
+
+- **The sweep's parameter dropdown overlapped its neighbours.** Three causes, all
+  of them mine: it borrowed Obsidian's `.dropdown` class, whose own padding and
+  background arrow fight a fixed height and put the arrow over the text; the groups
+  had no `flex: 0 0 auto`, so a narrow pane squeezed them until their contents
+  overlapped; and the row could not wrap. The select is now styled here rather than
+  by Obsidian's class, every group refuses to shrink, and the row wraps when it runs
+  out of width instead of crushing what is in it.
+
 ## [0.2.0-beta.26] — 2026-10-13
 
 ### Fixed

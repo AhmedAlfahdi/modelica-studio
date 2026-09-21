@@ -695,6 +695,9 @@ body.modelica-studio-resizing * {
   display: flex;
   align-items: center;
   gap: 5px;
+  /* Never shrunk into its neighbour: nine controls in a narrow pane used to
+     squeeze the groups until their contents overlapped. The row wraps instead. */
+  flex: 0 0 auto;
   padding: 2px 6px;
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
@@ -732,11 +735,24 @@ body.modelica-studio-resizing * {
 .modelica-studio-family-param,
 .modelica-studio-family-values {
   font-size: 11px;
-  padding: 2px 6px;
+  flex: 0 0 auto;
+  /* A fixed height with the padding INSIDE it, so the text and the arrow have
+     room rather than spilling over each other. */
+  height: 26px;
+  box-sizing: border-box;
+  padding: 0 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background-color: var(--background-primary);
+  color: var(--text-normal);
 }
 
 .modelica-studio-family-values {
   width: 110px;
+}
+
+.modelica-studio-family-param {
+  max-width: 150px;
 }
 
 .modelica-studio-embed-time {
@@ -1073,9 +1089,11 @@ body.modelica-studio-resizing * {
   padding: 2px 6px;
 }
 
-/* The pane's header must not squeeze the field out when the pane is narrow. */
+/* The pane's header must not squeeze the field out when the pane is narrow, and
+   the groups must not be squeezed into each other: the row wraps instead. */
 .modelica-studio-plotbar-actions {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  row-gap: 4px;
 }
 
 /* ------------------------------------------------------------------ *

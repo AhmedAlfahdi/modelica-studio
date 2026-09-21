@@ -2522,7 +2522,10 @@ export class ModelicaStudioView extends ItemView {
             : "Differences are shown when there is a family to compare with — sweep a parameter, or Keep as before"
         );
         deltas.addEventListener("click", () => void this.toggleDeltas());
-        const param = family.createEl("select", { cls: "dropdown modelica-studio-family-param" });
+        // NOT Obsidian's `.dropdown`: its own padding and background arrow fight a
+        // fixed height, and the arrow ended up over the text. A plain select with
+        // the browser's own arrow is sized here instead.
+        const param = family.createEl("select", { cls: "modelica-studio-family-param" });
         // Only what can actually be swept: `collectParameters` also reports the
         // initial-state entries, and overriding one of those is silently ignored
         // -- a family of identical curves for a value that never changed.
