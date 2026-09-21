@@ -479,10 +479,15 @@ export function drawPlot(
       const color = style?.color ?? seriesColor(result.series.indexOf(s));
       ctx.strokeStyle = color;
       ctx.lineWidth = 2.4;
+      // The swatch carries the series' OWN line style, or the legend says nothing
+      // about which curve is the family and which is the run on screen — which is
+      // the entire reason the family is dashed.
+      ctx.setLineDash(style?.dashed ? [5, 4] : []);
       ctx.beginPath();
       ctx.moveTo(lx, ly);
       ctx.lineTo(lx + 14, ly);
       ctx.stroke();
+      ctx.setLineDash([]);
       ctx.fillStyle = theme.foreground;
       const label = s.name.length > 18 ? "…" + s.name.slice(-17) : s.name;
       ctx.fillText(label, lx + 19, ly);

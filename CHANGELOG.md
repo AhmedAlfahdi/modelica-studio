@@ -5,6 +5,16 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.17] — 2026-10-04
+
+### Fixed
+
+- **The legend drew every swatch solid, including the dashed family.** The dash is
+  what tells a kept run (`h · e=0.7`) from the run on screen (`h`), and the legend
+  is where that is read — but the dash was reset before the legend was drawn, so a
+  legend naming ten traces distinguished none of them. Each swatch now carries the
+  series' own line style. Reported from a screenshot of a swept plot.
+
 ## [0.2.0-beta.16] — 2026-10-03
 
 ### Fixed

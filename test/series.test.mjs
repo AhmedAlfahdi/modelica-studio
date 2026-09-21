@@ -447,3 +447,44 @@ test("a family is one result, with each member named after its run", () => {
   ]);
   assert.deepEqual(two.result.series.map((s) => s.name), ["v", "v · R=100", "v · R=200"]);
 });
+
+test("a dashed series is dashed in the legend too", () => {
+  // The dash is what tells a kept run from the run on screen, and the legend is
+  // where that is read. Resetting the dash before the legend drew every swatch
+  // solid, so the legend named six traces and distinguished none of them.
+  const dashes = [];
+  let dash = "";
+  const ctx = new Proxy(
+    { canvas: { width: 900, height: 400 }, font: "", fillStyle: "", strokeStyle: "", globalAlpha: 1 },
+    {
+      get(t, k) {
+        if (k in t) return t[k];
+        if (k === "setLineDash") return (d) => { dash = d && d.length ? d.join(",") : ""; };
+        if (k === "measureText") return (s2) => ({ width: String(s2).length * 6 });
+        // Record the dash in force at each stroked line, and its length: the
+        // legend swatch is the short one.
+        if (k === "moveTo") return (x, y) => { t.__from = [x, y]; };
+        if (k === "lineTo") return (x, y) => {
+          const from = t.__from ?? [x, y];
+          if (Math.abs(y - from[1]) < 0.001 && x - from[0] < 20) dashes.push(dash || "solid");
+        };
+        return () => {};
+      },
+      set(t, k, v) { t[k] = v; return true; },
+    }
+  );
+  const time = [0, 1, 2];
+  const result = {
+    time,
+    series: [{ name: "h", values: [0, 1, 2], unit: "" }, { name: "h · e=0.7", values: [0, 2, 4], unit: "" }],
+    compileMs: 1, simulateMs: 1, reusedBinary: true, warnings: [],
+  };
+  plotMod.drawPlot(ctx, 900, 400, result, {
+    styles: { h: { color: "#c00", visible: true }, "h · e=0.7": { color: "#c00", visible: true, dashed: true } },
+    view: { xMin: 0, xMax: 2 },
+    dpr: 1,
+    theme: plotMod.plotThemeFrom(false),
+  });
+  assert.ok(dashes.includes("solid"), "the current run's swatch is solid");
+  assert.ok(dashes.includes("5,4"), `a dashed series gets a dashed swatch, got ${JSON.stringify(dashes)}`);
+});
