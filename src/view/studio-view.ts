@@ -24,7 +24,7 @@ import {
 import { defaultSeriesNames } from "./series";
 import { collectParameters } from "./parameters";
 import type { TreeNode as PackageNode } from "../modelica/library";
-import { drawGraphic, portIsEnabled } from "../render/canvas";
+import { drawGraphic, portIsEnabled, substituteMacros } from "../render/canvas";
 import { domainAttributes, domainOfLabel, domainOfPackage } from "../render/domains";
 import { currentTheme } from "../render/theme";
 import { EXAMPLES, findExample } from "../modelica/examples";
@@ -1758,6 +1758,30 @@ export class ModelicaStudioView extends ItemView {
     // them — rendered as nothing at all.
     const strokePx = Math.max(1, 1 / scale);
     for (const g of item.icon) {
+      // A thumbnail is a CLASS, so the only values it can show are the class's own
+      // defaults -- and `%name` has nothing to name. Without this the macro was
+      // painted as written: every `HeatCapacitor` in the palette read `%C`, and
+      // every labelled block read `%name` in its corner.
+      if (g.kind === "Text") {
+        const raw = g.textString ?? "";
+        if (raw.includes("%name")) continue;
+        if (raw.includes("%")) {
+          const withValues = {
+            ...g,
+            textString: substituteMacros(raw, g, (n) =>
+              n === "class"
+                ? item.shortName
+                : item.parameters.find((p) => p.name === n)?.defaultValue
+            ),
+          };
+          try {
+            drawGraphic(ctx, withValues as typeof g, t, 1, theme, strokePx);
+          } catch {
+            /* a single bad primitive must not break the palette */
+          }
+          continue;
+        }
+      }
       try {
         drawGraphic(ctx, g, t, 1, theme, strokePx);
       } catch {

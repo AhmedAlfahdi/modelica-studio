@@ -253,6 +253,17 @@ export class EmbeddedDiagram {
   private readonly resizeHandler = () => this.drawPlot();
   /** The data x under the pointer on the plot, or undefined when it is away. */
   private cursorX: number | undefined;
+  /**
+   * This block's text as the note holds it.
+   *
+   * Advanced on every write this instance makes. Without that, the second drag
+   * after a write would be refused as a conflict with its own earlier write,
+   * because the body in the note no longer matches the one the block was drawn
+   * from.
+   */
+  private noteBody: string;
+  /** True when there is an edit the note has not been told about. */
+  private dirty = false;
   /** The block's own t_end field, so it can be reset when a value is refused. */
   private timeInput: HTMLInputElement | null = null;
   /** True when the result on screen came from an earlier version of the source. */
@@ -266,12 +277,17 @@ export class EmbeddedDiagram {
     source: string,
     opts: EmbedOptions,
     /** Replace the block's text so the edit persists in the note. */
-    private readonly writeBack: (source: string) => void
+    private readonly writeBack: (source: string, expectBody: string) => void
   ) {
     const { opts: fromBlock, body } = parseDirective(source);
     /** The span the block itself declared, if it declared one. */
     this.blockStopTime = fromBlock.stopTime;
     this.source = body;
+    // What the note holds for this block, as far as this instance knows: the text
+    // it was rendered from, and after a successful write, the text it wrote. The
+    // writer compares against it, so an edit made in the note while the block was
+    // on screen is not overwritten by the next drag in its diagram.
+    this.noteBody = source;
     this.opts = { ...opts, ...fromBlock };
     // What the user last chose wins over the directive: the block is rebuilt on
     // every re-render, and a directive that reopens the plot each time is the
@@ -577,14 +593,36 @@ export class EmbeddedDiagram {
   /** Re-serialize and write the block back, debounced so a drag is one write. */
   private writeTimer: number | null = null;
   private persist(model: DiagramModel): void {
+    this.dirty = true;
     // The directive is re-attached here, not at the write-back, so `source` and
     // what the note receives always agree.
     this.source = withDirective(serializeDiagram(model), this.directiveOptions());
     if (this.writeTimer !== null) window.clearTimeout(this.writeTimer);
     this.writeTimer = window.setTimeout(() => {
       this.writeTimer = null;
-      if (!this.destroyed) this.writeBack(this.source);
+      this.flushWrite();
     }, 400);
+  }
+
+  /**
+   * Write this block's text into the note, and remember that it did.
+   *
+   * A named step rather than an inline callback because the write is debounced:
+   * an arrow inside a timer cannot be reached by a test that has no timers, and
+   * this is the half of the conflict check that decides what counts as somebody
+   * ELSE having changed the note.
+   */
+  private flushWrite(): void {
+    // Nothing to write until something has been edited. Without this a stray
+    // flush would write `this.source`, which is the block's BODY — the directive
+    // line has been parsed off it — and the block would lose its span.
+    if (this.destroyed || !this.dirty) return;
+    this.dirty = false;
+    this.writeBack(this.source, this.noteBody);
+    // Optimistic, because the writer compares before it writes and reports a
+    // refusal. Without it, the second edit of a burst would be refused as a
+    // conflict with this block's own earlier write.
+    this.noteBody = this.source;
   }
 
   private setStatus(text: string, stale = false): void {
@@ -980,20 +1018,79 @@ export function starterSource(): string {
  * Returns the text unchanged when the range is not usable, so a bad report can
  * never delete content.
  */
+/** Why a write was refused. */
+export type FenceRefusal = "bounds" | "fence" | "changed";
+
+export interface FenceWrite {
+  /** The note as it should be written; unchanged from the input when `ok` is false. */
+  text: string;
+  ok: boolean;
+  reason?: FenceRefusal;
+}
+
+/** A block body reduced to what a comparison should care about. */
+function normaliseBody(text: string): string {
+  return text.replace(/\r\n?/g, "\n").trim();
+}
+
+/** Whether a line is a fence, optionally for one particular language. */
+function isFence(line: string, language?: string): boolean {
+  // Both markers, because Markdown allows either and Obsidian renders both.
+  const m = /^\s*(`{3,}|~{3,})\s*([^\s`~]*)/.exec(line);
+  if (!m) return false;
+  if (language === undefined) return true;
+  // The info string can be `modelica` or `modelica-studio`, and may carry more
+  // words after it, so only the first word is compared.
+  return m[2].toLowerCase() === language.toLowerCase();
+}
+
+/**
+ * The note with one code block's body replaced.
+ *
+ * `lineStart` and `lineEnd` were recorded when the block was RENDERED, and the
+ * note may have moved since — the user typing above the block, another window,
+ * a sync client. Splicing into a range that has shifted replaces whatever now
+ * occupies those lines, which is how a note loses a paragraph and a fence:
+ * measured before this check existed, a body written through a range shifted by
+ * two lines deleted the opening fence and left the model spliced into the middle
+ * of the block. The user's paragraph survived that time by luck; different
+ * offsets eat text.
+ *
+ * So the range has to still be THIS block: a fence of the right language above,
+ * a closing fence below, and — when the caller says what it was drawn from — the
+ * same body in between. Refusing loses one diagram edit; writing to the wrong
+ * lines loses the document.
+ */
 export function replaceFencedBlock(
   text: string,
   lineStart: number,
   lineEnd: number,
-  body: string
-): string {
+  body: string,
+  expect?: { language?: string; body?: string }
+): FenceWrite {
   const lines = text.split("\n");
   const from = lineStart + 1;
   const to = lineEnd;
   // Every bound must be usable. `splice` clamps an over-long delete count to the
   // end of the array, so an out-of-range `lineEnd` would silently delete the
   // rest of the note — the one outcome that must never happen here.
-  if (lineStart < 0 || lineEnd < 0) return text;
-  if (from > to || from >= lines.length || to >= lines.length) return text;
+  if (lineStart < 0 || lineEnd < 0) return { text, ok: false, reason: "bounds" };
+  if (from > to || from >= lines.length || to >= lines.length) {
+    return { text, ok: false, reason: "bounds" };
+  }
+  if (!isFence(lines[lineStart] ?? "", expect?.language) || !isFence(lines[to] ?? "")) {
+    return { text, ok: false, reason: "fence" };
+  }
+  if (expect?.body !== undefined) {
+    // Trimmed, because the block's source as Obsidian hands it over and the lines
+    // between the fences differ only in the trailing newline -- and with the line
+    // endings removed, because a note saved with CRLF would otherwise never match
+    // and EVERY write to it would be refused, which is a worse failure than the
+    // one this check exists for.
+    if (normaliseBody(lines.slice(from, to).join("\n")) !== normaliseBody(expect.body)) {
+      return { text, ok: false, reason: "changed" };
+    }
+  }
   lines.splice(from, to - from, ...body.split("\n"));
-  return lines.join("\n");
+  return { text: lines.join("\n"), ok: true };
 }

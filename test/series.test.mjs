@@ -14,8 +14,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { buildLibs, repoRoot } from "./helpers/build.mjs";
 
-const LIB = buildLibs("series-lib", ["src/view/series.ts", "src/view/plot.ts"]);
+const LIB = buildLibs("series-lib", ["src/view/series.ts", "src/view/plot.ts", "src/view/axes.ts"]);
 const plotMod = await import(path.join(LIB, "plot.js"));
+const axes = await import(path.join(LIB, "axes.js"));
 const { defaultSeriesNames, summarizeSeries } = await import(path.join(LIB, "series.js"));
 
 /** Build a SimResult-shaped object from name -> values. */
@@ -287,4 +288,106 @@ test("the time under the pointer is read off the layout the plot is drawn with",
     10,
     "and the readout uses the width that is actually drawn"
   );
+});
+
+/* ------------------------------------------------------------------ */
+/* Which variables share an axis                                       */
+/* ------------------------------------------------------------------ */
+
+test("quantities of different size get their own axis, comparable ones share", () => {
+  // The rule the plot's readability rests on: a tank's level moves between 2.000
+  // and 1.978 while its internal energy sits near 1.6e8. Sharing one axis makes
+  // the level a dead flat line and the plot look broken although both are right.
+  const small = { name: "level", min: 1.978, max: 2.0 };
+  const big = { name: "energy", min: 1.6e8, max: 1.6001e8 };
+  const plans = axes.planAxes([small, big]);
+  assert.equal(plans.length, 2, "a hundred-million-fold difference is two axes");
+  assert.deepEqual(axes.axisIndexOf(plans, "level"), 1, "the small one is its own axis");
+  assert.deepEqual(axes.axisIndexOf(plans, "energy"), 0, "and the large one leads");
+  assert.deepEqual(plans[0].names, ["energy"], "named, not positional");
+
+  // Comparable, whatever their units: the ratio is what decides.
+  const volts = { name: "v", min: -1, max: 1 };
+  const amps = { name: "i", min: -0.5, max: 0.5 };
+  const shared = axes.planAxes([volts, amps]);
+  assert.equal(shared.length, 1, "two quantities of similar size share an axis");
+  assert.deepEqual(shared[0].names, ["v", "i"]);
+
+  // The GROUP axis spans its members, so neither is clipped.
+  assert.equal(shared[0].min, -1, "the axis covers the smallest");
+  assert.equal(shared[0].max, 1, "and the largest");
+});
+
+test("the separation threshold is a ratio, not a difference", () => {
+  // 12x is the threshold in the module. Just under it the two belong together;
+  // just over it they do not -- and because it is a RATIO, the same pair behaves
+  // the same at any scale, which is what makes it usable for pascals, kilograms
+  // and kelvin alike.
+  const at = (ratio) => [
+    { name: "a", min: 0, max: 1 },
+    { name: "b", min: 0, max: ratio },
+  ];
+  assert.equal(axes.planAxes(at(10)).length, 1, "ten times is comparable");
+  assert.equal(axes.planAxes(at(40)).length, 2, "forty times is not");
+  assert.equal(axes.planAxes(at(0.1)).length, 1, "and the ratio does not care which is larger");
+  assert.equal(axes.planAxes(at(0.025)).length, 2, "either way round");
+});
+
+test("more than two magnitudes fall back to two axes", () => {
+  // Four axes are harder to read than one, so the largest groups keep their own
+  // and everything else shares a third.
+  const plans = axes.planAxes([
+    { name: "tiny", min: 0, max: 1e-6 },
+    { name: "small", min: 0, max: 1 },
+    { name: "big", min: 0, max: 1e6 },
+    { name: "huge", min: 0, max: 1e12 },
+  ]);
+  assert.equal(plans.length, 3, "two axes kept, and one holding the rest");
+  const all = plans.flatMap((p) => p.names).sort();
+  assert.deepEqual(all, ["big", "huge", "small", "tiny"], "every series is on exactly one axis");
+  const rest = plans[2];
+  assert.ok(rest.names.length >= 2, "the leftovers are grouped rather than dropped");
+});
+
+test("a series that cannot be plotted does not make an axis", () => {
+  // A NaN extent comes from a result with no samples; planning an axis around it
+  // would give the plot a NaN range and nothing would be drawn at all.
+  const plans = axes.planAxes([
+    { name: "empty", min: Number.NaN, max: Number.NaN },
+    { name: "real", min: 0, max: 1 },
+  ]);
+  assert.deepEqual(plans.map((p) => p.names), [["real"]], "the unusable one is left out");
+  assert.deepEqual(axes.planAxes([]), [], "and no series is no axes");
+});
+
+test("only series whose change is visible against their own size are plotted", () => {
+  // A variable that moves by one part in a million cannot be read off a plot and
+  // only compresses the ones that can. The threshold is relative for the same
+  // reason the axis split is.
+  const still = { name: "constant", min: 1000000, max: 1000000.0001 };
+  const moving = { name: "moving", min: 0, max: 10 };
+  assert.deepEqual(
+    axes.readableSeries([still, moving]).map((s) => s.name),
+    ["moving"],
+    "a millionth of a percent is not a change to look at"
+  );
+  assert.deepEqual(
+    axes.readableSeries([moving, still], 1e-12).map((s) => s.name),
+    ["moving", "constant"],
+    "a looser threshold keeps it: its change is one part in ten thousand million"
+  );
+  // If NOTHING clears the bar, the flat result is the answer and is shown: an
+  // empty plot would read as a failure.
+  assert.deepEqual(
+    axes.readableSeries([still]).map((s) => s.name),
+    ["constant"],
+    "the only series is plotted even when it is flat"
+  );
+});
+
+test("a series on no axis is reported as belonging to none", () => {
+  const plans = axes.planAxes([{ name: "a", min: 0, max: 1 }]);
+  assert.equal(axes.axisIndexOf(plans, "a"), 0);
+  assert.equal(axes.axisIndexOf(plans, "missing"), -1, "no axis claims a series that is not there");
+  assert.equal(axes.axisIndexOf([], "a"), -1, "nor when there are no axes at all");
 });

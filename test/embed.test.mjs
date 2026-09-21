@@ -186,34 +186,157 @@ test("writing a block back replaces only its body", () => {
     "Text after.",
   ].join("\n");
 
-  const out = replaceFencedBlock(note, 2, 5, "model B\nend B;");
+  const out = replaceFencedBlock(note, 2, 5, "model B\nend B;", {
+    language: "modelica",
+    body: "model A\nend A;",
+  });
+  assert.equal(out.ok, true, "the write is accepted");
   assert.equal(
-    out,
+    out.text,
     ["# Title", "", "```modelica", "model B", "end B;", "```", "", "Text after."].join("\n"),
     "only the block body is replaced"
   );
 });
 
+test("a range that has shifted is refused rather than written through", () => {
+  // The range was recorded when the block RENDERED, and these are the same lines
+  // two lines later, after the user typed a paragraph above it. Writing through
+  // them deleted the opening fence and spliced the model into the middle of the
+  // block -- measured before this check existed. The paragraph survived that time
+  // by luck; a different offset eats text.
+  const before = ["# Title", "", "```modelica", "model A", "end A;", "```", "", "Text after."].join("\n");
+  const after = [
+    "# Title",
+    "",
+    "A paragraph I just typed.",
+    "",
+    "```modelica",
+    "model A",
+    "end A;",
+    "```",
+    "",
+    "Text after.",
+  ].join("\n");
+
+  const write = replaceFencedBlock(after, 2, 5, "model B\nend B;", {
+    language: "modelica",
+    body: "model A\nend A;",
+  });
+  assert.equal(write.ok, false, "the write is refused");
+  assert.equal(write.reason, "fence", "because those lines are not this block's fences");
+  assert.equal(write.text, after, "and the note comes back untouched");
+  // The guard refuses a shifted range, not the ordinary case.
+  assert.equal(replaceFencedBlock(before, 2, 5, "model B", { language: "modelica" }).ok, true);
+});
+
+test("an edit made inside the block is not overwritten by the diagram", () => {
+  // A block is live while the user edits its text by hand, and the next drag in
+  // its diagram would write the diagram's version over that edit.
+  const note = ["```modelica", "model A", "end A;", "```"].join("\n");
+  const write = replaceFencedBlock(note, 0, 3, "model B", {
+    language: "modelica",
+    body: "model A\nend A; // mine",
+  });
+  assert.equal(write.ok, false, "refused");
+  assert.equal(write.reason, "changed", "because the body is not the one the block was drawn from");
+  assert.equal(write.text, note, "and nothing is written");
+
+  // Whitespace is not an edit: Obsidian's source and the file's lines differ by
+  // the newline before the closing fence.
+  const ok = replaceFencedBlock("```modelica\nmodel A\nend A;\n\n```", 0, 4, "model B", {
+    language: "modelica",
+    body: "model A\nend A;\n",
+  });
+  assert.equal(ok.ok, true, "a trailing blank line does not count as a change");
+});
+
+test("the fence has to be the right kind of fence", () => {
+  // A note holds other code blocks. Writing a model into a shell block because a
+  // line number was off is the same corruption by another route.
+  const shell = ["```bash", "echo hi", "```"].join("\n");
+  const wrong = replaceFencedBlock(shell, 0, 2, "model B", { language: "modelica", body: "echo hi" });
+  assert.equal(wrong.ok, false, "a different language is refused");
+  assert.equal(wrong.reason, "fence");
+
+  // The plugin registers two languages for the same kind of block.
+  const studio = ["```modelica-studio", "model A", "```"].join("\n");
+  assert.equal(
+    replaceFencedBlock(studio, 0, 2, "model B", { language: "modelica-studio", body: "model A" }).ok,
+    true,
+    "the block's own language is accepted"
+  );
+
+  // Markdown allows tilde fences, and Obsidian renders them.
+  const tilde = ["~~~modelica", "model A", "~~~"].join("\n");
+  assert.equal(
+    replaceFencedBlock(tilde, 0, 2, "model B", { language: "modelica", body: "model A" }).ok,
+    true,
+    "a tilde fence is a fence"
+  );
+});
+
+test("a note saved with CRLF still accepts its own block", () => {
+  // The comparison removes line endings, because otherwise every write to such a
+  // note would be refused -- a worse failure than the one the check exists for.
+  const crlf = ["# Title", "", "```modelica", "model A", "end A;", "```"].join("\r\n");
+  const write = replaceFencedBlock(crlf, 2, 5, "model B", { language: "modelica", body: "model A\nend A;" });
+  assert.equal(write.ok, true, "the same text with different endings is the same text");
+
+  // And the guard still refuses a body that genuinely differs.
+  const changed = replaceFencedBlock(crlf, 2, 5, "model B", { language: "modelica", body: "model Other" });
+  assert.equal(changed.ok, false, "a real change is still refused");
+  assert.equal(changed.reason, "changed");
+});
+
 test("a block can grow and shrink", () => {
   const note = ["```modelica", "model A", "end A;", "```", "tail"].join("\n");
 
-  const longer = replaceFencedBlock(note, 0, 3, "model B\n  Real x;\nend B;");
-  assert.equal(
-    longer,
-    ["```modelica", "model B", "  Real x;", "end B;", "```", "tail"].join("\n")
+  const longer = replaceFencedBlock(note, 0, 3, "model B\n  Real x;\nend B;", {
+    language: "modelica",
+    body: "model A\nend A;",
+  });
+  assert.deepEqual(
+    longer.text.split("\n"),
+    ["```modelica", "model B", "  Real x;", "end B;", "```", "tail"],
+    "growing keeps what followed"
   );
 
-  const shorter = replaceFencedBlock(note, 0, 3, "model C");
-  assert.equal(shorter, ["```modelica", "model C", "```", "tail"].join("\n"));
+  const shorter = replaceFencedBlock(longer.text, 0, 4, "model C", {
+    language: "modelica",
+    body: "model B\n  Real x;\nend B;",
+  });
+  assert.deepEqual(
+    shorter.text.split("\n"),
+    ["```modelica", "model C", "```", "tail"],
+    "and shrinking closes the gap"
+  );
 });
 
 test("an unusable line range leaves the note untouched", () => {
   // A bad report from the host must never delete content: returning the text
   // unchanged is always safe, and the alternative is losing the user's work.
   const note = ["```modelica", "model A", "end A;", "```"].join("\n");
-  assert.equal(replaceFencedBlock(note, -1, 3, "x"), note);
-  assert.equal(replaceFencedBlock(note, 3, 0, "x"), note);
-  assert.equal(replaceFencedBlock(note, 0, 999, "x"), note, "an out-of-range end is refused");
+  const opts = { language: "modelica" };
+  assert.equal(replaceFencedBlock(note, -1, 3, "x", opts).text, note);
+  assert.equal(replaceFencedBlock(note, 3, 0, "x", opts).text, note);
+  const far = replaceFencedBlock(note, 0, 999, "x", opts);
+  assert.equal(far.text, note, "an out-of-range end is refused");
+  assert.equal(far.reason, "bounds", "and says why");
+});
+
+test("an empty expectation is an expectation", () => {
+  // A block that is empty in the note renders a starter model, so the writer is
+  // asked to expect "". A falsy check would skip the comparison and let the write
+  // land wherever the recorded range now points -- which is the corruption this
+  // whole check exists to prevent.
+  const empty = ["```modelica", "```"].join("\n");
+  const ok = replaceFencedBlock(empty, 0, 1, "model X", { language: "modelica", body: "" });
+  assert.equal(ok.ok, true, "an empty body matches an empty block");
+  assert.deepEqual(ok.text.split("\n"), ["```modelica", "model X", "```"], "and the model lands inside it");
+
+  const mismatch = replaceFencedBlock(empty, 0, 1, "model X", { language: "modelica", body: "model Other" });
+  assert.equal(mismatch.ok, false, "but a different body is still refused");
+  assert.equal(mismatch.reason, "changed");
 });
 
 test("the first of several blocks is replaced, not all of them", () => {
@@ -228,17 +351,22 @@ test("the first of several blocks is replaced, not all of them", () => {
     "```",
   ].join("\n");
 
-  const out = replaceFencedBlock(note, 0, 2, "model A2");
+  const out = replaceFencedBlock(note, 0, 2, "model A2", { language: "modelica", body: "model A" });
   assert.equal(
-    out,
+    out.text,
     ["```modelica", "model A2", "```", "middle", "```modelica", "model B", "```"].join("\n")
   );
 
-  const second = replaceFencedBlock(note, 4, 6, "model B2");
+  const second = replaceFencedBlock(note, 4, 6, "model B2", { language: "modelica", body: "model B" });
   assert.equal(
-    second,
+    second.text,
     ["```modelica", "model A", "```", "middle", "```modelica", "model B2", "```"].join("\n")
   );
+
+  // And the guard is what keeps them apart: writing block B's body through
+  // block A's range is refused rather than swapping one for the other.
+  const crossed = replaceFencedBlock(note, 0, 2, "model B2", { language: "modelica", body: "model B" });
+  assert.equal(crossed.ok, false, "a body from a different block is refused");
 });
 
 test("a block follows the plot configuration the studio shares", () => {
@@ -409,7 +537,7 @@ test("a block keeps its span through a full read/write cycle", async () => {
   const written = withDirective(reserialized, { stopTime: read.opts.stopTime });
 
   // 3. Write back into the note, using the same replacement the plugin uses.
-  const updated = replaceFencedBlock(note, 2, 8, written);
+  const updated = replaceFencedBlock(note, 2, 8, written, { language: "modelica" }).text;
   assert.match(updated, /^```modelica\n\/\/@ time=6\n/m, `the directive is still there:\n${updated}`);
 
   // 4. And it reads the same again on the next open, so a note survives being
@@ -463,9 +591,18 @@ test("an icon's parameter macro resolves in a block, and is not painted raw", ()
   assert.equal(paint("%{C}", inst), "2500", "and the braced form agrees with it");
   assert.equal(paint("C=%C", { ...inst, params: { C: "1000" } }), "C=1000", "an instance overrides it");
 
-  // The macro the renderer cannot know about: an unknown name is left as written
-  // rather than blanked, so a wrong-looking symbol still says what it wanted.
-  assert.equal(paint("%nosuch", inst), "%nosuch", "an unknown macro survives");
+  // A macro naming something the class does not declare is an error in the spec.
+  // It is shown as unknown rather than echoed: `%nosuch` on a symbol is the
+  // renderer showing its working, and `?` is the honest reading of "no value".
+  assert.equal(paint("%nosuch", inst), "?", "an unknown macro is shown as unknown");
+  // ...and a parameter that exists but has no value is the same case: MSL declares
+  // `T(start=1)` with no default and labels the icon `T=%T`.
+  assert.equal(paint("%T", inst), "?", "a parameter with no value is unknown, not raw");
+  assert.equal(
+    paint("%T", { ...inst, params: { T: "0.5" } }),
+    "0.5",
+    "and an instance that sets it resolves"
+  );
   assert.equal(paint("%%", inst), "%", "and an escaped percent is still one percent");
 
   // `%name` and `%class` are not parameters, and resolving them here would put a

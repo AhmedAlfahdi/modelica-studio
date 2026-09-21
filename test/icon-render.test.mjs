@@ -391,6 +391,18 @@ function iconGroupText(slice) {
  * The number is a RATCHET. It fails if it grows, so a new fault of this kind
  * cannot slip in unnoticed, and it is expected to fall as the rest are fixed.
  */
+/**
+ * Icon labels that name a parameter the class cannot supply a value for.
+ *
+ * They render as `?`, which is the truth: MSL declares such parameters without a
+ * default (`parameter SI.Time T(start=1)`) and expects the instance to set them.
+ * Measured over Modelica 4.1.0: 531 icon labels use a macro other than `%name`,
+ * 325 of them name a parameter with no value at class level, and none is left
+ * painting a macro. The number is pinned so a change that makes a resolvable
+ * parameter unresolvable is noticed rather than absorbed.
+ */
+const UNKNOWN_PARAM_BASELINE = 325;
+
 const UNDER_PARSED_BASELINE = 46;
 
 /**
@@ -522,6 +534,51 @@ function renderAll(index, name, def) {
   for (const params of renderSettings(def)) out.push(...renderInstance(index, name, { params }));
   return out;
 }
+
+test("no icon label paints a macro as written", { skip: !MSL && "no MSL installed" }, () => {
+  // `textString="%C"` means the value of the parameter, and a macro with nothing
+  // to resolve it was painted exactly as written: `HeatCapacitor` showed `%C` on
+  // every instance until the embed was given a resolver, and the palette
+  // thumbnails had no resolver at all. This is the whole-library half of that --
+  // what a renderer with the class's own values can and cannot resolve.
+  //
+  // It cannot resolve everything: MSL labels a parameter with `%T` where `T` is
+  // declared without a default (`parameter SI.Time T(start=1)`), and there is no
+  // value to show until an instance sets one. Those become `?` -- "not set yet" --
+  // and the count is ratcheted so it cannot quietly grow.
+  const index = new LibraryIndex();
+  index.addDirectory(MSL);
+  const painted = [];
+  let labels = 0;
+  let unknown = 0;
+  for (const c of index.listPlaceable()) {
+    const def = index.describe(c.name);
+    if (!def) continue;
+    for (const g of def.icon ?? []) {
+      if (g.kind !== "Text") continue;
+      const raw = g.textString ?? "";
+      // `%name` is the instance's, and is not drawn from the class at all.
+      if (!raw.includes("%") || raw.includes("%name")) continue;
+      labels++;
+      const shown = C.substituteMacros(raw, g, (n) =>
+        n === "class" ? def.shortName : def.parameters.find((p) => p.name === n)?.defaultValue
+      );
+      if (/%[A-Za-z_{]/.test(shown)) painted.push(`${c.name}: "${raw}" -> "${shown}"`);
+      if (shown.includes("?")) unknown++;
+    }
+  }
+  assert.ok(labels > 400, `the sweep actually ran: ${labels} labels`);
+  assert.deepEqual(
+    painted.slice(0, 5),
+    [],
+    `${painted.length} of ${labels} icon labels still paint a macro instead of a value`
+  );
+  assert.ok(
+    unknown <= UNKNOWN_PARAM_BASELINE,
+    `${unknown} labels have no value to show, up from ${UNKNOWN_PARAM_BASELINE}: a parameter ` +
+      "that used to be resolvable is not any more"
+  );
+});
 
 test("every component the palette offers draws something", { skip: !MSL && "no MSL installed" }, () => {
   // A class whose icon draws nothing is a component the user cannot see, cannot

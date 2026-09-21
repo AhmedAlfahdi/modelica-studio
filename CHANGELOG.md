@@ -5,6 +5,52 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.13] — 2026-09-30
+
+### Fixed
+
+- **A block could write its model into the wrong lines of a note.** The write-back
+  replaced the lines recorded when the block was RENDERED, checked only against the
+  length of the current file — so a note that had moved since (the user typing
+  above the block, another window, a sync client) got the body spliced into
+  whatever now occupied those lines. Reproduced before the fix: writing through a
+  range shifted by two lines deleted the block's opening fence and left the model
+  in the middle of it. The paragraph above survived that time by luck; a different
+  offset eats text.
+
+  The range must now still be the block: a fence of the right language above, a
+  closing fence below, and — the half that needs the block's own state — the same
+  body in between. A block that has written once advances what it expects to find,
+  so the second edit of a burst is not refused as a conflict with the first, and
+  an empty block expects an empty note rather than the starter model it renders.
+  A refusal is reported instead of dropping the edit quietly: the diagram on
+  screen has moved and the note has not, and only the user can decide which is
+  right. Line endings are compared loosely, or a note saved with CRLF would refuse
+  every write.
+
+- **The palette painted `%T` and `%name` in its thumbnails.** A thumbnail drew the
+  class's graphics directly, with no resolver, so every macro was drawn as written
+  — `HeatCapacitor` read `%C`, and any labelled block had `%name` in its corner.
+  It now substitutes the class's own values and leaves out `%name`, which is the
+  instance's and has nothing to name in a palette.
+
+- **A macro with no value is shown as `?`, not as itself.** MSL labels icons with
+  the value of a parameter that has no default at class level
+  (`parameter SI.Time T(start=1)`, label `T=%T`), and there is nothing to show
+  until an instance sets one. `T=%T` reads as a broken renderer; `T=?` reads as
+  "not set yet", which is what is true. Measured over Modelica 4.1.0: 531 icon
+  labels use a macro other than `%name`, **none** is left painting a macro, and
+  **325** have no value to show — a number now pinned by a test so a parameter
+  that stops being resolvable is noticed.
+
+### Added
+
+Tests for three areas that had none, from a review of what the suite does not
+reach: the write-back guard (its own cases, plus what a block tells the writer and
+when), the plot's axis planning — which decides whether two traces share an axis,
+caps the split at two, groups the remainder and drops unusable series, none of
+which was tested before — and the library-wide macro sweep above.
+
 ## [0.2.0-beta.12] — 2026-09-29
 
 ### Fixed

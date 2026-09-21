@@ -1233,9 +1233,17 @@ export function substituteMacros(
 ): string {
   return text.replace(/%(%)|%\{([^}]*)\}|%([A-Za-z_][A-Za-z0-9_.]*)/g, (all, esc, braced, bare) => {
     if (esc) return "%";
+    // With nothing to ask, the text is wanted as written -- a caller measuring a
+    // label's width has no values to offer and must not get question marks.
+    if (!resolve) return all;
     const name = braced ?? bare;
-    const v = resolve?.(name);
-    return v !== undefined ? v : all;
+    const v = resolve(name);
+    // A parameter with no value YET becomes unknown rather than staying a macro.
+    // MSL is full of labels like `T=%T` for a parameter declared `T(start=1)` with
+    // no default: measured over the library, 375 icon labels name a parameter the
+    // class cannot supply a value for, and `T=%T` reads as a broken renderer where
+    // `T=?` reads as "not set yet", which is what is true.
+    return v !== undefined && v !== "" ? v : "?";
   });
 }
 

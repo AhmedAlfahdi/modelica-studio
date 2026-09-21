@@ -1679,3 +1679,83 @@ test("a read-only log can be copied, and says so either way", async () => {
     `nothing to copy is said, not done: ${d["an empty log is not copied as an empty string"]}`
   );
 });
+test("a block tells the writer what the note holds, and advances it after writing", async () => {
+  // The write-back compares the lines in the note against what the block believes
+  // is there, so an edit made in the note is not overwritten. Three things have to
+  // hold for that to be safe AND usable: there is nothing to write until an edit
+  // has been made (the block's own body has had the directive parsed off it, so an
+  // early flush would write the block without its span), the belief starts as the
+  // source the block was RENDERED from, and it advances after the block's own
+  // write — otherwise the second edit of a burst is refused as a conflict with the
+  // first.
+  const out = page(
+    `import { EmbeddedDiagram } from "${ROOT}/src/view/embed";`,
+    "const DEF = (name) => ({ name, shortName: name, icon: [], diagram: [],",
+    "  ports: [{ name: 'p', type: 'Pin', isFlow: true, causality: 'acausal' }],",
+    "  portPositions: { p: [0, 0] }, parameters: [], hasIcon: false });",
+    "const SOURCE = ['//@ time=7',",
+    "  'model W',",
+    "  'Modelica.Electrical.Analog.Basic.Resistor r1;',",
+    "  'Modelica.Electrical.Analog.Basic.Resistor r2;',",
+    "  'equation', '  connect(r1.p, r2.p);', 'end W;'].join('\\n');",
+    "const writes = [];",
+    "function mount(text) {",
+    "  const el = document.body.createDiv();",
+    "  const host = {",
+    "    app: {},",
+    "    library: { component: (n) => DEF(n) },",
+    "    backend: null,",
+    "    settings: { labelScale: 1, hoverParameters: true, startTime: 0, stopTime: 1,",
+    "      numberOfIntervals: 100, tolerance: 1e-6, solver: '' },",
+    "    stopTimeFor: () => 1,",
+    "    showSetupHelp: () => {},",
+    "  };",
+    "  const embed = new EmbeddedDiagram(host, el, text,",
+    "    { showPlot: false, height: 320, autoSimulate: false, stopTime: 0 },",
+    "    (source, expectBody) => writes.push({ source, expectBody }));",
+    "  embed.mount();",
+    "  return embed;",
+    "}",
+    "function edit(embed, half) {",
+    "  const model = embed.editor.getModel();",
+    "  model.components[0].placement.extent = [-half, -half, half, half];",
+    "  embed.editor.cb.onChange(model);",
+    "}",
+    "",
+    "const block = mount(SOURCE);",
+    "block.flushWrite();",
+    "window.test('an untouched block writes nothing', () => String(writes.length));",
+    "",
+    "edit(block, 10);",
+    "block.flushWrite();",
+    "window.test('an edit is written, directive and all', () => writes[0].source.split('\\n')[0]);",
+    "window.test('and the writer is told what the note held',",
+    "  () => (JSON.stringify(writes[0].expectBody) === JSON.stringify(SOURCE) ? 'as rendered' : 'NOT: ' + JSON.stringify(writes[0].expectBody)));",
+    "",
+    "edit(block, 5);",
+    "block.flushWrite();",
+    "window.test('after its own write, the belief moves to what it wrote',",
+    "  () => (JSON.stringify(writes[1].expectBody) === JSON.stringify(writes[0].source) ? 'advanced' : 'STALE'));",
+    "window.test('so a second edit is written rather than refused', () => String(writes.length));",
+    "block.flushWrite();",
+    "window.test('and an idle flush writes nothing more', () => String(writes.length));",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  const d = passed(out);
+
+  assert.equal(d["an untouched block writes nothing"], "0", "a block does not write on mount");
+  assert.match(
+    d["an edit is written, directive and all"],
+    /^\/\/@ time=7 /,
+    `the write keeps the block's span: ${d["an edit is written, directive and all"]}`
+  );
+  assert.equal(d["and the writer is told what the note held"], "as rendered", "the expectation is the note's text");
+  assert.equal(d["after its own write, the belief moves to what it wrote"], "advanced");
+  assert.equal(
+    d["so a second edit is written rather than refused"],
+    "2",
+    "the second edit is not read as a conflict with the block's own first write"
+  );
+  assert.equal(d["and an idle flush writes nothing more"], "2", "nothing is written without another edit");
+});

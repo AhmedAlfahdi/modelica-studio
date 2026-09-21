@@ -26,6 +26,7 @@ import {
   parseEmbedOptions,
   replaceFencedBlock,
   starterSource,
+  type FenceRefusal,
 } from "./view/embed";
 import { createBackend, SimulationError, type SimulationBackend } from "./omc/backend";
 import { detectOmc, installHint, type OmcInstallation } from "./omc/locate";
@@ -160,7 +161,11 @@ export default class ModelicaStudioPlugin extends Plugin {
       el,
       text,
       opts,
-      (next) => this.writeEmbedSource(ctx.sourcePath, section, next)
+      // The EXPECTATION is the block's source as Obsidian handed it over, not the
+      // starter text an empty block is given: the writer compares it against the
+      // lines actually in the file.
+      (next, expectBody) =>
+        this.writeEmbedSource(ctx.sourcePath, section, next, { language: info, body: expectBody })
     );
     embed.infoLine = info;
     // Obsidian discards the element when the note re-renders, so replace any
@@ -180,15 +185,35 @@ export default class ModelicaStudioPlugin extends Plugin {
   private writeEmbedSource(
     sourcePath: string,
     section: { lineStart: number; lineEnd: number } | null,
-    source: string
+    source: string,
+    /** The block's text as the writer last knew it, and the fence's language. */
+    expect: { language: string; body: string }
   ): void {
     if (!section) return;
     const file = this.app.vault.getAbstractFileByPath(sourcePath);
     if (!(file instanceof TFile)) return;
 
-    void this.app.vault.process(file, (text) =>
-      replaceFencedBlock(text, section.lineStart, section.lineEnd, source)
-    );
+    // The refusal is decided inside the process callback, which must return the
+    // new text, so it is carried out in a variable rather than thrown.
+    let refused: FenceRefusal | undefined;
+    void this.app.vault
+      .process(file, (text) => {
+        const write = replaceFencedBlock(text, section.lineStart, section.lineEnd, source, expect);
+        if (!write.ok) refused = write.reason;
+        return write.text;
+      })
+      .then(() => {
+        if (!refused) return;
+        // Say so rather than dropping the edit quietly: the diagram on screen has
+        // moved and the note has not, and the user is the only one who can decide
+        // which of the two is right.
+        this.diag(`embed write refused (${refused}) for ${sourcePath}`);
+        new Notice(
+          "Modelica: the note changed since this block was drawn, so the edit was " +
+            "not written over it. Reload the note and make the change again.",
+          8000
+        );
+      });
   }
 
   /**
