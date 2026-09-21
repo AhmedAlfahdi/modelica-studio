@@ -5,6 +5,20 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.22] — 2026-10-09
+
+### Fixed
+
+- **The Scale panel reopened itself.** Whether it was open was read back off the
+  element's own `display`, and the pane's layout pass set that to visible whenever
+  the panel had content — so closing it and then changing a trace (which re-renders
+  the pane) brought it back. Reported as "the scale button is buggy, it keeps
+  appearing if I change traces".
+
+  Being open is now a decision held in the view, and the layout respects it: the
+  panel is hidden while the log is showing, hidden when it has been closed, and
+  closed again when a new result arrives with a new range.
+
 ## [0.2.0-beta.21] — 2026-10-08
 
 ### Fixed

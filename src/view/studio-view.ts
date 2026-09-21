@@ -152,6 +152,15 @@ export class ModelicaStudioView extends ItemView {
   private scalePanel: HTMLElement | null = null;
   /** The same controls, inline in the bottom pane. */
   private inlineScale: HTMLElement | null = null;
+  /**
+   * Whether the scale panel is open, as a decision rather than as a style.
+   *
+   * It used to be read back off `display`, and the pane's own layout pass set
+   * that to "" whenever the panel had content — so closing it, then changing a
+   * trace (which re-renders the pane), opened it again. Reported as "the scale
+   * button keeps appearing if I change traces".
+   */
+  private scaleOpen = false;
   private scaleInputs: Array<() => void> = [];
 
   private result: SimResult | null = null;
@@ -2094,8 +2103,10 @@ export class ModelicaStudioView extends ItemView {
       this.bottomActionsEl.style.display = showPlot ? "" : "none";
     }
     if (this.inlineScale) {
+      // Hidden while the log is showing, and hidden when the user closed it:
+      // `scaleOpen` is the decision, the layout is not.
       this.inlineScale.style.display =
-        showPlot && this.inlineScale.childElementCount > 0 ? "" : "none";
+        this.scaleOpen && showPlot && this.inlineScale.childElementCount > 0 ? "" : "none";
     }
     // No tab is hidden per mode any more. The one that was -- Source, in code
     // mode, where it would have been a no-op -- is gone entirely.
@@ -2806,9 +2817,9 @@ export class ModelicaStudioView extends ItemView {
       }
       this.inlineScale.style.display = "none";
     }
-    const open = this.inlineScale.style.display !== "none";
-    this.inlineScale.style.display = open ? "none" : "";
-    if (!open) {
+    this.scaleOpen = !this.scaleOpen;
+    this.inlineScale.style.display = this.scaleOpen ? "" : "none";
+    if (this.scaleOpen) {
       this.buildScalePanel(this.inlineScale, () => {
         this.drawResults();
         this.publishChart();
@@ -3956,6 +3967,9 @@ export class ModelicaStudioView extends ItemView {
       // The scale controls span the previous result's range, so they are
       // rebuilt empty and reopened on demand rather than left misleading.
       this.inlineScale?.remove();
+      // A new result has a new range, so the panel starts closed rather than
+      // showing the previous run's limits.
+      this.scaleOpen = false;
       this.inlineScale = null;
       // A new result resets the range, so the shared configuration follows.
       this.zoom = null;
