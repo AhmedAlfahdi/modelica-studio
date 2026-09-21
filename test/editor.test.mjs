@@ -266,6 +266,18 @@ function classDef(name) {
   };
 }
 const DEFS = { "M.R": classDef("M.R") };
+// The same class, but with artwork that fills the instance's extent. `M.R` draws
+// a wide flat rectangle inside its box, which leaves slack under it — fine for
+// hit-testing, misleading for anything about where a LABEL lands.
+DEFS["M.Fill"] = {
+  ...classDef("M.Fill"),
+  icon: [{ kind: "Rectangle", extent: [-10, -10, 10, 10], lineColor: [0, 0, 0] }],
+  // Ports on the box's edge. `classDef` puts them at ±100, which stretches the
+  // class's own box to 200 wide and makes the aspect-preserving fit draw the
+  // artwork as a thin strip inside the extent — fine for hit tests, useless for
+  // asking where the LABEL under the symbol lands.
+  portPositions: { p: [-10, 0], n: [10, 0] },
+};
 const lookup = (n) => DEFS[n];
 
 function inst(id, cx, cy, half = 20) {
@@ -1025,12 +1037,17 @@ test("zoomToFit measures the canvas before fitting", () => {
     editor.viewport.scale > tiny,
     `fitting after layout must use the larger canvas (was ${tiny}, now ${editor.viewport.scale})`
   );
-  // And the diagram should be centred in it.
+  // And the diagram should be centred in it. Diagram +y points up and canvas y
+  // points down, so the y mapping is mirrored — the earlier version of this
+  // added, which happened to pass only because the fixture is centred on y=0.
   const [x1, y1, x2, y2] = C0.diagramBounds(editor.getModel());
   const cx = ((x1 + x2) / 2) * editor.viewport.scale + editor.viewport.x;
-  const cy = ((y1 + y2) / 2) * editor.viewport.scale + editor.viewport.y;
+  const cy = editor.viewport.y - ((y1 + y2) / 2) * editor.viewport.scale;
   assert.ok(Math.abs(cx - 600) < 2, `diagram centred horizontally, got ${cx.toFixed(0)}`);
-  assert.ok(Math.abs(cy - 400) < 2, `diagram centred vertically, got ${cy.toFixed(0)}`);
+  // Vertically it sits a little above centre: the fit reserves room under the
+  // drawing for the component names, which are painted below their symbols.
+  const lift = 400 - cy;
+  assert.ok(lift >= 0 && lift <= 22, `centred vertically, nudged up for the labels (${lift.toFixed(0)}px)`);
 });
 
 test("a fit requested before layout does not frame a canvas that does not exist", () => {
@@ -1061,11 +1078,11 @@ test("a fit requested before layout does not frame a canvas that does not exist"
   const s = editor.viewport.scale;
   // Assert the outcome, not that the number changed: `zoomToFit` clamps its
   // scale, so a performed fit can legitimately produce the same value again.
-  // The whole diagram must be inside the view.
+  // The whole diagram must be inside the view. Mirrored in y, as the canvas is.
   const left = x1 * s + editor.viewport.x;
   const right = x2 * s + editor.viewport.x;
-  const top = y1 * s + editor.viewport.y;
-  const bottom = y2 * s + editor.viewport.y;
+  const top = editor.viewport.y - y2 * s;
+  const bottom = editor.viewport.y - y1 * s;
   assert.ok(left >= -1 && right <= 1201, `diagram fits horizontally (${left.toFixed(0)}..${right.toFixed(0)})`);
   assert.ok(top >= -1 && bottom <= 801, `diagram fits vertically (${top.toFixed(0)}..${bottom.toFixed(0)})`);
 });
@@ -1087,13 +1104,143 @@ test("resizing the canvas refits rather than leaving the diagram adrift", () => 
   const s = editor.viewport.scale;
   const left = x1 * s + editor.viewport.x;
   const right = x2 * s + editor.viewport.x;
-  const top = y1 * s + editor.viewport.y;
-  const bottom = y2 * s + editor.viewport.y;
+  const top = editor.viewport.y - y2 * s;
+  const bottom = editor.viewport.y - y1 * s;
   assert.ok(
     left >= -1 && right <= 601 && top >= -1 && bottom <= 401,
     `after a resize the diagram is still framed (${left.toFixed(0)}..${right.toFixed(0)}, ${top.toFixed(0)}..${bottom.toFixed(0)})`
   );
   assert.ok(s < fitted.scale, "a smaller canvas needs a smaller scale");
+});
+
+test("a fit fills the canvas, rather than framing the diagram tiny in it", () => {
+  // Reported from a screenshot of DCMotor: the circuit drawn small in the middle
+  // of a large canvas, with most of the pane empty. Two causes, both in the fit:
+  // `diagramBounds` padded by 40 DIAGRAM UNITS, which is 40px at scale 1 and 200px
+  // at scale 5, and a hard cap of 2 on the fitted scale.
+  //
+  // The model is the real one's geometry: six components of 20x20 units spread
+  // over 150x60, in a canvas the size of the studio's diagram pane.
+  const filled = (id, cx, cy, half = 10) => ({
+    id,
+    className: "M.Fill",
+    placement: { extent: [cx - half, cy - half, cx + half, cy + half], rotation: 0, visible: true },
+    params: {},
+  });
+  const model = {
+    name: "DCMotor",
+    components: [
+      filled("motor", -10, 10),
+      filled("load", 30, 10),
+      filled("drag", 70, 10),
+      filled("housing", -20, -30),
+      filled("supply", -60, 10),
+      filled("ground", -60, -30),
+    ],
+    connections: [],
+    graphics: [],
+  };
+  const { editor } = makeEditor(model.components);
+  const canvas = canvasOf(editor);
+  const W = 1300;
+  const H = 330;
+  // Labels at the largest size the setting allows (250%): at the default size the
+  // plain margin happens to cover them, so the fit's own label room would look
+  // unnecessary — and then clip the moment someone enlarges the labels.
+  editor.cb.display = () => ({ labelScale: 2.5, hoverParameters: false });
+  layoutTo(canvas, W, H);
+  editor.zoomToFit();
+
+  // The bounds of the DRAWING, computed here from the extents rather than asked
+  // of the code under test.
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  for (const c of model.components) {
+    const [a, b, cc, d] = c.placement.extent;
+    x1 = Math.min(x1, a, cc);
+    x2 = Math.max(x2, a, cc);
+    y1 = Math.min(y1, b, d);
+    y2 = Math.max(y2, b, d);
+  }
+  const s = editor.viewport.scale;
+  const drawnW = (x2 - x1) * s;
+  const drawnH = (y2 - y1) * s;
+  const left = x1 * s + editor.viewport.x;
+  // Diagram +y points UP and canvas y points DOWN, so the mapping is mirrored:
+  // the diagram's top edge (max y) is the smaller canvas coordinate.
+  const top = editor.viewport.y - y2 * s;
+  const bottom = editor.viewport.y - y1 * s;
+
+  // Nothing may be clipped: the diagram is inside the canvas with a margin.
+  assert.ok(left >= 8 && left + drawnW <= W - 8, `inside horizontally (${left.toFixed(0)}..${(left + drawnW).toFixed(0)})`);
+  assert.ok(top >= 8 && bottom <= H - 8, `inside vertically (${top.toFixed(0)}..${bottom.toFixed(0)})`);
+  // And it must actually use the canvas: the limiting dimension comes within a
+  // margin of the edge. The old code drew this at 120px tall in a 330px pane.
+  assert.ok(
+    drawnH >= H - 80,
+    `the drawing fills the height it is limited by: ${drawnH.toFixed(0)} of ${H}`
+  );
+  assert.ok(
+    drawnW >= W * 0.45,
+    `and a useful share of the width: ${drawnW.toFixed(0)} of ${W}`
+  );
+  // Centred, since a fit that fills one corner is the other half of the report —
+  // horizontally exactly, and vertically nudged UP by the room the labels need
+  // below the drawing.
+  const cx = ((x1 + x2) / 2) * s + editor.viewport.x;
+  assert.ok(Math.abs(cx - W / 2) < 2, `centred horizontally, got ${cx.toFixed(0)}`);
+  const topGap = top;
+  const bottomGap = H - bottom;
+  assert.ok(topGap >= 8 && bottomGap >= 8, `a margin on both sides (${topGap.toFixed(0)}/${bottomGap.toFixed(0)})`);
+  assert.ok(
+    bottomGap - topGap > 10 && bottomGap - topGap < 30,
+    `the drawing sits above centre, by about the room a label needs (${(bottomGap - topGap).toFixed(0)}px)`
+  );
+  // The room itself, measured: a name is drawn BELOW its symbol and belongs to no
+  // extent, so this gap is what keeps the bottom row of names off the edge at a
+  // large label size. Dropping the allowance leaves 35px, which is not enough for
+  // the 35.5px a 250% label needs plus the 3px it sits below the symbol.
+  assert.ok(
+    bottomGap >= 40,
+    `the fit reserves room under the drawing for the names (${bottomGap.toFixed(0)}px)`
+  );
+
+  // And the names under the symbols have to survive the fit. They are drawn BELOW
+  // the artwork and belong to no extent, so a fit that fills the height exactly
+  // clips the bottom row — which is what the extra room at the bottom is for.
+  // Taken from the draw calls rather than from a picture, because the label's
+  // place is a number: `fillText` is called with the TOP of the text.
+  const labels = [];
+  editor.ctx = new Proxy(
+    { canvas: { width: W, height: H }, measureText: () => ({ width: 10 }) },
+    {
+      get(t, k) {
+        if (k in t) return t[k];
+        // Only the component names: the grid's axis labels and the level-of-detail
+        // chip are other text, and neither belongs to a component.
+        if (k === "fillText") {
+          return (text, lx, ly) => {
+            if (model.components.some((c) => c.id === text)) labels.push({ text, y: ly });
+          };
+        }
+        return () => {};
+      },
+      set() {
+        return true;
+      },
+    }
+  );
+  SchematicEditor.prototype.draw.call(editor);
+  assert.equal(labels.length, model.components.length, "every component is named");
+  // The largest the label can be is 13px times the label-size setting (2.5 here),
+  // drawn 3px below the artwork.
+  const worst = 13 * 2.5 + 3;
+  for (const l of labels) {
+    assert.ok(
+      l.y + worst <= H,
+      `"${l.text}" is inside the canvas (its text ends at ${(l.y + worst).toFixed(0)} of ${H})`
+    );
+  }
+  editor.destroy();
 });
 
 test("coordinate diagnostics are off by default", () => {

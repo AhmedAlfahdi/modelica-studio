@@ -2117,7 +2117,15 @@ export function routeConnection(
   return [ax, ay, midX, ay, midX, by, bx, by];
 }
 
-/** Bounding box of a whole diagram, for "zoom to fit". */
+/**
+ * Bounding box of a whole diagram, for "zoom to fit".
+ *
+ * The box is TIGHT — the components' own extents and the wires between them, with
+ * nothing added. It used to be padded by 40 diagram units, which reads as a small
+ * margin at scale 1 and as most of the pane at scale 5: a fit has to leave its
+ * margin in SCREEN pixels, because that is the space the eye sees, and the caller
+ * is the one that knows the scale. `zoomToFit` does that.
+ */
 export function diagramBounds(model: DiagramModel): [number, number, number, number] {
   let minX = Infinity;
   let minY = Infinity;
@@ -2139,8 +2147,7 @@ export function diagramBounds(model: DiagramModel): [number, number, number, num
     }
   }
   if (!Number.isFinite(minX)) return [-100, -100, 100, 100];
-  const pad = 40;
-  return [minX - pad, minY - pad, maxX + pad, maxY + pad];
+  return [minX, minY, maxX, maxY];
 }
 
 /**

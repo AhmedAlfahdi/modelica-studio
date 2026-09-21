@@ -1932,7 +1932,17 @@ export class SchematicEditor {
 
   /* ---------------- viewport ---------------- */
 
-  /** Fit the diagram to the canvas. Prefer `scheduleFit` when size may be stale. */
+  /**
+   * Fit the diagram to the canvas. Prefer `scheduleFit` when size may be stale.
+   *
+   * The margin is in SCREEN pixels, and the scale is allowed all the way to
+   * `MAX_ZOOM`. Both were wrong in a way that only shows on a small model in a
+   * large pane: the bounds were padded by 40 diagram units — 40px at scale 1, but
+   * 200px at scale 5 — and the fitted scale was capped at 2, so a circuit drawn
+   * over 150x60 units could not fill a 1300x330 pane even with no margin at all.
+   * It came out as 120px of drawing in the middle of the canvas, reported as "the
+   * real estate is not filled".
+   */
   zoomToFit(): void {
     this.resize();
     if (this.cssWidth < 80 || this.cssHeight < 80) {
@@ -1945,10 +1955,20 @@ export class SchematicEditor {
     const [x1, y1, x2, y2] = diagramBounds(this.model);
     const w = Math.max(1, x2 - x1);
     const h = Math.max(1, y2 - y1);
-    const scale = clamp(Math.min(this.cssWidth / w, this.cssHeight / h), MIN_ZOOM, 2);
+    // A margin on every side, and more at the bottom: a component's name is drawn
+    // BELOW its symbol and is not part of any extent, so a fit that ignores it
+    // clips the labels off the bottom row.
+    const availW = Math.max(40, this.cssWidth - 2 * FIT_MARGIN);
+    const availH = Math.max(40, this.cssHeight - 2 * FIT_MARGIN - FIT_LABEL_ROOM);
+    const scale = clamp(Math.min(availW / w, availH / h), MIN_ZOOM, MAX_ZOOM);
     this.viewport.scale = scale;
     this.viewport.x = this.cssWidth / 2 - ((x1 + x2) / 2) * scale;
-    this.viewport.y = this.cssHeight / 2 + ((y1 + y2) / 2) * scale;
+    // Centred in the box that EXCLUDES the label room, not in the whole canvas:
+    // centring in the canvas splits that extra room evenly, so half of it ends up
+    // above and the bottom row of names is clipped anyway — which is what the
+    // first version of this did.
+    const band = (FIT_MARGIN + (this.cssHeight - FIT_MARGIN - FIT_LABEL_ROOM)) / 2;
+    this.viewport.y = band + ((y1 + y2) / 2) * scale;
     this.requestDraw();
   }
 
@@ -2541,6 +2561,17 @@ const WIRE_VERTEX_GRAB_PX = 8;
 
 const MIN_ZOOM = 0.08;
 const MAX_ZOOM = 16;
+
+/**
+ * Space a fit leaves around the diagram, in CSS pixels.
+ *
+ * Pixels rather than diagram units, because a margin is something the eye sees:
+ * the same 40 units is a comfortable border at scale 1 and most of the pane at
+ * scale 5. The extra room at the bottom is for the component names, which are
+ * drawn below their symbols.
+ */
+const FIT_MARGIN = 24;
+const FIT_LABEL_ROOM = 22;
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));

@@ -5,6 +5,33 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.35] — 2026-10-14
+
+### Fixed
+
+- **"Fit to view" framed a small diagram tiny in the middle of the pane.**
+  Reported from a screenshot of `DCMotor`: 150x60 diagram units drawn 120px tall
+  in a 330px pane, with most of the canvas empty. Two causes, both in the fit:
+  - `diagramBounds` padded its box by **40 diagram units**, which is 40px at scale
+    1 and 200px at scale 5 — most of a large pane. The box is tight now, and the
+    margin is in **screen pixels**, which is the space the eye actually sees.
+  - The fitted scale was **capped at 2**, so a compact model could not be enlarged
+    to fill the pane no matter what the margin was. It goes up to `MAX_ZOOM` now,
+    the same limit the zoom buttons use.
+
+  Measured for the reported model in a 1300x330 pane: **120px of drawing before,
+  260px after**, centred and fully inside, with the margin reserved under the
+  drawing for the component names — which are painted below their symbols and
+  belong to no extent, so a fit that fills the height exactly clips the bottom row.
+  At the default label size that room is invisible; at the 250% the setting allows
+  it is what keeps the names readable.
+
+### Changed
+
+- Three editor tests computed the vertical box by *adding* the viewport offset
+  where the canvas is mirrored in y, so they only ever checked one edge. They
+  check both now, and the fit test asserts the label room as a measured gap.
+
 ## [0.2.0-beta.34] — 2026-10-14
 
 ### Added

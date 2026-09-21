@@ -113,7 +113,7 @@ pre-release and BRAT is the intended route.
    Settings → Community plugins.
 
 To pin a version instead of tracking the latest, use BRAT's **frozen** option and
-name the release, for example `0.2.0-beta.34`.
+name the release, for example `0.2.0-beta.35`.
 
 BRAT reports a mismatch if a release's tag, its name and the version inside the
 released `manifest.json` disagree. They are kept identical here on purpose, so an
@@ -138,7 +138,7 @@ To try it without your own vault, `examples/vault/` is a ready-made one — see
 npm install
 npm run build          # typecheck, then bundle to main.js
 npm run dev            # rebuild on change
-npm test               # 620 tests, including a numerical audit of every example
+npm test               # 621 tests, including a numerical audit of every example
 ```
 
 `npm test` runs the real OpenModelica compiler, so it needs `omc` on your PATH
