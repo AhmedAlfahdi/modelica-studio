@@ -398,8 +398,19 @@ export class PluginSettingTab {
 
 /** A menu that records what was added, so a test can invoke an item. */
 export class Menu {
+  /**
+   * Every menu built during a test, in order.
+   *
+   * A menu is created and shown inside the code under test, so the test has no
+   * handle on it: without this, "the button opens a menu holding these two
+   * items" is unassertable, and a menu that opened empty would pass.
+   */
+  static all: Menu[] = [];
   items: Array<{ title: string; icon?: string; run?: () => void }> = [];
   shownAt: MouseEvent | null = null;
+  constructor() {
+    Menu.all.push(this);
+  }
   addItem(cb: (item: StubMenuItem) => unknown): this {
     const item = new StubMenuItem();
     cb(item);

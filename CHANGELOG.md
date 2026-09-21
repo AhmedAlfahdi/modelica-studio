@@ -5,6 +5,41 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.29] — 2026-10-14
+
+### Fixed
+
+- **The sweep dropdown had no arrow.** I removed Obsidian's `dropdown` class in
+  beta.27 to stop its padding fighting a fixed height — and the chevron is drawn
+  on that class alone: `app.css` sets `appearance: none` on every `select` and
+  puts the arrow on `.dropdown`. The class is back, and only the properties that
+  actually fought are overridden, so hover, focus and disabled come from the theme
+  again.
+- **The parameter box and the values box were drawn by two stylesheets.** A lone
+  class loses to Obsidian's `input[type='text']`, so the select was drawn by the
+  plugin's rule and the input by the theme's: two fills and two paddings, side by
+  side. One rule governs both now, at a specificity that wins.
+
+### Changed
+
+- **The results bar has been rebuilt**, as agreed from the mockup:
+  - `Sweep` is the one accented action in the row;
+  - `Scale` / `Full screen` / `Auto scale` share one segmented box;
+  - `Δ` became **Δ vs**, filled rather than ringed, and sits inside the group it
+    belongs to — it used to be a bare button between two groups, which a wrap left
+    stranded at the end of a line;
+  - `Copy image` and `Save image` are one **⋯** menu at the end of the row, which
+    keeps the row on one line in a narrow pane (at 900px it wrapped to two before,
+    and is one line now);
+  - the rules between the groups are gone. The boxes and the spacing group them,
+    and the rule class was the one that inherited the pane grip's `::before`;
+  - the `100, 200, 400` hint is greyed, and `t_end` is sized to its number.
+- The row now lives in `src/view/plot-actions.ts` behind a host interface rather
+  than as 140 lines of closures inside the 4,400-line view. That is what lets
+  `test/plot-actions.test.mjs` render it in a real DOM with the real `styles.css`
+  and assert what the browser computes — the two cascade bugs above look perfectly
+  correct in the source and are only visible in a computed style.
+
 ## [0.2.0-beta.28] — 2026-10-14
 
 ### Added

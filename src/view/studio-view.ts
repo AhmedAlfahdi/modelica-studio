@@ -52,6 +52,7 @@ import { formatMatchCount, fuzzyFilter } from "../modelica/fuzzy";
 import { docUrlFor, libraryVersionFrom } from "../modelica/doclinks";
 import { acceptsFileDrag, droppedVaultFile } from "./drop";
 import { RESULTS_TABS, resultsTabState, tabLabel, type ResultsTab } from "./bottom-tabs";
+import { buildPlotActions } from "./plot-actions";
 import { savePrompt } from "../modelica/save-state";
 import { keptSourceNote, reasonDetail, stopMessage } from "../ai/stop-message";
 import { formatExchanges, formatSummary, summarise } from "../ai/interaction-log";
@@ -2443,142 +2444,43 @@ export class ModelicaStudioView extends ItemView {
 
     const actions = this.bottomActionsEl;
     if (actions) {
-      actions.empty();
-      // Simulation time lives here rather than in the settings tab: it is part
-      // of asking the question, not of configuring the plugin, and changing it
-      // means running again — which is what this row is for.
-      const time = actions.createDiv({ cls: "modelica-studio-time" });
-      time.createSpan({ cls: "modelica-studio-muted", text: "t_end" });
-      const endInput = time.createEl("input", {
-        type: "number",
-        cls: "modelica-studio-time-input",
-        attr: { step: "any", min: "0" },
-      });
-      endInput.value = String(this.plugin.stopTime());
-      const apply = () => {
-        const v = Number(endInput.value);
-        if (!Number.isFinite(v) || v <= 0) {
-          endInput.value = String(this.plugin.stopTime());
-          return;
-        }
-        // Recorded against THIS model, so it neither reverts on reload nor
-        // leaks into every other model's blocks.
-        this.plugin.setStopTime(v);
-        void this.runSimulation({ silent: true });
-      };
-      endInput.addEventListener("change", apply);
-      endInput.addEventListener("keydown", (ev) => {
-        if (ev.key === "Enter") {
-          ev.preventDefault();
-          apply();
-        }
-      });
-      time.createSpan({ cls: "modelica-studio-muted", text: "s" });
-
-      if (this.result) {
-        // Three groups, because they are three subjects: how the plot is scaled,
-        // what is being compared, and getting a picture out. As one row of nine
-        // buttons, which of them belonged together was a guess.
-        actions.createDiv({ cls: "modelica-studio-group-sep" });
-        const scale = actions.createDiv({
-          cls: "modelica-studio-group",
-          attr: { "aria-label": "How the plot is scaled" },
-        });
-        scale
-          .createEl("button", { cls: "modelica-studio-btn", text: "Scale" })
-          .addEventListener("click", () => this.toggleScalePanel());
-        scale
-          .createEl("button", { cls: "modelica-studio-btn", text: "Full screen" })
-          .addEventListener("click", () => this.openFullScreen());
-        scale
-          .createEl("button", { cls: "modelica-studio-btn", text: "Auto scale" })
-          .addEventListener("click", () => this.autoScale());
-        // The delta toggle: on, the cursor readout says how far each family curve
-        // is from the run on screen.
-        // The figure buttons. A canvas cannot be selected or dragged out, so
-        // without these a result can be looked at and not shown to anybody.
-        // The family: what happens when a number changes. A parameter, the values
-        // to try, and one button — the sweep is one simulation per value, so the
-        // count is capped in `parseSweepValues` rather than in the UI.
-        actions.createDiv({ cls: "modelica-studio-group-sep" });
-        const family = actions.createDiv({
-          cls: "modelica-studio-group modelica-studio-family",
-          attr: { "aria-label": "Sweep a parameter, or keep a run to compare with" },
-        });
-        // `is-active` is the visible state and `is-idle` says the effect has
-        // nothing to work on yet: without both, pressing it looked like pressing
-        // nothing, which is exactly how it was reported.
-        const hasFamily = this.family.length > 0;
-        const on = this.plugin.settings.plotDeltas;
-        const deltas = actions.createEl("button", {
-          cls: `modelica-studio-btn${on ? " is-active" : ""}${hasFamily ? "" : " is-idle"}`,
-          text: "Δ",
-        });
-        deltas.setAttribute("aria-pressed", on ? "true" : "false");
-        deltas.setAttribute(
-          "aria-label",
-          hasFamily
-            ? "Show how far each swept curve is from the run on screen, at the cursor"
-            : "Differences are shown when there is a family to compare with — sweep a parameter, or Keep as before"
-        );
-        deltas.addEventListener("click", () => void this.toggleDeltas());
-        // NOT Obsidian's `.dropdown`: its own padding and background arrow fight a
-        // fixed height, and the arrow ended up over the text. A plain select with
-        // the browser's own arrow is sized here instead.
-        const param = family.createEl("select", { cls: "modelica-studio-family-param" });
+      // The row itself lives in `plot-actions.ts`, where it can be rendered and
+      // asserted in a real DOM. What is passed in is the view's own state and
+      // commands, so the builder never reaches back into this class.
+      buildPlotActions(actions, {
+        stopTime: () => this.plugin.stopTime(),
+        // Recording the span and running again are one action from here: the
+        // field is how the question is asked, and a new answer needs the run.
+        applyStopTime: (seconds) => {
+          this.plugin.setStopTime(seconds);
+          void this.runSimulation({ silent: true });
+        },
+        hasResult: () => !!this.result,
         // Only what can actually be swept: `collectParameters` also reports the
         // initial-state entries, and overriding one of those is silently ignored
         // -- a family of identical curves for a value that never changed.
-        const names = sweepableParameters(collectParameters(this.plugin.model));
-        for (const n of names.length ? names : ["—"]) {
-          param.createEl("option", { text: n, value: n });
-        }
-        param.disabled = names.length === 0;
-        // Restored from the last sweep, because this row is rebuilt after every
-        // run: a field that empties itself loses the only record of what was
-        // asked for, which is what you want to look at WHILE reading the curves.
-        if (names.includes(this.sweepField.parameter)) param.value = this.sweepField.parameter;
-        else if (names.length) this.sweepField.parameter = names[0];
-        param.addEventListener("change", () => {
-          this.sweepField.parameter = param.value;
-        });
-        const values = family.createEl("input", {
-          type: "text",
-          cls: "modelica-studio-family-values",
-          attr: { placeholder: "100, 200, 400", "aria-label": "Values to sweep the parameter over" },
-        });
-        values.value = this.sweepField.values;
-        values.addEventListener("input", () => {
-          this.sweepField.values = values.value;
-        });
-        const sweep = family.createEl("button", { cls: "modelica-studio-btn", text: "Sweep" });
-        sweep.setAttribute("aria-label", "Run once for each value and draw them together");
-        sweep.addEventListener("click", () => void this.runSweep(param.value, values.value));
-        const keep = family.createEl("button", { cls: "modelica-studio-btn", text: "Keep as before" });
-        keep.setAttribute("aria-label", "Draw this run dashed behind the next one");
-        keep.addEventListener("click", () => this.keepAsBefore());
-        if (this.family.length > 0) {
-          const clear = family.createEl("button", { cls: "modelica-studio-btn", text: "Clear family" });
-          clear.addEventListener("click", () => {
-            this.family = [];
-            this.lastSweep = null;
-            this.drawResults();
-            this.renderPlotPane();
-          });
-        }
-
-        actions.createDiv({ cls: "modelica-studio-group-sep" });
-        const figures = actions.createDiv({
-          cls: "modelica-studio-group",
-          attr: { "aria-label": "The plot as a picture" },
-        });
-        figures
-          .createEl("button", { cls: "modelica-studio-btn", text: "Copy image" })
-          .addEventListener("click", () => void this.copyFigure());
-        figures
-          .createEl("button", { cls: "modelica-studio-btn", text: "Save image" })
-          .addEventListener("click", () => void this.saveFigure());
-      }
+        sweepParameters: () => sweepableParameters(collectParameters(this.plugin.model)),
+        sweepField: () => ({ ...this.sweepField }),
+        setSweepField: (field) => {
+          this.sweepField = field;
+        },
+        familyCount: () => this.family.length,
+        deltasOn: () => this.plugin.settings.plotDeltas,
+        toggleScalePanel: () => this.toggleScalePanel(),
+        openFullScreen: () => this.openFullScreen(),
+        autoScale: () => this.autoScale(),
+        toggleDeltas: () => void this.toggleDeltas(),
+        runSweep: (parameter, values) => void this.runSweep(parameter, values),
+        keepAsBefore: () => this.keepAsBefore(),
+        copyFigure: () => void this.copyFigure(),
+        saveFigure: () => void this.saveFigure(),
+        clearFamily: () => {
+          this.family = [];
+          this.lastSweep = null;
+          this.drawResults();
+          this.renderPlotPane();
+        },
+      });
     }
     if (this.emptyEl?.isConnected) this.emptyEl.remove();
     this.emptyEl =

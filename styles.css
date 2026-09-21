@@ -676,11 +676,18 @@ body.modelica-studio-resizing * {
 
 /* The family controls: a parameter, the values to try, and one button. */
 /* A toggle in a row of buttons has to LOOK toggled: the delta button did its work
-   invisibly, which read as a button that does nothing. */
+   invisibly, which read as a button that does nothing. It is FILLED, not ringed:
+   a coloured ring made a two-letter button the loudest thing in the row, beside
+   the button that actually runs the sweep. */
 .modelica-studio-btn.is-active {
-  border-color: var(--interactive-accent);
-  color: var(--text-normal);
+  border-color: transparent;
+  color: var(--interactive-accent);
   background-color: var(--background-modifier-hover);
+  font-weight: 600;
+}
+
+.modelica-studio-btn.is-active:hover {
+  background-color: var(--background-modifier-active-hover, var(--interactive-hover));
 }
 
 /* Nothing to compare against yet: the effect is real but has no input. */
@@ -688,9 +695,24 @@ body.modelica-studio-resizing * {
   opacity: 0.6;
 }
 
+/* Read after the plot has been read. A button for a rare action should not
+   compete with the controls used while working. */
+.modelica-studio-btn.is-quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+
+.modelica-studio-btn.is-quiet:hover {
+  background: var(--interactive-hover);
+  color: var(--text-normal);
+}
+
 /* A boxed group of controls that belong to one subject: the plot's scaling, what
    is being compared, and the figure buttons. As nine buttons in a row, which of
-   them belonged together was a guess. */
+   them belonged together was a guess. The boxes are what groups them now: the
+   rules that used to stand between them did the same job twice, and one of those
+   rules inherited the pane grip and was reported as a stray bar. */
 .modelica-studio-group {
   display: flex;
   align-items: center;
@@ -701,20 +723,29 @@ body.modelica-studio-resizing * {
   padding: 2px 6px;
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
-  /* Softer than the row around it: the divider is what separates the groups, and
-     a heavy fill beside a heavy rule reads as two competing edges. */
   background-color: var(--background-secondary);
 }
 
-/* A visible rule between the groups, full height of the row. NOT
-   `.modelica-studio-divider`: that is the PANE divider, and borrowing its name
-   gave every rule the pane grip's ::before -- a stray bar at the left of the row,
-   reported as "the resizing handle is now not centred". */
-.modelica-studio-group-sep {
-  width: 1px;
-  align-self: stretch;
-  margin: 2px 6px;
-  background-color: var(--background-modifier-border-hover);
+/* One subject, one box: the three view controls share their edges rather than
+   sitting apart as three unrelated buttons. */
+.modelica-studio-group.is-segmented {
+  gap: 0;
+}
+
+.modelica-studio-group.is-segmented .modelica-studio-btn {
+  border-radius: 0;
+  margin-left: -1px;
+}
+
+.modelica-studio-group.is-segmented .modelica-studio-btn:first-child {
+  border-top-left-radius: var(--radius-s);
+  border-bottom-left-radius: var(--radius-s);
+  margin-left: 0;
+}
+
+.modelica-studio-group.is-segmented .modelica-studio-btn:last-child {
+  border-top-right-radius: var(--radius-s);
+  border-bottom-right-radius: var(--radius-s);
 }
 
 /* One height for everything in the row. The delta button was a small square
@@ -732,27 +763,52 @@ body.modelica-studio-resizing * {
   gap: 5px;
 }
 
+/* ONE rule for both fields, and it has to outrank the theme's.
+   `.modelica-studio-family-values` alone is a class (0,1,0) and LOSES to
+   Obsidian's `input[type='text']` (0,1,1), so the parameter select was drawn by
+   this stylesheet and the values input by the theme's: two fills, two paddings,
+   side by side, reported as "the variables dropdown is overlapping". Declared
+   together, at a specificity that wins, so they cannot drift apart again. */
 .modelica-studio-family-param,
-.modelica-studio-family-values {
+.modelica-studio-family input[type="text"].modelica-studio-family-values {
   font-size: 11px;
   flex: 0 0 auto;
   /* A fixed height with the padding INSIDE it, so the text and the arrow have
      room rather than spilling over each other. */
   height: 26px;
   box-sizing: border-box;
-  padding: 0 6px;
+  padding: 0 7px;
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
   background-color: var(--background-primary);
   color: var(--text-normal);
 }
 
-.modelica-studio-family-values {
-  width: 110px;
+.modelica-studio-family-param:hover,
+.modelica-studio-family input[type="text"].modelica-studio-family-values:hover {
+  border-color: var(--background-modifier-border-hover);
 }
 
+/* The parameter list wears Obsidian's `dropdown` class for its ARROW and nothing
+   else. app.css sets `appearance: none` on every `select` and draws the chevron
+   as a background image on `.dropdown` alone -- so dropping the class to stop its
+   padding fighting the fixed height left a box with no sign that it opens, which
+   is what the screenshot showed. The two properties that actually fought are
+   answered for here; the padding leaves room for the art the theme draws. */
 .modelica-studio-family-param {
+  box-shadow: none;
+  text-align: left;
+  padding-right: 22px;
   max-width: 150px;
+}
+
+/* The hint must not read as content that is already there. */
+.modelica-studio-family input[type="text"].modelica-studio-family-values::placeholder {
+  color: var(--text-faint);
+}
+
+.modelica-studio-family-values {
+  width: 118px;
 }
 
 .modelica-studio-embed-time {
@@ -936,7 +992,9 @@ body.modelica-studio-resizing * {
 
 .modelica-studio-plotbar-actions {
   display: flex;
-  gap: 6px;
+  /* Space, not rules, is what separates the groups now: a 9px gap between boxes
+     against a 5px gap inside them groups by rhythm alone. */
+  gap: 9px;
   align-items: center;
 }
 
@@ -1079,12 +1137,15 @@ body.modelica-studio-resizing * {
 .modelica-studio-time {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   margin-right: 4px;
 }
 
+/* A 90px box holding a two-digit number, with its unit stranded at the far side
+   of it. Narrow, and the number centred, so `20` and `s` read as one value. */
 .modelica-studio-time-input {
-  width: 90px;
+  width: 54px;
+  text-align: center;
   font-size: 11px;
   padding: 2px 6px;
 }
@@ -1094,6 +1155,12 @@ body.modelica-studio-resizing * {
 .modelica-studio-plotbar-actions {
   flex-wrap: wrap;
   row-gap: 4px;
+}
+
+/* One action in this bar produces a result, and this is it. Heavier than its
+   neighbours so the row has a subject rather than ten equals. */
+.modelica-studio-plotbar .modelica-studio-btn.mod-cta {
+  font-weight: 600;
 }
 
 /* ------------------------------------------------------------------ *

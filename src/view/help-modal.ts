@@ -334,10 +334,10 @@ export class HelpModal extends Modal {
       cls: "modelica-studio-muted",
       text:
         "With a family on screen, resting the cursor on the plot reads every curve at " +
-        "that instant AND how far each is from the run on screen (Δ). The Δ button in " +
-        "the results bar turns that on and off. Copy image and Save image put the plot " +
-        "or the diagram where you are writing about it: a saved figure lands beside the " +
-        "note and its link is put at the cursor.",
+        "that instant AND how far each is from the run on screen (Δ vs). That button, in " +
+        "the results bar next to the sweep fields, turns it on and off. The ⋯ button at " +
+        "the end of the bar copies the plot or saves it as a picture file: a saved figure " +
+        "lands beside the note and its link is put at the cursor.",
     });
 
     /* ---- putting one in a note ---- */

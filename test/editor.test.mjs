@@ -1301,18 +1301,24 @@ test("the simulation time is editable in the view, not only in settings", () => 
   // `stopTime` existed as a value with no control anywhere — not in the view,
   // not in the settings tab. A model left with another model's span gave a
   // useless plot with no obvious way to fix it from where the plot is.
+  //
+  // The row itself moved into `plot-actions.ts` (so it can be rendered in a DOM
+  // test); what is asserted here is that the two halves are still joined: the
+  // field asks the view, and the view records the span against THIS model.
   const src = fs.readFileSync("src/view/studio-view.ts", "utf8");
-  assert.ok(src.includes("modelica-studio-time-input"), "the plot bar carries a time field");
+  const bar = fs.readFileSync("src/view/plot-actions.ts", "utf8");
+  assert.ok(bar.includes("modelica-studio-time-input"), "the plot bar carries a time field");
+  assert.ok(bar.includes("host.applyStopTime(v)"), "editing it is handed to the view");
   assert.ok(
-    src.includes("this.plugin.setStopTime(v)"),
-    "editing it records the span for THIS model, so it neither reverts nor leaks"
+    src.includes("this.plugin.setStopTime(seconds)"),
+    "which records the span for THIS model, so it neither reverts nor leaks"
   );
   assert.ok(
-    src.includes("String(this.plugin.stopTime())"),
+    bar.includes("String(host.stopTime())") && src.includes("stopTime: () => this.plugin.stopTime()"),
     "and the field shows this model's span, not a shared one"
   );
   assert.ok(
-    /applyStopTime|endInput\.addEventListener\("change", apply\)/.test(src),
+    /applyStopTime: \(seconds\)[\s\S]{0,120}runSimulation/.test(src),
     "and re-runs the simulation"
   );
 });
