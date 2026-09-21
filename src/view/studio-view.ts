@@ -23,7 +23,7 @@ import {
 import type ModelicaStudioPlugin from "../main";
 import { SchematicEditor } from "./editor";
 import { copyText } from "./clipboard";
-import { formatLint, lintModel, summariseLint } from "../modelica/lint";
+import { formatLint, lintModel, repairInstruction, summariseLint, type LintFinding } from "../modelica/lint";
 import { overlayResults, parseSweepValues, type FamilyRun } from "./family";
 import { copyCanvasImage, linkFigure, saveCanvasImage } from "./figure";
 import {
@@ -1165,10 +1165,15 @@ export class ModelicaStudioView extends ItemView {
    */
   private fullFailureText(): string {
     const direct = this.lastSimulationError?.trim();
-    if (direct) return direct;
-    const logged = this.plugin.runLog.lastFailure();
-    if (logged) return logged.detail;
-    return this.codeDiagEl?.getText()?.trim() ?? "";
+    const logged = direct ? undefined : this.plugin.runLog.lastFailure();
+    const base = direct ?? logged?.detail ?? this.codeDiagEl?.getText()?.trim() ?? "";
+    // The findings are appended rather than substituted: a model can both fail to
+    // compile AND have two blocks wired to nothing, and the second explains the
+    // first ("variable p has no remaining equation").
+    const findings = this.lintFindings();
+    if (findings.length === 0) return base;
+    const section = `The diagram has a problem the compiler does not report: ${summariseLint(findings)}`;
+    return base ? `${base}\n\n${section}` : section;
   }
 
   /** Show compiler output beside the code, where it is needed. */
@@ -1235,9 +1240,7 @@ export class ModelicaStudioView extends ItemView {
       return;
     }
 
-    const prompt = repair
-      ? "The model below does not compile. Fix it, keeping what it is trying to do."
-      : (this.aiInput?.value.trim() ?? "");
+    const prompt = repair ? repairInstruction(this.lintFindings()) : (this.aiInput?.value.trim() ?? "");
     if (!prompt) {
       this.setStatus("Describe the model you want first.");
       this.aiInput?.focus();
@@ -2109,10 +2112,15 @@ export class ModelicaStudioView extends ItemView {
    * the plot it explains and does not have to be dismissed on every run.
    */
   private wiringWarning(): string | undefined {
-    const findings = lintModel(this.plugin.sourceForSave(), {
+    const findings = this.lintFindings();
+    return findings.length > 0 ? summariseLint(findings) : undefined;
+  }
+
+  /** What is wrong with the drawing. One place, so every reader agrees. */
+  private lintFindings(): LintFinding[] {
+    return lintModel(this.plugin.sourceForSave(), {
       isComponent: (name) => this.plugin.library.component(name) !== undefined,
     });
-    return findings.length > 0 ? summariseLint(findings) : undefined;
   }
 
   private renderRunLog(): void {
@@ -2942,9 +2950,7 @@ export class ModelicaStudioView extends ItemView {
    */
   async checkModel(): Promise<void> {
     const source = this.plugin.sourceForSave();
-    const findings = lintModel(source, {
-      isComponent: (name) => this.plugin.library.component(name) !== undefined,
-    });
+    const findings = this.lintFindings();
     const backend = this.plugin.backend;
     if (!backend) {
       new TextModal(this.app, "Check", formatLint(findings)).open();
@@ -2979,7 +2985,12 @@ export class ModelicaStudioView extends ItemView {
       ).open();
       return;
     }
-    new TextModal(this.app, "Check", formatLint(findings, diagnostics, checked)).open();
+    const report = formatLint(findings, diagnostics, checked);
+    new TextModal(this.app, "Check", report, {
+      label: "Ask the AI to fix it",
+      hint: "Send the model and this report to the AI; the result lands in the editor for review",
+      run: () => this.repairFromReport(),
+    }).open();
   }
 
   /**
@@ -3056,6 +3067,21 @@ export class ModelicaStudioView extends ItemView {
     this.drawResults();
     this.renderPlotPane();
     this.setStatus("Kept the current run as \"before\" — run again to compare");
+  }
+
+  /**
+   * Hand the report to the repair path.
+   *
+   * The same path the log's "Send to AI" uses, which is the point: a loose
+   * diagram usually SIMULATES — flatly — so the log's button was never offered
+   * for the one fault this report exists to find. The result goes to the code
+   * editor, not over the model, so nothing is lost by asking.
+   */
+  private repairFromReport(): void {
+    this.setMode("code");
+    this.toggleAiRow(true);
+    if (this.aiInput) this.aiInput.value = "Fix the wiring this report describes.";
+    void this.runAiRequest(true);
   }
 
   /** The canvas holding the result the user is looking at. */

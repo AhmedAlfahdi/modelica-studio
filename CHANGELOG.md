@@ -5,6 +5,35 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.15] — 2026-10-02
+
+### Added
+
+- **Check can now hand the report to the AI.** The report has an *Ask the AI to
+  fix it* button, which sends the model and the findings through the repair path
+  that already existed — the result lands in the editor for review, never over the
+  model.
+
+  The gap it closes is not the button, it is that the repair path was unreachable
+  for this fault: *Send to AI* lives in the run log and is offered when a run
+  **fails**, and a diagram with isolated blocks usually does not fail. It
+  compiles, integrates, and draws a flat line — which is the whole reason the
+  check exists. The one case that needed the repair could not reach it.
+
+- **The repair prompt says which problem it is.** "The model below does not
+  compile" was wrong for a loose diagram, and it invites a rewrite of the physics
+  when the fault is that two blocks are not joined. It now reads *"compiles but
+  does not work: <the finding> … join the components with connect(...) statements
+  — this is a schematic, so the wiring is the model"*. The wiring requirement is
+  stated up front because it is what the caller checks: this vault's own AI log
+  has five exchanges rejected for loose wiring, each rejection repeating the same
+  sentence. Saying it once is cheaper than five repairs discovering it.
+
+- The findings are carried into **every** repair, including one started from a
+  failed run: a model can both fail to compile and have two blocks wired to
+  nothing, and the second explains the first ("variable p does not have any
+  remaining equation to be solved in").
+
 ## [0.2.0-beta.14] — 2026-10-01
 
 ### Added

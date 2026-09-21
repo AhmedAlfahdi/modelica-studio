@@ -134,3 +134,21 @@ test("the report distinguishes nothing found from everything found", () => {
 
   assert.equal(lint.summariseLint([{ kind: "wiring", message: "one" }, { kind: "wiring", message: "two" }]), "one two");
 });
+
+test("the repair prompt says which problem it is", () => {
+  // The two cases need different instructions, and the vault's own AI log is the
+  // evidence: five exchanges came back rejected for loose wiring, each rejection
+  // repeating the same sentence. Saying it once, up front, is cheaper than five
+  // repairs discovering it.
+  const compiling = lint.repairInstruction([]);
+  assert.match(compiling, /does not compile/, "a model that will not compile is asked to be fixed");
+  assert.doesNotMatch(compiling, /connect/, "and nothing is said about wiring");
+
+  const loose = lint.repairInstruction([
+    { kind: "wiring", message: "None of the 2 components are connected to each other: a, b." },
+  ]);
+  assert.match(loose, /compiles but does not work/, "a loose diagram says so, rather than claiming it will not compile");
+  assert.match(loose, /None of the 2 components/, "the finding is quoted, not paraphrased");
+  assert.match(loose, /connect\(\.\.\.\)/, "and the wiring requirement is stated up front");
+  assert.match(loose, /schematic/, "with the reason: this is a schematic, not an equations answer");
+});

@@ -84,3 +84,29 @@ export function formatLint(
 export function summariseLint(findings: LintFinding[]): string {
   return findings.map((f) => f.message).join(" ");
 }
+
+/**
+ * What to ask the AI to do about what was found.
+ *
+ * The prompt has to say which problem it is, because the two cases need
+ * different instructions: "does not compile" invites a rewrite of the physics,
+ * and the fault here is that two blocks are not joined. The vault's own AI log
+ * is the evidence — five exchanges came back rejected for exactly this, and the
+ * rejections say the same thing three times over ("None of the 4 components are
+ * connected to each other"). Saying it once, up front, is cheaper than five
+ * repairs discovering it.
+ *
+ * The wiring requirement is stated as a requirement rather than a suggestion
+ * because it is what the caller will check: a model that answers a schematic
+ * request with equations is refused, however good the equations are.
+ */
+export function repairInstruction(findings: LintFinding[]): string {
+  if (findings.length === 0) {
+    return "The model below does not compile. Fix it, keeping what it is trying to do.";
+  }
+  return (
+    `The model below compiles but does not work: ${summariseLint(findings)} ` +
+    "Fix it, keeping what it is trying to do, and join the components with connect(...) " +
+    "statements — this is a schematic, so the wiring is the model."
+  );
+}

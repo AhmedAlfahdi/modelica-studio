@@ -384,8 +384,21 @@ class RevisionModal extends Modal {
  * Exported so the AI prompt log can be read in the app rather than in a console:
  * reviewing what was sent and what came back is the whole point of keeping it.
  */
+export interface TextModalAction {
+  label: string;
+  /** What the button will do, as a tooltip. */
+  hint: string;
+  run: () => void;
+}
+
 export class TextModal extends Modal {
-  constructor(app: App, private title: string, private text: string) {
+  constructor(
+    app: App,
+    private title: string,
+    private text: string,
+    /** An optional second button, for a dialog whose text suggests an action. */
+    private action?: TextModalAction
+  ) {
     super(app);
   }
 
@@ -401,6 +414,16 @@ export class TextModal extends Modal {
     setIcon(copy, "clipboard-copy");
     copy.createSpan({ text: "Copy" });
     copy.addEventListener("click", () => void copyText(this.text, `the ${this.title.toLowerCase()}`));
+    if (this.action) {
+      const button = actions.createEl("button", { cls: "modelica-studio-btn mod-cta" });
+      setIcon(button, "sparkles");
+      button.createSpan({ text: this.action.label });
+      button.setAttr("aria-label", this.action.hint);
+      button.addEventListener("click", () => {
+        this.close();
+        this.action?.run();
+      });
+    }
   }
 
   onClose(): void {
