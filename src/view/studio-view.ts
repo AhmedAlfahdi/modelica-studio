@@ -2479,6 +2479,7 @@ export class ModelicaStudioView extends ItemView {
         // Three groups, because they are three subjects: how the plot is scaled,
         // what is being compared, and getting a picture out. As one row of nine
         // buttons, which of them belonged together was a guess.
+        actions.createDiv({ cls: "modelica-studio-divider" });
         const scale = actions.createDiv({
           cls: "modelica-studio-group",
           attr: { "aria-label": "How the plot is scaled" },
@@ -2494,6 +2495,16 @@ export class ModelicaStudioView extends ItemView {
           .addEventListener("click", () => this.autoScale());
         // The delta toggle: on, the cursor readout says how far each family curve
         // is from the run on screen.
+        // The figure buttons. A canvas cannot be selected or dragged out, so
+        // without these a result can be looked at and not shown to anybody.
+        // The family: what happens when a number changes. A parameter, the values
+        // to try, and one button — the sweep is one simulation per value, so the
+        // count is capped in `parseSweepValues` rather than in the UI.
+        actions.createDiv({ cls: "modelica-studio-divider" });
+        const family = actions.createDiv({
+          cls: "modelica-studio-group modelica-studio-family",
+          attr: { "aria-label": "Sweep a parameter, or keep a run to compare with" },
+        });
         // `is-active` is the visible state and `is-idle` says the effect has
         // nothing to work on yet: without both, pressing it looked like pressing
         // nothing, which is exactly how it was reported.
@@ -2511,15 +2522,6 @@ export class ModelicaStudioView extends ItemView {
             : "Differences are shown when there is a family to compare with — sweep a parameter, or Keep as before"
         );
         deltas.addEventListener("click", () => void this.toggleDeltas());
-        // The figure buttons. A canvas cannot be selected or dragged out, so
-        // without these a result can be looked at and not shown to anybody.
-        // The family: what happens when a number changes. A parameter, the values
-        // to try, and one button — the sweep is one simulation per value, so the
-        // count is capped in `parseSweepValues` rather than in the UI.
-        const family = actions.createDiv({
-          cls: "modelica-studio-group modelica-studio-family",
-          attr: { "aria-label": "Sweep a parameter, or keep a run to compare with" },
-        });
         const param = family.createEl("select", { cls: "dropdown modelica-studio-family-param" });
         // Only what can actually be swept: `collectParameters` also reports the
         // initial-state entries, and overriding one of those is silently ignored
@@ -2562,6 +2564,7 @@ export class ModelicaStudioView extends ItemView {
           });
         }
 
+        actions.createDiv({ cls: "modelica-studio-divider" });
         const figures = actions.createDiv({
           cls: "modelica-studio-group",
           attr: { "aria-label": "The plot as a picture" },

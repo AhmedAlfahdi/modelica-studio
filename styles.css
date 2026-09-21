@@ -698,7 +698,17 @@ body.modelica-studio-resizing * {
   padding: 2px 6px;
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
-  background-color: var(--background-secondary-alt);
+  /* Softer than the row around it: the divider is what separates the groups, and
+     a heavy fill beside a heavy rule reads as two competing edges. */
+  background-color: var(--background-secondary);
+}
+
+/* A visible rule between the groups, full height of the row. */
+.modelica-studio-divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 6px;
+  background-color: var(--background-modifier-border-hover);
 }
 
 /* One height for everything in the row. The delta button was a small square

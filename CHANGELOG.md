@@ -5,6 +5,22 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.24] — 2026-10-11
+
+### Fixed
+
+- **The Δ button sat outside the group it belongs to.** The button was created into
+  the results row before the group that holds the sweep controls was built, so it
+  floated between the scale group and the comparison group — reported from a
+  screenshot: "the delta button seems to be outside the group". It is now the first
+  control inside the comparison group, where it reads as part of the thing it
+  switches.
+
+- **Visible dividers between the groups.** A box outline alone left the three groups
+  reading as one long strip, so a full-height rule now stands between them, and the
+  group fill is softer than the row around it — a heavy fill beside a heavy rule
+  reads as two competing edges.
+
 ## [0.2.0-beta.23] — 2026-10-10
 
 ### Changed
