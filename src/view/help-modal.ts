@@ -283,6 +283,15 @@ export class HelpModal extends Modal {
     el.createEl("p", {
       cls: "modelica-studio-muted",
       text:
+        "Near a point where two traces meet, the readout takes that exact instant " +
+        "and marks it “crossing” — the crossing is usually the moment the plot is " +
+        "being read for, and no sample falls on it exactly. Settings → Modelica " +
+        "Studio → Results plot turns that snap off, and sets how close the pointer " +
+        "has to come, measured in pixels so it feels the same at every zoom level.",
+    });
+    el.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
         "A dimmed connector in the inspector is one the class only declares " +
         "conditionally — a heat port appears only once useHeatPort is true. It " +
         "cannot be wired until then, so its pin is not drawn either. A connector " +

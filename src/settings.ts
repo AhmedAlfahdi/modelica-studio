@@ -9,6 +9,10 @@
 import { App, Notice, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import type ModelicaStudioPlugin from "./main";
 import { FolderSuggest } from "./view/folder-suggest";
+// The snap distance is defined by the plot, which has to clamp whatever it is
+// given: the slider offers exactly the range the plot will honour, so the number
+// shown is the number in force rather than a value silently pinned at the end.
+import { MAX_SNAP_TOLERANCE_PX, MIN_SNAP_TOLERANCE_PX, snapTolerancePx } from "./view/plot";
 import { exclusionsFrom, libraryRows } from "./modelica/library-exclusions";
 import { SOLVERS, solverDescription, AI_THINKING_LEVELS, MODEL_STYLES, type AiThinking, type ModelStyle, AI_DEFAULTS,
   DEFAULT_TIMEOUT_SECONDS, AI_PROVIDERS, AiConfig, LEGACY_SECRET_NAME, legacyKeyOf } from "./ai/prompts";
@@ -290,6 +294,15 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         })
       );
 
+    /* ---- reading the results plot ---- */
+    containerEl.createEl("h3", { text: "Results plot" });
+    containerEl.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "What the pointer tells you while it is over a result plot — in the " +
+        "Studio, and in a simulation block embedded in a note.",
+    });
+
     new Setting(containerEl)
       .setName("Show differences in the plot readout")
       .setDesc(
@@ -305,6 +318,60 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           this.plugin.getView()?.refreshPlot();
         })
       );
+
+    // The two settings below are one feature split in two, so the second is
+    // dimmed while the first is off rather than left looking as if it does
+    // something. Re-rendering the whole tab would scroll back to the top.
+    const SNAP_ON_DESC =
+      "How close, in pixels on screen, the pointer has to come to a crossing " +
+      "before it snaps. Pixels rather than seconds so it feels the same at every " +
+      "zoom level: raise it if the snap is hard to catch, lower it if the cursor " +
+      "ever jumps to a crossing you were not aiming at.";
+    const SNAP_OFF_DESC = "Not used while the snap above is off.";
+    // Held rather than built in place because the toggle above it owns whether
+    // this row is enabled, and the row has to exist before it can be greyed.
+    let snapDistance: Setting | null = null;
+
+    new Setting(containerEl)
+      .setName("Snap the cursor to where curves cross")
+      .setDesc(
+        "When the pointer is about to cross a point where two traces meet, the " +
+          "readout takes that exact instant instead of the nearest round number, " +
+          "and says “crossing”. On by default, and it is what makes a crossing " +
+          "readable: the instant is interpolated between samples, so it is a time " +
+          "no sample actually has."
+      )
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.plotSnapCrossings).onChange(async (v) => {
+          this.plugin.settings.plotSnapCrossings = v;
+          // Applied before the write, so the row greys as the switch moves
+          // rather than one disk round-trip later. `setDisabled` on the row greys
+          // the label and the slider together, which is the honest state: with
+          // the snap off nothing reads this value.
+          snapDistance?.setDisabled(!v);
+          snapDistance?.setDesc(v ? SNAP_ON_DESC : SNAP_OFF_DESC);
+          this.plugin.getView()?.refreshPlot();
+          this.plugin.refreshEmbeds();
+          await this.plugin.saveSettings();
+        })
+      );
+
+    snapDistance = new Setting(containerEl)
+      .setName("Snap distance")
+      .setDesc(this.plugin.settings.plotSnapCrossings ? SNAP_ON_DESC : SNAP_OFF_DESC)
+      .addSlider((sl) =>
+        sl
+          .setLimits(MIN_SNAP_TOLERANCE_PX, MAX_SNAP_TOLERANCE_PX, 1)
+          .setValue(snapTolerancePx(this.plugin.settings.plotSnapTolerance))
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.plotSnapTolerance = v;
+            await this.plugin.saveSettings();
+            this.plugin.getView()?.refreshPlot();
+            this.plugin.refreshEmbeds();
+          })
+      );
+    snapDistance.setDisabled(!this.plugin.settings.plotSnapCrossings);
 
     /* ---- AI assistance ---- */
     containerEl.createEl("h3", { text: "AI assistance" });

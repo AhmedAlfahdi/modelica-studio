@@ -26,6 +26,33 @@ export interface PlotTheme {
   cursor: string;
 }
 
+/**
+ * How near, in pixels, the cursor has to come to a crossing before it snaps.
+ *
+ * Pixels rather than seconds because that is the distance the person aiming is
+ * judging: a hundredth of the time axis is seven pixels at one zoom level and
+ * seventy at another, so a tolerance in seconds means a different magnet every
+ * time the view changes. The settings slider is what a user sets; this is the
+ * fallback when nothing is passed, and a test holds the two together.
+ */
+export const SNAP_TOLERANCE_PX = 7;
+
+/** Bounds for the snap distance, so a stray stored value cannot wreck the cursor. */
+export const MIN_SNAP_TOLERANCE_PX = 1;
+export const MAX_SNAP_TOLERANCE_PX = 40;
+
+/**
+ * The snap distance to actually use, from whatever was configured.
+ *
+ * A window wider than the plot would make the cursor jump to a crossing the
+ * pointer is nowhere near, and a value that is not a number at all (an older
+ * data.json, a hand-edited one) must not disable the snap by accident.
+ */
+export function snapTolerancePx(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) return SNAP_TOLERANCE_PX;
+  return Math.min(MAX_SNAP_TOLERANCE_PX, Math.max(MIN_SNAP_TOLERANCE_PX, value));
+}
+
 export const DEFAULT_THEME: PlotTheme = {
   background: "rgb(252,252,254)",
   foreground: "rgb(40,44,52)",
@@ -244,10 +271,19 @@ export interface DrawPlotOptions {
    * The crossings are what a plot like an RLC response is read FOR — where the
    * capacitor's voltage meets the inductor's current — and picking that instant by
    * eye off a crosshair gives a time that is nearly right. On by default; the snap
-   * only applies within a small fraction of the time axis, so the cursor is
+   * only applies within `snapTolerancePx` of the crossing, so the cursor is
    * unchanged everywhere else.
    */
   snapIntersections?: boolean;
+  /**
+   * How near, in pixels, a crossing has to be for the snap to take it.
+   *
+   * In pixels rather than in seconds on purpose: the plot is zoomed and panned,
+   * and what a person is judging is the gap between the crosshair and the
+   * crossing on screen. Converted to a window on the time axis here, against the
+   * width the lines were actually drawn at.
+   */
+  snapTolerancePx?: number;
   /**
    * The label of the run on screen, when a family is drawn.
    *
@@ -523,7 +559,7 @@ export function drawPlot(
   if (opts.cursorX !== undefined && opts.cursorX >= xMin && opts.cursorX <= xMax) {
     let cursorAt = opts.cursorX;
     let snappedToCrossing = false;
-    if (opts.snapIntersections !== false && visible.length > 1) {
+    if (opts.snapIntersections !== false && visible.length > 1 && lay.width > 1) {
       // In the space the lines are DRAWN in — pixels — and not in their values.
       // `capacitor.v` and `inductor.i` are two magnitudes and get two y-axes, so
       // their values are never equal while the lines cross plainly on screen: the
@@ -531,9 +567,12 @@ export function drawPlot(
       const drawn = visible.map((s) =>
         s.values.map((v) => (Number.isFinite(v) ? scaleFor(s.name)(v) : Number.NaN))
       );
-      // A hundredth of the visible span: about seven pixels on a plot this wide,
-      // so it is a magnet rather than a move.
-      const crossing = nearestCrossing(result.time, drawn, cursorAt, (xMax - xMin) * 0.01);
+      // The tolerance is a distance on screen, so it is turned into a window on
+      // the time axis with the width the axes were drawn at. Seven pixels by
+      // default — a magnet, not a move.
+      const window =
+        (snapTolerancePx(opts.snapTolerancePx) / lay.width) * (xMax - xMin);
+      const crossing = nearestCrossing(result.time, drawn, cursorAt, window);
       if (crossing !== undefined) {
         cursorAt = crossing;
         snappedToCrossing = true;

@@ -151,6 +151,21 @@ export interface ModelicaStudioSettings {
    */
   plotDeltas: boolean;
   /**
+   * Whether the cursor readout snaps to the instant two traces cross.
+   *
+   * On by default: the crossing is usually the moment being read off, and the
+   * snap only acts when the pointer is already within `plotSnapTolerance` of it.
+   */
+  plotSnapCrossings: boolean;
+  /**
+   * How near, in pixels, a crossing has to be for the readout to snap to it.
+   *
+   * Pixels, not seconds, because that is the distance being aimed at on screen
+   * and it means the same thing at every zoom level. `SNAP_TOLERANCE_PX` in
+   * `view/plot.ts` is the same number, and a test holds the two together.
+   */
+  plotSnapTolerance: number;
+  /**
    * Results-pane height in DIAGRAM mode; 0 means the default.
    *
    * Per mode rather than shared: the pane sits above the editing area, so one
@@ -231,6 +246,10 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   labelScale: 1,
   hoverParameters: true,
   plotDeltas: true,
+  plotSnapCrossings: true,
+  // Matches SNAP_TOLERANCE_PX: 7px is under a tenth of a character's width on
+  // screen, so it is a magnet rather than a move.
+  plotSnapTolerance: 7,
   plotHeight: 0,
   codePlotHeight: 0,
   modelStopTimes: {},

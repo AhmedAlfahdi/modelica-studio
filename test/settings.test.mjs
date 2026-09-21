@@ -57,6 +57,46 @@ fs.writeFileSync(
 );
 const { DEFAULT_SETTINGS, mergeSettings } = await import(path.join(staging, "settings.js"));
 
+// The plot, for the one number the two modules have to agree on: the snap
+// distance the settings ship with, and the distance the plot falls back to when
+// no setting reaches it. Two literals in two files stay equal only by luck, so
+// this compares them.
+execFileSync(
+  "npx",
+  [
+    "esbuild",
+    "src/view/plot.ts",
+    "--bundle",
+    "--format=esm",
+    "--platform=node",
+    `--outfile=${path.join(staging, "plot.js")}`,
+    "--log-level=error",
+  ],
+  { cwd: repoRoot, stdio: "pipe" }
+);
+const plotMod = await import(path.join(staging, "plot.js"));
+
+test("the crossing snap is on by default, at the distance the plot itself uses", () => {
+  // Reported as: tell me whether it is on, and how far it reaches. Both are now
+  // settings, so both have to survive a data.json written before they existed --
+  // and the distance has to be the SAME number the renderer falls back to, or a
+  // caller that passes no tolerance would behave like a different plugin.
+  assert.equal(DEFAULT_SETTINGS.plotSnapCrossings, true, "the snap is on out of the box");
+  assert.equal(
+    DEFAULT_SETTINGS.plotSnapTolerance,
+    plotMod.SNAP_TOLERANCE_PX,
+    "the default distance is the renderer's own fallback"
+  );
+
+  const older = mergeSettings(DEFAULT_SETTINGS, { stopTime: 5 });
+  assert.equal(older.plotSnapCrossings, true, "an older data.json gains the switch");
+  assert.equal(older.plotSnapTolerance, plotMod.SNAP_TOLERANCE_PX, "and the distance");
+
+  const chosen = mergeSettings(DEFAULT_SETTINGS, { plotSnapCrossings: false, plotSnapTolerance: 15 });
+  assert.equal(chosen.plotSnapCrossings, false, "a stored choice wins");
+  assert.equal(chosen.plotSnapTolerance, 15);
+});
+
 test("coordinate diagnostics default to off", () => {
   // They are a debugging aid. Earlier they were always on, which drew boxes,
   // callouts and a viewport readout over every diagram — a visual bug in itself.

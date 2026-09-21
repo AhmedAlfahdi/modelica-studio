@@ -619,3 +619,99 @@ test("the snap works on the lines as drawn, not on their values", () => {
   // And in value space there is nothing to find, which is the bug in one line.
   assert.equal(plotMod.nearestCrossing(time, [volts, amps], 1.4, 0.5), undefined);
 });
+
+test("the crossing snap can be switched off, and its reach is a pixel distance", () => {
+  // Both were hard-wired: the snap always fired, and it always reached 1% of the
+  // time axis -- a different number of seconds at every zoom level, and the same
+  // number of PIXELS only by accident. The settings now carry a switch and a
+  // distance, and both have to reach the drawing.
+  const time = [0, 1, 2, 3, 4];
+  const result = {
+    time,
+    series: [
+      { name: "a", values: [0, 1, 2, 3, 4], unit: "" },
+      { name: "b", values: [4, 3, 2, 1, 0], unit: "" },
+    ],
+    compileMs: 1,
+    simulateMs: 1,
+    reusedBinary: true,
+    warnings: [],
+  };
+  const styles = { a: { color: "#c00", visible: true }, b: { color: "#06c", visible: true } };
+
+  /** The cursor readout text at `cursorX`, over the given view. */
+  const readout = (view, cursorX, opts) => {
+    const rows = [];
+    const ctx = new Proxy(
+      {
+        canvas: { width: 900, height: 400 },
+        font: "",
+        fillStyle: "",
+        strokeStyle: "",
+        globalAlpha: 1,
+        textAlign: "",
+        textBaseline: "",
+      },
+      {
+        get(t, k) {
+          if (k in t) return t[k];
+          if (k === "measureText") return (s) => ({ width: String(s).length * 6 });
+          if (k === "fillText") return (text) => rows.push(String(text));
+          return () => {};
+        },
+        set(t, k, v) {
+          t[k] = v;
+          return true;
+        },
+      }
+    );
+    plotMod.drawPlot(ctx, 900, 400, result, {
+      styles,
+      view,
+      dpr: 1,
+      cursorX,
+      theme: plotMod.plotThemeFrom(false),
+      ...opts,
+    });
+    return rows.join(" | ");
+  };
+
+  // 900px wide, and the legend takes its share, leaving 712px of axes: at
+  // xMax = 4 that is 178px per second, so a cursor at 2.02s is 3.56px from the
+  // crossing at 2s.
+  const near = readout({ xMin: 0, xMax: 4 }, 2.02, { snapTolerancePx: 4 });
+  assert.match(near, /\(crossing\)/, `4px reaches a 3.56px gap: ${near}`);
+  const far = readout({ xMin: 0, xMax: 4 }, 2.02, { snapTolerancePx: 3 });
+  assert.doesNotMatch(far, /\(crossing\)/, `3px must not reach 3.56px: ${far}`);
+
+  // The same gap on a plot zoomed out to 8 seconds is 89px per second, so it
+  // takes a cursor at 2.04s. The SAME two tolerances decide it the same way --
+  // which is the point of measuring in pixels, and what a window in seconds
+  // cannot do.
+  const zoomedNear = readout({ xMin: 0, xMax: 8 }, 2.04, { snapTolerancePx: 4 });
+  assert.match(zoomedNear, /\(crossing\)/, `4px reaches 3.56px when zoomed out: ${zoomedNear}`);
+  const zoomedFar = readout({ xMin: 0, xMax: 8 }, 2.04, { snapTolerancePx: 3 });
+  assert.doesNotMatch(zoomedFar, /\(crossing\)/, `3px must not, either: ${zoomedFar}`);
+
+  // With nothing passed, the plot's own default applies -- the path an embed or
+  // any other caller takes. 7px reaches a 3.56px gap.
+  assert.match(
+    readout({ xMin: 0, xMax: 4 }, 2.02, {}),
+    /\(crossing\)/,
+    "the default distance is used when the settings do not pass one"
+  );
+  assert.equal(plotMod.SNAP_TOLERANCE_PX, 7, "and it is the number the settings default to");
+
+  // Switched off, the readout stays where the pointer is -- not merely silent
+  // about the crossing.
+  const off = readout({ xMin: 0, xMax: 4 }, 2.02, { snapIntersections: false, snapTolerancePx: 20 });
+  assert.doesNotMatch(off, /\(crossing\)/, `switched off: ${off}`);
+  assert.match(off, /t = 2\.02/, `the cursor is left where it was: ${off}`);
+
+  // A value that is not a usable distance -- a hand-edited data.json -- falls
+  // back rather than switching the snap off or making it unbounded.
+  assert.equal(plotMod.snapTolerancePx(undefined), 7);
+  assert.equal(plotMod.snapTolerancePx(Number.NaN), 7);
+  assert.equal(plotMod.snapTolerancePx(0), plotMod.MIN_SNAP_TOLERANCE_PX, "never zero-width");
+  assert.equal(plotMod.snapTolerancePx(1e6), plotMod.MAX_SNAP_TOLERANCE_PX, "nor the whole plot");
+});

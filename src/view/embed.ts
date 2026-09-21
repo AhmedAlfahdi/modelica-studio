@@ -833,6 +833,11 @@ export class EmbeddedDiagram {
       view: this.plotView(),
       dpr,
       cursorX: this.cursorX,
+      // The cursor readout here snaps to a crossing under the same settings as
+      // the Studio's: it is the same readout, and a block whose pointer behaved
+      // differently from the Studio's would be a bug of its own.
+      snapIntersections: this.host.settings.plotSnapCrossings,
+      snapTolerancePx: this.host.settings.plotSnapTolerance,
       // As many traces as the box has room for rather than a fixed six: the pane
       // is as tall as the note makes it, and a readout taller than the plot runs
       // off the bottom.

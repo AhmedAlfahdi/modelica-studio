@@ -387,3 +387,38 @@ test("help lives in the studio, and lists shortcuts that exist", () => {
   // The table must not claim a shortcut the editor does not have.
   assert.ok(!/rungekutta4|Ctrl\+Shift\+P/.test(help), "no invented shortcuts");
 });
+
+test("both surfaces that draw a cursor readout obey the snap settings", () => {
+  // A wiring check, and only a wiring check: what the tolerance DOES is tested
+  // against real drawing in `series.test.mjs`, and that the settings tab shows
+  // and greys the two controls in `ui-render.test.mjs`. What can still go wrong
+  // here is one surface being forgotten, which is invisible until someone
+  // notices the note's plot behaving unlike the Studio's.
+  const studio = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  const embed = fs.readFileSync(path.join(repoRoot, "src/view/embed.ts"), "utf8");
+  assert.match(
+    studio,
+    /snapIntersections: this\.plugin\.settings\.plotSnapCrossings/,
+    "the Studio passes the switch"
+  );
+  assert.match(
+    studio,
+    /snapTolerancePx: this\.plugin\.settings\.plotSnapTolerance/,
+    "and the distance"
+  );
+  assert.match(
+    embed,
+    /snapIntersections: this\.host\.settings\.plotSnapCrossings/,
+    "an embedded plot passes the switch too"
+  );
+  assert.match(
+    embed,
+    /snapTolerancePx: this\.host\.settings\.plotSnapTolerance/,
+    "and the distance"
+  );
+  // And the setting the tab writes is the one the plot reads, spelled the same.
+  const merge = fs.readFileSync(path.join(repoRoot, "src/settings-merge.ts"), "utf8");
+  for (const key of ["plotSnapCrossings", "plotSnapTolerance"]) {
+    assert.match(merge, new RegExp(`^\\s+${key}:`, "m"), `${key} is a declared setting`);
+  }
+});

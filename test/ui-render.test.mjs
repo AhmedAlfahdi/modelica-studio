@@ -422,6 +422,103 @@ test("the settings tab renders every section, with the solver's details in its b
   assert.match(d["both label controls are in their own section"], /^Diagram labels/, "under one heading");
 });
 
+test("the crossing-snap settings render, read the stored values, and grey each other", async () => {
+  // Two settings for one feature: a switch, and the distance the snap reaches.
+  // The distance is meaningless while the switch is off, so it has to SAY so and
+  // be greyed — a control that looks live but is not read is how a setting ends
+  // up appearing to do nothing. Rendered rather than grepped, because that is the
+  // class of bug this session kept producing.
+  const out = page(
+    `import { ModelicaStudioSettingTab } from "${ROOT}/src/settings";`,
+    "const vault = new StubVault();",
+    "const plugin = makePlugin(vault, { settings: {",
+    "  solver: 'cvode',",
+    "  excludedLibraries: '',",
+    "  debugLog: false,",
+    "  labelScale: 1,",
+    "  hoverParameters: true,",
+    "  plotSnapCrossings: true,",
+    "  plotSnapTolerance: 14,",
+    "  plotDeltas: false,",
+    "  aiModels: [],",
+    "  ai: { secretName: '', baseUrl: '', model: '', temperature: 0.2, systemPrompt: '', thinking: 'off', style: 'visual', timeoutSeconds: 300 },",
+    "} });",
+    "plugin.library = { size: 0, packages: () => [], hasPlaceableClass: () => false, isExcluded: () => false };",
+    "plugin.toolchainSummary = () => 'omc';",
+    "plugin.hasSecretStorage = () => false;",
+    "plugin.applyExclusions = () => {};",
+    "plugin.setStopTime = () => {};",
+    "plugin.stopTime = () => 1;",
+    "plugin.getView = () => null;",
+    "plugin.refreshEmbeds = () => {};",
+    "",
+    "const tab = new ModelicaStudioSettingTab(plugin);",
+    "tab.display();",
+    "const root = tab.containerEl;",
+    "const row = (n) => Array.from(root.querySelectorAll('.setting-item')).find((i) => i.querySelector('.setting-item-name').textContent === n);",
+    "const headings = Array.from(root.querySelectorAll('h3')).map((h) => h.textContent);",
+    "const live = () => {",
+    "  const toggle = row('Snap the cursor to where curves cross');",
+    "  const dist = row('Snap distance');",
+    "  if (!toggle || !dist) return { missing: [!!toggle, !!dist] };",
+    "  const t = toggle.components.find((c) => typeof c.setValue === 'function' && c.inputEl.getAttribute('data-control') === 'toggle');",
+    "  const s = dist.components.find((c) => c.inputEl.getAttribute('data-control') === 'slider');",
+    "  return { t, s, dist, toggle };",
+    "};",
+    "window.test('both controls are rendered, under their own heading', () => {",
+    "  const v = live();",
+    "  const at = headings.indexOf('Results plot');",
+    "  return 'toggle=' + !!v.t + ' slider=' + !!v.s + ' value=' + (v.s ? v.s.value : '?') + ' on=' + (v.t ? v.t.value : '?')",
+    "    + ' section=' + (at < 0 ? 'NONE' : headings.slice(at, at + 1).join('')) + ' greyed=' + v.dist.className;",
+    "});",
+    "window.test('the stored values are the ones shown', () => {",
+    "  const v = live();",
+    "  if (v.missing) return 'MISSING ' + v.missing.join();",
+    "  return 'distance=' + v.s.value + ' on=' + v.t.value + ' item=' + v.dist.className;",
+    "});",
+    "// The switch is thrown, as a click would.",
+    "const before = live();",
+    "before.t.value = false;",
+    "before.t.inputEl.dispatchEvent(new Event('change'));",
+    "const after = live();",
+    "window.test('turning the snap off greys the distance and says why', () =>",
+    "  'item=' + after.dist.className + ' desc=' + after.dist.querySelector('.setting-item-description').textContent);",
+    "window.test('and the choice is stored', () => 'stored=' + plugin.settings.plotSnapCrossings);",
+    "window.test('the distance is still the one that was set', () => 'distance=' + after.s.value);",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const d = passed(out);
+
+  assert.match(
+    d["both controls are rendered, under their own heading"],
+    /toggle=true slider=true value=14 on=true/,
+    "both controls exist and show what is stored"
+  );
+  assert.match(
+    d["both controls are rendered, under their own heading"],
+    /section=Results plot/,
+    "under their own heading, not filed under the diagram labels"
+  );
+  assert.match(
+    d["the stored values are the ones shown"],
+    /distance=14 on=true item=setting-item$/m,
+    "a live snap means an enabled row, not a greyed one"
+  );
+
+  assert.match(d["turning the snap off greys the distance and says why"], /is-disabled/, "the row is greyed");
+  assert.match(
+    d["turning the snap off greys the distance and says why"],
+    /Not used while the snap above is off/,
+    "and it says the value is not being read"
+  );
+  assert.equal(d["and the choice is stored"], "stored=false", "the switch writes the setting");
+  assert.equal(d["the distance is still the one that was set"], "distance=14", "and it is not reset");
+});
+
 test("the palette renders, respects exclusions, and can be driven by keyboard", async () => {
   // The palette with exclusions applied was only ever measured by COUNT, never
   // rendered; and it had no keyboard support at all, which matters more now that

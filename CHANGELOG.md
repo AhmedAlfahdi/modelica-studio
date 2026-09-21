@@ -5,6 +5,28 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.28] — 2026-10-14
+
+### Added
+
+- **The crossing snap is now a setting, in two parts** — Settings → Modelica
+  Studio → Results plot. One switch turns it off, and one slider sets how close,
+  **in pixels on screen**, the pointer has to come to a crossing before it takes
+  it. Pixels rather than seconds on purpose: a distance in seconds is a different
+  magnet at every zoom level, while seven pixels is seven pixels. The slider is
+  greyed and says so while the switch is off, rather than looking live and doing
+  nothing. Both apply to the Studio's plot and to a simulated block embedded in a
+  note, which share the readout. The default is unchanged: on, at 7 px, which is
+  what the snap always used.
+
+### Changed
+
+- The pointer-readout settings moved under their own **Results plot** heading.
+  They were filed under "Diagram labels", which had nothing to do with them.
+- The snap's reach is clamped to a usable range (1–40 px) wherever it is read, so
+  a hand-edited `data.json` cannot switch the snap off by accident or widen it
+  until the cursor jumps across the plot.
+
 ## [0.2.0-beta.27] — 2026-10-14
 
 ### Fixed

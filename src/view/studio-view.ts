@@ -2997,6 +2997,8 @@ export class ModelicaStudioView extends ItemView {
       // is the point of inspecting there.
       cursorRows: canvas === this.fullCanvas ? result.series.length : 6,
       showDeltas: this.plugin.settings.plotDeltas,
+      snapIntersections: this.plugin.settings.plotSnapCrossings,
+      snapTolerancePx: this.plugin.settings.plotSnapTolerance,
       currentLabel,
       dpr,
     });

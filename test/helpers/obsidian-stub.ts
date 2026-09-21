@@ -148,6 +148,21 @@ export class Setting {
     return this;
   }
 
+  /**
+   * Grey a whole row, label and control together.
+   *
+   * Obsidian's own `setDisabled` marks the row and disables its inputs; the class
+   * is what a test reads back, since that is what the user sees.
+   */
+  setDisabled(disabled: boolean): this {
+    this.settingEl.toggleClass("is-disabled", disabled);
+    const controls = this.controlEl.querySelectorAll("input, select, textarea");
+    for (const el of Array.from(controls)) {
+      (el as HTMLInputElement).disabled = disabled;
+    }
+    return this;
+  }
+
   /** Each `add*` renders a control and keeps it, so a test can read the value. */
   private control<T>(kind: string, build: (el: HTMLElement) => T): this {
     const el = this.controlEl.ownerDocument.createElement("input");
