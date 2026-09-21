@@ -5,6 +5,37 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.37] — 2026-10-14
+
+### Added
+
+- **Wire thickness**, in Settings → Modelica Studio → Diagram: 50% to 300% of the
+  standard. The standard is a fixed fraction of a symbol's on-screen size, so
+  wires and symbols keep their relationship at every zoom and this moves that
+  whole curve. The area a wire can be clicked in follows the setting — a wire
+  drawn three times as heavy has to be grabbable across its face, or it looks
+  right and feels wrong. Symbols and the grid are untouched.
+- **Parameter popup size**, in the same section: the text of the panel that
+  appears while hovering a component, 50% to 250%. It has its own setting rather
+  than following the label size, which it used to: the name under a symbol is read
+  at a glance and the popup is read deliberately, so wanting one larger says
+  nothing about the other. The panel grows with its text, so nothing is cut off —
+  the old code clamped the font to 9–13px, against which a setting of 200% came
+  out as 13px.
+- **Readout size**, in Settings → Modelica Studio → Results plot: the cursor
+  readout drawn on a result plot, 50% to 250%, separate from the diagram's popup
+  because a plot is read on its own. The box, its leading and its padding scale
+  with the text, so a large readout does not overflow the panel it sits in. The
+  axis ticks, the legend and the trace names are not affected.
+
+  All three apply to the Studio and to blocks embedded in notes.
+
+### Changed
+
+- The settings section "Diagram labels" is now **"Diagram"**: it holds the label
+  size, the wire thickness, the hover toggle and the popup size, and only the
+  first of those is about labels.
+
 ## [0.2.0-beta.36] — 2026-10-14
 
 ### Fixed

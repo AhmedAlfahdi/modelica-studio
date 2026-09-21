@@ -151,6 +151,29 @@ export interface ModelicaStudioSettings {
    */
   plotDeltas: boolean;
   /**
+   * Stroke weight of the wires, as a multiple of the standard weight.
+   *
+   * The standard is a fixed fraction of a symbol's on-screen size, so wires and
+   * symbols keep their relationship at every zoom — this scales that whole curve,
+   * and the area a wire can be grabbed in, rather than pinning one width.
+   */
+  wireScale: number;
+  /**
+   * Font scale of the cursor readout drawn on a result plot.
+   *
+   * Separate from the diagram's own readout: a plot is read on its own, often in
+   * a pane, and the two have nothing to do with each other.
+   */
+  plotReadoutScale: number;
+  /**
+   * Font scale of the parameter popup drawn over a diagram.
+   *
+   * Its own setting rather than part of `labelScale`: the name under a symbol is
+   * read at a glance while the popup is read deliberately, so wanting one larger
+   * says nothing about the other.
+   */
+  diagramReadoutScale: number;
+  /**
    * Whether the cursor readout snaps to the instant two traces cross.
    *
    * On by default: the crossing is usually the moment being read off, and the
@@ -245,6 +268,9 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   paletteWidth: 210,
   labelScale: 1,
   hoverParameters: true,
+  wireScale: 1,
+  plotReadoutScale: 1,
+  diagramReadoutScale: 1,
   plotDeltas: true,
   plotSnapCrossings: true,
   // Matches SNAP_TOLERANCE_PX: 7px is under a tenth of a character's width on

@@ -76,6 +76,31 @@ execFileSync(
 );
 const plotMod = await import(path.join(staging, "plot.js"));
 
+test("wire weight and the two readout sizes are settings of their own", () => {
+  // Asked for separately, and separate they are: wires are diagram geometry, the
+  // plot readout is read on the plot, and the parameter popup is read over a
+  // diagram. Wanting one larger says nothing about the others.
+  for (const key of ["wireScale", "plotReadoutScale", "diagramReadoutScale"]) {
+    assert.equal(DEFAULT_SETTINGS[key], 1, `${key} starts at the standard size`);
+  }
+
+  const older = mergeSettings(DEFAULT_SETTINGS, { stopTime: 5 });
+  assert.equal(older.wireScale, 1, "an older data.json gains the wire weight");
+  assert.equal(older.plotReadoutScale, 1, "and the plot readout size");
+  assert.equal(older.diagramReadoutScale, 1, "and the popup size");
+
+  const chosen = mergeSettings(DEFAULT_SETTINGS, {
+    wireScale: 1.6,
+    plotReadoutScale: 1.8,
+    diagramReadoutScale: 1.3,
+  });
+  assert.equal(chosen.wireScale, 1.6, "a stored value wins");
+  assert.equal(chosen.plotReadoutScale, 1.8);
+  assert.equal(chosen.diagramReadoutScale, 1.3);
+  // And they are not the same key: the diagram's popup has its own.
+  assert.notEqual(chosen.plotReadoutScale, chosen.diagramReadoutScale);
+});
+
 test("the crossing snap is on by default, at the distance the plot itself uses", () => {
   // Reported as: tell me whether it is on, and how far it reaches. Both are now
   // settings, so both have to survive a data.json written before they existed --

@@ -246,8 +246,8 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         })
       );
 
-    /* ---- Diagram labels ---- */
-    containerEl.createEl("h3", { text: "Diagram labels" });
+    /* ---- the diagram ---- */
+    containerEl.createEl("h3", { text: "Diagram" });
 
     new Setting(containerEl)
       .setName("Label size")
@@ -277,6 +277,28 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Wire thickness")
+      .setDesc(
+        "Scales the strokes of the wires, as a percentage of the default. The " +
+          "default is a fixed fraction of a symbol's size, so wires and symbols " +
+          "keep their relationship at every zoom; this moves that whole curve, " +
+          "and the area a wire can be clicked in follows, or a thick wire would " +
+          "look right and be hard to grab. Symbols and grid are unaffected."
+      )
+      .addSlider((sl) =>
+        sl
+          .setLimits(50, 300, 10)
+          .setValue(Math.round(this.plugin.settings.wireScale * 100))
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.wireScale = v / 100;
+            await this.plugin.saveSettings();
+            this.plugin.getView()?.refreshDiagram();
+            this.plugin.refreshEmbeds();
+          })
+      );
+
+    new Setting(containerEl)
       .setName("Show parameters when hovering a component")
       .setDesc(
         "While the pointer rests on a component, shows what its parameters are " +
@@ -294,6 +316,28 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         })
       );
 
+    new Setting(containerEl)
+      .setName("Parameter popup size")
+      .setDesc(
+        "Scales the text of the panel that appears while hovering a component. " +
+          "Its own setting rather than part of the label size: the name under a " +
+          "symbol is read at a glance and the popup is read deliberately, so " +
+          "wanting one larger says nothing about the other. The panel grows with " +
+          "its text, so nothing is cut off."
+      )
+      .addSlider((sl) =>
+        sl
+          .setLimits(50, 250, 10)
+          .setValue(Math.round(this.plugin.settings.diagramReadoutScale * 100))
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.diagramReadoutScale = v / 100;
+            await this.plugin.saveSettings();
+            this.plugin.getView()?.refreshDiagram();
+            this.plugin.refreshEmbeds();
+          })
+      );
+
     /* ---- reading the results plot ---- */
     containerEl.createEl("h3", { text: "Results plot" });
     containerEl.createEl("p", {
@@ -302,6 +346,28 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         "What the pointer tells you while it is over a result plot — in the " +
         "Studio, and in a simulation block embedded in a note.",
     });
+
+    new Setting(containerEl)
+      .setName("Readout size")
+      .setDesc(
+        "Scales the text of the box that follows the cursor across a result " +
+          "plot, which lists the time and each trace's value there. Separate " +
+          "from the diagram's parameter popup: a plot is read on its own. The " +
+          "box grows with its text. The axis ticks, the legend and the trace " +
+          "names are not affected."
+      )
+      .addSlider((sl) =>
+        sl
+          .setLimits(50, 250, 10)
+          .setValue(Math.round(this.plugin.settings.plotReadoutScale * 100))
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.plotReadoutScale = v / 100;
+            await this.plugin.saveSettings();
+            this.plugin.getView()?.refreshPlot();
+            this.plugin.refreshEmbeds();
+          })
+      );
 
     new Setting(containerEl)
       .setName("Show differences in the plot readout")

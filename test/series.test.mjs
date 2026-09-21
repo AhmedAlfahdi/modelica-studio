@@ -620,6 +620,88 @@ test("the snap works on the lines as drawn, not on their values", () => {
   assert.equal(plotMod.nearestCrossing(time, [volts, amps], 1.4, 0.5), undefined);
 });
 
+test("the cursor readout is sized by its own setting, box and all", () => {
+  // Asked for separately from the diagram's parameter popup. The box is measured
+  // from the text, so the font, the leading and the padding have to move together
+  // or a large font overflows the panel it is drawn in.
+  const result = {
+    time: [0, 1, 2],
+    series: [{ name: "h", values: [0, 1, 2], unit: "m" }],
+    compileMs: 1,
+    simulateMs: 1,
+    reusedBinary: true,
+    warnings: [],
+  };
+
+  const drawAt = (readoutScale) => {
+    const fonts = [];
+    const boxes = [];
+    const rects = [];
+    let font = "";
+    const ctx = new Proxy(
+      {
+        canvas: { width: 900, height: 400 },
+        font: "",
+        fillStyle: "",
+        strokeStyle: "",
+        globalAlpha: 1,
+        textAlign: "",
+        textBaseline: "",
+      },
+      {
+        get(t, k) {
+          if (k in t) return t[k];
+          // Width depends on the FONT, as a real one does: a stub that returns a
+          // constant per character cannot show a box growing with its text.
+          if (k === "measureText") {
+            return (s2) => ({ width: String(s2).length * (parseFloat(font) || 11) * 0.55 });
+          }
+          // The readout is the last box drawn in a frame that has a cursor.
+          if (k === "fillRect") return (x, y, w, h) => boxes.push([x, y, w, h]);
+          if (k === "fillText") return (text, x, y) => rects.push([String(text), x, y, font]);
+          return () => {};
+        },
+        set(t, k, v) {
+          if (k === "font") font = String(v);
+          t[k] = v;
+          return true;
+        },
+      }
+    );
+    plotMod.drawPlot(ctx, 900, 400, result, {
+      styles: { h: { color: "#c00", visible: true } },
+      view: { xMin: 0, xMax: 2 },
+      dpr: 1,
+      cursorX: 1,
+      theme: plotMod.plotThemeFrom(false),
+      readoutScale,
+    });
+    // The readout's own row: the one that names the trace.
+    const row = rects.filter(([text]) => text.startsWith("h = ")).pop();
+    const box = boxes[boxes.length - 1];
+    return { font: row ? row[3] : "NONE", row, box };
+  };
+
+  const standard = drawAt(1);
+  const bigger = drawAt(2);
+  assert.equal(standard.font, "11px sans-serif", "the standard size");
+  assert.equal(bigger.font, "22px sans-serif", "and twice it");
+  // The row's own offset inside the box grows with the text, and so does the box.
+  assert.ok(
+    Math.abs(bigger.box[3] / standard.box[3] - 2) < 0.05,
+    `the box grows with the text (${standard.box[3]} -> ${bigger.box[3]})`
+  );
+  assert.ok(
+    Math.abs(bigger.box[2] / standard.box[2] - 2) < 0.05,
+    `and so does its width (${standard.box[2]} -> ${bigger.box[2]})`
+  );
+  // The box's own padding scales with the text, so the first row sits that much
+  // further in: 6px at the standard size, 12px at twice it. The offset from the
+  // cursor line is unchanged — that is spacing on the plot, not room for the text.
+  assert.equal(standard.row[1] - standard.box[0], 6, "6px of padding at the standard size");
+  assert.equal(bigger.row[1] - bigger.box[0], 12, "and 12px at twice it");
+});
+
 test("the crossing snap can be switched off, and its reach is a pixel distance", () => {
   // Both were hard-wired: the snap always fired, and it always reached 1% of the
   // time axis -- a different number of seconds at every zoom level, and the same

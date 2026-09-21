@@ -1936,7 +1936,7 @@ export function drawConnection(
   points: number[],
   vp: Viewport,
   dpr: number,
-  opts: { selected?: boolean; width?: number; theme?: Theme } = {}
+  opts: { selected?: boolean; width?: number; widthScale?: number; theme?: Theme } = {}
 ): void {
   const theme = opts.theme ?? currentTheme();
   if (points.length < 4) return;
@@ -1944,7 +1944,10 @@ export function drawConnection(
   // Scale factor the transform already applies; undo it for a fixed weight.
   const scale = Math.hypot(vt.a, vt.b) || 1;
   // Follow the zoom so the wire stays proportional to the symbols.
-  const basePx = opts.width ?? wireWidthPx(scale);
+  // The wire-thickness setting multiplies the whole curve — including its clamps,
+  // because a clamp the user cannot exceed would make the setting do nothing at
+  // one end. `opts.width` is for callers that already know the weight.
+  const basePx = (opts.width ?? wireWidthPx(scale)) * (opts.widthScale ?? 1);
 
   ctx.save();
   // The points below are already in DEVICE pixels (via `vt`, which includes the

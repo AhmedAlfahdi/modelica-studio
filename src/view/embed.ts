@@ -470,6 +470,8 @@ export class EmbeddedDiagram {
       display: () => ({
         labelScale: this.host.settings.labelScale,
         hoverParameters: this.host.settings.hoverParameters,
+        readoutScale: this.host.settings.diagramReadoutScale,
+        wireScale: this.host.settings.wireScale,
       }),
       // Without this the editor draws `%C` where the heat capacity should be:
       // the icon says `textString="%C"`, and a macro with no resolver to ask is
@@ -861,6 +863,8 @@ export class EmbeddedDiagram {
       view: this.plotView(),
       dpr,
       cursorX: this.cursorX,
+      // The same readout-size setting as the studio's plot: it is the same readout.
+      readoutScale: this.host.settings.plotReadoutScale,
       // The cursor readout here snaps to a crossing under the same settings as
       // the Studio's: it is the same readout, and a block whose pointer behaved
       // differently from the Studio's would be a bug of its own.

@@ -402,6 +402,8 @@ export class ModelicaStudioView extends ItemView {
       display: () => ({
         labelScale: this.plugin.settings.labelScale,
         hoverParameters: this.plugin.settings.hoverParameters,
+        readoutScale: this.plugin.settings.diagramReadoutScale,
+        wireScale: this.plugin.settings.wireScale,
       }),
       readClipboard: () => navigator.clipboard.readText(),
       writeClipboard: (text) => navigator.clipboard.writeText(text),
@@ -3038,6 +3040,7 @@ export class ModelicaStudioView extends ItemView {
       // is the point of inspecting there.
       cursorRows: canvas === this.fullCanvas ? result.series.length : 6,
       showDeltas: this.plugin.settings.plotDeltas,
+      readoutScale: this.plugin.settings.plotReadoutScale,
       snapIntersections: this.plugin.settings.plotSnapCrossings,
       snapTolerancePx: this.plugin.settings.plotSnapTolerance,
       currentLabel,

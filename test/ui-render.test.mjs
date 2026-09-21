@@ -306,6 +306,9 @@ test("the settings tab renders every section, with the solver's details in its b
     "  debugLog: false,",
     "  labelScale: 1.4,",
     "  hoverParameters: false,",
+    "  wireScale: 1.6,",
+    "  diagramReadoutScale: 1.3,",
+    "  plotReadoutScale: 1.8,",
     "  ai: { secretName: 'modelica-studio-api-key', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-flash', temperature: 0.2, systemPrompt: '', thinking: 'off', style: 'visual', timeoutSeconds: 300 },",
     "  aiModels: [],",
     "} });",
@@ -358,20 +361,33 @@ test("the settings tab renders every section, with the solver's details in its b
     "  const row = Array.from(root.querySelectorAll('.modelica-studio-library-row')).find((r) => r.querySelector('label').textContent === 'Magnetic');",
     "  return row ? row.className + ' checked=' + row.querySelector('input').checked : 'NO MAGNETIC ROW';",
     "});",
-    "window.test('the label controls exist and show the stored values', () => {",
+    "window.test('the diagram controls exist and show the stored values', () => {",
     "  const item = (n) => Array.from(root.querySelectorAll('.setting-item')).find((i) => i.querySelector('.setting-item-name').textContent === n);",
-    "  const size = item('Label size');",
-    "  const hover = item('Show parameters when hovering a component');",
-    "  if (!size || !hover) return 'MISSING: ' + [!!size, !!hover].join();",
-    // The component carries the value, so the tab is reading the setting rather
-    // than rendering a default.
-    "  const slider = size.components.find((c) => typeof c.setDynamicTooltip === 'function');",
-    "  const toggle = hover.components.find((c) => typeof c.setValue === 'function' && typeof c.setDynamicTooltip !== 'function');",
-    "  return 'size=' + (slider ? slider.value : '?') + ' hover=' + (toggle ? toggle.value : '?');",
+    "  const names = ['Label size', 'Wire thickness', 'Show parameters when hovering a component', 'Parameter popup size'];",
+    "  const missing = names.filter((n) => !item(n));",
+    "  if (missing.length) return 'MISSING: ' + missing.join();",
+    "  // The component carries the value, so the tab is reading the setting rather",
+    "  // than rendering a default. Each is given a distinct one in the fixture.",
+    "  const sliderAt = (n) => {",
+    "    const c = item(n).components.find((x) => typeof x.setDynamicTooltip === 'function');",
+    "    return c ? c.value : '?';",
+    "  };",
+    "  const toggle = item('Show parameters when hovering a component').components",
+    "    .find((c) => typeof c.setValue === 'function' && typeof c.setDynamicTooltip !== 'function');",
+    "  return 'label=' + sliderAt('Label size') + ' wire=' + sliderAt('Wire thickness')",
+    "    + ' popup=' + sliderAt('Parameter popup size') + ' hover=' + (toggle ? toggle.value : '?');",
     "});",
-    "window.test('both label controls are in their own section', () => {",
-    "  const at = headings.indexOf('Diagram labels');",
-    "  return at < 0 ? 'NO SECTION' : headings.slice(at, at + 2).join(' > ');",
+    "window.test('the plot readout has its own size, in the plot section', () => {",
+    "  const item = Array.from(root.querySelectorAll('.setting-item')).find((i) => i.querySelector('.setting-item-name').textContent === 'Readout size');",
+    "  if (!item) return 'NO READOUT SIZE';",
+    "  const c = item.components.find((x) => typeof x.setDynamicTooltip === 'function');",
+    "  const at = headings.indexOf('Results plot');",
+    "  const inSection = at >= 0 && Array.from(root.querySelectorAll('.setting-item')).indexOf(item) > Array.from(root.querySelectorAll('h3')).indexOf(root.querySelectorAll('h3')[at]);",
+    "  return 'value=' + (c ? c.value : '?') + ' afterPlotHeading=' + inSection;",
+    "});",
+    "window.test('the diagram controls are in their own section', () => {",
+    "  const at = headings.indexOf('Diagram');",
+    "  return at < 0 ? 'NO SECTION' : headings.slice(at, at + 3).join(' > ');",
     "});",
     "window.test('the performance figures are a table, not a sentence', () => {",
     "  const rows = root.querySelectorAll('.modelica-studio-metric');",
@@ -415,11 +431,21 @@ test("the settings tab renders every section, with the solver's details in its b
   // The two diagram-label settings, rendered with stored values that are not the
   // defaults, so a tab that ignored the setting would show 100/true and fail.
   assert.equal(
-    d["the label controls exist and show the stored values"],
-    "size=140 hover=false",
-    "both controls exist and reflect the stored settings"
+    d["the diagram controls exist and show the stored values"],
+    "label=140 wire=160 popup=130 hover=false",
+    "every diagram control reflects its own stored setting"
   );
-  assert.match(d["both label controls are in their own section"], /^Diagram labels/, "under one heading");
+  assert.equal(
+    d["the plot readout has its own size, in the plot section"],
+    "value=180 afterPlotHeading=true",
+    "and the plot's readout is sized separately, under the plot's heading"
+  );
+  // Diagram, then Results plot, in that order — and nothing else between them.
+  assert.match(
+    d["the diagram controls are in their own section"],
+    /^Diagram > Results plot/,
+    "the diagram's controls are under Diagram, and the plot's under Results plot"
+  );
 });
 
 test("the crossing-snap settings render, read the stored values, and grey each other", async () => {

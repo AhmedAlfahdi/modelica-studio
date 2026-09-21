@@ -1243,6 +1243,132 @@ test("a fit fills the canvas, rather than framing the diagram tiny in it", () =>
   editor.destroy();
 });
 
+test("the wire-thickness setting reaches the drawing, and the click area", () => {
+  // Asked for as a setting. The weight is a fraction of a symbol's on-screen
+  // size, so the setting has to move that whole curve — and the area a wire can
+  // be grabbed in has to follow it, or a thick wire looks right and feels wrong.
+  const components = [inst("r1", -60, 0), inst("r2", 60, 0)];
+  const model = {
+    name: "M",
+    components,
+    connections: [
+      { id: "c1", from: { component: "r1", port: "p" }, to: { component: "r2", port: "n" }, points: [] },
+    ],
+    graphics: [],
+  };
+  const { editor } = makeEditor(components);
+  editor.setModel(model);
+  const canvas = canvasOf(editor);
+  layoutTo(canvas, 1000, 600);
+  editor.resize();
+
+  // Record the weight in force at every `stroke`, then compare the two settings
+  // run against run: the grid and the symbols are identical in both, so whatever
+  // differs is what the setting moved.
+  const strokes = [];
+  const recording = (scale) => {
+    editor.cb.display = () => ({ labelScale: 1, hoverParameters: false, wireScale: scale });
+    editor.ctx = new Proxy(
+      { canvas: { width: 1000, height: 600 }, measureText: () => ({ width: 10 }), lineWidth: 1 },
+      {
+        get(t, k) {
+          if (k in t) return t[k];
+          if (k === "stroke") return () => strokes.push(t.lineWidth);
+          return () => {};
+        },
+        set(t, k, v) {
+          t[k] = v;
+          return true;
+        },
+      }
+    );
+    strokes.length = 0;
+    SchematicEditor.prototype.draw.call(editor);
+    return strokes.slice();
+  };
+
+  const standard = recording(1);
+  const heavy = recording(2.5);
+  assert.equal(standard.length, heavy.length, "the same frame, drawn twice");
+  const changed = standard
+    .map((w, i) => (Math.abs(w - heavy[i]) > 1e-9 ? i : -1))
+    .filter((i) => i >= 0);
+  assert.ok(changed.length > 0, "something in the frame responds to the setting");
+  const ratio = heavy[changed[0]] / standard[changed[0]];
+  assert.ok(
+    Math.abs(ratio - 2.5) < 0.01,
+    `the wire is drawn 2.5x as heavy (${standard[changed[0]]} -> ${heavy[changed[0]]})`
+  );
+
+  // And the grab radius: a wire 2.5x as thick has to be clickable across its face.
+  const hitAt = (y, scale) => {
+    editor.cb.display = () => ({ labelScale: 1, hoverParameters: false, wireScale: scale });
+    editor.hoveredWire = null;
+    // The wire is a segment through the diagram's origin, so the canvas point to
+    // ask about is where the viewport puts that origin — not the canvas's middle.
+    move(editor, editor.viewport.x, y);
+    return editor.hoveredWire;
+  };
+  // The wire runs between the two components through the diagram's origin, which
+  // the viewport maps to `(viewport.x, viewport.y)` in canvas pixels.
+  const y = editor.viewport.y;
+  assert.equal(hitAt(y, 1), "c1", "a pointer ON the wire hits it");
+  assert.ok(!hitAt(y + 22, 1), "22px away is not a hit at the standard weight");
+  assert.equal(hitAt(y + 22, 4), "c1", "and it is at four times the weight");
+  editor.destroy();
+});
+
+test("the parameter popup has its own size, separate from the labels", () => {
+  // Asked for separately: the name under a symbol is read at a glance while the
+  // popup is read deliberately, so wanting one larger says nothing about the
+  // other. The popup used to follow the label size.
+  const { editor } = makeEditor();
+  const canvas = canvasOf(editor);
+  layoutTo(canvas, 1000, 600);
+  editor.resize();
+  editor.hovered = "r1";
+
+  const fonts = [];
+  const recording = (labelScale, readoutScale) => {
+    editor.cb.display = () => ({
+      labelScale,
+      hoverParameters: true,
+      readoutScale,
+      wireScale: 1,
+    });
+    editor.ctx = new Proxy(
+      { canvas: { width: 1000, height: 600 }, measureText: (s) => ({ width: String(s).length * 6 }) },
+      {
+        get(t, k) {
+          if (k in t) return t[k];
+          return () => {};
+        },
+        set(t, k, v) {
+          if (k === "font" && /px /.test(String(v))) fonts.push(String(v));
+          t[k] = v;
+          return true;
+        },
+      }
+    );
+    fonts.length = 0;
+    SchematicEditor.prototype.draw.call(editor);
+    return fonts.slice();
+  };
+
+  // The popup's body font is the monospace one it prints the parameters with.
+  const bodyOf = (list) => list.filter((f) => f.includes("monospace")).pop();
+  const standard = bodyOf(recording(1, 1));
+  const bigger = bodyOf(recording(1, 2));
+  assert.ok(standard && bigger, `the popup was drawn at both sizes (${standard} / ${bigger})`);
+  assert.match(standard, /^12px monospace$/, "12px at the standard size");
+  assert.match(bigger, /^24px monospace$/, "and 24px at twice it");
+
+  // And the label size no longer moves it: only the popup's own setting does.
+  const labelsBig = bodyOf(recording(2.5, 1));
+  assert.equal(labelsBig, "12px monospace", "a large label size leaves the popup alone");
+  editor.destroy();
+});
+
 test("coordinate diagnostics are off by default", () => {
   // They are a debugging aid, not something a user should meet on first run.
   // A stray overlay is a visual bug in its own right: the earlier always-on

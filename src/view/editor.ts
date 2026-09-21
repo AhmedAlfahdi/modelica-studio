@@ -87,12 +87,19 @@ export interface EditorCallbacks {
   /** Report transient status text (e.g. "moved 3 components"). */
   onStatus?: (text: string) => void;
   /**
-   * Text scale and hover readout, from the settings.
+   * Text scales, wire weight and the hover readout, from the settings.
    *
    * Read on every frame rather than captured at construction, so changing the
    * setting shows immediately instead of after the editor is rebuilt.
    */
-  display?: () => { labelScale: number; hoverParameters: boolean };
+  display?: () => {
+    labelScale: number;
+    hoverParameters: boolean;
+    /** Font scale of the parameter popup. */
+    readoutScale?: number;
+    /** Stroke weight of the wires, as a multiple of the standard. */
+    wireScale?: number;
+  };
   /** Read text from the system clipboard. */
   readClipboard?: () => Promise<string>;
   /** Write text to the system clipboard. */
@@ -828,7 +835,7 @@ export class SchematicEditor {
     // does not steal the click from the symbol, and before empty space, so a wire
     // in open space is reachable at all -- which it previously was not, at any
     // zoom, by any gesture.
-    const wireHit = this.hitTestWire(dx, dy, WIRE_GRAB_PX / this.viewport.scale);
+    const wireHit = this.hitTestWire(dx, dy, (WIRE_GRAB_PX * this.wireScale()) / this.viewport.scale);
     if (wireHit && ev.button === 0) {
       const additive = ev.ctrlKey || ev.metaKey || ev.shiftKey;
       if (additive) {
@@ -1102,7 +1109,10 @@ export class SchematicEditor {
     // A wire is not a component and has no symbol to light up, so the cursor is
     // what says it can be clicked. Without this the wire is selectable but nothing
     // on screen suggests it, which is how it stayed unselectable in practice.
-    const wire = bodyHit || p ? undefined : this.hitTestWire(dx, dy, WIRE_GRAB_PX / this.viewport.scale);
+    const wire =
+      bodyHit || p
+        ? undefined
+        : this.hitTestWire(dx, dy, (WIRE_GRAB_PX * this.wireScale()) / this.viewport.scale);
     const wireId = wire?.conn.id ?? null;
     if (wireId !== this.hoveredWire) {
       this.hoveredWire = wireId;
@@ -1233,7 +1243,7 @@ export class SchematicEditor {
     // reshapes a wire also has an obvious inverse. Without this the only way back
     // from a route dragged into a symbol is to undo, which also undoes whatever
     // else came after it.
-    const wire = this.hitTestWire(dx, dy, WIRE_GRAB_PX / this.viewport.scale);
+    const wire = this.hitTestWire(dx, dy, (WIRE_GRAB_PX * this.wireScale()) / this.viewport.scale);
     if (wire) {
       this.setWireSelection([wire.conn.id]);
       this.resetWireRoutes();
@@ -1600,7 +1610,7 @@ export class SchematicEditor {
       // it should offer the same actions. Falling straight through to clearing
       // the selection made the menu's Delete unavailable on the one thing the
       // user had pointed at.
-      const wire = this.hitTestWire(dx, dy, WIRE_GRAB_PX / this.viewport.scale);
+      const wire = this.hitTestWire(dx, dy, (WIRE_GRAB_PX * this.wireScale()) / this.viewport.scale);
       if (wire && !this.wireSelection.has(wire.conn.id)) this.setWireSelection([wire.conn.id]);
       else if (!wire) this.clearSelection();
     }
@@ -2024,6 +2034,7 @@ export class SchematicEditor {
           this.selection.has(conn.from.component) ||
           this.selection.has(conn.to.component) ||
           this.hoveredWire === conn.id,
+        widthScale: this.wireScale(),
       });
       // Corners to drag, but only for the wire in hand: showing them for every
       // wire attached to a selected component would litter a multi-selection with
@@ -2120,11 +2131,22 @@ export class SchematicEditor {
     }));
     if (lines.length === 0) lines.push({ text: "no parameters", overridden: false });
 
-    const headPx = Math.max(10, Math.min(14, 13 * labelScale));
-    const bodyPx = Math.max(9, Math.min(13, 12 * labelScale));
-    const pad = 6;
-    const gap = 14;
-    const lineH = bodyPx + 4;
+    // The popup's own scale, NOT the label size: the name under a symbol is read
+    // at a glance and the popup is read deliberately, so wanting one larger says
+    // nothing about the other. `labelScale` still sets the gap it is placed in,
+    // because that gap is about clearing the caption.
+    //
+    // Clamped to the range the setting offers, and no tighter: the old 9-13px
+    // clamps were there to keep a label derived from the symbol's size
+    // proportionate, and against a deliberate setting they simply ignore it —
+    // 200% came out as 13px.
+    const readoutScale = Math.max(0.5, Math.min(2.5, this.cb.display?.().readoutScale ?? 1));
+    const headPx = 13 * readoutScale;
+    const bodyPx = 12 * readoutScale;
+    // Padding and leading follow the text, or a large font overflows its box.
+    const pad = Math.round(6 * readoutScale);
+    const gap = Math.round(14 * readoutScale);
+    const lineH = bodyPx + Math.round(4 * readoutScale);
     const margin = 4;
     const canvasW = this.cssWidth * this.dpr;
     const canvasH = this.cssHeight * this.dpr;
@@ -2465,6 +2487,11 @@ export class SchematicEditor {
    * tested nearest-first so that crossing wires pick the one on top, which is the
    * one drawn last.
    */
+  /** The wire-thickness setting, read per use rather than captured. */
+  private wireScale(): number {
+    return this.cb.display?.().wireScale ?? 1;
+  }
+
   private hitTestWire(
     x: number,
     y: number,
@@ -2553,6 +2580,13 @@ const PORT_GRAB_PX = 7;
  * Wider than a port's grab radius because a wire is a thin line with nothing
  * behind it: aiming at one exactly is fiddly, and the nearest-miss is
  * unambiguous in a way that two overlapping components are not.
+ */
+/**
+ * How near a click has to be to a wire, in screen pixels.
+ *
+ * Multiplied by the wire-thickness setting wherever it is used: a wire drawn
+ * three times as heavy has to be grabbable across its face, or the setting makes
+ * the diagram look right and feel wrong.
  */
 const WIRE_GRAB_PX = 6;
 

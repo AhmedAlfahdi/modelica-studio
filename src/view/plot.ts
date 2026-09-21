@@ -285,6 +285,14 @@ export interface DrawPlotOptions {
    */
   snapTolerancePx?: number;
   /**
+   * Font scale of the cursor readout.
+   *
+   * Its own setting, separate from the diagram's parameter popup: a plot is read
+   * on its own, often in a pane, and the two have nothing to do with each other.
+   * The box, its leading and its padding all follow, or a large font overflows.
+   */
+  readoutScale?: number;
+  /**
    * The label of the run on screen, when a family is drawn.
    *
    * The delta is measured against THAT curve. Naming the current run (so the
@@ -606,9 +614,17 @@ export function drawPlot(
     // exactly what a plot should do for you.
     if (opts.showDeltas) lines.push(...deltaLines(readoff, opts.currentLabel ?? ""));
     if (lines.length > 1) {
-      ctx.font = "11px sans-serif";
-      const wBox = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 12;
-      const hBox = lines.length * 14 + 8;
+      // The readout's own scale, from the settings. The box is measured from the
+      // text, so every part of it uses the same scale: font, leading and padding.
+      // The offset from the cursor line stays put — that is spacing on the plot
+      // rather than room for the text.
+      const scale = Math.max(0.5, Math.min(3, opts.readoutScale ?? 1));
+      const lineH = 14 * scale;
+      const padX = 6 * scale;
+      const padY = 5 * scale;
+      ctx.font = `${11 * scale}px sans-serif`;
+      const wBox = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 2 * padX;
+      const hBox = lines.length * lineH + 2 * padY;
       let bx = x + 10;
       if (bx + wBox > lay.left + lay.width) bx = x - wBox - 10;
       const by = lay.top + 8;
@@ -620,7 +636,7 @@ export function drawPlot(
       ctx.fillStyle = theme.foreground;
       ctx.textAlign = "left";
       ctx.textBaseline = "top";
-      lines.forEach((l, i) => ctx.fillText(l, bx + 6, by + 5 + i * 14));
+      lines.forEach((l, i) => ctx.fillText(l, bx + padX, by + padY + i * lineH));
     }
   }
 
