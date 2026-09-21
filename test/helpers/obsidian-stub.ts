@@ -477,7 +477,28 @@ export class AbstractInputSuggest<T> {
 
 export const Platform = { isMacOS: false, isMobile: false, isDesktop: true };
 
+/**
+ * Put an icon in an element, the way the app does it.
+ *
+ * This used to be one line — set `data-icon` and stop — and that hid a real bug:
+ * the app's own `setIcon` removes the element's FIRST child and appends the new
+ * SVG, so a button built as `[icon, label]` becomes `[label, loader]` after one
+ * swap, and the swap back then removes the LABEL. The stub's silence about that is
+ * why a button ended up with two icons and no word, reported from a screenshot.
+ *
+ * `data-icon` is still recorded, on the element AND on the svg, because that is
+ * what the tests read.
+ */
 export function setIcon(el: HTMLElement, icon: string): void {
+  const first = el.firstElementChild;
+  if (first && first.tagName.toLowerCase() === "svg" && first.getAttribute("data-icon") === icon) {
+    return;
+  }
+  if (el.firstChild) el.removeChild(el.firstChild);
+  const svg = el.ownerDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", `svg-icon lucide-${icon}`);
+  svg.setAttribute("data-icon", icon);
+  el.appendChild(svg);
   el.setAttribute("data-icon", icon);
 }
 

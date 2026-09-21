@@ -5,6 +5,28 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.36] — 2026-10-14
+
+### Fixed
+
+- **A button that had been busy lost its label and kept both icons.** Reported as
+  "the simulation word is missing and shows a static loading wheel", and as a
+  duplicated copy icon on the Check button — one fault, mine, from the busy
+  indication added in beta.33.
+
+  `setIcon` removes the element's FIRST child and appends the new SVG. A button is
+  built as `[icon, label]`, so the first swap left `[label, loader]`, and the swap
+  back then removed the **label** and appended the original icon: `[loader, icon]`.
+  Two icons and no word, on every button that had been through it — Simulate,
+  Check, Generate and Fix. The label is now put back last on every swap, so the
+  order is always `[icon, label]`.
+
+- **The test double for `setIcon` was one line — "set `data-icon` and stop" — and
+  that is why nothing caught this.** It never touched the element's children, so a
+  swap could delete a label in the app and pass every test here. It now does what
+  the app does: removes the first child and appends an SVG. With that, the existing
+  busy test reports `label: ""`, `icons: 2` when the fix is reverted.
+
 ## [0.2.0-beta.35] — 2026-10-14
 
 ### Fixed

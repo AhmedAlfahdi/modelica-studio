@@ -38,10 +38,18 @@ export function setBusy(el: HTMLElement | null | undefined, busy: boolean, perce
 /**
  * Turn the icon of a button that has started something into a turning one.
  *
- * The icon is the button's FIRST child — `setIcon` replaces that child and leaves
- * the label span alone — and `.svg-icon` is a fixed 14px box, so the button's own
- * size does not change. That is the whole reason for doing it this way rather than
- * adding a spinner beside the label, which would move every button after it.
+ * `setIcon` removes the button's FIRST child and appends the new SVG. A button's
+ * children are `[icon, label]`, so the first swap leaves `[label, loader]` — and
+ * the second swap, the one that puts the original icon back, then removes the
+ * LABEL and appends the icon, leaving `[loader, icon]`: two icons and no word.
+ *
+ * That is exactly what it did: after one simulation the Simulate button was a
+ * spinner and a play triangle with "Simulate" gone, and every button that had been
+ * through it looked the same. The label is therefore put back last, every time.
+ *
+ * `.svg-icon` is a fixed 14px box, so swapping one for another cannot change the
+ * button's size — which is why this is done rather than adding a spinner beside
+ * the label, where every button after it would move.
  */
 export function setButtonBusy(
   btn: HTMLElement | null | undefined,
@@ -49,6 +57,8 @@ export function setButtonBusy(
   idleIcon: string
 ): void {
   if (!btn) return;
+  const label = Array.from(btn.children).find((el) => !(el instanceof SVGSVGElement));
   setIcon(btn, busy ? "loader-2" : idleIcon);
+  if (label && label.parentElement) btn.appendChild(label);
   btn.toggleClass("modelica-studio-spin", busy);
 }

@@ -57,8 +57,10 @@ const HEAD = [
   "  pane.createDiv({ cls: 'modelica-studio-plot' });",
   "  document.body.appendChild(pane);",
   "",
+  "  // Built as the toolbar builds one: icon first, then the label.",
   "  const runBtn = document.createElement('button');",
   "  runBtn.className = 'modelica-studio-btn mod-cta';",
+  "  setButtonBusy(runBtn, false, 'play');",
   "  runBtn.createSpan({ text: 'Simulate' });",
   "  document.body.appendChild(runBtn);",
   "",
@@ -130,11 +132,17 @@ test("the bar appears while a simulation runs, and moves nothing", async () => {
       "view.__resolve();",
       "await running;",
       "await settle();",
+      "const svgs = Array.from(runBtn.children).filter((el) => el.tagName.toLowerCase() === 'svg');",
       "const after = {",
       "  busy: pane.classList.contains('is-loading'),",
       "  aria: pane.getAttribute('aria-busy'),",
       "  icon: runBtn.getAttribute('data-icon'),",
       "  spinning: runBtn.classList.contains('modelica-studio-spin'),",
+      "  // The label survives, and there is exactly ONE icon. `setIcon` removes the",
+      "  // first child, so a second swap used to eat the word and leave both icons.",
+      "  label: runBtn.textContent,",
+      "  icons: svgs.length,",
+      "  order: Array.from(runBtn.children).map((el) => el.tagName.toLowerCase()).join(','),",
       "};",
       "",
       "window.test('the pane is marked while it works', () => JSON.stringify(state));",
@@ -165,8 +173,16 @@ test("the bar appears while a simulation runs, and moves nothing", async () => {
   );
   assert.equal(
     d["and unmarked afterwards"],
-    JSON.stringify({ busy: false, aria: null, icon: "play", spinning: false }),
-    "a bar left running after the work stops is worse than no bar"
+    JSON.stringify({
+      busy: false,
+      aria: null,
+      icon: "play",
+      spinning: false,
+      label: "Simulate",
+      icons: 1,
+      order: "svg,span",
+    }),
+    "the bar stops, the icon is back, and the button still says what it does"
   );
   assert.equal(d["nothing moved"], "identical", "the animation cannot reflow the view");
 });
