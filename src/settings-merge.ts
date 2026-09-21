@@ -143,6 +143,13 @@ export interface ModelicaStudioSettings {
    * twenty components is then twenty clicks to read.
    */
   hoverParameters: boolean;
+
+  /**
+   * Whether the cursor readout shows how far each swept curve is from the run on
+   * screen. On by default: it is the question a sweep is asked, and it is empty
+   * unless there is a family to compare against.
+   */
+  plotDeltas: boolean;
   /**
    * Results-pane height in DIAGRAM mode; 0 means the default.
    *
@@ -223,6 +230,7 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   paletteWidth: 210,
   labelScale: 1,
   hoverParameters: true,
+  plotDeltas: true,
   plotHeight: 0,
   codePlotHeight: 0,
   modelStopTimes: {},

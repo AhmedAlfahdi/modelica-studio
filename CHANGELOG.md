@@ -5,6 +5,28 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.19] — 2026-10-06
+
+### Added
+
+- **The cursor readout shows deltas.** With a family on screen, resting the cursor
+  on the plot now says how far each swept curve is from the run on screen at that
+  instant — `Δ capacitor.v vs source.V=10 = +0.626` — signed, because the direction
+  is the answer as often as the size. On by default, with a **Δ** button in the
+  results bar to turn it off and on; the choice is remembered. It is empty unless
+  there is a family to compare against.
+
+- **The Help window is tabbed** — Overview, Diagrams, Results, About — instead of
+  one column. Seven subjects in a single scroll meant finding out how a sweep works
+  required scrolling past the domain colours and the keyboard shortcuts. Nothing is
+  lost by tabbing: every panel is built and only hidden.
+
+- **Help has a "Sweeps and families" section**, which is where the questions this
+  week's conversation raised are answered in the app: what a sweep is, why only
+  parameters can be swept and a `start` value cannot (with the two-line change that
+  makes an initial height sweepable), what Keep as before is for, what Clear family
+  does, and what the Δ toggle and the figure buttons do.
+
 ## [0.2.0-beta.18] — 2026-10-05
 
 ### Fixed

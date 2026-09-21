@@ -2474,6 +2474,17 @@ export class ModelicaStudioView extends ItemView {
         actions
           .createEl("button", { cls: "modelica-studio-btn", text: "Auto scale" })
           .addEventListener("click", () => this.autoScale());
+        // The delta toggle: on, the cursor readout says how far each family curve
+        // is from the run on screen.
+        const deltas = actions.createEl("button", {
+          cls: `modelica-studio-btn${this.plugin.settings.plotDeltas ? " is-active" : ""}`,
+          text: "Δ",
+        });
+        deltas.setAttribute(
+          "aria-label",
+          "Show how far each swept curve is from the run on screen, at the cursor"
+        );
+        deltas.addEventListener("click", () => void this.toggleDeltas());
         // The figure buttons. A canvas cannot be selected or dragged out, so
         // without these a result can be looked at and not shown to anybody.
         // The family: what happens when a number changes. A parameter, the values
@@ -2946,7 +2957,8 @@ export class ModelicaStudioView extends ItemView {
       cursorX: this.cursorX,
       // The overlay has the room to list every drawn trace at the cursor, which
       // is the point of inspecting there.
-      cursorRows: canvas === this.fullCanvas ? this.result.series.length : 6,
+      cursorRows: canvas === this.fullCanvas ? result.series.length : 6,
+      showDeltas: this.plugin.settings.plotDeltas,
       dpr,
     });
   }
@@ -3106,6 +3118,19 @@ export class ModelicaStudioView extends ItemView {
     this.renderPlotPane();
     this.setStatus(`Swept ${parameter} over ${values.length} values of ${this.plugin.model.name}`);
     this.plugin.diag(`sweep ${this.plugin.model.name}: ${parameter} = ${values.join(", ")}`);
+  }
+
+  /** Turn the cursor readout's deltas on or off, and remember the choice. */
+  private async toggleDeltas(): Promise<void> {
+    this.plugin.settings.plotDeltas = !this.plugin.settings.plotDeltas;
+    await this.plugin.saveSettings();
+    this.setStatus(
+      this.plugin.settings.plotDeltas
+        ? "Cursor readout: differences shown"
+        : "Cursor readout: differences hidden"
+    );
+    this.drawResults();
+    this.renderPlotPane();
   }
 
   /** Keep the run on screen, dashed, so the next one can be compared with it. */

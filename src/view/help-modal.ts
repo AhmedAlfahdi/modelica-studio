@@ -84,10 +84,44 @@ export class HelpModal extends Modal {
     this.contentEl.empty();
   }
 
+  /**
+   * One tab per subject.
+   *
+   * These began as one column, which was right while there were three subjects and
+   * wrong as soon as there were seven: finding out how a sweep works meant
+   * scrolling past the domain colours and the keyboard shortcuts to reach it. A
+   * tab is a place to put the next feature.
+   */
+  private buildTabs(root: HTMLElement, names: string[]): (name: string) => HTMLElement {
+    const bar = root.createDiv({ cls: "modelica-studio-help-tabs" });
+    const panels = new Map<string, HTMLElement>();
+    for (const name of names) {
+      panels.set(name, root.createDiv({ cls: "modelica-studio-help-panel" }));
+    }
+    const show = (name: string) => {
+      for (const [n, panel] of panels) panel.toggleClass("is-hidden", n !== name);
+      for (const button of Array.from(bar.children) as HTMLElement[]) {
+        button.toggleClass("is-active", button.textContent === name);
+      }
+    };
+    for (const name of names) {
+      const button = bar.createEl("button", { cls: "modelica-studio-help-tab", text: name });
+      button.addEventListener("click", () => show(name));
+    }
+    // The first tab is open; the sections below ask for their panel WITHOUT
+    // showing it, or the last section rendered would be the one on screen.
+    show(names[0]);
+    return (name: string) => panels.get(name) ?? root;
+  }
+
   private render(): void {
-    const { contentEl: el } = this;
-    el.empty();
-    el.addClass("modelica-studio-help-modal");
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("modelica-studio-help-modal");
+    const panel = this.buildTabs(contentEl, ["Overview", "Diagrams", "Results", "About"]);
+    // `let`, because each section below is written into whichever panel it
+    // belongs to; the panels are all in the DOM, so nothing is lost by tabbing.
+    let el = panel("Overview");
 
     /* ---- this installation ---- */
     el.createEl("h4", { text: "This installation" });
@@ -159,6 +193,7 @@ export class HelpModal extends Modal {
     );
 
     /* ---- the domain colour code ---- */
+    el = panel("Diagrams");
     el.createEl("h4", { text: "Domain colours" });
     el.createEl("p", {
       cls: "modelica-studio-muted",
@@ -255,6 +290,47 @@ export class HelpModal extends Modal {
         "available; turn the parameter back on, or remove the wire.",
     });
 
+    el = panel("Results");
+
+    /* ---- sweeps ---- */
+    el.createEl("h4", { text: "Sweeps and families" });
+    el.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "A sweep runs the model once for each value of one parameter and draws them " +
+        "together, which is what most models are FOR: the damping, the gain, the " +
+        "mass. Pick the parameter in the results bar, type the values — " +
+        "“100, 200, 400”, or a range “100:50:400” — and press Sweep. The last value " +
+        "becomes the run on screen, solid; the others are drawn dashed behind it, and " +
+        "every curve is named after the value that made it (capacitor.v · source.V=10).",
+    });
+    el.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "Only PARAMETERS can be swept — a constant of the model for the whole run. A " +
+        "state's start value is where a variable begins, not a number the run can be " +
+        "given, so it is not offered; to compare two starting heights, declare the " +
+        "height as a parameter and write the state in terms of it " +
+        "(“parameter Real h0=4;  Real h(start=h0, fixed=true);”), or use Keep as before.",
+    });
+    el.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "Keep as before holds the run on screen, dashed, so the next run is compared " +
+        "with it — for a change a sweep cannot express: an edited equation, a rewired " +
+        "diagram, a different initial value. Clear family removes the comparison and " +
+        "leaves the run on screen.",
+    });
+    el.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "With a family on screen, resting the cursor on the plot reads every curve at " +
+        "that instant AND how far each is from the run on screen (Δ). The Δ button in " +
+        "the results bar turns that on and off. Copy image and Save image put the plot " +
+        "or the diagram where you are writing about it: a saved figure lands beside the " +
+        "note and its link is put at the cursor.",
+    });
+
     /* ---- putting one in a note ---- */
     el.createEl("h4", { text: "Embedding in a note" });
     el.createEl("p", {
@@ -284,6 +360,7 @@ export class HelpModal extends Modal {
     this.shortcutTable(el, CODE_SHORTCUTS);
 
     /* ---- about ---- */
+    el = panel("About");
     el.createEl("h4", { text: "About" });
     const about = el.createDiv({ cls: "modelica-studio-help-about" });
     about.createSpan({ text: `Modelica Studio ${this.plugin.manifest.version}` });

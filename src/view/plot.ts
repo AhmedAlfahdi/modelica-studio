@@ -236,6 +236,8 @@ export interface DrawPlotOptions {
   cursorX?: number;
   /** Traces listed in the cursor readout. The full-screen plot allows more. */
   cursorRows?: number;
+  /** Show how far each curve of a family is from the run on screen. */
+  showDeltas?: boolean;
   /** Device pixel ratio. */
   dpr: number;
   /** Map a series name to an axis unit label. */
@@ -513,10 +515,19 @@ export function drawPlot(
 
     // Nearest sample values, shown in a compact box.
     const lines: string[] = [`t = ${formatTick(opts.cursorX)}`];
+    const readoff: Array<{ base: string; label: string; value: number }> = [];
     for (const s of visible.slice(0, opts.cursorRows ?? 6)) {
       const v = sampleAt(result.time, s.values, opts.cursorX);
-      if (v !== undefined) lines.push(`${s.name} = ${formatTick(v)}`);
+      if (v === undefined) continue;
+      lines.push(`${s.name} = ${formatTick(v)}`);
+      const split = splitFamilyName(s.name);
+      readoff.push({ base: split.base, label: split.label ?? "", value: v });
     }
+    // The deltas: what the family is worth at this instant, relative to the run
+    // on screen. This is the question a sweep is asked -- "how much does it
+    // differ?" -- and reading it off two rows and subtracting in your head is
+    // exactly what a plot should do for you.
+    if (opts.showDeltas) lines.push(...deltaLines(readoff));
     if (lines.length > 1) {
       ctx.font = "11px sans-serif";
       const wBox = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 12;
@@ -537,6 +548,51 @@ export function drawPlot(
   }
 
   ctx.restore();
+}
+
+/**
+ * A series name split into the variable and the run it came from.
+ *
+ * `capacitor.v · source.V=10` is the ten-volt run of `capacitor.v`; a name with
+ * no separator is the run on screen, which is what the family is measured
+ * against.
+ */
+export function splitFamilyName(name: string): { base: string; label: string } {
+  const at = name.indexOf(" · ");
+  // "" means the run on screen, which is what the family is measured against.
+  return at < 0 ? { base: name, label: "" } : { base: name.slice(0, at), label: name.slice(at + 3) };
+}
+
+/**
+ * One line per family member, saying how far it is from the run on screen.
+ *
+ * Signed, because the direction is the answer as often as the size: a curve that
+ * is above the other and one that is below are different findings. Grouped by
+ * variable, so a sweep of a resistor reports a delta for each quantity rather
+ * than each curve.
+ */
+export function deltaLines(
+  values: Array<{ base: string; label: string; value: number }>
+): string[] {
+  const groups = new Map<string, Array<{ label: string; value: number }>>();
+  for (const v of values) {
+    const list = groups.get(v.base) ?? [];
+    list.push({ label: v.label, value: v.value });
+    groups.set(v.base, list);
+  }
+  const out: string[] = [];
+  for (const [base, list] of groups) {
+    const current = list.find((v) => v.label === "");
+    // No run on screen to measure against: nothing to say.
+    if (!current) continue;
+    for (const other of list) {
+      if (other.label === "") continue;
+      const delta = current.value - other.value;
+      const sign = delta > 0 ? "+" : delta < 0 ? "−" : "";
+      out.push(`Δ ${base} vs ${other.label} = ${sign}${formatTick(Math.abs(delta))}`);
+    }
+  }
+  return out;
 }
 
 /** Linearly interpolate a series value at time `t`. */

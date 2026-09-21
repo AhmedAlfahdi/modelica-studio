@@ -1788,6 +1788,35 @@ body.modelica-studio-resizing * {
 .modelica-studio-help-modal h4:first-of-type {
   margin-top: 0;
 }
+/* One tab per subject, so a section can be found without scrolling past the rest. */
+.modelica-studio-help-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 10px;
+}
+
+.modelica-studio-help-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  box-shadow: none;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.modelica-studio-help-tab.is-active {
+  color: var(--text-normal);
+  border-bottom-color: var(--interactive-accent);
+}
+
+.modelica-studio-help-panel.is-hidden {
+  display: none;
+}
+
 .modelica-studio-help-facts {
   border: 1px solid var(--background-modifier-border);
   border-radius: 5px;

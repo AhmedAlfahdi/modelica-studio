@@ -1759,3 +1759,60 @@ test("a block tells the writer what the note holds, and advances it after writin
   );
   assert.equal(d["and an idle flush writes nothing more"], "2", "nothing is written without another edit");
 });
+
+test("the help window is tabbed, and every subject is still reachable", async () => {
+  // It was one column, which was right for three subjects and wrong for seven:
+  // finding out how a sweep works meant scrolling past the domain colours and
+  // the shortcuts. The panels are all in the DOM, so a tab only hides.
+  const out = page(
+    "const plugin = makePlugin(new StubVault(), {});",
+    "const modal = new HelpModal(plugin.app, plugin);",
+    "modal.open();",
+    "const el = modal.contentEl;",
+    "const tabs = () => Array.from(el.querySelectorAll('.modelica-studio-help-tab')).map((t) => t.textContent);",
+    "const shown = () => Array.from(el.querySelectorAll('.modelica-studio-help-panel')).filter((p) => !p.className.includes('is-hidden')).map((p) => p.querySelector('h4').textContent);",
+    "window.test('the tabs are the subjects', () => tabs().join(' | '));",
+    "window.test('one is open at a time', () => shown().join(','));",
+    "window.test('clicking a tab opens it and closes the last', () => {",
+    "  const results = Array.from(el.querySelectorAll('.modelica-studio-help-tab')).find((t) => t.textContent === 'Results');",
+    "  results.click();",
+    "  return shown().join(',') + ' | active=' + results.className.includes('is-active');",
+    "});",
+    "window.test('and the sweep is described there, where it can be found', () => {",
+    "  const panel = Array.from(el.querySelectorAll('.modelica-studio-help-panel')).find((p) => p.textContent.includes('Sweeps and families'));",
+    "  return panel ? panel.textContent.replace(/\\s+/g, ' ').slice(0, 2200) : 'NOT FOUND';",
+    "});",
+    "window.test('a hidden panel keeps its text, so nothing is lost by tabbing', () => {",
+    "  const all = Array.from(el.querySelectorAll('.modelica-studio-help-panel'));",
+    "  return all.map((p) => p.textContent.replace(/\\s+/g, '').length).join(',');",
+    "});",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  const d = passed(out);
+
+  assert.equal(d["the tabs are the subjects"], "Overview | Diagrams | Results | About");
+  assert.equal(d["one is open at a time"], "This installation", "the first panel is the one shown");
+  assert.equal(
+    d["clicking a tab opens it and closes the last"],
+    "Sweeps and families | active=true",
+    "a click moves the open panel"
+  );
+  assert.match(
+    d["and the sweep is described there, where it can be found"],
+    /A sweep runs the model once for each value of one parameter/,
+    "the sweep is explained in the Results tab"
+  );
+  assert.match(
+    d["and the sweep is described there, where it can be found"],
+    /Only PARAMETERS can be swept/,
+    "including why a start value is not offered"
+  );
+  // Every panel is populated: an empty tab is worse than a long scroll.
+  for (const [i, length] of d["a hidden panel keeps its text, so nothing is lost by tabbing"]
+    .split(",")
+    .map(Number)
+    .entries()) {
+    assert.ok(length > 60, `panel ${i + 1} has content (${length} characters)`);
+  }
+});
