@@ -15,6 +15,7 @@
  */
 
 import { Menu, setIcon } from "obsidian";
+import { noLabelTooltip } from "./a11y";
 
 /**
  * Everything the bar needs to ask or tell the view.
@@ -99,10 +100,14 @@ export function buildPlotActions(parent: HTMLElement, host: PlotActionHost): voi
 
   // How the plot is scaled. One subject, so one box with shared edges: as three
   // separate buttons they read as three unrelated actions.
-  const scale = parent.createDiv({
-    cls: "modelica-studio-group is-segmented",
-    attr: { "aria-label": "How the plot is scaled" },
-  });
+  // Deliberately unnamed. Obsidian's handler is delegated on `[aria-label]`, so a
+  // named container pops its own label up whenever the pointer crosses anything
+  // inside it -- and the flag that switches that off is read from the COMPUTED
+  // style, so it silences every tooltip in the subtree as well. A name on a plain
+  // div is not exposed by screen readers anyway; the buttons inside say what they
+  // are. (Verified in the app bundle: `getComputedStyle(e).getPropertyValue(
+  // "--no-tooltip")`.)
+  const scale = parent.createDiv({ cls: "modelica-studio-group is-segmented" });
   button(scale, "Scale").addEventListener("click", () => host.toggleScalePanel());
   button(scale, "Full screen").addEventListener("click", () => host.openFullScreen());
   button(scale, "Auto scale").addEventListener("click", () => host.autoScale());
@@ -111,10 +116,9 @@ export function buildPlotActions(parent: HTMLElement, host: PlotActionHost): voi
   // same question — what happens when a number changes — so the toggle is inside
   // this box rather than floating between the groups, where a wrap left it
   // stranded at the end of a line with nothing to say which box it belonged to.
-  const family = parent.createDiv({
-    cls: "modelica-studio-group modelica-studio-family",
-    attr: { "aria-label": "Sweep a parameter, or keep a run to compare with" },
-  });
+  // Unnamed for the same reason as the scale group: the controls inside carry
+  // their own names, and a name here would raise a tooltip over the open list.
+  const family = parent.createDiv({ cls: "modelica-studio-group modelica-studio-family" });
   const field = host.sweepField();
   const names = host.sweepParameters();
 
@@ -122,10 +126,12 @@ export function buildPlotActions(parent: HTMLElement, host: PlotActionHost): voi
   // `appearance: none` on every `select` and draws the chevron as a background
   // image on `.dropdown` alone, so a bare select is a box with no sign that it
   // opens. Only its padding is answered for here, in the stylesheet.
-  const param = family.createEl("select", {
-    cls: "modelica-studio-family-param dropdown",
-    attr: { "aria-label": "Parameter to sweep" },
-  });
+  const param = family.createEl("select", { cls: "modelica-studio-family-param dropdown" });
+  // Silenced, but still named for a screen reader: what this opens is a native
+  // popup, drawn above everything in the page, so a tooltip for it was reported
+  // as a box peeking out from behind the open list. It has no children, so the
+  // inherited flag costs nothing else.
+  noLabelTooltip(param, "Parameter to sweep");
   for (const n of names.length ? names : ["—"]) param.createEl("option", { text: n, value: n });
   param.disabled = names.length === 0;
   // Restored from the last sweep, because this row is rebuilt after every run: a
@@ -138,13 +144,21 @@ export function buildPlotActions(parent: HTMLElement, host: PlotActionHost): voi
   const values = family.createEl("input", {
     type: "text",
     cls: "modelica-studio-family-values",
-    attr: { placeholder: "100, 200, 400", "aria-label": "Values to sweep the parameter over" },
+    attr: {
+      placeholder: "100, 200, 400",
+      // A tooltip, not just a name: this is where the form of the answer is
+      // explained, including the step form and how many values a sweep needs.
+      "aria-label": "Values to sweep over — two or more, e.g. 100, 200, 400 or 0:0.5:2",
+    },
   });
   values.value = field.values;
   values.addEventListener("input", () => host.setSweepField({ ...host.sweepField(), values: values.value }));
 
   const sweep = button(family, "Sweep", "mod-cta");
-  sweep.setAttribute("aria-label", "Run once for each value and draw them together");
+  sweep.setAttribute(
+    "aria-label",
+    "Run once for each value and draw them together — a sweep needs at least two values"
+  );
   sweep.addEventListener("click", () => host.runSweep(param.value, values.value));
 
   const keep = button(family, "Keep as before");

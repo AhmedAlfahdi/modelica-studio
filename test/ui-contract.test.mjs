@@ -285,18 +285,36 @@ test("a group or container does not raise a tooltip for its children", () => {
   // The tooltip handler is delegated on `[aria-label]`, so a container's label
   // popped up whenever the pointer crossed any control inside it: the mode
   // group's "Editor mode" appeared over the Diagram and Code buttons.
-  assert.match(view, /export function noLabelTooltip/, "there is a helper for it");
-  const helper = /export function noLabelTooltip[\s\S]*?\n\}/.exec(view);
-  assert.ok(helper, "the helper is present");
+  //
+  // Read from the app bundle: the flag is checked with
+  // `getComputedStyle(el).getPropertyValue("--no-tooltip")`, so it INHERITS —
+  // which is why a labelled container has to be silenced as a whole, and why the
+  // results bar's groups carry no label at all rather than a silenced one.
+  const a11y = fs.readFileSync(path.join(repoRoot, "src/view/a11y.ts"), "utf8");
+  const helper = /export function noLabelTooltip[\s\S]*?\n\}/.exec(a11y);
+  assert.ok(helper, "the helper is in one place, so both surfaces use the same one");
   assert.match(helper[0], /--no-tooltip/, "it uses the flag Obsidian checks");
   assert.match(helper[0], /aria-label/, "and still names the group for a screen reader");
-  // Every labelled container goes through it.
+  // Every labelled container in the studio goes through it.
   for (const container of ["modeGroup", "this.inspectorTabsEl", "tabs", "menu", "aiRow"]) {
     assert.ok(
       new RegExp(`noLabelTooltip\\(${container.replace(".", "\\.")}`).test(view),
       `${container} should suppress its own tooltip`
     );
   }
+
+  // The results bar: reported as "the tooltip that appears behind the dropdown
+  // menu". Its groups are plain divs, so they are unnamed — a name on a container
+  // would either raise a tooltip over the open list or, silenced, take the
+  // tooltips off every control inside it.
+  const bar = fs.readFileSync(path.join(repoRoot, "src/view/plot-actions.ts"), "utf8");
+  const labelled = bar.match(/createDiv\(\{[^}]*aria-label/g) ?? [];
+  assert.deepEqual(labelled, [], "no container in the bar carries a label");
+  assert.match(
+    bar,
+    /noLabelTooltip\(param, "Parameter to sweep"\)/,
+    "and the list, which opens a native popup nothing in the page can be drawn above, is silenced"
+  );
 });
 
 test("no control carries two tooltip attributes at once", () => {

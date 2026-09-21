@@ -53,6 +53,7 @@ import { docUrlFor, libraryVersionFrom } from "../modelica/doclinks";
 import { acceptsFileDrag, droppedVaultFile } from "./drop";
 import { RESULTS_TABS, resultsTabState, tabLabel, type ResultsTab } from "./bottom-tabs";
 import { buildPlotActions } from "./plot-actions";
+import { noLabelTooltip } from "./a11y";
 import { savePrompt } from "../modelica/save-state";
 import { keptSourceNote, reasonDetail, stopMessage } from "../ai/stop-message";
 import { formatExchanges, formatSummary, summarise } from "../ai/interaction-log";
@@ -3034,12 +3035,22 @@ export class ModelicaStudioView extends ItemView {
    */
   async runSweep(parameter: string, valuesText: string, opts: { silent?: boolean } = {}): Promise<void> {
     const values = parseSweepValues(valuesText);
-    if (this.busy || !this.plugin.backend || !parameter || values.length === 0) {
-      if (values.length === 0 && !opts.silent) {
-        new Notice("Modelica: give the sweep some values, e.g. 100, 200, 400 or 100:50:400.");
+    // Two values at least, and said out loud rather than quietly doing something
+    // else. One value used to run: the single run became the result on screen and
+    // the family came out empty, so a "sweep" of one number looked like the plot
+    // simply changing — with nothing on screen to say why there was no family.
+    if (values.length < 2) {
+      if (!opts.silent) {
+        new Notice(
+          values.length === 0
+            ? "Modelica: a sweep needs values — 100, 200, 400 runs three, or 0:0.5:2 for a range."
+            : "Modelica: a sweep needs at least two values — one value is a single run. " +
+              "Try 100, 200, 400, or 0:0.5:2 for a range."
+        );
       }
       return;
     }
+    if (this.busy || !this.plugin.backend || !parameter) return;
     this.flushEditorIntoModel();
     this.busy = true;
     const source = serializeDiagram(this.plugin.model);
@@ -4318,20 +4329,6 @@ export function openInBrowser(url: string): void {
   document.body.appendChild(a);
   a.click();
   a.remove();
-}
-
-/**
- * Give an element an accessible name that never becomes a tooltip.
- *
- * Obsidian attaches tooltips by delegation on `[aria-label]`, so any container
- * carrying a label pops one up whenever the pointer crosses its children — the
- * mode group's "Editor mode" appeared over the Diagram and Code buttons for
- * exactly that reason. A group still needs its name for a screen reader, so the
- * label stays and the tooltip is switched off with the flag Obsidian checks.
- */
-export function noLabelTooltip(el: HTMLElement, name: string): void {
-  el.setAttribute("aria-label", name);
-  el.style.setProperty("--no-tooltip", "true");
 }
 
 /**

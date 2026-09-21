@@ -180,6 +180,16 @@ test("the results bar renders one action, one box per subject, and no stray rule
       "window.test('nothing is separated by a rule any more', () => {",
       "  return parent.querySelectorAll('.modelica-studio-group-sep').length + ' separators';",
       "});",
+      "window.test('what the pointer raises over each control', () => {",
+      "  // Obsidian's handler is delegated on [aria-label] and reads the flag from the",
+      "  // COMPUTED style, so it inherits: a flagged container would silence every",
+      "  // control inside it. Only the list is flagged, and it has no children.",
+      "  const labelled = Array.from(parent.querySelectorAll('[aria-label]'));",
+      "  const groups = Array.from(parent.querySelectorAll('.modelica-studio-group'));",
+      "  return labelled.map((el) => el.tagName.toLowerCase() + ':' + el.className.split(' ')[0]",
+      "    + '=' + (getComputedStyle(el).getPropertyValue('--no-tooltip').trim() || 'TOOLTIP')).join(' | ')",
+      "    + '  groups=' + groups.length + ' named=' + groups.filter((g) => g.hasAttribute('aria-label')).length;",
+      "});",
       "window.test('the figure actions are one quiet menu, not a box of buttons', () => {",
       "  const b = parent.querySelector('.modelica-studio-btn.is-quiet');",
       "  if (!b) return 'NO FIGURE BUTTON';",
@@ -213,6 +223,17 @@ test("the results bar renders one action, one box per subject, and no stray rule
   );
   assert.match(d["a toggle is filled, not ringed"], /border=rgba\(0, 0, 0, 0\)/, "and NOT a ring");
   assert.equal(d["nothing is separated by a rule any more"], "0 separators");
+  // The list itself must not raise a tooltip: what it opens is a native popup,
+  // drawn above everything in the page, and the tooltip was reported as a box
+  // peeking out from behind it. Everything else keeps its own.
+  assert.equal(
+    d["what the pointer raises over each control"],
+    "input:modelica-studio-time-input=TOOLTIP | select:modelica-studio-family-param=true | " +
+      "input:modelica-studio-family-values=TOOLTIP | button:modelica-studio-btn=TOOLTIP | " +
+      "button:modelica-studio-btn=TOOLTIP | button:modelica-studio-btn=TOOLTIP | " +
+      "button:modelica-studio-btn=TOOLTIP  groups=2 named=0",
+    "only the parameter list is silenced, and no group is named"
+  );
   const figures = d["the figure actions are one quiet menu, not a box of buttons"];
   assert.match(figures, /^icon=more-horizontal/);
   assert.match(figures, /aria=Copy or save the plot as a picture/);
@@ -404,4 +425,88 @@ test("a model with nothing sweepable says so rather than offering a fake choice"
   assert.deepEqual(out.errors, [], "no page errors");
   for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
   assert.equal(out.results[0].detail, "disabled=true options=—");
+});
+
+test("a sweep of fewer than two values is refused, and says why", async () => {
+  // Asked for directly: tell the user a sweep needs two values. One value used to
+  // RUN -- the single run became the result on screen and the family came out
+  // empty, so a "sweep" of one number looked like the plot simply changing, with
+  // nothing on screen to say why there was nothing to compare with.
+  const out = await runInDom(
+    [
+      DOM_PREAMBLE,
+      `import { ModelicaStudioView } from "${ROOT}/src/view/studio-view";`,
+      `import { Notice } from "${ROOT}/test/helpers/obsidian-stub";`,
+      "",
+      "const simulated = [];",
+      "const view = Object.create(ModelicaStudioView.prototype);",
+      "view.plugin = {",
+      "  model: { name: 'Bounce', components: [], connections: [], equations: [], graphics: [] },",
+      "  settings: { startTime: 0, numberOfIntervals: 500, tolerance: 1e-6, solver: '', charts: {} },",
+      "  model: { name: 'Bounce', components: [], connections: [], equations: [], graphics: [] },",
+      "  stopTime: () => 1,",
+      "  diag: () => {},",
+      "  backend: {",
+      "    simulate: async (req) => {",
+      "      simulated.push(req.parameters.e);",
+      "      return { time: [0, 1], series: [{ name: 'h', values: [1, 0], unit: 'm' }],",
+      "        warnings: [], compileMs: 0, simulateMs: 0, reusedBinary: true };",
+      "    },",
+      "  },",
+      "};",
+      "view.busy = false;",
+      "view.family = [];",
+      "view.seriesStyles = {};",
+      "view.setStatus = () => {};",
+      "view.flushEditorIntoModel = () => {};",
+      "view.renderPlotPane = () => {};",
+      "view.drawResults = () => {};",
+      "view.publishChart = () => {};",
+      "",
+      "Notice.messages.length = 0;",
+      "await view.runSweep('e', '0.5');",
+      "const one = Notice.messages.slice();",
+      "// Captured now: the array keeps filling as the later calls run.",
+      "const ranAfterOne = simulated.length;",
+      "Notice.messages.length = 0;",
+      "await view.runSweep('e', 'not a number');",
+      "const none = Notice.messages.slice();",
+      "const ranAfterNone = simulated.length;",
+      "Notice.messages.length = 0;",
+      "await view.runSweep('e', '0.4, 0.8');",
+      "const two = Notice.messages.slice();",
+      "",
+      "window.test('one value is refused, with the reason', () =>",
+      "  'ran=' + ranAfterOne + ' notice=' + one.join(' / '));",
+      "window.test('and so is a field with nothing usable in it', () =>",
+      "  'ran=' + ranAfterNone + ' notice=' + none.join(' / '));",
+      "window.test('two values run, and both are recorded', () =>",
+      "  'ran=' + simulated.length + ' values=' + simulated.join(',') + ' notices=' + two.length",
+      "    + ' family=' + view.family.length + ' label=' + (view.lastSweep ? view.lastSweep.value : '-'));",
+      "window.finish();",
+    ].join("\n")
+  );
+
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const d = Object.fromEntries(out.results.map((r) => [r.name, r.detail]));
+
+  assert.match(d["one value is refused, with the reason"], /^ran=0 /, "nothing was simulated");
+  assert.match(
+    d["one value is refused, with the reason"],
+    /at least two values/,
+    "and the notice says what a sweep needs"
+  );
+  assert.match(d["and so is a field with nothing usable in it"], /^ran=0 /);
+  assert.match(d["and so is a field with nothing usable in it"], /needs values/);
+
+  assert.match(d["two values run, and both are recorded"], /ran=2 values=0\.4,0\.8/, "both ran");
+  assert.match(d["two values run, and both are recorded"], /notices=0/, "without complaint");
+  assert.match(
+    d["two values run, and both are recorded"],
+    /family=1 label=0\.8/,
+    "the first is the family, the last is the run on screen"
+  );
 });

@@ -5,6 +5,33 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.31] — 2026-10-14
+
+### Fixed
+
+- **The tooltip that appeared behind the open parameter list.** Obsidian attaches
+  tooltips by delegation on `[aria-label]`, and it reads its opt-out from the
+  COMPUTED style — `getComputedStyle(el).getPropertyValue("--no-tooltip")`, read
+  out of the app bundle — so the flag inherits to every child. The results bar's
+  groups carried labels, so a group's name popped up whenever the pointer crossed
+  anything inside it; a native list popup is drawn above everything in the page,
+  so the tooltip was left peeking out from behind it. The groups are unnamed now
+  (a name on a plain `div` is not exposed by screen readers anyway, and each
+  control inside carries its own), and the parameter list itself is silenced while
+  keeping its name. The controls whose tooltips are worth having — the values
+  field, Sweep, Keep as before, Δ vs — still show theirs.
+
+### Changed
+
+- **A sweep now tells you it needs at least two values.** One value used to run:
+  the single run became the result on screen and the family came out empty, so a
+  "sweep" of one number looked like the plot simply changing, with nothing saying
+  why there was nothing to compare with. It is refused now, with a notice that
+  states the requirement and both forms — `100, 200, 400` or `0:0.5:2` — the
+  Sweep button's tooltip says it as well, and the Help window's sweep section
+  spells it out: one value is a single run with a parameter set, which is what the
+  inspector is for.
+
 ## [0.2.0-beta.30] — 2026-10-14
 
 ### Fixed

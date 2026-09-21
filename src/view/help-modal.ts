@@ -316,6 +316,13 @@ export class HelpModal extends Modal {
     el.createEl("p", {
       cls: "modelica-studio-muted",
       text:
+        "A sweep needs at least TWO values: one value is a single run with a parameter " +
+        "set, which is what the inspector does, so there would be nothing to compare " +
+        "with. Up to twelve values are run.",
+    });
+    el.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
         "Only PARAMETERS can be swept — a constant of the model for the whole run. A " +
         "state's start value is where a variable begins, not a number the run can be " +
         "given, so it is not offered; to compare two starting heights, declare the " +
