@@ -5,6 +5,27 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.25] — 2026-10-12
+
+### Added
+
+- **The cursor snaps to the instant two curves cross.** That instant is what a plot
+  like an RLC response is read for — where the capacitor's voltage meets the
+  inductor's current — and placing it by eye gives a time that is nearly right. A
+  crossing is a sign change between two samples, and the instant is interpolated
+  between them, since the samples are a fixed grid and the crossing is almost never
+  on one. The magnet acts within a hundredth of the visible span — about seven
+  pixels — so the cursor is unchanged everywhere else, and the readout says
+  `(crossing)` when it has snapped.
+
+### Fixed
+
+- **The resize grip appeared at the far left of the results bar.** The rules added
+  between the button groups were given the class `modelica-studio-divider`, which is
+  the PANE divider — so each rule inherited that divider's centred `::before` grip
+  and drew a stray bar. Reported as "the resizing handle is now not centred, it is
+  on the far left for some reason". The rules have their own class now.
+
 ## [0.2.0-beta.24] — 2026-10-11
 
 ### Fixed

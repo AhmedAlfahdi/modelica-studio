@@ -239,6 +239,16 @@ export interface DrawPlotOptions {
   /** Show how far each curve of a family is from the run on screen. */
   showDeltas?: boolean;
   /**
+   * Snap the cursor to the instant two curves cross, when one is near.
+   *
+   * The crossings are what a plot like an RLC response is read FOR — where the
+   * capacitor's voltage meets the inductor's current — and picking that instant by
+   * eye off a crosshair gives a time that is nearly right. On by default; the snap
+   * only applies within a small fraction of the time axis, so the cursor is
+   * unchanged everywhere else.
+   */
+  snapIntersections?: boolean;
+  /**
    * The label of the run on screen, when a family is drawn.
    *
    * The delta is measured against THAT curve. Naming the current run (so the
@@ -511,7 +521,23 @@ export function drawPlot(
 
   // Cursor readout
   if (opts.cursorX !== undefined && opts.cursorX >= xMin && opts.cursorX <= xMax) {
-    const x = Math.round(sx(opts.cursorX)) + 0.5;
+    let cursorAt = opts.cursorX;
+    let snappedToCrossing = false;
+    if (opts.snapIntersections !== false && visible.length > 1) {
+      // A hundredth of the visible span: about seven pixels on a plot this wide,
+      // so it is a magnet rather than a move.
+      const crossing = nearestCrossing(
+        result.time,
+        visible.map((s) => s.values),
+        cursorAt,
+        (xMax - xMin) * 0.01
+      );
+      if (crossing !== undefined) {
+        cursorAt = crossing;
+        snappedToCrossing = true;
+      }
+    }
+    const x = Math.round(sx(cursorAt)) + 0.5;
     ctx.strokeStyle = theme.cursor;
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 3]);
@@ -522,10 +548,12 @@ export function drawPlot(
     ctx.setLineDash([]);
 
     // Nearest sample values, shown in a compact box.
-    const lines: string[] = [`t = ${formatTick(opts.cursorX)}`];
+    const lines: string[] = [
+      `t = ${formatTick(cursorAt)}${snappedToCrossing ? "  (crossing)" : ""}`,
+    ];
     const readoff: Array<{ base: string; label: string; value: number }> = [];
     for (const s of visible.slice(0, opts.cursorRows ?? 6)) {
-      const v = sampleAt(result.time, s.values, opts.cursorX);
+      const v = sampleAt(result.time, s.values, cursorAt);
       if (v === undefined) continue;
       lines.push(`${s.name} = ${formatTick(v)}`);
       const split = splitFamilyName(s.name);
@@ -604,6 +632,39 @@ export function deltaLines(
     }
   }
   return out;
+}
+
+/**
+ * The nearest instant at which any two of `lines` cross, within `window` of `t`.
+ *
+ * A crossing is a sign change between consecutive samples, and the instant is
+ * interpolated between them — the samples are a fixed grid, so the crossing is
+ * almost never on one. Pairs that touch without crossing count too, since a
+ * tangent is a crossing an eye cannot place either.
+ */
+export function nearestCrossing(
+  time: number[],
+  lines: number[][],
+  t: number,
+  window: number
+): number | undefined {
+  let best: number | undefined;
+  for (let i = 0; i + 1 < time.length; i++) {
+    for (let a = 0; a < lines.length; a++) {
+      for (let b = a + 1; b < lines.length; b++) {
+        const d0 = lines[a][i] - lines[b][i];
+        const d1 = lines[a][i + 1] - lines[b][i + 1];
+        if (!Number.isFinite(d0) || !Number.isFinite(d1)) continue;
+        if (d0 !== 0 && d1 !== 0 && d0 * d1 > 0) continue;
+        const span = time[i + 1] - time[i];
+        const frac = d0 === d1 ? 0 : Math.min(1, Math.max(0, d0 / (d0 - d1)));
+        const cross = time[i] + span * frac;
+        if (Math.abs(cross - t) > window) continue;
+        if (best === undefined || Math.abs(cross - t) < Math.abs(best - t)) best = cross;
+      }
+    }
+  }
+  return best;
 }
 
 /** Linearly interpolate a series value at time `t`. */

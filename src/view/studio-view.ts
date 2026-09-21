@@ -2479,7 +2479,7 @@ export class ModelicaStudioView extends ItemView {
         // Three groups, because they are three subjects: how the plot is scaled,
         // what is being compared, and getting a picture out. As one row of nine
         // buttons, which of them belonged together was a guess.
-        actions.createDiv({ cls: "modelica-studio-divider" });
+        actions.createDiv({ cls: "modelica-studio-group-sep" });
         const scale = actions.createDiv({
           cls: "modelica-studio-group",
           attr: { "aria-label": "How the plot is scaled" },
@@ -2500,7 +2500,7 @@ export class ModelicaStudioView extends ItemView {
         // The family: what happens when a number changes. A parameter, the values
         // to try, and one button — the sweep is one simulation per value, so the
         // count is capped in `parseSweepValues` rather than in the UI.
-        actions.createDiv({ cls: "modelica-studio-divider" });
+        actions.createDiv({ cls: "modelica-studio-group-sep" });
         const family = actions.createDiv({
           cls: "modelica-studio-group modelica-studio-family",
           attr: { "aria-label": "Sweep a parameter, or keep a run to compare with" },
@@ -2564,7 +2564,7 @@ export class ModelicaStudioView extends ItemView {
           });
         }
 
-        actions.createDiv({ cls: "modelica-studio-divider" });
+        actions.createDiv({ cls: "modelica-studio-group-sep" });
         const figures = actions.createDiv({
           cls: "modelica-studio-group",
           attr: { "aria-label": "The plot as a picture" },

@@ -568,3 +568,28 @@ test("deltas are measured against the named run on screen", () => {
   );
   assert.match(down[0], /^Δ v vs before = −2$/, `got ${down[0]}`);
 });
+
+test("the cursor snaps to the instant two curves cross", () => {
+  // The crossings are what an RLC response is read for -- where the capacitor's
+  // voltage meets the inductor's current -- and eyeing one off a crosshair gives a
+  // time that is nearly right. The snap only acts within its window.
+  const time = [0, 1, 2, 3, 4];
+  const rising = [0, 1, 2, 3, 4];
+  const falling = [4, 3, 2, 1, 0];
+  const cross = plotMod.nearestCrossing(time, [rising, falling], 2, 0.5);
+  assert.equal(cross, 2, "the crossing is found where the lines meet");
+
+  // Between the samples, the instant is interpolated: these cross at 1.5.
+  const a = [0, 0, 1, 1, 1];
+  const b = [1, 1, 0, 0, 0];
+  const between = plotMod.nearestCrossing(time, [a, b], 1.6, 0.5);
+  assert.ok(Math.abs(between - 1.5) < 1e-9, `interpolated, got ${between}`);
+
+  assert.equal(plotMod.nearestCrossing(time, [rising, falling], 0, 0.5), undefined, "far away: no snap");
+  assert.equal(plotMod.nearestCrossing(time, [rising], 2, 0.5), undefined, "one line has no crossing");
+  assert.equal(
+    plotMod.nearestCrossing(time, [[0, Number.NaN, 2, 3, 4], falling], 2, 0.5),
+    2,
+    "a gap does not stop the search"
+  );
+});
