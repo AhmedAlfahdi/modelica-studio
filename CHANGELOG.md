@@ -5,6 +5,28 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.21] — 2026-10-08
+
+### Fixed
+
+- **The deltas never appeared.** Naming the run on screen — which beta.18 did so the
+  legend could say `resistor.R=20` — left EVERY row of the readout with a label, and
+  the delta was measured against "the row with no label". On a swept plot there was
+  therefore no reference: six curves listed, no difference printed, and a toggle
+  that had nothing to switch. The reference is now the run on screen BY NAME, which
+  is what the caller already knows.
+
+  Reported with a screenshot of a three-value `resistor.R` sweep, while the status
+  line said "differences shown" — the toggle was on and working; it was hiding a
+  comparison that could not be computed.
+
+### Added
+
+- The same switch in **Settings → Diagram labels**: *Show differences in the plot
+  readout*. It is on by default — that was already true, and the defect above is why
+  it looked otherwise — and the Δ button in the results bar still toggles it while
+  you are looking at the plot.
+
 ## [0.2.0-beta.20] — 2026-10-07
 
 ### Fixed

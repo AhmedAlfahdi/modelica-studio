@@ -2890,6 +2890,9 @@ export class ModelicaStudioView extends ItemView {
    */
   private paint(canvas: HTMLCanvasElement, host: HTMLElement): void {
     if (!this.result) return;
+    const currentLabel = this.lastSweep
+      ? `${this.lastSweep.parameter}=${this.lastSweep.value}`
+      : undefined;
     const view = this.zoom ?? {
       xMin: this.result.time[0],
       xMax: this.result.time[this.result.time.length - 1],
@@ -2897,11 +2900,7 @@ export class ModelicaStudioView extends ItemView {
     // The family is folded into the result BEFORE anything reads it, so the axes,
     // the legend, the cursor readout and the extents all account for the other
     // runs without knowing they exist.
-    const { result, familyNames } = overlayResults(
-      this.result,
-      this.family,
-      this.lastSweep ? `${this.lastSweep.parameter}=${this.lastSweep.value}` : undefined
-    );
+    const { result, familyNames } = overlayResults(this.result, this.family, currentLabel);
     const styled: Record<string, SeriesStyle> = { ...this.seriesStyles };
     // Under the CURRENT name as well as the family names: an overlay renames the
     // run on screen too, and a style looked up by the old name is not found.
@@ -2967,6 +2966,7 @@ export class ModelicaStudioView extends ItemView {
       // is the point of inspecting there.
       cursorRows: canvas === this.fullCanvas ? result.series.length : 6,
       showDeltas: this.plugin.settings.plotDeltas,
+      currentLabel,
       dpr,
     });
   }
@@ -3128,6 +3128,12 @@ export class ModelicaStudioView extends ItemView {
     this.plugin.diag(`sweep ${this.plugin.model.name}: ${parameter} = ${values.join(", ")}`);
   }
 
+  /** Repaint the results pane: the plots settings are read while drawing. */
+  refreshPlot(): void {
+    this.drawResults();
+    this.renderPlotPane();
+  }
+
   /** Turn the cursor readout's deltas on or off, and remember the choice. */
   private async toggleDeltas(): Promise<void> {
     this.plugin.settings.plotDeltas = !this.plugin.settings.plotDeltas;
@@ -3143,8 +3149,7 @@ export class ModelicaStudioView extends ItemView {
           ? "Cursor readout: differences shown — rest the cursor on the plot"
           : "Differences are on, but there is nothing to compare yet: sweep a parameter or press Keep as before"
     );
-    this.drawResults();
-    this.renderPlotPane();
+    this.refreshPlot();
   }
 
   /** Keep the run on screen, dashed, so the next one can be compared with it. */

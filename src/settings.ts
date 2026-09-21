@@ -290,6 +290,22 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         })
       );
 
+    new Setting(containerEl)
+      .setName("Show differences in the plot readout")
+      .setDesc(
+        "With a family on screen — a sweep, or a run kept with “Keep as before” — " +
+          "resting the cursor on the plot says how far each curve is from the run on " +
+          "screen at that moment, signed. On by default; the Δ button in the results " +
+          "bar toggles the same thing without leaving the plot."
+      )
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.plotDeltas).onChange(async (v) => {
+          this.plugin.settings.plotDeltas = v;
+          await this.plugin.saveSettings();
+          this.plugin.getView()?.refreshPlot();
+        })
+      );
+
     /* ---- AI assistance ---- */
     containerEl.createEl("h3", { text: "AI assistance" });
     containerEl.createEl("p", {

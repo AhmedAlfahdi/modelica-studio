@@ -536,3 +536,35 @@ test("a legend names the run on screen as well as the family", () => {
   assert.ok(legend.some((r) => r.endsWith("source.V=15")), "including the one on screen");
   assert.ok(legend.some((r) => r.endsWith("source.V=10")), "and the one behind it");
 });
+
+test("deltas are measured against the named run on screen", () => {
+  // The regression that made them disappear: naming the current run, so the
+  // legend can say `resistor.R=20`, left EVERY row labelled -- and the reference
+  // had been "the row without a label", so there was nothing to measure against
+  // and no delta was printed. A family always contains the run on screen, under
+  // its own name.
+  const rows = [
+    { base: "capacitor.v", label: "resistor.R=20", value: 8.866 },
+    { base: "capacitor.v", label: "resistor.R=12", value: 7.07 },
+    { base: "capacitor.v", label: "resistor.R=15", value: 7.902 },
+  ];
+  const lines = plotMod.deltaLines(rows, "resistor.R=20");
+  assert.equal(lines.length, 2, `one line per other run, got ${JSON.stringify(lines)}`);
+  assert.match(lines[0], /^Δ capacitor\.v vs resistor\.R=12 = \+1\.796$/, "signed, and against the run on screen");
+  assert.match(lines[1], /resistor\.R=15 = \+0\.964$/, "and the same for the other");
+
+  // A single run has nothing to compare against -- and neither has a family whose
+  // reference label is not in the readout.
+  assert.deepEqual(plotMod.deltaLines([{ base: "v", label: "", value: 1 }], ""), []);
+  assert.deepEqual(plotMod.deltaLines(rows, "resistor.R=99"), [], "an unknown reference says nothing");
+
+  // Below zero reads as a minus, not a negative sign in a plus field.
+  const down = plotMod.deltaLines(
+    [
+      { base: "v", label: "before", value: 5 },
+      { base: "v", label: "", value: 3 },
+    ],
+    ""
+  );
+  assert.match(down[0], /^Δ v vs before = −2$/, `got ${down[0]}`);
+});

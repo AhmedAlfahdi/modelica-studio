@@ -238,6 +238,14 @@ export interface DrawPlotOptions {
   cursorRows?: number;
   /** Show how far each curve of a family is from the run on screen. */
   showDeltas?: boolean;
+  /**
+   * The label of the run on screen, when a family is drawn.
+   *
+   * The delta is measured against THAT curve. Naming the current run (so the
+   * legend can say `source.V=15`) is what made the deltas vanish: every row
+   * carried a label, and the reference had been "the row without one".
+   */
+  currentLabel?: string;
   /** Device pixel ratio. */
   dpr: number;
   /** Map a series name to an axis unit label. */
@@ -527,7 +535,7 @@ export function drawPlot(
     // on screen. This is the question a sweep is asked -- "how much does it
     // differ?" -- and reading it off two rows and subtracting in your head is
     // exactly what a plot should do for you.
-    if (opts.showDeltas) lines.push(...deltaLines(readoff));
+    if (opts.showDeltas) lines.push(...deltaLines(readoff, opts.currentLabel ?? ""));
     if (lines.length > 1) {
       ctx.font = "11px sans-serif";
       const wBox = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 12;
@@ -572,7 +580,8 @@ export function splitFamilyName(name: string): { base: string; label: string } {
  * than each curve.
  */
 export function deltaLines(
-  values: Array<{ base: string; label: string; value: number }>
+  values: Array<{ base: string; label: string; value: number }>,
+  currentLabel = ""
 ): string[] {
   const groups = new Map<string, Array<{ label: string; value: number }>>();
   for (const v of values) {
@@ -582,11 +591,13 @@ export function deltaLines(
   }
   const out: string[] = [];
   for (const [base, list] of groups) {
-    const current = list.find((v) => v.label === "");
-    // No run on screen to measure against: nothing to say.
+    const current = list.find((v) => v.label === currentLabel);
+    // No run on screen to measure against: nothing to say. This is the state a
+    // single run is in, and the state a family is NOT in — it always contains the
+    // run on screen, under its own label.
     if (!current) continue;
     for (const other of list) {
-      if (other.label === "") continue;
+      if (other.label === currentLabel) continue;
       const delta = current.value - other.value;
       const sign = delta > 0 ? "+" : delta < 0 ? "−" : "";
       out.push(`Δ ${base} vs ${other.label} = ${sign}${formatTick(Math.abs(delta))}`);
