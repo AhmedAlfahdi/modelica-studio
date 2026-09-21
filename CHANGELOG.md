@@ -5,6 +5,33 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.39] — 2026-10-14
+
+### Fixed
+
+- **Zooming out made the wires overlap the symbols.** Reported from two
+  screenshots — "when zooming out the lines start to overlap" — and it was the
+  stroke width being divided by the zoom *after* its clamps were applied:
+  `clamp(2.2 x zoom, 1.2, 8) / zoom` is inversely proportional to the zoom, so the
+  further out you went the FATTER every wire got on screen. Measured:
+
+  | zoom | before | after |
+  |---|---|---|
+  | 0.05 | 24.0px | 1.2px |
+  | 0.1 | 12.0px | 1.2px |
+  | 0.5 | 2.4px | 1.2px |
+  | 1 | 2.2px | 2.2px |
+  | 2 | 2.2px | 4.4px |
+  | 4 | 2.0px | 8.0px |
+  | 8 | 1.0px | 8.0px |
+
+  The points are placed in device pixels and the context transform is identity, so
+  the clamped width already *is* the on-screen width; the division was undoing the
+  proportionality the rest of the function sets up. Wires now follow the symbols
+  down to a 1.2px floor and up to an 8px cap, as the constants have always
+  documented, and never move the other way. At 100% zoom nothing changes, so the
+  wire-thickness setting keeps the weight it was given.
+
 ## [0.2.0-beta.38] — 2026-10-14
 
 ### Changed

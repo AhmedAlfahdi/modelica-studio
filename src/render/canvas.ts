@@ -1941,7 +1941,9 @@ export function drawConnection(
   const theme = opts.theme ?? currentTheme();
   if (points.length < 4) return;
   const vt = viewportTransform(vp, dpr);
-  // Scale factor the transform already applies; undo it for a fixed weight.
+  // The zoom the points were placed with. `wireWidthPx` wants it — the standard
+  // weight is a fraction of a symbol's on-screen size — but the width itself is
+  // NOT divided by it: see below.
   const scale = Math.hypot(vt.a, vt.b) || 1;
   // Follow the zoom so the wire stays proportional to the symbols.
   // The wire-thickness setting multiplies the whole curve — including its clamps,
@@ -1956,7 +1958,13 @@ export function drawConnection(
   // at a different place from the symbols it connects.
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.strokeStyle = conn.color ? rgb(themedColor(conn.color, theme, "stroke")) : rgb(theme.wire);
-  ctx.lineWidth = (opts.selected ? basePx + 1.5 : basePx) / scale;
+  // `basePx` is a width in SCREEN pixels — that is what its clamps are for, and
+  // what `wireWidthPx` documents — so under the identity transform it is used as
+  // it stands. Dividing it by the zoom as well made the width inversely
+  // proportional to zoom: `clamp(2.2 x zoom, 1.2, 8) / zoom` drew a 12px wire at
+  // 10% zoom against 2.2px at 100%, so zooming out made every wire fatter than
+  // the symbols it connects. Reported as "when zooming out the lines overlap".
+  ctx.lineWidth = opts.selected ? basePx + 1.5 : basePx;
   // Round joins and caps: a butt cap leaves a visible nick where a wire meets
   // a pin, which is what made the runs look discontinuous.
   ctx.lineJoin = "round";

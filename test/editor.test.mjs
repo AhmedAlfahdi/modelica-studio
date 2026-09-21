@@ -245,6 +245,7 @@ const { SchematicEditor, GRID } = await import(path.join(buildLibs("editor-lib",
 
 // Canvas geometry, for assertions about what is clickable.
 const C0 = await import(path.join(buildLibs("canvas-lib", ["src/render/canvas.ts"]), "canvas.js"));
+const { MIN_WIRE_WIDTH_PX, MAX_WIRE_WIDTH_PX, WIRE_WIDTH_PX } = C0;
 
 /* ------------------------------------------------------------------ */
 /* Fixtures                                                           */
@@ -1324,6 +1325,109 @@ test("the wire-thickness setting reaches the drawing, and the click area", () =>
   assert.equal(hitAt(y, 1), "c1", "a pointer ON the wire hits it");
   assert.ok(!hitAt(y + 22, 1), "22px away is not a hit at the standard weight");
   assert.equal(hitAt(y + 22, 4), "c1", "and it is at four times the weight");
+  editor.destroy();
+});
+
+test("a wire never grows fatter on screen as the diagram shrinks", () => {
+  // Reported from two screenshots: zoomed in, the wires looked right; zoomed out,
+  // they covered the symbols they connect. The cause was the stroke being divided
+  // by the zoom AFTER the clamps were applied: `clamp(2.2 x zoom, 1.2, 8) / zoom`
+  // is inversely proportional to the zoom, so the further out you go the FATTER
+  // every wire gets on screen — 1.2px at 100% became 12px at 10%.
+  //
+  // The drawn width is what matters here, so the test reads the width the wire is
+  // actually stroked with: `drawConnection` sets the transform to identity and
+  // puts the points in device pixels, so `lineWidth` IS the on-screen width.
+  // Two components, because a wire's route is resolved from its ports, plus the
+  // one connection between them. The frame strokes in a fixed order — the grid,
+  // then the connections, then the symbols — so the wire is the stroke after the
+  // grid's, whatever else the frame contains.
+  const components = [inst("r1", 0, 0), inst("r2", 200, 0)];
+  const model = {
+    name: "M",
+    components,
+    connections: [
+      { id: "c1", from: { component: "r1", port: "p" }, to: { component: "r2", port: "n" }, points: [] },
+    ],
+    graphics: [],
+  };
+  const { editor } = makeEditor(components);
+  editor.setModel(model);
+  const canvas = canvasOf(editor);
+  layoutTo(canvas, 1000, 600);
+  editor.resize();
+  editor.cb.display = () => ({ labelScale: 1, hoverParameters: false, wireScale: 1 });
+
+  /** The weights stroked in one frame at `zoom`, with and without the wire. */
+  const frame = (zoom, withWire) => {
+    const strokes = [];
+    editor.ctx = new Proxy(
+      { canvas: { width: 1000, height: 600 }, measureText: () => ({ width: 10 }), lineWidth: 1 },
+      {
+        get(t, k) {
+          if (k in t) return t[k];
+          if (k === "stroke") return () => strokes.push(t.lineWidth);
+          return () => {};
+        },
+        set(t, k, v) {
+          t[k] = v;
+          return true;
+        },
+      }
+    );
+    editor.setModel(withWire ? model : { ...model, connections: [] });
+    editor.viewport.scale = zoom;
+    editor.viewport.x = 500;
+    editor.viewport.y = 300;
+    strokes.length = 0;
+    SchematicEditor.prototype.draw.call(editor);
+    return strokes;
+  };
+
+  /**
+   * The width the wire is stroked with at this zoom.
+   *
+   * Two frames, identical but for the connection: whatever differs is the wire,
+   * whatever the grid did (it hides itself when zoomed far enough out) and
+   * whatever the symbols stroke.
+   */
+  const wireWidthAt = (zoom) => {
+    const withWire = frame(zoom, true);
+    const without = frame(zoom, false);
+    const i = withWire.findIndex(
+      (w, k) => without[k] === undefined || Math.abs(w - without[k]) > 1e-9
+    );
+    assert.ok(i >= 0, `the wire is in the frame at zoom ${zoom} (${withWire.join(", ")})`);
+    return withWire[i];
+  };
+
+  const zooms = [0.1, 0.4, 0.8, 1, 2, 4];
+  const widths = zooms.map((z) => wireWidthAt(z));
+  const table = zooms.map((z, i) => `${z}:${widths[i].toFixed(2)}`).join(" ");
+
+  // The weight follows the symbols down to a floor and up to a cap, and never
+  // moves the other way: it is non-decreasing in the zoom, always.
+  for (let i = 1; i < widths.length; i++) {
+    assert.ok(
+      widths[i] >= widths[i - 1] - 1e-9,
+      `the wire never thins as the diagram grows (${table})`
+    );
+  }
+  assert.ok(
+    Math.abs(widths[0] - MIN_WIRE_WIDTH_PX) < 1e-9,
+    `zoomed far out it stops at the floor (${widths[0]} of ${MIN_WIRE_WIDTH_PX})`
+  );
+  assert.ok(
+    Math.abs(widths[zooms.indexOf(1)] - WIRE_WIDTH_PX) < 1e-9,
+    `at 100% it is the standard weight (${widths[zooms.indexOf(1)]} of ${WIRE_WIDTH_PX})`
+  );
+  assert.ok(
+    Math.abs(widths[widths.length - 1] - MAX_WIRE_WIDTH_PX) < 1e-9,
+    `and zoomed in it stops at the cap (${widths[widths.length - 1]} of ${MAX_WIRE_WIDTH_PX})`
+  );
+  // The regression in one number: a wire must not be fatter on screen when the
+  // diagram is smaller. This was 12px at 0.1 against 2.2px at 1.
+  assert.ok(widths[0] < widths[zooms.indexOf(1)], `ten times out is thinner (${table})`);
   editor.destroy();
 });
 
