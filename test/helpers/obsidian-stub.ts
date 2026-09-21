@@ -422,6 +422,15 @@ export class StubMenuItem {
   }
 }
 
+/**
+ * A note's view. The plugin asks it for an editor when a figure is saved into
+ * the note at the cursor; a test that never opens one gets undefined, which is
+ * the same path as a reading-mode view.
+ */
+export class MarkdownView {
+  editor: unknown = undefined;
+}
+
 export class Notice {
   static messages: string[] = [];
   constructor(message: string) {

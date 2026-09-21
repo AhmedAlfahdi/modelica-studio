@@ -14,9 +14,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { buildLibs, repoRoot } from "./helpers/build.mjs";
 
-const LIB = buildLibs("series-lib", ["src/view/series.ts", "src/view/plot.ts", "src/view/axes.ts"]);
+const LIB = buildLibs("series-lib", ["src/view/series.ts", "src/view/plot.ts", "src/view/axes.ts", "src/view/family.ts"]);
 const plotMod = await import(path.join(LIB, "plot.js"));
 const axes = await import(path.join(LIB, "axes.js"));
+const family = await import(path.join(LIB, "family.js"));
 const { defaultSeriesNames, summarizeSeries } = await import(path.join(LIB, "series.js"));
 
 /** Build a SimResult-shaped object from name -> values. */
@@ -390,4 +391,59 @@ test("a series on no axis is reported as belonging to none", () => {
   assert.equal(axes.axisIndexOf(plans, "a"), 0);
   assert.equal(axes.axisIndexOf(plans, "missing"), -1, "no axis claims a series that is not there");
   assert.equal(axes.axisIndexOf([], "a"), -1, "nor when there are no axes at all");
+});
+
+/* ------------------------------------------------------------------ */
+/* Families of curves                                                  */
+/* ------------------------------------------------------------------ */
+
+test("a sweep field takes a list or a range", () => {
+  // Both are natural to type: points of interest, and a range. The count is
+  // capped because a sweep is one simulation per value.
+  assert.deepEqual(family.parseSweepValues("100, 200, 400"), [100, 200, 400], "a list");
+  assert.deepEqual(family.parseSweepValues("1 2 3"), [1, 2, 3], "spaces work too");
+  assert.deepEqual(family.parseSweepValues("0:0.1:0.3"), [0, 0.1, 0.2, 0.3], "a range includes its end");
+  assert.deepEqual(family.parseSweepValues("1:1:3"), [1, 2, 3], "and a whole-number range");
+  assert.deepEqual(family.parseSweepValues("10:-5:0"), [10, 5, 0], "a descending step");
+  assert.deepEqual(family.parseSweepValues("0.1:0.1:0.3"), [0.1, 0.2, 0.3], "with no floating-point tail");
+  assert.equal(family.parseSweepValues("").length, 0, "nothing typed is no sweep");
+  assert.equal(family.parseSweepValues("1:0:3").length, 0, "a step of zero is refused");
+  assert.equal(family.parseSweepValues("abc").length, 0, "and so is nonsense");
+  assert.equal(family.parseSweepValues("1:1:100").length, 12, "the count is capped");
+});
+
+test("a family is one result, with each member named after its run", () => {
+  // The plot takes one result -- axes, legend, cursor and extents all come from
+  // `result.series` -- so the family is folded into it rather than taught to the
+  // renderer as a second thing.
+  const time = [0, 1, 2];
+  const current = { time, series: [{ name: "v", values: [0, 1, 2], unit: "V" }], compileMs: 1, simulateMs: 1, reusedBinary: true, warnings: [] };
+  const other = { time, series: [{ name: "v", values: [0, 2, 4], unit: "V" }], compileMs: 1, simulateMs: 1, reusedBinary: true, warnings: [] };
+
+  const none = family.overlayResults(current, []);
+  assert.equal(none.result, current, "no family is the result itself");
+  assert.equal(none.familyNames.size, 0);
+
+  const over = family.overlayResults(current, [{ label: "R=100", result: other }]);
+  assert.deepEqual(
+    over.result.series.map((s) => s.name),
+    ["v", "v · R=100"],
+    "the family trace is named after the run it came from"
+  );
+  assert.deepEqual(over.result.series[1].values, [0, 2, 4], "with that run's values");
+  assert.deepEqual(over.result.series[0].values, [0, 1, 2], "and the current run is untouched");
+  assert.deepEqual([...over.familyNames], ["v · R=100"], "the added names are reported, to be styled");
+  assert.equal(over.result.time, time, "on the current run's time axis");
+
+  // A run on a different grid is resampled onto the one axis the plot has.
+  const coarse = { ...other, time: [0, 2], series: [{ name: "v", values: [0, 4], unit: "V" }] };
+  const resampled = family.overlayResults(current, [{ label: "before", result: coarse }]);
+  assert.deepEqual(resampled.result.series[1].values, [0, 2, 4], "interpolated onto the current grid");
+
+  // Two members of the same sweep do not collide.
+  const two = family.overlayResults(current, [
+    { label: "R=100", result: other },
+    { label: "R=200", result: other },
+  ]);
+  assert.deepEqual(two.result.series.map((s) => s.name), ["v", "v · R=100", "v · R=200"]);
 });

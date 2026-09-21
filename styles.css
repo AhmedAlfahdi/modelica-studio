@@ -674,6 +674,23 @@ body.modelica-studio-resizing * {
   white-space: nowrap;
 }
 
+/* The family controls: a parameter, the values to try, and one button. */
+.modelica-studio-family {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.modelica-studio-family-param,
+.modelica-studio-family-values {
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
+.modelica-studio-family-values {
+  width: 110px;
+}
+
 .modelica-studio-embed-time {
   display: flex;
   align-items: center;

@@ -5,6 +5,47 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.14] — 2026-10-01
+
+### Added
+
+- **Figures.** A plot and a diagram are canvases, and until now nothing could
+  leave the app: a result could be seen, hovered and measured, and not shown to
+  anybody who was not sitting in front of Obsidian — which is the whole of a
+  written course, a slide and a bug report. The results bar has **Copy image** and
+  **Save image**; the command palette has the same two for the diagram; and a
+  block in a note has a camera button for whichever pane it is showing. A saved
+  figure lands beside the note that asked for it, named for the model and the
+  minute, and its link is put at the cursor — so the picture ends up where the
+  words about it are. Copying asks for the PNG rather than a screenshot, so what
+  arrives is the plot and not the theme, the sidebars and the scroll position.
+
+- **Check the model without running it.** *Check the current model*, or the
+  **Check** button in the code toolbar: the connectivity check that was written to
+  validate AI output ("4 components are connected to nothing: height,
+  downward_velocity, …" — five of the exchanges in this vault's own log) now runs
+  on a model a person drew, and the compiler is asked about everything else — a
+  parameter with no value, a variable with no equation. Compiling is not
+  simulating, so it is nearly free and the built model is kept for the next run.
+  The connectivity half is also shown above the run log whenever it applies: the
+  failure it catches is silent, because a loose diagram compiles and the flat line
+  that comes out reads as a fact about the physics.
+
+  A "parameter has no value" guess is deliberately NOT part of the static half:
+  the parser cannot tell a declaration with no default (`parameter SI.Time
+  T(start=1)`) from one whose default is an expression (`parameter Real x = 2*k`),
+  so a check built on it would cry wolf on half the library. The compiler knows,
+  and its answer is the one that decides whether the model runs.
+
+- **Families of curves.** A sweep — a parameter, the values to try (`100, 200,
+  400`, or `100:50:400`), one button — and **Keep as before**, which draws the run
+  on screen dashed behind the next one. The point of most of the models in a
+  course is what happens when a number changes, and one run at a time answers that
+  with a sequence of screenshots. The plot takes one result, so the family is
+  folded into it: each trace is named after the run it came from (`mass.s ·
+  R=100`), resampled onto the current time grid if the two differ, and drawn
+  dashed so it reads as the past rather than as another measurement.
+
 ## [0.2.0-beta.13] — 2026-09-30
 
 ### Fixed

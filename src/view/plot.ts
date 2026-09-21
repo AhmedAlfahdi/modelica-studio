@@ -14,6 +14,8 @@ import { planAxes, type AxisPlan } from "./axes";
 export interface SeriesStyle {
   color: string;
   visible: boolean;
+  /** Drawn dashed: a run kept for comparison rather than the one on screen. */
+  dashed?: boolean;
 }
 
 export interface PlotTheme {
@@ -415,6 +417,9 @@ export function drawPlot(
     const style = opts.styles[s.name];
     ctx.strokeStyle = style?.color ?? seriesColor(result.series.indexOf(s));
     ctx.lineWidth = 1.6;
+    // A family member is drawn dashed: same axes, and unmistakably not the run
+    // being looked at.
+    ctx.setLineDash(style?.dashed ? [5, 4] : []);
     ctx.lineJoin = "round";
     ctx.beginPath();
     let started = false;
@@ -447,6 +452,10 @@ export function drawPlot(
     void i;
   });
   ctx.restore();
+
+  // Back to solid, so the legend's swatches and the cursor are not dashed by
+  // whatever series was drawn last.
+  ctx.setLineDash([]);
 
   // Legend, only when the panel is wide enough to spare the room.
   const plan = legendPlan(lay, cssWidth);

@@ -9,10 +9,23 @@
  * an escape hatch when a construct has no diagram form.
  */
 
-import { App, ItemView, Modal, Notice, Platform, TFile, WorkspaceLeaf, setIcon } from "obsidian";
+import {
+  App,
+  ItemView,
+  MarkdownView,
+  Modal,
+  Notice,
+  Platform,
+  TFile,
+  WorkspaceLeaf,
+  setIcon,
+} from "obsidian";
 import type ModelicaStudioPlugin from "../main";
 import { SchematicEditor } from "./editor";
 import { copyText } from "./clipboard";
+import { formatLint, lintModel, summariseLint } from "../modelica/lint";
+import { overlayResults, parseSweepValues, type FamilyRun } from "./family";
+import { copyCanvasImage, linkFigure, saveCanvasImage } from "./figure";
 import {
   drawPlot,
   plotThemeFrom,
@@ -143,6 +156,11 @@ export class ModelicaStudioView extends ItemView {
 
   private result: SimResult | null = null;
   private seriesStyles: Record<string, SeriesStyle> = {};
+  /**
+   * Runs drawn behind the current one: a sweep's members, and any run kept with
+   * "Keep as before". One list, because they are one picture.
+   */
+  private family: FamilyRun[] = [];
   /** Identifies the result the current trace choices belong to. */
   private seriesSignature = "";
   private cursorX: number | undefined;
@@ -625,6 +643,12 @@ export class ModelicaStudioView extends ItemView {
       this.applyCodeToDiagram(true)
     );
     mk("sparkles", "AI", "Describe what you want, or ask for a repair", () => this.toggleAiRow());
+    mk(
+      "clipboard-check",
+      "Check",
+      "Look for wiring mistakes and ask the compiler about the model, without running it",
+      () => void this.checkModel()
+    );
 
     const diagEl = bar.createDiv({ cls: "modelica-studio-code-diag" });
     this.codeDiagEl = diagEl;
@@ -2076,9 +2100,26 @@ export class ModelicaStudioView extends ItemView {
    * what the model was given, and a paraphrase in the panel would make the
    * prompt unverifiable.
    */
+  /**
+   * What is wrong with the drawing, as one line for the top of the run log.
+   *
+   * The failure this prevents is silent: components that are not wired together
+   * still compile, and the flat line that comes out reads as a fact about the
+   * physics. Shown above the run output rather than as a notice, so it is next to
+   * the plot it explains and does not have to be dismissed on every run.
+   */
+  private wiringWarning(): string | undefined {
+    const findings = lintModel(this.plugin.sourceForSave(), {
+      isComponent: (name) => this.plugin.library.component(name) !== undefined,
+    });
+    return findings.length > 0 ? summariseLint(findings) : undefined;
+  }
+
   private renderRunLog(): void {
     if (!this.logText) return;
-    this.logText.setText(this.plugin.runLog.toText() || "No simulations have been run yet.");
+    const warning = this.wiringWarning();
+    const text = this.plugin.runLog.toText() || "No simulations have been run yet.";
+    this.logText.setText(warning ? `${warning}\n\n${text}` : text);
   }
 
   /** One labelled value field, for a parameter or an initial value. */
@@ -2415,6 +2456,44 @@ export class ModelicaStudioView extends ItemView {
         actions
           .createEl("button", { cls: "modelica-studio-btn", text: "Auto scale" })
           .addEventListener("click", () => this.autoScale());
+        // The figure buttons. A canvas cannot be selected or dragged out, so
+        // without these a result can be looked at and not shown to anybody.
+        // The family: what happens when a number changes. A parameter, the values
+        // to try, and one button — the sweep is one simulation per value, so the
+        // count is capped in `parseSweepValues` rather than in the UI.
+        const family = actions.createDiv({ cls: "modelica-studio-family" });
+        const param = family.createEl("select", { cls: "dropdown modelica-studio-family-param" });
+        const names = Object.keys(collectParameters(this.plugin.model));
+        for (const n of names.length ? names : ["—"]) {
+          param.createEl("option", { text: n, value: n });
+        }
+        param.disabled = names.length === 0;
+        const values = family.createEl("input", {
+          type: "text",
+          cls: "modelica-studio-family-values",
+          attr: { placeholder: "100, 200, 400", "aria-label": "Values to sweep the parameter over" },
+        });
+        const sweep = family.createEl("button", { cls: "modelica-studio-btn", text: "Sweep" });
+        sweep.setAttribute("aria-label", "Run once for each value and draw them together");
+        sweep.addEventListener("click", () => void this.runSweep(param.value, values.value));
+        const keep = family.createEl("button", { cls: "modelica-studio-btn", text: "Keep as before" });
+        keep.setAttribute("aria-label", "Draw this run dashed behind the next one");
+        keep.addEventListener("click", () => this.keepAsBefore());
+        if (this.family.length > 0) {
+          const clear = family.createEl("button", { cls: "modelica-studio-btn", text: "Clear family" });
+          clear.addEventListener("click", () => {
+            this.family = [];
+            this.drawResults();
+            this.renderPlotPane();
+          });
+        }
+
+        actions
+          .createEl("button", { cls: "modelica-studio-btn", text: "Copy image" })
+          .addEventListener("click", () => void this.copyFigure());
+        actions
+          .createEl("button", { cls: "modelica-studio-btn", text: "Save image" })
+          .addEventListener("click", () => void this.saveFigure());
       }
     }
     if (this.emptyEl?.isConnected) this.emptyEl.remove();
@@ -2762,7 +2841,22 @@ export class ModelicaStudioView extends ItemView {
       xMin: this.result.time[0],
       xMax: this.result.time[this.result.time.length - 1],
     };
-    const drawn = this.result.series.filter((s) => this.seriesStyles[s.name]?.visible === true);
+    // The family is folded into the result BEFORE anything reads it, so the axes,
+    // the legend, the cursor readout and the extents all account for the other
+    // runs without knowing they exist.
+    const { result, familyNames } = overlayResults(this.result, this.family);
+    const styled: Record<string, SeriesStyle> = { ...this.seriesStyles };
+    for (const name of familyNames) {
+      const base = this.seriesStyles[name.split(" · ")[0]];
+      styled[name] ??= {
+        color: base?.color ?? seriesColor(0),
+        // Drawn unless the trace it came from was ticked off: a family is the
+        // same variables over again, and hiding one should hide its relations.
+        visible: base?.visible !== false,
+        dashed: true,
+      };
+    }
+    const drawn = result.series.filter((s) => styled[s.name]?.visible === true);
     if (drawn.length === 0) {
       // Nothing ticked. Drawing a grid here is actively misleading: the axis is
       // derived from whatever is left, which is a near-zero range around zero,
@@ -2775,9 +2869,10 @@ export class ModelicaStudioView extends ItemView {
     // is otherwise invisible: the axes come from whatever is visible, so a wrong
     // selection looks like a wrong simulation.
     this.plugin.diag(
-      `plot: ${drawn.length}/${this.result.series.length} traces` +
+      `plot: ${drawn.length}/${result.series.length} traces` +
         ` [${drawn.slice(0, 4).map((s) => s.name).join(", ")}]` +
-        ` x=[${view.xMin}, ${view.xMax}]`
+        ` x=[${view.xMin}, ${view.xMax}]` +
+        (this.family.length > 0 ? ` +${this.family.length} family` : "")
     );
     const rect = host.getBoundingClientRect();
     const w = Math.max(120, Math.floor(rect.width));
@@ -2791,10 +2886,10 @@ export class ModelicaStudioView extends ItemView {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const theme = currentTheme();
-    drawPlot(ctx, w, h, this.result, {
+    drawPlot(ctx, w, h, result, {
       theme: plotThemeFrom(theme),
       legendBackground: theme.plotLegendBackground,
-      styles: this.seriesStyles,
+      styles: styled,
       view: {
         xMin: view.xMin,
         xMax: view.xMax,
@@ -2831,6 +2926,194 @@ export class ModelicaStudioView extends ItemView {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text, w / 2, h / 2);
+  }
+
+  /**
+   * Say what is wrong with the model without running it.
+   *
+   * Two answers, in one report: the connectivity check, which is static and
+   * instant and describes the DRAWING, and the compiler's own diagnostics, which
+   * are authoritative about everything else — a parameter with no value, a
+   * variable with no equation, a unit that does not add up. Neither replaces the
+   * other, and the second is what a person reaches for a compiler to get.
+   *
+   * Compiling is not simulating: no integration, and the built model is kept for
+   * the next run, so asking is nearly free.
+   */
+  async checkModel(): Promise<void> {
+    const source = this.plugin.sourceForSave();
+    const findings = lintModel(source, {
+      isComponent: (name) => this.plugin.library.component(name) !== undefined,
+    });
+    const backend = this.plugin.backend;
+    if (!backend) {
+      new TextModal(this.app, "Check", formatLint(findings)).open();
+      this.plugin.showSetupHelp();
+      return;
+    }
+    this.setStatus("Checking…");
+    let diagnostics: Array<{ severity: string; message: string; line?: number }> = [];
+    let checked = false;
+    try {
+      const outcome = await backend.compile({
+        modelName: this.plugin.model.name,
+        source,
+        parameters: collectParameters(this.plugin.model),
+        startTime: this.plugin.settings.startTime,
+        stopTime: this.plugin.stopTime(),
+        numberOfIntervals: this.plugin.settings.numberOfIntervals,
+        tolerance: this.plugin.settings.tolerance,
+        solver: this.plugin.settings.solver || undefined,
+      });
+      diagnostics = outcome.diagnostics;
+      checked = outcome.ok;
+      this.setStatus(outcome.ok ? "Check: compiles" : "Check: the compiler reported errors");
+    } catch (err) {
+      this.setStatus("Check failed");
+      new TextModal(
+        this.app,
+        "Check",
+        `${formatLint(findings)}\n\nthe compiler could not be asked: ${
+          err instanceof Error ? err.message : err
+        }`
+      ).open();
+      return;
+    }
+    new TextModal(this.app, "Check", formatLint(findings, diagnostics, checked)).open();
+  }
+
+  /**
+   * Run the model once per value of one parameter, and draw them together.
+   *
+   * Sequentially, because the compiler is the expensive part and running four of
+   * them at once on the same model name would have them fight over the build
+   * directory. Each result is kept, so the family survives changing which traces
+   * are visible.
+   */
+  async runSweep(parameter: string, valuesText: string, opts: { silent?: boolean } = {}): Promise<void> {
+    const values = parseSweepValues(valuesText);
+    if (this.busy || !this.plugin.backend || !parameter || values.length === 0) {
+      if (values.length === 0 && !opts.silent) {
+        new Notice("Modelica: give the sweep some values, e.g. 100, 200, 400 or 100:50:400.");
+      }
+      return;
+    }
+    this.flushEditorIntoModel();
+    this.busy = true;
+    const source = serializeDiagram(this.plugin.model);
+    const base = collectParameters(this.plugin.model);
+    const runs: FamilyRun[] = [];
+    try {
+      for (const [i, value] of values.entries()) {
+        this.setStatus(`Sweeping ${parameter}=${value} (${i + 1} of ${values.length})…`);
+        const result = await this.plugin.backend.simulate({
+          modelName: this.plugin.model.name,
+          source,
+          parameters: { ...base, [parameter]: String(value) },
+          startTime: this.plugin.settings.startTime,
+          stopTime: this.plugin.stopTime(),
+          numberOfIntervals: this.plugin.settings.numberOfIntervals,
+          tolerance: this.plugin.settings.tolerance,
+          solver: this.plugin.settings.solver || undefined,
+        });
+        runs.push({ label: `${parameter}=${value}`, result });
+      }
+    } catch (err) {
+      this.setStatus("Sweep failed");
+      new Notice(`Modelica: the sweep stopped — ${err instanceof Error ? err.message : err}`);
+      this.busy = false;
+      return;
+    }
+    this.busy = false;
+    // The last run becomes the current one, so the cursor, the trace list and the
+    // inspector all describe something real; the rest are drawn behind it.
+    const last = runs.pop();
+    if (last) this.result = last.result;
+    this.family = runs;
+    // The traces are chosen by the ONE seeder, exactly as a single run chooses
+    // them: a second rule here would override it, which is the fault the seeding
+    // invariant exists for (a sweep of a 25-variable model would draw all 25).
+    if (this.result) {
+      const preferred = findExample(this.plugin.model.name)?.series ?? [];
+      const wanted = preferred.length
+        ? preferred.filter((n) => this.result!.series.some((s) => s.name === n))
+        : defaultSeriesNames(this.result, 4);
+      this.seedVisible(
+        wanted.length ? wanted : defaultSeriesNames(this.result, 8),
+        this.result.series.map((s) => s.name).join("|")
+      );
+    }
+    this.drawResults();
+    this.renderPlotPane();
+    this.setStatus(`Swept ${parameter} over ${values.length} values`);
+    this.plugin.diag(`sweep ${this.plugin.model.name}: ${parameter} = ${values.join(", ")}`);
+  }
+
+  /** Keep the run on screen, dashed, so the next one can be compared with it. */
+  private keepAsBefore(): void {
+    if (!this.result) return;
+    this.family = [...this.family, { label: "before", result: this.result, before: true }];
+    this.drawResults();
+    this.renderPlotPane();
+    this.setStatus("Kept the current run as \"before\" — run again to compare");
+  }
+
+  /** The canvas holding the result the user is looking at. */
+  private visiblePlot(): HTMLCanvasElement | undefined {
+    return this.fullCanvas ?? this.plotCanvas ?? undefined;
+  }
+
+  /** Copy the visible plot into the clipboard as a PNG. */
+  async copyFigure(): Promise<void> {
+    const canvas = this.visiblePlot();
+    if (!canvas) return;
+    await copyCanvasImage(canvas, "the plot");
+  }
+
+  /** Save the visible plot beside the note, and link it there. */
+  async saveFigure(): Promise<void> {
+    const canvas = this.visiblePlot();
+    if (!canvas) return;
+    const path = await saveCanvasImage(
+      this.app,
+      canvas,
+      this.plugin.model.name,
+      this.plugin.settings.modelFolder
+    );
+    if (path) linkFigure(path, this.activeNoteEditor());
+  }
+
+  /** The editor of the note in front of the user, if a note is open. */
+  private activeNoteEditor(): { replaceSelection(text: string): void } | undefined {
+    const active = this.app.workspace.activeEditor;
+    if (active?.editor) return active.editor;
+    return this.app.workspace.getActiveViewOfType(MarkdownView)?.editor ?? undefined;
+  }
+
+  /** Copy the DIAGRAM as a PNG, for a note or a slide about the model itself. */
+  async copyDiagramFigure(): Promise<void> {
+    const canvas = this.editor?.canvasEl;
+    if (!canvas) {
+      new Notice("Modelica: there is no diagram to copy.");
+      return;
+    }
+    await copyCanvasImage(canvas, "the diagram");
+  }
+
+  /** Save the diagram beside the note, and link it there. */
+  async saveDiagramFigure(): Promise<void> {
+    const canvas = this.editor?.canvasEl;
+    if (!canvas) {
+      new Notice("Modelica: there is no diagram to save.");
+      return;
+    }
+    const path = await saveCanvasImage(
+      this.app,
+      canvas,
+      this.plugin.model.name,
+      this.plugin.settings.modelFolder
+    );
+    if (path) linkFigure(path, this.activeNoteEditor());
   }
 
   /**

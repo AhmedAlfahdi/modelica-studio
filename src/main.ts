@@ -1022,6 +1022,39 @@ export default class ModelicaStudioPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "check-model",
+      name: "Check the current model",
+      checkCallback: (checking) => {
+        const view = this.getView();
+        if (!view) return false;
+        if (!checking) void view.checkModel();
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "copy-diagram-image",
+      name: "Copy the diagram as an image",
+      checkCallback: (checking) => {
+        const view = this.getView();
+        if (!view) return false;
+        if (!checking) void view.copyDiagramFigure();
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "save-diagram-image",
+      name: "Save the diagram as an image",
+      checkCallback: (checking) => {
+        const view = this.getView();
+        if (!view) return false;
+        if (!checking) void view.saveDiagramFigure();
+        return true;
+      },
+    });
+
+    this.addCommand({
       id: "embed-simulation",
       name: "Embed a simulation in the current note",
       callback: () => this.embedIntoNote(),

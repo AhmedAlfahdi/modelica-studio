@@ -38,7 +38,17 @@ fs.writeFileSync(
 );
 fs.writeFileSync(
   path.join(pkgDir, "index.js"),
-  "export class Notice { constructor(m) { this.message = m; } }\nexport class App {}\nexport class TFile {}\n"
+  [
+    "export class Notice { constructor(m) { this.message = m; } }",
+    "export class App {}",
+    "export class TFile {}",
+    "export function setIcon() {}",
+    "export class MarkdownView {}",
+    "export class Modal {}",
+    "export class Setting {}",
+    "export class WorkspaceLeaf {}",
+    "",
+  ].join("\n")
 );
 const { parseEmbedOptions, replaceFencedBlock } = await import(path.join(staging, "embed.js"));
 const { parseDirective } = await import(path.join(staging, "embed.js"));

@@ -13,7 +13,7 @@
  * drifting apart.
  */
 
-import { Notice, type App } from "obsidian";
+import { Notice, setIcon, type App } from "obsidian";
 import type ModelicaStudioPlugin from "../main";
 import { SchematicEditor } from "./editor";
 import {
@@ -28,6 +28,7 @@ import {
 import { currentTheme } from "../render/theme";
 import { parseModelica, findClass, toDiagramModel } from "../modelica/parser";
 import type { ComponentInstance } from "../modelica/types";
+import { copyCanvasImage } from "./figure";
 import { serializeDiagram } from "../modelica/serializer";
 import { DirectiveOptions, withDirective } from "./modelica-lang";
 import { EXAMPLES, findExample } from "../modelica/examples";
@@ -414,6 +415,12 @@ export class EmbeddedDiagram {
     open.createSpan({ text: "Open diagram" });
     open.addEventListener("click", () => this.host.openDiagram?.(this.source));
     button("Fit", "", () => this.editor?.scheduleFit());
+    // The figure, from the block: what a note about a result usually wants next
+    // to the words about it, without opening the studio.
+    const picture = toolbar.createEl("button", { cls: "modelica-studio-btn" });
+    setIcon(picture, "camera");
+    picture.setAttr("aria-label", "Copy the visible pane as a PNG");
+    picture.addEventListener("click", () => void this.copyFigure());
     // The pane shows either the plot or the diagram, so this swaps between them.
     // "Hide plot" named only half of that: pressing it also brings the diagram
     // back, which is not what a button labelled "hide" leads one to expect.
@@ -948,6 +955,16 @@ export class EmbeddedDiagram {
     this.cursorX = undefined;
     this.drawPlot();
   };
+
+  /** Copy whichever pane is showing as a PNG. */
+  private async copyFigure(): Promise<void> {
+    const canvas = this.opts.showPlot ? this.plotCanvas : this.editor?.canvasEl;
+    if (!canvas) {
+      new Notice("Modelica: there is nothing drawn to copy yet.");
+      return;
+    }
+    await copyCanvasImage(canvas, this.opts.showPlot ? "the plot" : "the diagram");
+  }
 
   /** Repaint after a settings change that the diagram reads while drawing. */
   refreshDiagram(): void {
