@@ -5,6 +5,37 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.2] — 2026-10-14
+
+### Fixed
+
+- **A component dropped from the palette landed at the mirrored height.** Reported
+  as "it doesn't drop where my mouse is — there is a y offset", and the cause was a
+  second copy of the client-to-diagram arithmetic: the studio computed
+  `(py - vp.y) / vp.scale` where the canvas uses `(py - t.y) / t.yScale`, and
+  `yScale` is NEGATIVE because Modelica's +y is up. A drop therefore landed off by
+  **twice its distance from the viewport origin** — 100px on screen for a drop 100px
+  above centre at 100% zoom, and upside down. The studio's copy also ignored the
+  canvas's CSS-to-internal scale, a second source of offset when the pane is not the
+  canvas's own size.
+
+  The mapping is now public on the canvas (`toDiagram`, and `viewCentre` for callers
+  with no pointer event), and **all three** studio copies are gone: the drop, the
+  palette's Enter, and the palette's double-click. Those last two place at the centre
+  of the view, where the error is nearly zero — which is why only the drag was ever
+  reported, and why the same fault had been sitting in the other two unnoticed.
+
+  `sceneTransform`'s own comment had named this failure mode before it happened: *"a
+  sign that lived in two places is exactly how the drawing and the clicking came
+  apart before."*
+
+  The test measures the mapping as one thing — a known canvas box, a CSS box half its
+  size, and a viewport — and requires a point above the origin to come out POSITIVE,
+  then adds a component through the same call the studio makes and checks it lands on
+  the pointer within one grid step. Reverting the y flip fails it. A contract test
+  keeps a fourth copy from appearing: the studio must call `toDiagram`/`viewCentre`
+  and must contain no `- vp.y) / vp.scale` arithmetic.
+
 ## [0.3.1] — 2026-10-14
 
 ### Changed

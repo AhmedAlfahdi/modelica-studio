@@ -1781,15 +1781,11 @@ export class ModelicaStudioView extends ItemView {
     // Placing from the keyboard needs a canvas position; the centre of the
     // visible area is the least surprising one.
     const placeFromKeyboard = () => {
-      const vp = this.editor?.viewport;
-      if (!vp || !this.editor) return;
-      const w = this.canvasHost?.clientWidth ?? 0;
-      const h = this.canvasHost?.clientHeight ?? 0;
-      const inst = this.editor.addComponent(
-        item.name,
-        (w / 2 - vp.x) / vp.scale,
-        (h / 2 - vp.y) / vp.scale
-      );
+      const ed = this.editor;
+      if (!ed) return;
+      // The view's centre, through the canvas's own transform — see `viewCentre`.
+      const [cx, cy] = ed.viewCentre();
+      const inst = ed.addComponent(item.name, cx, cy);
       if (inst) this.setStatus(`Added ${inst.id}.`);
     };
     btn.addEventListener("keydown", (ev) => {
@@ -1857,8 +1853,7 @@ export class ModelicaStudioView extends ItemView {
     btn.addEventListener("dblclick", () => {
       const ed = this.editor;
       if (!ed) return;
-      const cx = (ed.canvasRect.width / 2 - ed.viewport.x) / ed.viewport.scale;
-      const cy = (ed.canvasRect.height / 2 - ed.viewport.y) / ed.viewport.scale;
+      const [cx, cy] = ed.viewCentre();
       ed.addComponent(item.name, cx, cy);
     });
   }
@@ -1949,12 +1944,10 @@ export class ModelicaStudioView extends ItemView {
         ev.dataTransfer?.getData("text/modelica-class") ||
         ev.dataTransfer?.getData("text/plain");
       if (!className || !this.editor) return;
-      const rect = host.getBoundingClientRect();
-      const px = ev.clientX - rect.left;
-      const py = ev.clientY - rect.top;
-      const vp = this.editor.viewport;
-      const dx = (px - vp.x) / vp.scale;
-      const dy = (py - vp.y) / vp.scale;
+      // Through the canvas's own mapping, so the symbol lands under the pointer:
+      // the y axis is mirrored (Modelica's +y is up), and that sign lives in
+      // `sceneTransform` alone.
+      const [dx, dy] = this.editor.toDiagram(ev);
       const inst = this.editor.addComponent(className, dx, dy);
       if (inst) this.setStatus(`Added ${inst.id}.`);
     });

@@ -638,10 +638,34 @@ export class SchematicEditor {
     return [(ev.clientX - rect.left) * sx, (ev.clientY - rect.top) * sy];
   }
 
-  private toDiagram(ev: { clientX: number; clientY: number }): [number, number] {
+  /**
+   * The diagram point under a pointer event — THE client-to-diagram mapping.
+   *
+   * Public because callers outside the canvas need it: a component dropped from the
+   * palette has to land under the pointer. Three copies of this arithmetic had grown
+   * in the studio, and all three omitted the y flip that `sceneTransform` exists to
+   * hold in one place — `(py - vp.y) / vp.scale` instead of `(py - t.y) / t.yScale`.
+   * A drop therefore landed at the MIRRORED height, off by twice its distance from
+   * the viewport origin: visibly wrong for a drag anywhere off-centre, and nearly
+   * invisible for the two callers that place at the view's centre, which is why only
+   * the drag was reported.
+   */
+  toDiagram(ev: { clientX: number; clientY: number }): [number, number] {
     const [px, py] = this.pointerLocal(ev);
     const t = this.sceneTransform();
     return [(px - t.x) / t.scale, (py - t.y) / t.yScale];
+  }
+
+  /**
+   * The diagram point at the middle of the canvas.
+   *
+   * The same transform as `toDiagram`, for callers with no pointer event: the
+   * palette's Enter and double-click place a component "in the middle of the view",
+   * and computing that by hand is how the third copy of the arithmetic appeared.
+   */
+  viewCentre(): [number, number] {
+    const t = this.sceneTransform();
+    return [(this.cssWidth / 2 - t.x) / t.scale, (this.cssHeight / 2 - t.y) / t.yScale];
   }
 
   /* ---------------- pointer handling ---------------- */

@@ -472,3 +472,25 @@ test("turning the component names off reaches both surfaces that draw them", () 
   const merge = fs.readFileSync(path.join(repoRoot, "src/settings-merge.ts"), "utf8");
   assert.match(merge, /^\s+showInstanceLabels: true,/m, "the setting is declared, on by default");
 });
+
+test("placing a component goes through the canvas's own coordinate mapping", () => {
+  // Three copies of the client-to-diagram arithmetic had grown in the studio, and
+  // all three omitted the y flip that `sceneTransform` exists to hold in one place:
+  // a component dropped from the palette landed at the mirrored height, off by twice
+  // its distance from the viewport origin. The drag was reported; the palette's Enter
+  // and double-click had the same fault and place at the view's centre, where the
+  // error is nearly zero, so nobody saw it.
+  const studio = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  assert.match(studio, /this\.editor\.toDiagram\(ev\)/, "a drop uses the canvas's mapping");
+  assert.match(studio, /ed\.viewCentre\(\)/, "and the palette places at the view centre through it");
+  assert.doesNotMatch(
+    studio,
+    /-\s*vp\.y\)\s*\/\s*vp\.scale/,
+    "no hand-rolled conversion survives in the studio"
+  );
+  assert.doesNotMatch(studio, /-\s*ed\.viewport\.y\)\s*\/\s*ed\.viewport\.scale/, "in any spelling");
+  const editor = fs.readFileSync(path.join(repoRoot, "src/view/editor.ts"), "utf8");
+  assert.match(editor, /toDiagram\(ev: \{ clientX: number; clientY: number \}\): \[number, number\] \{/,
+    "the mapping is public, so callers outside the canvas can use it instead of copying it");
+  assert.match(editor, /viewCentre\(\): \[number, number\] \{/, "and so is the view centre");
+});

@@ -1329,6 +1329,87 @@ test("the wire-thickness setting reaches the drawing, and the click area", () =>
   editor.destroy();
 });
 
+test("a component dropped from the palette lands under the pointer", () => {
+  // Reported: "when I drop a component from the palette, it doesn't drop where my
+  // mouse is — there is a y offset". The studio had its own copy of the
+  // client-to-diagram arithmetic and it omitted the y flip, so a drop landed at the
+  // MIRRORED height: off by twice its distance from the viewport origin, and upside
+  // down. The mapping belongs to the canvas, and this measures it as one.
+  const { editor } = makeEditor();
+  const canvas = canvasOf(editor);
+  layoutTo(canvas, 900, 600);
+  editor.resize();
+
+  // A canvas whose CSS box is half its internal size, so the CSS-to-internal scale
+  // is exercised too: `pointerLocal` divides by it, and the studio's copy ignored it.
+  const rect = { left: 40, top: 90, width: 450, height: 300 };
+  canvas.getBoundingClientRect = () => ({ ...rect, right: rect.left + rect.width, bottom: rect.top + rect.height });
+  editor.viewport.scale = 2;
+  editor.viewport.x = 400;
+  editor.viewport.y = 200;
+
+  // Where a client point should land, worked out from the same three facts the
+  // drawing uses: the canvas box, the CSS scale, and +y pointing UP.
+  const expect = (clientX, clientY) => [
+    ((clientX - rect.left) * (900 / rect.width) - 400) / 2,
+    ((clientY - rect.top) * (600 / rect.height) - 200) / -2,
+  ];
+
+  const points = [
+    [rect.left + 100, rect.top + 60],
+    [rect.left + 225, rect.top + 150],
+    [rect.left + 400, rect.top + 260],
+  ];
+  const wrong = [];
+  for (const [cx, cy] of points) {
+    const [dx, dy] = editor.toDiagram({ clientX: cx, clientY: cy });
+    const [ex, ey] = expect(cx, cy);
+    if (Math.abs(dx - ex) > 0.01 || Math.abs(dy - ey) > 0.01) {
+      wrong.push(`(${cx},${cy}) -> (${dx.toFixed(1)},${dy.toFixed(1)}) instead of (${ex.toFixed(1)},${ey.toFixed(1)})`);
+    }
+  }
+  assert.deepEqual(wrong, [], "the mapping is the drawing's, mirrored y included");
+
+  // And the point ABOVE the viewport origin must come out POSITIVE, which is the
+  // sign the studio's copy had backwards. Stated separately because it is the whole
+  // bug: everything else can be right while this is inverted.
+  // 40 CSS px below the box top is 80 internal px, against a viewport origin at 200:
+  // i.e. 120 internal px ABOVE the origin, which is +60 diagram units.
+  const above = editor.toDiagram({ clientX: rect.left + 225, clientY: rect.top + 40 });
+  assert.ok(
+    above[1] > 0,
+    `a point above the viewport origin is a positive diagram y, got ${above[1].toFixed(1)}`
+  );
+
+  // A real drop, through the same call the studio makes: the component's centre
+  // lands on the pointer, up to the grid it snaps to.
+  const [dx, dy] = editor.toDiagram({ clientX: rect.left + 300, clientY: rect.top + 120 });
+  // Whatever class the fixture's lookup can resolve.
+  const className = editor.model.components[0].className;
+  const inst = editor.addComponent(className, dx, dy);
+  assert.ok(inst, "the component was added");
+  const [x1, y1, x2, y2] = inst.placement.extent;
+  const cxs = (x1 + x2) / 2;
+  const cys = (y1 + y2) / 2;
+  const GRID = 10;
+  assert.ok(
+    Math.abs(cxs - dx) <= GRID && Math.abs(cys - dy) <= GRID,
+    `the symbol is at the pointer, within one grid step (dropped ${dx.toFixed(1)},${dy.toFixed(1)}; ` +
+      `placed ${cxs},${cys})`
+  );
+  // Not merely close: on the same side of the origin, which a mirrored placement is not.
+  assert.equal(Math.sign(cys), Math.sign(dy) || Math.sign(cys), `placed above/below as dropped (${cys} vs ${dy.toFixed(1)})`);
+
+  // The view centre uses the same transform, and is what the palette's Enter and
+  // double-click place at.
+  const [vcx, vcy] = editor.viewCentre();
+  assert.ok(
+    Math.abs(vcx - (900 / 2 - 400) / 2) < 0.01 && Math.abs(vcy - (600 / 2 - 200) / -2) < 0.01,
+    `the view centre is the middle of the canvas (${vcx.toFixed(1)},${vcy.toFixed(1)})`
+  );
+  editor.destroy();
+});
+
 test("every committed edit asks for a repaint", () => {
   // Reported: rotating with R "lags more than a second". The model changed at
   // once; the CANVAS did not, because rotation was the one edit that neither
