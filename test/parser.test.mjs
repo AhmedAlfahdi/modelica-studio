@@ -924,3 +924,55 @@ end M;`;
   const comp = pkg.nested[0].components.find((c) => c.name === "x");
   assert.equal(comp.modifiers !== undefined, true, "and the declaration still parses");
 });
+
+test("DynamicSelect is read as the editing value, and written back whole", () => {
+  // MLS §18.6.4: `DynamicSelect(editing, other)` — the FIRST argument is the value
+  // for the editing state and must be a literal; the second is what a tool shows
+  // while a simulation runs. A diagram in an editor is the editing state.
+  //
+  // Every other function call in an annotation is summarised as `name(...)`, which
+  // is right for those. Doing it to this one meant MSL's tank parsed its water
+  // rectangle as the STRING "DynamicSelect(...)" where a numeric extent was
+  // required — so the graphic was dropped and the tank drew empty — and its level
+  // text drew the source of the annotation instead of a value. The annotation
+  // below is OpenTank's, verbatim.
+  const src = `model Tank
+  parameter Real level_start = 2.5;
+  parameter Real height = 3.0;
+  annotation (Icon(graphics={
+    Rectangle(
+      extent=DynamicSelect({{-100,-100},{100,10}}, {{-100,-100},{100,(-100 + 200*level/height)}}),
+      fillColor=DynamicSelect({85,170,255}, if overflow then {255,0,0} else {85,170,255}),
+      fillPattern=FillPattern.VerticalCylinder),
+    Text(extent={{-95,-24},{95,-44}},
+         textString=DynamicSelect("%level_start", String(level, significantDigits=2)))}));
+end Tank;`;
+  const cls = findClass(parseModelica(src), "Tank");
+  const [water, text] = cls.icon;
+  assert.equal(cls.icon.length, 2, `both graphics parse (${cls.icon.length})`);
+
+  // The editing values, which is what the diagram draws.
+  assert.deepEqual(water.extent, [-100, -100, 100, 10], "the water rectangle has the editing extent");
+  assert.deepEqual(water.fillColor, [85, 170, 255], "and the editing colour");
+  assert.equal(text.textString, "%level_start", "the level text is the editing literal, not the call");
+
+  // The calls themselves, kept so a SAVE writes the animation back rather than
+  // leaving a constant in the user's own source.
+  assert.equal(water.dynamic?.extent.editing, "{{-100,-100},{100,10}}");
+  assert.match(water.dynamic?.extent.other ?? "", /-100 \+ 200\*level\/height/, "with the animated argument");
+  assert.equal(text.dynamic?.textString.editing, '"%level_start"');
+
+  const back = serializerMod.serializeGraphic(water);
+  assert.match(back, /extent=DynamicSelect\(\{\{-100,-100\},\{100,10\}\}/, "serializing writes the call back");
+  assert.match(back, /200\*level\/height/, "with both arguments");
+  assert.match(
+    serializerMod.serializeGraphic(text),
+    /textString=DynamicSelect\("%level_start", String\(/,
+    "and the same for text"
+  );
+  assert.match(
+    serializerMod.serializeGraphic(water),
+    /fillColor=DynamicSelect\(\{85,170,255\}, if overflow then \{255,0,0\}/,
+    "a colour can be dynamic too"
+  );
+});

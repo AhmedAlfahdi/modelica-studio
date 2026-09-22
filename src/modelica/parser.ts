@@ -1237,7 +1237,10 @@ class Parser {
    * `parseAnnotationBody` where they can be interpreted as layers/placement
    * rather than as opaque values.
    */
-  private parseArgumentListRaw(): Record<string, unknown> {
+  private parseArgumentListRaw(
+    /** Filled with any `DynamicSelect` calls found, by attribute name. */
+    dynamic?: Record<string, { editing: string; other: string }>
+  ): Record<string, unknown> {
     const out: Record<string, unknown> = {};
     while (!this.isEof() && !this.at(")")) {
       if (this.at(",")) {
@@ -1267,8 +1270,9 @@ class Parser {
       // A graphic primitive written with `=`: `Rectangle(extent=...)`.
       if (GRAPHIC_KINDS.has(key) && this.at("(") && !this.at("=")) {
         this.next();
-        const args = this.parseArgumentListRaw();
-        const g = buildGraphic(key, args);
+        const dyn: Record<string, { editing: string; other: string }> = {};
+        const args = this.parseArgumentListRaw(dyn);
+        const g = buildGraphic(key, args, dyn);
         if (g) out[key] = g;
         continue;
       }
@@ -1281,7 +1285,15 @@ class Parser {
       }
       if (this.at("=")) {
         this.next();
-        out[key] = this.parseValue();
+        const value = this.parseValue();
+        if (isDynamic(value)) {
+          // The EDITING value is what the diagram draws; the call itself is kept
+          // beside the arguments so the serializer can put it back verbatim.
+          out[key] = value.editing;
+          (dynamic ??= {})[key] = { editing: value.editingText, other: value.other };
+          continue;
+        }
+        out[key] = value;
         continue;
       }
       // A bare name with nothing after it: `annotation (Dialog)` marks a
@@ -1324,6 +1336,57 @@ class Parser {
   }
 
   /** Parse a value, falling back to raw text for anything unrecognised. */
+  /**
+   * `DynamicSelect(editing, other)`.
+   *
+   * Returns the EDITING value — the first argument, which the specification
+   * requires to be a literal — wrapped so the attribute reader can also record
+   * the source text of both arguments. The wrapper never reaches a graphic: the
+   * reader unwraps it and stores the call beside the value, for the serializer.
+   */
+  private parseDynamicSelect(): DynamicArgument {
+    this.next(); // '('
+    const editingStart = this.peek().start;
+    const editing = this.parseValue();
+    const editingText = this.sourceSlice(editingStart, this.peek().start).replace(/,\s*$/, "").trim();
+    let other = "";
+    if (this.at(",")) {
+      this.next();
+      const otherStart = this.peek().start;
+      this.skipToCloseParen();
+      other = this.sourceSlice(otherStart, this.closedAt).trim();
+    } else {
+      this.eat(")");
+    }
+    return { editing, editingText, other };
+  }
+
+  /**
+   * Consume up to and including the `)` that closes the current group.
+   *
+   * `closedAt` records where that `)` started, so the caller can take the source
+   * text of everything before it without re-scanning.
+   */
+  private skipToCloseParen(): void {
+    let depth = 0;
+    while (!this.isEof()) {
+      const t = this.peek();
+      if (t.value === "(" || t.value === "[" || t.value === "{") depth++;
+      else if (t.value === ")" || t.value === "]" || t.value === "}") {
+        if (depth === 0 && t.value === ")") {
+          this.closedAt = t.start;
+          this.next();
+          return;
+        }
+        depth--;
+      }
+      this.next();
+    }
+    this.closedAt = this.peek().start;
+  }
+
+  private closedAt = 0;
+
   private parseValue(): unknown {
     const t = this.peek();
     const result = this.parseValueInner();
@@ -1426,7 +1489,21 @@ class Parser {
         name += "." + this.next().value;
       }
       if (this.at("(")) {
-        // Function call — treat as raw expression
+        // `DynamicSelect(editing, other)` is the one call in a graphical
+        // annotation whose VALUE matters: MLS §18.6.4 defines the first argument
+        // as the value for the editing state and the second as the value while a
+        // simulation runs. A diagram in an editor is the editing state, so the
+        // first argument is what is drawn.
+        //
+        // Summarising it as `name(...)` — which is right for every other call —
+        // meant the tank's water rectangle parsed as the STRING "DynamicSelect(...)"
+        // where a numeric extent was required, so the graphic was dropped and the
+        // tank drew empty; and its level text drew the source of the annotation
+        // instead of the value. 106 annotations in MSL 4.1.0 are written this way.
+        if (name === "DynamicSelect") {
+          return this.parseDynamicSelect();
+        }
+        // Any other function call — treat as raw expression
         this.skipBalancedParens();
         return name + "(...)";
       }
@@ -1489,8 +1566,9 @@ class Parser {
       ) {
         const kind = this.next().value;
         this.next(); // '('
-        const args = this.parseArgumentListRaw();
-        const g = buildGraphic(kind, args);
+        const dyn: Record<string, { editing: string; other: string }> = {};
+        const args = this.parseArgumentListRaw(dyn);
+        const g = buildGraphic(kind, args, dyn);
         if (g) out.push(g);
         continue;
       }
@@ -1506,6 +1584,22 @@ class Parser {
 
 /** Sentinel returned by parseValueInner when it cannot interpret the input. */
 const UNPARSED = Symbol("unparsed");
+
+/**
+ * A value that arrived as `DynamicSelect(editing, other)`.
+ *
+ * `editing` is what a diagram draws; the two source texts are kept so a save can
+ * write the call back as it was written (see `Graphic.dynamic`).
+ */
+interface DynamicArgument {
+  editing: unknown;
+  editingText: string;
+  other: string;
+}
+
+function isDynamic(v: unknown): v is DynamicArgument {
+  return !!v && typeof v === "object" && "editing" in (v as object) && "editingText" in (v as object);
+}
 
 /** The six Modelica graphical primitives (MLS §18.6.5). */
 const GRAPHIC_KINDS = new Set([
@@ -1606,8 +1700,16 @@ function asExtent(v: unknown): [number, number, number, number] | undefined {
   return [f[0], f[1], f[2], f[3]];
 }
 
-function buildGraphic(kind: string, a: Record<string, unknown>): Graphic | null {
+function buildGraphic(
+  kind: string,
+  a: Record<string, unknown>,
+  /** `DynamicSelect` calls found in this primitive's arguments, if any. */
+  dynamic?: Record<string, { editing: string; other: string }>
+): Graphic | null {
   const common = {
+    // Any `DynamicSelect` call this primitive was written with, so a save puts
+    // it back instead of leaving the editing value as a literal.
+    dynamic: dynamic && Object.keys(dynamic).length > 0 ? dynamic : undefined,
     // Kept as parsed: `true`/`false` are booleans, but MSL also writes
     // expressions such as `visible=useHeatPort`. Coercing those with Boolean()
     // makes every conditional graphic visible, which is wrong for the common

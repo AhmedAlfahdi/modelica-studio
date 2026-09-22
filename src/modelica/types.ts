@@ -57,6 +57,16 @@ export interface GraphicCommon {
   pattern?: LinePattern;
   lineThickness?: number;
   smooth?: SmoothKind;
+  /**
+   * Attributes that arrived as `DynamicSelect(editing, other)`, by attribute
+   * name, with the source text of both arguments.
+   *
+   * The parsed value IS the editing argument — that is what a diagram shows — but
+   * the whole call is kept so a save writes it back unchanged. Without it,
+   * serializing a class would leave a literal where the animation was, which is
+   * the user's own source being quietly simplified.
+   */
+  dynamic?: Record<string, { editing: string; other: string }>;
 }
 
 export interface ShapeCommon extends GraphicCommon {

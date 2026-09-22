@@ -5,6 +5,44 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.53] — 2026-10-14
+
+### Fixed
+
+- **`DynamicSelect` is now read, so animated icons draw.** Asked whether the tank
+  showed the right level, and it showed neither a level nor a tank:
+
+  - `Modelica.Fluid.Vessels.OpenTank`'s **water rectangle is declared with**
+    `extent=DynamicSelect(...)`. The parser summarises any function call in an
+    annotation as `name(...)`, which is right for the calls that are only read as
+    text — but here a numeric extent is required, so the graphic was **dropped**
+    and the tank drew empty.
+  - Its **level text** is `textString=DynamicSelect("%level_start", String(level,
+    …))`, and the summary was drawn as the text, so the label read
+    `DynamicSelect(...)` — the annotation's own source.
+
+  MLS §18.6.4 defines the call: the **first** argument is the value for the
+  **editing state** and must be a literal, the second is what a tool shows while a
+  simulation runs. A diagram in an editor *is* the editing state, so the first
+  argument is the value. The tank now draws its water band and reads
+  **`level = 2.5`** — the user's own `level_start`.
+
+  **Saving keeps the animation.** The parsed value is the editing argument, so a
+  round trip would have written a constant where the `DynamicSelect` was — the
+  user's source quietly simplified. Both arguments are captured as they were
+  written and the serializer emits the call again, verbatim.
+
+  106 annotations in MSL 4.1.0 are written this way — the tank's level, valve
+  bodies, the DrumBoiler's fill, the AST batch-plant vessels — and all of them were
+  affected in one of those two ways.
+
+  The live value during a simulation (the second argument) is **not** shown: the
+  plugin draws the editing state and does not animate icons. One library-wide
+  ratchet moved by one as a result — the tank's label is now a `%level_start`
+  macro where it used to be text containing no macro, and it is honestly unknown
+  for the class alone, whose default is the expression `0.5*height` rather than a
+  literal. An instance that sets it, as the example does, shows the number.
+
 ## [0.2.0-beta.52] — 2026-10-14
 
 ### Fixed

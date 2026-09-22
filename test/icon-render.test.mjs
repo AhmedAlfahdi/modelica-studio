@@ -401,7 +401,19 @@ function iconGroupText(slice) {
  * painting a macro. The number is pinned so a change that makes a resolvable
  * parameter unresolvable is noticed rather than absorbed.
  */
-const UNKNOWN_PARAM_BASELINE = 325;
+/**
+ * Labels whose macro names something the CLASS cannot supply, so they show `?`.
+ *
+ * Raised from 325 to 326 when `DynamicSelect` started being read as its editing
+ * argument: `OpenTank` labels its level `DynamicSelect("%level_start", String(level,
+ * …))`, and that label was previously painted as the source text
+ * `"DynamicSelect(...)"` — which contains no macro, so this sweep never looked at
+ * it. Now it is a `%level_start` label like any other, and it is honestly unknown,
+ * because the class declares `level_start` with the expression `0.5*height` rather
+ * than a literal. An INSTANCE that sets it (the example sets 2.5) renders the
+ * value; the sweep has no instance.
+ */
+const UNKNOWN_PARAM_BASELINE = 326;
 
 const UNDER_PARSED_BASELINE = 46;
 
@@ -664,4 +676,44 @@ test("every icon label is legible and stays inside its box", { skip: !MSL && "no
   assert.ok(labels > 500, `the sweep actually ran: ${labels} labels`);
   assert.deepEqual(tiny.slice(0, 10), [], `${tiny.length} labels are illegible or missing`);
   assert.deepEqual(overflow.slice(0, 10), [], `${overflow.length} labels overflow their box`);
+});
+
+test("the tank's level shows the parameter it names", () => {
+  // The end of the same thread, and the question that started it: the tank's
+  // second line used to read "DynamicSelect(...)" — the annotation's own source.
+  // With the editing argument kept, `%level_start` resolves through the ordinary
+  // macro path, so the user's own `level_start = 2.5` is what appears.
+  const src = `model Tank
+  annotation (Icon(graphics={
+    Text(extent={{-95,-24},{95,-44}},
+         textString=DynamicSelect("%level_start", String(level, significantDigits=2)))}));
+end Tank;`;
+  const cls = parserMod.parseModelica(src).find((c) => c.name === "Tank");
+  const def = { name: "Tank", shortName: "Tank", icon: cls.icon, ports: [], parameters: [], hasIcon: true };
+  const texts = [];
+  const ctx = new Proxy(
+    { canvas: { width: 400, height: 400 }, measureText: () => ({ width: 20 }), lineWidth: 1 },
+    {
+      get(t, k) {
+        if (k in t) return t[k];
+        if (k === "fillText") return (s) => texts.push(String(s));
+        return () => {};
+      },
+      set(t, k, v) { t[k] = v; return true; },
+    }
+  );
+  const { drawComponent } = C;
+  drawComponent(
+    ctx,
+    { id: "tank", className: "Tank", placement: { extent: [-100, -100, 100, 100], rotation: 0, visible: true }, params: {} },
+    def,
+    { scale: 1, x: 200, y: 200 },
+    1,
+    { lookup: () => undefined, theme: T.LIGHT, resolveParam: (_i, n) => (n === "level_start" ? "2.5" : undefined) }
+  );
+  assert.ok(texts.includes("2.5"), `the level reads 2.5, got ${JSON.stringify(texts)}`);
+  assert.ok(
+    !texts.some((t) => t.includes("DynamicSelect")),
+    `and the annotation is never drawn as text (${JSON.stringify(texts)})`
+  );
 });

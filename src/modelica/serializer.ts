@@ -65,7 +65,14 @@ function extentStr(e: [number, number, number, number]): string {
 export function serializeGraphic(g: Graphic): string {
   const parts: string[] = [];
   const add = (k: string, v: string | undefined) => {
-    if (v !== undefined) parts.push(`${k}=${v}`);
+    if (v === undefined) return;
+    // An attribute that was written as `DynamicSelect(editing, other)` is written
+    // back as that call. The parsed value is the EDITING argument — see
+    // `Graphic.dynamic` — so emitting it alone would turn an animated attribute
+    // into a constant in the user's own source, which is a silent simplification
+    // of their model rather than a formatting difference.
+    const dyn = g.dynamic?.[k];
+    parts.push(`${k}=${dyn ? `DynamicSelect(${dyn.editing}, ${dyn.other})` : v}`);
   };
 
   // Common properties come first, matching OMEdit's own ordering.
