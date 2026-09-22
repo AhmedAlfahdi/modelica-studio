@@ -1094,6 +1094,57 @@ test("rebuilding the tab does not throw the reader back to the top", async () =>
   );
 });
 
+test("the About panel states the author, the licence and how to cite", async () => {
+  // The About panel is where someone looks to find out what they are allowed to do
+  // with this, and who to credit. Both are read from the metadata rather than typed
+  // into the panel, and a test in checks.test.mjs holds package.json and the licence
+  // file to the same strings — so the panel cannot describe terms the release does
+  // not carry.
+  const out = page(
+    "const plugin = makePlugin(new StubVault(), {});",
+    "plugin.manifest = { id: 'modelica-studio', version: '0.3.0', author: 'Ahmed N. Alfahdi' };",
+    "const modal = new HelpModal(plugin.app, plugin);",
+    "modal.open();",
+    "const panel = Array.from(modal.contentEl.querySelectorAll('.modelica-studio-help-panel')).find((p) => p.textContent.includes('About'));",
+    "window.test('the panel names the version and the author', () => {",
+    "  if (!panel) return 'NO ABOUT PANEL';",
+    "  const text = panel.textContent.replace(/\\s+/g, ' ');",
+    "  return 'version=' + text.includes('0.3.0') + ' author=' + text.includes('Ahmed N. Alfahdi') +",
+    "    ' preBeta=' + /pre-1\\.0/.test(text) + ' saysBeta=' + /\\bbeta\\b/i.test(text);",
+    "});",
+    "window.test('it states the licence and links to the full text', () => {",
+    "  const text = panel.textContent.replace(/\\s+/g, ' ');",
+    "  const buttons = Array.from(panel.querySelectorAll('button')).map((b) => b.textContent);",
+    "  return 'licence=' + text.includes('GPL-3.0-or-later') + ' buttons=' + buttons.join(',');",
+    "});",
+    "window.test('and it asks for citation rather than requiring it', () => {",
+    "  const text = panel.textContent.replace(/\\s+/g, ' ');",
+    "  return 'cites=' + /Citing is a favour/.test(text) + ' demands=' + /(must|required to|shall) cite/i.test(text) +",
+    "    ' whatForks=' + /stay free and keep the notices/.test(text);",
+    "});",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  const d = passed(out);
+
+  assert.equal(
+    d["the panel names the version and the author"],
+    "version=true author=true preBeta=true saysBeta=false",
+    "the version and author come from the manifest, and the wording is pre-1.0 rather than beta — 0.3.0 is the first release not tagged beta"
+  );
+  assert.equal(
+    d["it states the licence and links to the full text"],
+    "licence=true buttons=the full text,open,how",
+    "the licence is named, with the full text, the source and the citation one click away"
+  );
+  assert.equal(
+    d["and it asks for citation rather than requiring it"],
+    "cites=true demands=false whatForks=true",
+    "citation is a favour, and the panel says what a fork must do"
+  );
+});
+
 test("the palette renders, respects exclusions, and can be driven by keyboard", async () => {
   // The palette with exclusions applied was only ever measured by COUNT, never
   // rendered; and it had no keyboard support at all, which matters more now that

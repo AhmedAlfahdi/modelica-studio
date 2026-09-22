@@ -566,4 +566,20 @@ test("the licence and citation metadata agree with each other", () => {
 
   // The whole point of the licence: a fork has to stay open and say so.
   assert.match(readme, /Nobody can take it\s+closed|stays free/i, "the README says what a fork must do");
+
+  // The Help window's About panel states the licence to the reader in the
+  // application, which is the one place they can see it without opening the
+  // repository -- so it is held to the same strings as everything else.
+  const help = read("src/view/help-modal.ts");
+  assert.match(
+    help,
+    /export const PLUGIN_LICENSE = "GPL-3\.0-or-later";/,
+    "the About panel names the same licence as package.json"
+  );
+  assert.match(
+    help,
+    /this\.plugin\.manifest\.author/,
+    "and reads the author from the manifest rather than repeating it"
+  );
+  assert.match(help, /CITATION\.cff/, "with a link to the citation file");
 });

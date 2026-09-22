@@ -5,6 +5,31 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.1] — 2026-10-14
+
+### Changed
+
+- **The About panel in the Help window now says who made this, what it may be used
+  under, and how to cite it.** It showed the version and the word "beta" and nothing
+  else — thin for the one place in the application where a reader can find out their
+  obligations without opening the repository.
+
+  It now states the author (read from `manifest.json`, so the store listing, the
+  panel and the copyright notice cannot disagree), the licence with a link to its
+  full text, the source repository, and how to cite — followed by one paragraph on
+  what the licence gives and asks: use it for anything, a version you distribute
+  stays free and keeps the notices, and citing is a favour rather than a condition.
+
+  The wording is "pre-1.0, and experimental" rather than "beta", which stopped being
+  true at 0.3.0 — the first release not tagged beta — and the README had already
+  been changed to say the same.
+
+  `PLUGIN_LICENSE` is stated once in the Help module and held equal to
+  `package.json` by a test, because the panel is where a reader reads their terms and
+  a panel that describes terms the release does not carry is worse than a blank one.
+  The panel's three claims are each falsified: claiming MIT, typing an author into
+  the panel instead of reading the manifest, and writing "you must cite".
+
 ## [0.3.0] — 2026-10-14
 
 The first release that is not tagged beta. **The code is beta.58's** — no drawing,

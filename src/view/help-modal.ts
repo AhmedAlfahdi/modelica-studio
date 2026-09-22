@@ -25,6 +25,18 @@ import type { Color } from "../modelica/types";
 const mod = Platform.isMacOS ? "Cmd" : "Ctrl";
 
 /**
+ * Where the project lives, and the licence it ships under.
+ *
+ * The licence is not in `manifest.json`, so it is stated here — and a test holds it
+ * equal to `package.json`, which is what npm and GitHub read. The author is NOT
+ * stated here: it is read from the manifest, so the store listing, the About panel
+ * and the copyright notice cannot disagree.
+ */
+export const PLUGIN_REPO = "https://github.com/AhmedAlfahdi/modelica-studio";
+export const PLUGIN_LICENSE = "GPL-3.0-or-later";
+export const PLUGIN_LICENSE_URL = "https://www.gnu.org/licenses/gpl-3.0.html";
+
+/**
  * The connector colours a diagram is actually read through, by domain.
  *
  * `sample` is the class each row is measured from, and a test resolves every one of
@@ -509,9 +521,49 @@ export class HelpModal extends Modal {
     el.createEl("h4", { text: "About" });
     const about = el.createDiv({ cls: "modelica-studio-help-about" });
     about.createSpan({ text: `Modelica Studio ${this.plugin.manifest.version}` });
+    // "pre-1.0" rather than "beta": 0.3.0 is the first version not tagged beta, and
+    // the README says the same. What has not changed is that it is young software.
     about.createSpan({
       cls: "modelica-studio-muted",
-      text: " — beta, and experimental. Models are plain Modelica source; nothing is locked in.",
+      text:
+        " — pre-1.0, and experimental. Models are plain Modelica source; nothing is " +
+        "locked in, and nothing here is required to open them again.",
+    });
+
+    // Who made it, what it may be used under, and how to cite it. Read from the
+    // manifest and the constants above rather than typed twice.
+    const rows = el.createDiv({ cls: "modelica-studio-help-facts" });
+    const aboutRow = (label: string, value: string, link?: { text: string; url: string }) => {
+      const line = rows.createDiv({ cls: "modelica-studio-help-fact" });
+      line.createSpan({ cls: "modelica-studio-help-fact-label", text: label });
+      const cell = line.createSpan({ cls: "modelica-studio-help-fact-value" });
+      cell.createSpan({ text: value });
+      if (link) {
+        const b = cell.createEl("button", { cls: "modelica-studio-btn", text: link.text });
+        b.addEventListener("click", () => openInBrowser(link.url));
+      }
+    };
+    aboutRow("Author", this.plugin.manifest.author ?? "—");
+    aboutRow("Licence", PLUGIN_LICENSE, { text: "the full text", url: PLUGIN_LICENSE_URL });
+    aboutRow("Source", PLUGIN_REPO.replace("https://github.com/", ""), {
+      text: "open",
+      url: PLUGIN_REPO,
+    });
+    aboutRow("Cite it", "Please cite it in published work", {
+      text: "how",
+      url: `${PLUGIN_REPO}/blob/main/CITATION.cff`,
+    });
+
+    el.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "Free software under the GNU General Public License, version 3 or later: use " +
+        "it for anything, including commercially, and change it however you like. A " +
+        "version you distribute has to stay free and keep the notices, so nobody can " +
+        "take it closed, and modified versions have to say they are modified. " +
+        "Citing is a favour asked of you rather than a condition — a citation " +
+        "requirement cannot be part of an open-source licence, and the citation file " +
+        "above gives the exact form.",
     });
   }
 
