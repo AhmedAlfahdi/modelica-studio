@@ -5,6 +5,33 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.46] — 2026-10-14
+
+### Fixed
+
+- **A second value axis had its tick labels painted over by the legend.** Reported
+  from a screenshot: the values down the right-hand edge (`1.1e+5`) sat behind the
+  legend's translucent surface. Both live in the margin right of the frame, and
+  the legend did not know the labels were there — measured at a 700px pane, the
+  values ended at x=611 and the legend began at x=597, a 14px overlap. The right
+  margin now RESERVES the axis label column, the legend starts after it, and its
+  surface is painted from the legend's own edge rather than from a width that only
+  happened to reach the canvas edge.
+- **In a pane too narrow for a legend, the axis values were cut off at the edge.**
+  Found while fixing the above: with no legend the right margin was 14px, so a
+  380px pane drew `0.011` ending at x=403 — off the canvas. The reservation is
+  part of `plotLayout` now, so the pointer-to-time mapping uses the same geometry
+  as the pixels; that is the pair that had already drifted once.
+- Legend names are shortened to the width that is actually left, measured rather
+  than counted in characters, keeping the tail (`…port_a.m_flow`), because a
+  character count that fits one font overflows another. Beside an axis a shortened
+  legend is drawn rather than dropped — the alternative is reaching for the series
+  toggles above the plot, which cover the whole pane.
+
+Each claim is falsified in the tests: reverting the legend's placement reproduces
+the overlap numerically, reverting the margin reservation reproduces the clipping,
+and moving the legend's surface back over the labels fails the surface assertion.
+
 ## [0.2.0-beta.45] — 2026-10-14
 
 ### Changed

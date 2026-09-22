@@ -500,6 +500,193 @@ test("a dashed series is dashed in the legend too", () => {
   assert.ok(dashes.includes("5,4"), `a dashed series gets a dashed swatch, got ${JSON.stringify(dashes)}`);
 });
 
+test("the legend is placed clear of a second axis's values", () => {
+  // Reported from a screenshot: the right-hand axis values (1.1e+5) were painted
+  // over by the legend's surface, because both live in the margin to the right of
+  // the frame and the legend did not know the labels were there.
+  const text = [];
+  const rects = [];
+  let font = "11px sans-serif";
+  const ctx = new Proxy(
+    {
+      canvas: { width: 700, height: 380 },
+      font,
+      fillStyle: "",
+      strokeStyle: "",
+      globalAlpha: 1,
+      textAlign: "",
+      textBaseline: "",
+    },
+    {
+      get(t, k) {
+        if (k in t) return t[k];
+        // A width in proportion to the font size, so a measurement is a real one.
+        if (k === "measureText") {
+          const size = Number(/([0-9.]+)px/.exec(font)?.[1] ?? 11);
+          return (s2) => ({ width: String(s2).length * size * 0.55 });
+        }
+        if (k === "fillText") {
+          return (label, x, y) => text.push({ label: String(label), x, y });
+        }
+        // The legend paints a translucent surface over its strip; that surface is
+        // what actually hid the axis values in the report, so it is recorded too.
+        if (k === "fillRect") {
+          return (x, y, w2, h2) => rects.push({ x, y, w: w2, h: h2, alpha: t.globalAlpha });
+        }
+        return () => {};
+      },
+      set(t, k, v) {
+        if (k === "font") font = String(v);
+        t[k] = v;
+        return true;
+      },
+    }
+  );
+
+  // Pressure in the hundreds of thousands against a flow in hundredths: two
+  // axes, and the second one's labels are six characters wide.
+  const time = [0, 1, 2];
+  const result = {
+    time,
+    series: [
+      { name: "pump.medium.p_bar", values: [1.1e5, 1.2e5, 1.1e5], unit: "Pa" },
+      { name: "pipe.port_a.m_flow", values: [0.011, 0.012, 0.011], unit: "kg/s" },
+    ],
+    compileMs: 1, simulateMs: 1, reusedBinary: true, warnings: [],
+  };
+  const W = 700;
+  plotMod.drawPlot(ctx, W, 380, result, {
+    styles: {},
+    view: { xMin: 0, xMax: 2 },
+    dpr: 1,
+    theme: plotMod.plotThemeFrom(false),
+  });
+
+  // The same layout the drawing used, which now reserves the axis column.
+  const layout = plotMod.layoutForResult(W, 380, result, {});
+  const frameRight = layout.left + layout.width;
+  // The axis values: numbers drawn to the right of the frame.
+  const axis = text.filter((t) => t.x > frameRight && /[0-9]/.test(t.label) && t.label.length <= 8);
+  // The legend: its swatch labels are drawn further right again, or, when there
+  // is no room for both, not at all.
+  // The legend's rows are the only text shortened this way; `fitLabel` marks them
+  // with a leading ellipsis.
+  const legendNames = text.filter((t) => t.label.startsWith("…"));
+  assert.ok(axis.length > 0, `the second axis is labelled (${text.map((t) => t.label).join(" | ")})`);
+
+  const axisRight = Math.max(...axis.map((t) => t.x + t.label.length * 11 * 0.55));
+
+  // The pane in the report: narrow enough that the strip beside the axis is only
+  // about 70px, which is a truncated legend — not none, and not a collision.
+  assert.ok(
+    legendNames.length > 0,
+    `the legend is still drawn beside the axis (${text.map((t) => t.label).join(" | ")})`
+  );
+  const legendLeft = Math.min(...legendNames.map((t) => t.x));
+  assert.ok(
+    legendLeft > axisRight + 2,
+    `the legend starts past the axis values (axis ends at ${axisRight.toFixed(1)}, legend starts at ${legendLeft})`
+  );
+  // The legend's translucent surface must also start past the values: placement
+  // alone is not enough, because the surface is painted AFTER them and would hide
+  // them exactly as the screenshot showed.
+  const surface = rects.filter((r) => r.alpha < 1);
+  assert.ok(surface.length > 0, "the legend paints a surface");
+  for (const r of surface) {
+    assert.ok(
+      r.x > axisRight,
+      `the legend's surface starts past the axis values (surface at ${r.x}, values end at ${axisRight.toFixed(1)})`
+    );
+  }
+
+  // And every name drawn fits inside the canvas: a shortened name that runs off
+  // the edge is the same bug wearing a different hat.
+  for (const t of legendNames) {
+    assert.ok(
+      t.x + t.label.length * 11 * 0.55 <= W,
+      `"${t.label}" fits in the pane (ends at ${(t.x + t.label.length * 11 * 0.55).toFixed(0)} of ${W})`
+    );
+  }
+
+  // In a pane too narrow for a legend the axis values must still fit inside the
+  // canvas: the margin used to be 14px, so they were cut off at the edge.
+  const narrowText = [];
+  const narrowRects = [];
+  const narrowCtx = new Proxy(
+    { canvas: { width: 380, height: 300 }, font, fillStyle: "", strokeStyle: "", globalAlpha: 1, textAlign: "", textBaseline: "" },
+    {
+      get(t, k) {
+        if (k in t) return t[k];
+        if (k === "measureText") {
+          const size = Number(/([0-9.]+)px/.exec(font)?.[1] ?? 11);
+          return (s2) => ({ width: String(s2).length * size * 0.55 });
+        }
+        if (k === "fillText") return (label, x) => narrowText.push({ label: String(label), x });
+        return () => {};
+      },
+      set(t, k, v) {
+        if (k === "font") font = String(v);
+        t[k] = v;
+        return true;
+      },
+    }
+  );
+  plotMod.drawPlot(narrowCtx, 380, 300, result, {
+    styles: {},
+    view: { xMin: 0, xMax: 2 },
+    dpr: 1,
+    theme: plotMod.plotThemeFrom(false),
+  });
+  const narrowFrameRight = plotMod.plotLayout(380, 300, false, plotMod.axisLabelColumnW(
+    plotMod.planAxes
+      ? []
+      : []
+  )).left;
+  void narrowFrameRight;
+  // Every number drawn to the right of the frame has to end inside the canvas.
+  const approx = (t2) => t2.x + t2.label.length * 11 * 0.55;
+  for (const t2 of narrowText.filter((x) => /[0-9]/.test(x.label))) {
+    assert.ok(
+      approx(t2) <= 380,
+      `"${t2.label}" is not cut off in a 380px pane (ends at ${approx(t2).toFixed(0)})`
+    );
+  }
+  void narrowRects;
+
+  // When even a shortened legend would not fit, it is left out rather than drawn
+  // over the values.
+  const tiny = [];
+  const tinyCtx = new Proxy(
+    { canvas: { width: 300, height: 380 }, font, fillStyle: "", strokeStyle: "", globalAlpha: 1, textAlign: "", textBaseline: "" },
+    {
+      get(t, k) {
+        if (k in t) return t[k];
+        if (k === "measureText") {
+          const size = Number(/([0-9.]+)px/.exec(font)?.[1] ?? 11);
+          return (s2) => ({ width: String(s2).length * size * 0.55 });
+        }
+        if (k === "fillText") return (label) => tiny.push(String(label));
+        return () => {};
+      },
+      set(t, k, v) {
+        if (k === "font") font = String(v);
+        t[k] = v;
+        return true;
+      },
+    }
+  );
+  plotMod.drawPlot(tinyCtx, 300, 380, result, {
+    styles: {},
+    view: { xMin: 0, xMax: 2 },
+    dpr: 1,
+    theme: plotMod.plotThemeFrom(false),
+  });
+  assert.ok(
+    !tiny.some((l) => l.startsWith("…") || l.includes("pump") || l.includes("pipe")),
+    `in a 300px pane the legend is left out rather than overlapping (${tiny.join(" | ")})`
+  );
+});
+
 test("a legend names the run on screen as well as the family", () => {
   // Reported from a screenshot: two curves, and no way to tell 10 V from 15 V.
   const rows = [];

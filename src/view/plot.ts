@@ -145,7 +145,12 @@ export interface PlotLayout {
  * series toggles above the plot already serve that purpose, and stealing 120px
  * from a 380px panel would leave an unreadable sliver.
  */
-export function plotLayout(w: number, h: number, showLegend: boolean): PlotLayout {
+export function plotLayout(
+  w: number,
+  h: number,
+  showLegend: boolean,
+  axisLabelW = 0
+): PlotLayout {
   const left = w < 340 ? 46 : 56;
   const top = 12;
   const bottom = 30;
@@ -154,7 +159,10 @@ export function plotLayout(w: number, h: number, showLegend: boolean): PlotLayou
   const legendW = 118;
   const minPlotW = 220;
   const withLegend = showLegend && w - left - legendW - 14 >= minPlotW;
-  const right = withLegend ? legendW + 14 : 14;
+  // The second axis labels its ticks in this margin, so its column is reserved
+  // whether or not there is a legend: without the reservation a narrow pane cut
+  // the values off at the edge of the canvas.
+  const right = 14 + axisLabelW + (withLegend ? legendW : 0);
 
   return {
     left,
@@ -165,6 +173,31 @@ export function plotLayout(w: number, h: number, showLegend: boolean): PlotLayou
     height: Math.max(10, h - top - bottom),
   };
 }
+
+/**
+ * The width the extra value axes need for their tick labels.
+ *
+ * Estimated from the tick strings rather than measured, because the LAYOUT has to
+ * reserve it and the layout is a pure function — the drawing then uses the same
+ * number, so the pixels and the pointer-to-time mapping cannot disagree. Two
+ * characters of slack, because zooming into a narrow range can produce a longer
+ * label than the full range does (`1.1e+5` against `1.15e+5`), and a value cut off
+ * at the edge of a plot is worse than an unused pixel.
+ */
+export function axisLabelColumnW(plans: { min: number; max: number }[]): number {
+  if (plans.length < 2) return 0;
+  let chars = 0;
+  for (const plan of plans.slice(1)) {
+    const span = plan.max - plan.min;
+    for (const v of niceTicks(plan.min, plan.max, span === 0 ? 2 : 5)) {
+      chars = Math.max(chars, formatTick(v).length);
+    }
+  }
+  return chars === 0 ? 0 : Math.ceil((chars + 2) * CHAR_W) + 12;
+}
+
+/** Width of a character at the axis font size, for the estimate above. */
+const CHAR_W = 6.2;
 
 /**
  * The traces a plot will actually draw, given the per-trace styles.
@@ -191,9 +224,20 @@ export function layoutForResult(
   w: number,
   h: number,
   result: SimResult,
-  styles: Record<string, SeriesStyle> = {}
+  styles: Record<string, SeriesStyle> = {},
+  /** The x-range drawn, when the plot is zoomed; the full range otherwise. */
+  view?: { xMin: number; xMax: number }
 ): PlotLayout {
-  return plotLayout(w, h, visibleSeries(result.series, styles).length > 0);
+  const visible = visibleSeries(result.series, styles);
+  const xMin = view?.xMin ?? result.time[0] ?? 0;
+  const xMax = view?.xMax ?? result.time[result.time.length - 1] ?? 1;
+  const plans = planAxes(
+    visible.map((s) => {
+      const [a, b] = seriesExtent(result.time, s, xMin, xMax);
+      return { name: s.name, min: a, max: b };
+    })
+  );
+  return plotLayout(w, h, visible.length > 0, axisLabelColumnW(plans));
 }
 
 /**
@@ -220,11 +264,49 @@ export function timeAtPlotX(
   return view.xMin + ((x - lay.left) / lay.width) * (view.xMax - view.xMin);
 }
 
-/** How many legend rows fit, and whether the legend is drawn at all. */
-export function legendPlan(lay: PlotLayout, w: number): { show: boolean; rows: number } {
-  const show = w - lay.left - lay.width - 14 >= 100;
+/**
+ * How many legend rows fit, and whether the legend is drawn at all.
+ *
+ * `axisLabelW` is the width a second value axis needs for its tick labels, which
+ * live in the same margin: the legend is only drawn when there is room for BOTH,
+ * because the alternative is what a screenshot showed — the axis values painted
+ * over by the legend's surface.
+ */
+export function legendPlan(
+  lay: PlotLayout,
+  w: number,
+  axisLabelW = 0
+): { show: boolean; rows: number } {
+  // Beside a second axis the strip is whatever the labels leave, and a legend
+  // with its names shortened is worth more than no legend: the alternative is
+  // reaching for the series toggles above the plot, which cover the whole pane.
+  // Alone it keeps the comfortable threshold, because there the labels are full
+  // names and a sliver of them says nothing.
+  const minW = axisLabelW > 0 ? MIN_LEGEND_BESIDE_AXIS_W : 100;
+  const show = w - lay.left - lay.width - 14 - axisLabelW >= minW;
   const rows = show ? Math.max(0, Math.floor((lay.height - 10) / 15)) : 0;
   return { show, rows };
+}
+
+/** Enough for a swatch and a few distinguishing characters of a name. */
+const MIN_LEGEND_BESIDE_AXIS_W = 56;
+
+/**
+ * A series name shortened to fit the space the legend has.
+ *
+ * The TAIL is kept — `pipe.port_a.m_flow` against `pipe.port_a.p` differ at the
+ * end — and the width is measured rather than counted in characters, because the
+ * strip left over beside a second axis is narrow and a character count that fits
+ * one font overflows another.
+ */
+function fitLabel(ctx: CanvasRenderingContext2D, name: string, maxW: number): string {
+  if (maxW <= 0) return "";
+  if (ctx.measureText(name).width <= maxW) return name;
+  let tail = name;
+  while (tail.length > 2 && ctx.measureText("…" + tail).width > maxW) {
+    tail = tail.slice(1);
+  }
+  return "…" + tail;
 }
 
 /** Min/max of a series over an inclusive x-range. */
@@ -332,7 +414,6 @@ export function drawPlot(
   ctx.fillRect(0, 0, cssWidth, cssHeight);
 
   const visible = visibleSeries(result.series, opts.styles);
-  const lay = plotLayout(cssWidth, cssHeight, visible.length > 0);
 
   if (result.time.length === 0) {
     ctx.fillStyle = theme.foreground;
@@ -384,6 +465,10 @@ export function drawPlot(
   }
   const primary = plans[0] ?? { min: 0, max: 1, names: [] };
   const axisOf = new Map<string, number>();
+  // AFTER the plans, because the extra axes label their ticks in the right
+  // margin and the layout has to reserve that column. The order matters: laying
+  // out first is what cut the values off beside a narrow pane.
+  const lay = plotLayout(cssWidth, cssHeight, visible.length > 0, axisLabelColumnW(plans));
   plans.forEach((plan, i) => plan.names.forEach((n: string) => axisOf.set(n, i)));
 
   (globalThis as { __PLOT_AXES__?: (m: string) => void }).__PLOT_AXES__?.(
@@ -522,9 +607,16 @@ export function drawPlot(
   ctx.setLineDash([]);
 
   // Legend, only when the panel is wide enough to spare the room.
-  const plan = legendPlan(lay, cssWidth);
+  //
+  // A second axis labels its ticks in the same margin the legend wants — the
+  // labels are drawn from the frame outwards — so the column is measured first
+  // and the legend starts after it. Reported from a screenshot: the y values were
+  // painted over by the legend's surface, which is drawn after them.
+  const axisLabelW = axisLabelColumnW(plans);
+  const plan = legendPlan(lay, cssWidth, axisLabelW);
   if (visible.length > 0 && plan.show && plan.rows > 0) {
-    const lx = lay.left + lay.width + 10;
+    const lx = lay.left + lay.width + 10 + axisLabelW;
+    const stripW = Math.max(0, cssWidth - lx - 4);
     let ly = lay.top + 8;
     ctx.font = "11px sans-serif";
     ctx.textAlign = "left";
@@ -535,7 +627,11 @@ export function drawPlot(
     const boxH = (shown.length + (overflow > 0 ? 1 : 0)) * 15 + 8;
     ctx.fillStyle = theme.background;
     ctx.globalAlpha = 0.92;
-    ctx.fillRect(lx - 4, lay.top + 4, lay.width + lay.right - 8, boxH + 4);
+    // From the legend's own left edge to the edge of the canvas: it used to be
+    // `lay.width + lay.right - 8`, which happened to reach the edge only because
+    // the legend sat hard against it, and painted over the axis labels when it
+    // did not.
+    ctx.fillRect(lx - 4, lay.top + 4, stripW + 4, boxH + 4);
     ctx.globalAlpha = 1;
 
     for (const s of shown) {
@@ -553,8 +649,7 @@ export function drawPlot(
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = theme.foreground;
-      const label = s.name.length > 18 ? "…" + s.name.slice(-17) : s.name;
-      ctx.fillText(label, lx + 19, ly);
+      ctx.fillText(fitLabel(ctx, s.name, stripW - 19 - 4), lx + 19, ly);
       ly += 15;
     }
     if (overflow > 0) {
