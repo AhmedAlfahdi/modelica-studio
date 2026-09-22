@@ -43,7 +43,7 @@ releases and updates it for you. The plugin is pre-1.0, so the version numbers a
    Settings → Community plugins.
 
 To pin a version instead of tracking the latest, use BRAT's **frozen** option and
-name the release, for example `0.3.4`.
+name the release, for example `0.3.5`.
 
 BRAT reports a mismatch if a release's tag, its name and the version inside the
 released `manifest.json` disagree. They are kept identical here on purpose, so an
@@ -106,9 +106,10 @@ names the run, and the cursor reads every visible trace at the instant under it.
 
 ![The result of that model, plotted](docs/images/plot.png)
 
-*A step force on the first mass at t = 0.1 s. Nothing is anchored, so the pair
-drifts — position curving upward — while the spring-damper between them rings and
-settles: that is the ripple in the first second. Both curves are the numbers
+*The two masses' positions, with a step force on the first at t = 0.1 s. Nothing is
+anchored, so the pair drifts together — both curves bend upward — while the spring
+and damper between them ring and settle: that is the wiggle in the first second, and
+the gap between the curves is the spring's extension. Both curves are the numbers
 OpenModelica returned; nothing in this README is redrawn by hand.*
 
 A **sweep** runs the model once per value of one parameter and overlays the results

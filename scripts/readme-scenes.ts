@@ -98,8 +98,12 @@ window.__scenePlot = (data) => {
     const ctx = canvas.getContext("2d")!;
     const styles: Record<string, { color: string; visible: boolean }> = {};
     const colours = ["#c0392b", "#2980b9", "#27ae60", "#8e44ad"];
+    // The two POSITIONS rather than the example's default position-and-velocity: the
+    // point of this model is that the pair drifts while the gap between them settles,
+    // and that is only visible with both masses on the plot.
+    const visible = ["mass1.s", "mass2.s"];
     data.result.series.forEach((s, i) => {
-      styles[s.name] = { color: colours[i % colours.length], visible: data.example.series.includes(s.name) };
+      styles[s.name] = { color: colours[i % colours.length], visible: visible.includes(s.name) };
     });
     drawPlot(ctx, width, height, data.result as never, {
       styles,
@@ -120,10 +124,17 @@ window.__scenePlot = (data) => {
   }
 };
 
-/** The Help window's connection section. */
+/**
+ * The Help window's connection section, as markup for its own page.
+ *
+ * Returns HTML rather than a box, and the runner renders it in a page of its own.
+ * Extracting the panel inside the app page does not work: Obsidian's modal CSS and
+ * the tab strip keep an inactive panel unpainted even with its `display` forced, so
+ * the capture came out blank twice — 3 KB of nothing, which is how a blank image
+ * reached the README once before a size check caught it.
+ */
 window.__sceneHelp = () => {
   try {
-    const host = document.getElementById("help")!;
     const modal = new HelpModal(
       { vault: {}, workspace: { getLeavesOfType: () => [] } } as never,
       {
@@ -141,9 +152,8 @@ window.__sceneHelp = () => {
     ) as HTMLElement | undefined;
     if (!panel) throw new Error("the connection panel was not rendered");
     panel.classList.remove("is-hidden");
-    host.appendChild(panel);
-    const r = panel.getBoundingClientRect();
-    return { x: Math.floor(r.left) - 12, y: Math.floor(r.top) - 12, width: Math.ceil(r.width) + 24, height: Math.ceil(r.height) + 24 };
+    panel.style.display = "block";
+    return { html: panel.outerHTML };
   } catch (err) {
     return fail(err);
   }

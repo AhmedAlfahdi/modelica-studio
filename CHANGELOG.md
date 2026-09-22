@@ -5,6 +5,28 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.5] — 2026-10-14
+
+### Fixed
+
+- **The Help screenshot shipped blank.** 0.3.4's `docs/images/help.png` was 4 KB of
+  empty background: the panel was extracted from the Help modal inside the app page,
+  where Obsidian's modal CSS and the tab strip keep an inactive panel unpainted even
+  after its class and inline `display` are forced. It is now rendered in a page of
+  its own, from the panel's markup, with the same stylesheets — and the generator
+  **refuses to write an image under 12 KB**, because a blank capture is a failure
+  rather than a screenshot. That guard is what caught this one.
+
+  Two other generator faults were fixed on the way: a CSS `zoom` used to sharpen DOM
+  captures (it moved the box out from under `capturePage`, capturing 980x848 of
+  nothing), and the order of the scenes (loading the Help page navigates away from
+  the app page, so the canvas scenes must run first).
+
+- **The plot screenshot now shows both masses' positions** rather than the example's
+  default position-and-velocity. The README's point about this model is that the pair
+  drifts while the *gap* between them settles — which is only visible with `mass1.s`
+  and `mass2.s` both on the plot. The caption says which traces are shown.
+
 ## [0.3.4] — 2026-10-14
 
 ### Changed

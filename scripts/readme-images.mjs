@@ -76,6 +76,10 @@ console.log(`  ${data.example.name}: ${data.result.time.length} samples, ${data.
 const CSS = fs.readFileSync(path.join(ROOT, "styles.css"), "utf8");
 const APP_CSS = fs.existsSync("/tmp/app.css") ? fs.readFileSync("/tmp/app.css", "utf8") : "";
 const PLUGIN = bundle("scripts/readme-scenes.ts", path.join(TMP, "page.js"), "browser");
+const THEME_VARS = `
+:root, body { --color-accent: hsl(254, 80%, 68%); --color-accent-2: hsl(254, 80%, 76%);
+  --text-accent: var(--color-accent); --text-accent-hover: var(--color-accent-2);
+  --color-base-40: hsl(0, 0%, 40%); --background-modifier-border-focus: var(--color-base-40); }`;
 
 const page = path.join(TMP, "index.html");
 fs.writeFileSync(
@@ -97,6 +101,9 @@ fs.writeFileSync(
 </body></html>`
 );
 
+fs.writeFileSync(path.join(TMP, "app.css"), APP_CSS);
+fs.writeFileSync(path.join(TMP, "plugin.css"), CSS);
+fs.writeFileSync(path.join(TMP, "theme.css"), THEME_VARS);
 fs.writeFileSync(
   path.join(TMP, "scenes.json"),
   JSON.stringify({
@@ -133,11 +140,8 @@ app.whenReady().then(async () => {
   // The call, with the data INLINE: the page cannot see this file's variables, and a
   // function serialised with toString() would carry their names without their values.
   const DATA = JSON.stringify(SCENES);
-  // Canvas scenes hand back their own pixels; a DOM scene is staged, rendered once
-  // and captured from the box it reports.
+  // Canvas scenes hand back their own pixels at the ratio the editor gave them.
   const CANVAS = [["diagram", "window.__sceneDiagram(" + DATA + ")"], ["plot", "window.__scenePlot(" + DATA + ")"]];
-  const DOM = [["help", "window.__sceneHelp()"]];
-
   for (const [name, call] of CANVAS) {
     const out = JSON.parse(await win.webContents.executeJavaScript("(async () => JSON.stringify(await (" + call + ")))()"));
     if (out.error) { console.log("SCENE FAILED " + name + ": " + out.error); continue; }
@@ -145,25 +149,41 @@ app.whenReady().then(async () => {
     console.log("wrote " + name + ".png  " + out.width + "x" + out.height);
   }
 
-  for (const [name, call] of DOM) {
-    // Staged at the top-left with the others hidden (capturePage refuses a box
-    // outside the window) and the page zoomed, so its pixels are crisp.
-    await win.webContents.executeJavaScript(
-      "document.querySelectorAll('.shot').forEach((el) => { el.style.display = 'none'; });" +
-        "const stage = document.getElementById('" + name + "');" +
-        "stage.style.display = 'block'; stage.style.position = 'absolute';" +
-        "stage.style.left = '0'; stage.style.top = '0'; stage.style.padding = '16px';" +
-        "stage.style.background = 'var(--background-primary)';" +
-        "document.body.style.zoom = '2';"
+  // The Help panel, in a page of its own: markup taken from the app page and rendered
+  // where nothing hides it. Obsidian's modal CSS and the tab strip keep an inactive
+  // panel unpainted even with its display forced, which is how a blank 3 KB image
+  // reached the README once. (Note for future edits: this whole runner is a template
+  // literal, so a backtick anywhere in here -- even in a comment -- ends it early.)
+  const helpScene = JSON.parse(await win.webContents.executeJavaScript("(async () => JSON.stringify(await (window.__sceneHelp())))()"));
+  if (helpScene.error) {
+    console.log("SCENE FAILED help: " + helpScene.error);
+  } else {
+    const read = (f) => fs.readFileSync(path.join(__dirname, f), "utf8");
+    const helpPage = path.join(__dirname, "help.html");
+    fs.writeFileSync(
+      helpPage,
+      '<!doctype html><html><meta charset="utf-8">' +
+        "<style>" + read("app.css") + "</style>" +
+        "<style>" + read("plugin.css") + "</style>" +
+        "<style>" + read("theme.css") + " body { margin: 0; padding: 16px; width: 620px; background: var(--background-primary); color: var(--text-normal); }</style>" +
+        '<body class="theme-light">' + helpScene.html + "</body></html>"
     );
-    await new Promise((r) => setTimeout(r, 250));
-    const rect = JSON.parse(await win.webContents.executeJavaScript("(async () => JSON.stringify(await (" + call + ")))()"));
-    if (rect.error) { console.log("SCENE FAILED " + name + ": " + rect.error); continue; }
-    const image = await win.webContents.capturePage({
-      x: Math.max(0, rect.x), y: Math.max(0, rect.y), width: rect.width, height: rect.height,
-    });
-    fs.writeFileSync(path.join(${JSON.stringify(OUT)}, name + ".png"), image.toPNG());
-    console.log("wrote " + name + ".png  " + image.getSize().width + "x" + image.getSize().height);
+    await win.loadFile(helpPage);
+    await new Promise((r) => setTimeout(r, 400));
+    const rect = JSON.parse(
+      await win.webContents.executeJavaScript(
+        "JSON.stringify((() => { const el = document.querySelector('.modelica-studio-help-panel');" +
+          " const r = el.getBoundingClientRect(); return { x: 0, y: 0, width: Math.ceil(r.width) + 32, height: Math.ceil(r.height) + 32 }; })())"
+      )
+    );
+    const image = await win.webContents.capturePage(rect);
+    const png = image.toPNG();
+    if (png.length < 12000) {
+      console.log("SCENE BLANK help: only " + png.length + " bytes");
+    } else {
+      fs.writeFileSync(path.join(${JSON.stringify(OUT)}, "help.png"), png);
+      console.log("wrote help.png  " + image.getSize().width + "x" + image.getSize().height + "  " + Math.round(png.length / 1024) + " KB");
+    }
   }
 
   app.exit(0);
