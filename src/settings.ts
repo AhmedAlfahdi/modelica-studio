@@ -19,6 +19,10 @@ import { SOLVERS, solverDescription, AI_THINKING_LEVELS, MODEL_STYLES, type AiTh
 
 
 
+// Used by the thickness sliders, and re-exported below for anything that needs
+// to know the band without importing the merge module.
+import { STROKE_SCALE_MAX, STROKE_SCALE_MIN } from "./settings-merge";
+
 export class ModelicaStudioSettingTab extends PluginSettingTab {
   plugin: ModelicaStudioPlugin;
 
@@ -317,11 +321,11 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
             "at 3 px at 100% zoom, and each line keeps its own thickness relative " +
             "to that — a bus stays double a signal wire, a shaft outline stays " +
             "half a body outline. 50% is a hairline for a dense diagram; 400% is " +
-            "as heavy as a symbol can take before it turns into a blob."
+            "as heavy as a wire or a symbol can take before it stops reading."
         )
         .addSlider((sl) =>
           sl
-            .setLimits(50, 400, 10)
+            .setLimits(STROKE_SCALE_MIN * 100, STROKE_SCALE_MAX * 100, 10)
             .setValue(Math.round(this.plugin.settings.symbolStrokeScale * 100))
             .setDynamicTooltip()
             .onChange(async (v) => {
@@ -340,11 +344,13 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
             "at 100% zoom, and the library's ratio between them is kept at any " +
             "setting. The area a wire can be clicked in follows, or a thick wire " +
             "would look right and be hard to grab. Symbols and the grid are " +
-            "unaffected — link the two if you would rather set them together."
+            "unaffected — link the two if you would rather set them together. 400% " +
+            "is the ceiling because past it a wire is heavier than the pin it " +
+            "lands on."
         )
         .addSlider((sl) =>
           sl
-            .setLimits(50, 1000, 10)
+            .setLimits(STROKE_SCALE_MIN * 100, STROKE_SCALE_MAX * 100, 10)
             .setValue(Math.round(this.plugin.settings.wireScale * 100))
             .setDynamicTooltip()
             .onChange(async (v) => {
@@ -361,11 +367,12 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
             "1.5 px and the library's own double and quadruple lines at 3 px and " +
             "6 px. Lines are drawn in proportion to a symbol's own size, so a " +
             "small symbol keeps the same look as a large one. The pins on a " +
-            "component follow it; text, fills and the selection outline do not."
+            "component follow it; text, fills and the selection outline do not. " +
+            "400% is the ceiling: past it a symbol stops being a symbol."
         )
         .addSlider((sl) =>
           sl
-            .setLimits(50, 400, 10)
+            .setLimits(STROKE_SCALE_MIN * 100, STROKE_SCALE_MAX * 100, 10)
             .setValue(Math.round(this.plugin.settings.symbolStrokeScale * 100))
             .setDynamicTooltip()
             .onChange(async (v) => {
@@ -994,5 +1001,7 @@ export {
   effectiveStrokeScales,
   mergeSettings,
   migrateSettings,
+  STROKE_SCALE_MAX,
+  STROKE_SCALE_MIN,
 } from "./settings-merge";
 export type { ChartState, ModelicaStudioSettings } from "./settings-merge";

@@ -313,9 +313,11 @@ export class HelpModal extends Modal {
         "line thickness in Settings → Modelica Studio → Diagram scale the wires and " +
         "the symbols, and Link wire and component thickness there gives the two one " +
         "slider — the wires then follow the component weight, so the library's ratio " +
-        "between a single, a double and a quadruple line cannot drift apart. At the " +
-        "standard 100% a single line is 1.5 px and a double one is 3 px at 100% " +
-        "zoom.",
+        "between a single, a double and a quadruple line cannot drift apart. Both " +
+        "sliders run from 50% to 400% of the library's own weight, which is the " +
+        "range in which the numbers still mean something: at 100% a single line is " +
+        "1.5 px and a double one 3 px at 100% zoom, and past 400% a wire is heavier " +
+        "than the pin it lands on.",
     });
 
     /* ---- reading the diagram ---- */

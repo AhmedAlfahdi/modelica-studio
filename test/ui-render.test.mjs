@@ -441,7 +441,9 @@ test("the settings tab renders every section, with the solver's details in its b
   // defaults, so a tab that ignored the setting would show 100/true and fail.
   assert.equal(
     d["the diagram controls exist and show the stored values"],
-    "label=140 wire=160 popup=130 hover=false symbol=220 link=false limits=50-1000-10 50-400-10",
+    // Both sliders offer the band the STANDARD defines, not a range invented for a
+    // scale that turned out to be wrong.
+    "label=140 wire=160 popup=130 hover=false symbol=220 link=false limits=50-400-10 50-400-10",
     "every diagram control reflects its own stored setting, and the wire weight reaches 1000%"
   );
   assert.equal(

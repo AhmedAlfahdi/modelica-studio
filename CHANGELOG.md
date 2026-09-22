@@ -5,6 +5,22 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.45] — 2026-10-14
+
+### Changed
+
+- **The wire slider now offers the same 50–400% the component slider does.** The
+  1000% ceiling was asked for when the numbers had no standard behind them — a
+  wire was drawn 1.47x a symbol line declaring the same thickness, so ten times it
+  looked reasonable. With MSL's scale 100% IS the library's weight, and 400% is
+  the point past which a wire is heavier than the pin it lands on: a single line
+  at 6 px against a pin ring 3.5–6 px across. All three sliders — wires,
+  components, and the linked one — now cover the same band, from the same two
+  constants.
+- A stored value outside that band is brought into it when the settings are
+  loaded, so the slider and the drawing cannot disagree: a saved 1000% becomes
+  400% rather than drawing ten times the weight behind a slider that says 400%.
+
 ## [0.2.0-beta.44] — 2026-10-14
 
 ### Fixed

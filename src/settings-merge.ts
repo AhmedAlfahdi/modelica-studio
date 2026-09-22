@@ -262,6 +262,17 @@ export interface ModelicaStudioSettings {
   aiModels: string[];
 }
 
+/**
+ * The band the thickness settings share.
+ *
+ * 100% is the weight MSL declares, which is what makes the numbers mean
+ * something. Below 50% a line is a hairline the legibility floor clamps anyway;
+ * above 400% a wire is heavier than the pin it connects to, and a symbol is a
+ * blob. Both sliders use the same band, and so does the linked one.
+ */
+export const STROKE_SCALE_MIN = 0.5;
+export const STROKE_SCALE_MAX = 4;
+
 export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   omcPath: "",
   libraryPaths: "",
@@ -378,6 +389,21 @@ export function migrateSettings(
   if (!recordedFolder && !settings.modelFolder.trim()) {
     settings.modelFolder = DEFAULT_SETTINGS.modelFolder;
   }
+
+  // The thickness settings were calibrated against a scale that turned out to be
+  // wrong: the wire slider went to 1000% because a wire was drawn 1.47x a symbol
+  // line declaring the same thickness, which made ten times it look reasonable.
+  // MSL's own scale says what the numbers mean — 100% is the library's weight —
+  // and past 400% a wire is heavier than the pin it lands on, so the stored value
+  // is brought into the range the slider now offers. The UI and the drawing then
+  // agree, which a clamp applied only when drawing would not.
+  for (const key of ["wireScale", "symbolStrokeScale"] as const) {
+    const v = settings[key];
+    if (typeof v === "number" && Number.isFinite(v)) {
+      settings[key] = Math.min(STROKE_SCALE_MAX, Math.max(STROKE_SCALE_MIN, v));
+    }
+  }
+  if (settings.syncStrokeScale) settings.wireScale = settings.symbolStrokeScale;
 
   const ai = settings.ai as unknown as Record<string, unknown> | undefined;
   if (!ai) return settings;

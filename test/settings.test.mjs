@@ -219,3 +219,29 @@ test("the link resolves the two thicknesses in one place", () => {
     "linked, the wires follow the component weight — the symbol is the reference, because the library draws its graphics and the wire follows the connector"
   );
 });
+
+test("a stored thickness above the standard's band is brought into it", () => {
+  // The wire slider offered up to 1000% because a wire used to be drawn 1.47x a
+  // symbol line declaring the same thickness, which made ten times it look
+  // reasonable. With MSL's scale the band is 50-400%, and a stored value outside
+  // it is clamped — otherwise the slider would show 400% while the diagram drew
+  // 1000%.
+  const { DEFAULT_SETTINGS: D, migrateSettings, STROKE_SCALE_MIN, STROKE_SCALE_MAX, effectiveStrokeScales } = merge;
+  assert.equal(STROKE_SCALE_MIN, 0.5, "the band's floor");
+  assert.equal(STROKE_SCALE_MAX, 4, "and its ceiling");
+
+  const wild = migrateSettings({ ...D, wireScale: 10, symbolStrokeScale: 2 }, { wireScale: 10 });
+  assert.equal(wild.wireScale, 4, "1000% is clamped to the ceiling");
+  assert.equal(wild.symbolStrokeScale, 2, "and a value inside the band is left alone");
+
+  const tiny = migrateSettings({ ...D, wireScale: 0.1 }, { wireScale: 0.1 });
+  assert.equal(tiny.wireScale, 0.5, "below the floor it is lifted to it");
+
+  // A linked pair cannot be left disagreeing by an older file either.
+  const linked = migrateSettings({ ...D, wireScale: 3, symbolStrokeScale: 1.5, syncStrokeScale: true }, {});
+  assert.deepEqual(
+    effectiveStrokeScales(linked),
+    { wires: 1.5, symbols: 1.5 },
+    "linked, the wire takes the component value whatever was stored"
+  );
+});
