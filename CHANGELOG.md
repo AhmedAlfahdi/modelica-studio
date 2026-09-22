@@ -5,6 +5,41 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.56] — 2026-10-14
+
+### Fixed
+
+- **A graphic written positionally inside a layer could still be dropped without a
+  trace.** `Icon(Rectangle(...))` — a primitive as an argument rather than inside
+  `graphics={...}` — is legal Modelica and a second place `buildGraphic` can fail.
+  The record added in beta.55 covered the two list forms and missed this one, so the
+  sweep that reads it would have passed while the picture was missing a shape. Both
+  the record and the `DynamicSelect` capture now cover it, and a test drives all
+  three forms: a drop in the list, a drop in the other layer, and a drop in the
+  positional form. Removing the record fails it with `got []`.
+
+### Added
+
+- **The plot's margins are a property, not a case.** Ten pane widths from 300px to
+  1200px, with and without a second value axis: the legend's rows must start after
+  the axis values end, no value or legend row may pass the edge of the canvas, and a
+  legend must be drawn whenever 100px of strip was free for it. The two margin bugs
+  shipped in a row were single cases found by eye; reverting either half of the fix
+  now fails 7 and 9 of the 20 combinations.
+- **The cache round-trips what the parser learned** — the field-level half of the
+  guard for the beta.53 mistake, where a parser fix shipped without a version bump
+  and every existing index kept the old parse (`DynamicSelect` extents, `dynamic`
+  argument pairs, and the drop record all survive `JSON.parse(JSON.stringify(...))`).
+- **`test/component-render.test.mjs`: real canvas, both pixel ratios.** The
+  library-wide sweeps draw into a recorder, which is fast and blind to anything that
+  happens in the rasteriser rather than in the calls. Twenty classes from every area
+  of MSL are now drawn on a real canvas at dpr 1 and 2 and measured: every one leaves
+  ink, none of it lands off the surface, and doubling the ratio doubles the drawing's
+  size. Writing it proved it can see that ratio — a fixture that scaled by `dpr` as
+  well as passing it reported **x3.99** across all twenty.
+
+  The app's own startup log was checked too, and is clean.
+
 ## [0.2.0-beta.55] — 2026-10-14
 
 ### Added

@@ -14,6 +14,7 @@ import path from "node:path";
 import { buildLibs, repoRoot, testTmpDir } from "./helpers/build.mjs";
 
 const LIB = buildLibs("library-lib", ["src/modelica/library.ts", "src/modelica/parser.ts", "src/modelica/types.ts"]);
+const parserMod = await import(path.join(LIB, "parser.js"));
 const { LibraryIndex, loadLibraryIndex, indexRoots, buildPackageTree, newestLibraries, INDEX_CACHE_VERSION } = await import(
   path.join(LIB, "library.js")
 );
@@ -491,4 +492,52 @@ test("an index that hits the file cap says so", () => {
   const partial = capped.addDirectory(root, { maxFiles: 5 });
   assert.equal(partial, 5, "the cap stops the walk");
   assert.deepEqual(capped.truncatedRoots, [root], "and the root is reported as incomplete");
+});
+
+test("a parsed class survives the cache exactly as the parser produced it", () => {
+  // The cache holds the PARSED classes, so anything the parser learns must survive a
+  // JSON round trip or the fix reaches nobody who has opened the plugin before. That
+  // is not hypothetical: beta.53 taught the parser to read `DynamicSelect`, shipped
+  // without a version bump, and every existing index kept the old text -- the user
+  // reported the tank as still broken, twice.
+  //
+  // This is the field-level half of that guard. The version half is asserted above:
+  // a snapshot written by another version is ignored rather than read as current.
+  const src = `model Tank
+  annotation (Icon(graphics={
+    Rectangle(extent=DynamicSelect({{-100,-100},{100,10}}, {{-100,-100},{100,level}}),
+      fillColor={85,170,255}),
+    Text(extent={{-95,-24},{95,-44}}, textString=DynamicSelect("%level_start", String(level))),
+    Rectangle(extent=Unreadable(1, 2))}));
+end Tank;`;
+  const { parseModelica, findClass } = parserMod;
+  const before = findClass(parseModelica(src), "Tank");
+
+  // Exactly what the index does when it writes and reads the snapshot.
+  const after = JSON.parse(JSON.stringify(before));
+
+  // Both graphics that use `DynamicSelect` BUILD -- that is the fix this round trip
+  // has to preserve -- and the third, whose extent is a call nothing can read, is
+  // the one that is dropped and recorded.
+  assert.equal(after.icon.length, 2, "both DynamicSelect graphics are there");
+  assert.deepEqual(
+    after.icon[0].extent,
+    [-100, -100, 100, 10],
+    "the EDITING extent of a DynamicSelect is what was cached, not the call"
+  );
+  assert.deepEqual(
+    after.icon[0].dynamic?.extent,
+    { editing: "{{-100,-100},{100,10}}", other: "{{-100,-100},{100,level}}" },
+    "and both arguments are kept, so a save can write the call back"
+  );
+  assert.deepEqual(
+    after.icon[1].dynamic?.textString,
+    { editing: '"%level_start"', other: "String(level)" },
+    "the same for a label"
+  );
+  assert.deepEqual(
+    after.unparsedGraphics,
+    ["Rectangle"],
+    "and the record of what could not be built survives too, or the sweep that reads it sees nothing"
+  );
 });

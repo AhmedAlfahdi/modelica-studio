@@ -976,3 +976,57 @@ end Tank;`;
     "a colour can be dynamic too"
   );
 });
+
+test("the drop record covers every form a graphic can be written in", () => {
+  // The sweep that guards the library asserts `unparsedGraphics` is empty for every
+  // class in MSL. That assertion is only worth anything if the RECORD is complete:
+  // a form the parser can drop without recording would let the sweep pass while the
+  // picture was missing a shape, which is the fault the sweep exists for.
+  //
+  // `extent` is the attribute that decides whether a shape can be built at all, so
+  // an unreadable one is the smallest reliable way to force a drop. (A `Line` with
+  // an unreadable `points` is NOT a drop -- it builds and draws nothing -- which is
+  // a different fault and not what this test is about.)
+  const src = `model ListForm
+  annotation (
+    Icon(graphics={
+      Rectangle(extent=Unreadable(1, 2), lineColor={0,0,0}),
+      Rectangle(extent={{-10,-10},{10,10}}, lineColor={0,0,0})}),
+    Diagram(graphics={
+      Rectangle(extent=AlsoUnreadable(3, 4), lineColor={0,0,0}),
+      Line(points={{-10,-10},{10,10}}, color={0,0,0})}));
+end ListForm;
+
+model Positional
+  annotation (Icon(Rectangle(extent={{-10,-10},{10,10}}, lineColor={0,0,0})));
+end Positional;
+
+model PositionalBad
+  annotation (Icon(Rectangle(extent=Unreadable(1, 2), lineColor={0,0,0})));
+end PositionalBad;`;
+  const classes = parseModelica(src);
+  const list = findClass(classes, "ListForm");
+
+  assert.equal(list.icon.length, 1, "the buildable icon graphic is kept");
+  assert.equal(list.diagram.length, 1, "and the buildable diagram graphic");
+  assert.deepEqual(
+    list.unparsedGraphics,
+    ["Rectangle", "Rectangle"],
+    `both layers' drops are RECORDED, got ${JSON.stringify(list.unparsedGraphics)}`
+  );
+
+  // A primitive written positionally inside the layer: `Icon(Rectangle(...))`.
+  const positional = findClass(classes, "Positional");
+  assert.equal(positional.icon.length, 1, "a positional graphic that builds is kept");
+  assert.deepEqual(positional.unparsedGraphics, [], "and is not reported as dropped");
+
+  // And the same form WITH an unreadable attribute, which used to vanish without a
+  // trace: this is the hole this test was written to find.
+  const bad = findClass(classes, "PositionalBad");
+  assert.equal(bad.icon.length, 0, "an unbuildable positional graphic is not kept");
+  assert.deepEqual(
+    bad.unparsedGraphics,
+    ["Rectangle"],
+    `and it is recorded like any other, got ${JSON.stringify(bad.unparsedGraphics)}`
+  );
+});

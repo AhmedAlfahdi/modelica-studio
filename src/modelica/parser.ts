@@ -1153,9 +1153,15 @@ class Parser {
         const name = this.next().value;
         this.next(); // '('
         if (GRAPHIC_KINDS.has(name)) {
-          const args = this.parseArgumentListRaw();
-          const g = buildGraphic(name, args);
+          // A primitive written POSITIONALLY inside the layer — `Icon(Rectangle(...))`
+          // rather than `Icon(graphics={Rectangle(...)})`. Legal Modelica, and a
+          // second place a graphic can be dropped, so it records the drop and keeps
+          // any `DynamicSelect` the same way the list form does.
+          const dyn: Record<string, { editing: string; other: string }> = {};
+          const args = this.parseArgumentListRaw(dyn);
+          const g = buildGraphic(name, args, dyn);
           if (g) out.push(g);
+          else this.dropStack[this.dropStack.length - 1]?.push(name);
         } else {
           // An unrecognised group (coordinateSystem, etc.) — consume it and,
           // for containers that may hold graphics, harvest nested primitives.

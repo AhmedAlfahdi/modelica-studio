@@ -687,6 +687,104 @@ test("the legend is placed clear of a second axis's values", () => {
   );
 });
 
+test("the legend and the axis values never collide, at any width", () => {
+  // Two bugs in a row lived in this margin: the legend painted over the second
+  // axis's values, and then -- with no legend -- the values were cut off at the
+  // edge of the canvas. Both were single cases, so both were found by a person
+  // looking at one pane. This sweeps the widths instead, and asserts the two
+  // properties that must hold at every one of them:
+  //
+  //   no overlap   the legend's rows start after the axis values end
+  //   nothing cut  no value's right edge passes the canvas
+  //
+  // A third is implicitly checked: the legend is either fully drawn or absent, and
+  // when it is absent the PANE is too narrow for it (never a silent half-legend).
+  const WIDTHS = [300, 340, 380, 420, 480, 520, 620, 700, 900, 1200];
+  const CHAR = 0.55;
+  const failures = [];
+
+  for (const width of WIDTHS) {
+    for (const secondAxis of [false, true]) {
+      let font = "11px sans-serif";
+      const text = [];
+      const ctx = new Proxy(
+        { canvas: { width, height: 380 }, font, fillStyle: "", strokeStyle: "", globalAlpha: 1, textAlign: "", textBaseline: "" },
+        {
+          get(t, k) {
+            if (k in t) return t[k];
+            if (k === "measureText") {
+              const size = Number(/([\d.]+)px/.exec(font)?.[1] ?? 11);
+              return (s2) => ({ width: String(s2).length * size * CHAR });
+            }
+            if (k === "fillText") return (label, x) => text.push({ label: String(label), x });
+            return () => {};
+          },
+          set(t, k, v) {
+            if (k === "font") font = String(v);
+            t[k] = v;
+            return true;
+          },
+        }
+      );
+      const time = [0, 1, 2, 3, 4, 5];
+      const series = [
+        { name: "pipe.port_a.p", values: [1.1e5, 1.12e5, 1.15e5, 1.13e5, 1.11e5, 1.1e5], unit: "Pa" },
+        { name: "pipe.port_a.m_flow", values: [0.011, 0.0115, 0.012, 0.0118, 0.0112, 0.011], unit: "kg/s" },
+      ];
+      const result = secondAxis
+        ? { time, series, compileMs: 1, simulateMs: 1, reusedBinary: true, warnings: [] }
+        : { time, series: [series[0]], compileMs: 1, simulateMs: 1, reusedBinary: true, warnings: [] };
+
+      plotMod.drawPlot(ctx, width, 380, result, {
+        styles: {},
+        view: { xMin: 0, xMax: 5 },
+        dpr: 1,
+        theme: plotMod.plotThemeFrom(false),
+      });
+
+      const lay = plotMod.layoutForResult(width, 380, result, {});
+      const frameRight = lay.left + lay.width;
+      const right = (t2) => t2.x + t2.label.length * 11 * CHAR;
+
+      // By POSITION, which is what the two properties are about: the extra axis
+      // labels its ticks 7px right of the frame, and the legend's rows start at
+      // least 10px right of it (further when there is an axis column to clear).
+      // Identifying legend rows by their truncation ellipsis was wrong -- a name
+      // that fits has none, so a perfectly good legend read as absent.
+      const values = text.filter((t2) => t2.x > frameRight && t2.x < frameRight + 9);
+      const legend = text.filter((t2) => t2.x >= frameRight + 10);
+
+      for (const v of values) {
+        if (right(v) > width + 0.5) {
+          failures.push(`${width}px, ${secondAxis ? "two" : "one"} axis: value "${v.label}" ends at ${right(v).toFixed(0)}`);
+        }
+      }
+      if (legend.length === 0) {
+        // Absent is only correct when there is no room for it.
+        const strip = width - frameRight - 14;
+        if (strip >= 100) {
+          failures.push(`${width}px, ${secondAxis ? "two" : "one"} axis: no legend though ${strip.toFixed(0)}px was free`);
+        }
+        continue;
+      }
+      const legendLeft = Math.min(...legend.map((t2) => t2.x));
+      const valuesRight = values.length ? Math.max(...values.map(right)) : frameRight;
+      if (legendLeft <= valuesRight + 2) {
+        failures.push(
+          `${width}px, ${secondAxis ? "two" : "one"} axis: legend at ${legendLeft.toFixed(0)}, values end at ${valuesRight.toFixed(0)}`
+        );
+      }
+      for (const t2 of legend) {
+        if (right(t2) > width + 0.5) {
+          failures.push(`${width}px, ${secondAxis ? "two" : "one"} axis: legend row "${t2.label}" ends at ${right(t2).toFixed(0)}`);
+        }
+      }
+    }
+  }
+
+  assert.deepEqual(failures, [], `${failures.length} width/axis combinations misplace the legend or the values`);
+});
+
 test("a legend names the run on screen as well as the family", () => {
   // Reported from a screenshot: two curves, and no way to tell 10 V from 15 V.
   const rows = [];
