@@ -1,6 +1,35 @@
 /**
  * Systematic rendering checks over the WHOLE library.
  *
+ * THE METHOD. Every fault this file has caught was first seen by a person looking
+ * at one component that looked wrong, and was then true of hundreds. So each check
+ * here is an invariant that must hold for EVERY class the palette offers, measured
+ * from what the renderer actually does rather than from what the source says it
+ * should do, and reported with the class name and the numbers.
+ *
+ * A sweep cannot judge whether a symbol is BEAUTIFUL. It can insist that every
+ * declared mark is drawn, at the weight it declares, visibly in both themes, with
+ * labels that fit and read as values rather than as annotations -- and each of
+ * those has been a real bug, found by eye, that a sweep would have caught on the
+ * day it was written:
+ *
+ *   - a graphic written `extent=DynamicSelect(...)` was DROPPED, so the tank drew
+ *     empty and its level read `DynamicSelect(...)`;
+ *   - every stroke was divided by the transform scale, so an outline came out 10px
+ *     thick on a normally-placed component;
+ *   - a label was drawn at the 1px floor, or wider than the symbol it labelled;
+ *   - every fill pattern and line pattern was dropped by a name mismatch.
+ *
+ * TWO RULES FOR ADDING ONE, both learned the hard way here:
+ *   1. Assert an EXACT property, or a named set -- never a count that tolerates
+ *      offenders. The drop sweep below was a count with a budget of 46, and the
+ *      tank lived inside it.
+ *   2. CALIBRATE the measurement on a case with an independently known answer. The
+ *      theme-visibility sweep read a CSS string as if it were a number, produced
+ *      NaN for every class, and passed for its whole life -- including against a
+ *      probe that drew every mark in the canvas colour. It now checks one known
+ *      stroke against a contrast computed by hand.
+ *
  * The bugs this file exists for were each found by a person noticing one
  * component that looked wrong:
  *
@@ -86,16 +115,29 @@ function recorder() {
         case "fill":
           return () => images.push({ op: "fill", style: t.fillStyle });
         case "stroke":
-          return () => images.push({ op: "stroke", style: t.strokeStyle, dash: [...t.lineDash] });
+          return () =>
+            images.push({
+              op: "stroke",
+              style: t.strokeStyle,
+              dash: [...t.lineDash],
+              // The weight, which the looks-sweeps assert against the thickness the
+              // graphic declares: a stroke drawn at the wrong weight is the fault
+              // that made every symbol outline 10px thick.
+              width: t.lineWidth,
+            });
         case "fillRect":
+          return () => images.push({ op: "rect", style: t.fillStyle });
         case "strokeRect":
-          return () => images.push({ op: "rect" });
+          return () => images.push({ op: "rect", style: t.strokeStyle });
         case "fillText":
           return (text) =>
             images.push({
               op: "text",
               text: String(text),
               px: parseFloat(/([\d.]+)px/.exec(t.font)?.[1] ?? "0"),
+              // A text-only icon (`Electrical.Digital.Basic.And` is an ampersand
+              // and nothing else) has no stroke to judge its visibility by.
+              style: t.fillStyle,
             });
         case "drawImage":
           return () => images.push({ op: "image" });
@@ -112,7 +154,7 @@ function recorder() {
 }
 
 /** Draw one placed component and return everything it painted. */
-function renderInstance(index, className, { id = "i1", params = {}, scale = 11 } = {}) {
+function renderInstance(index, className, { id = "i1", params = {}, scale = 11, theme } = {}) {
   const lookup = (n) => index.describe(n);
   const { ctx, images } = recorder();
   C.drawComponent(
@@ -121,9 +163,85 @@ function renderInstance(index, className, { id = "i1", params = {}, scale = 11 }
     lookup(className),
     { x: 0, y: 0, scale },
     1,
-    { lookup }
+    { lookup, ...(theme ? { theme } : {}) }
   );
   return images;
+}
+
+/** Every `.mo` file of the standard library, minus the prose packages. */
+function* msources() {
+  const SKIP = new Set(["UsersGuide", "Resources"]);
+  const walk = function* (dir) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (!SKIP.has(e.name)) yield* walk(p);
+      } else if (e.name.endsWith(".mo")) yield p;
+    }
+  };
+  yield* walk(MSL);
+}
+
+/** Every class in a parse, nested ones included. */
+function flattenClasses(ast) {
+  const out = [];
+  (function walk(list) {
+    for (const c of list ?? []) {
+      out.push(c);
+      walk(c.nested);
+    }
+  })(ast.classes ?? ast);
+  return out;
+}
+
+/** The on-screen widths of everything stroked. */
+function paintWidths(images) {
+  return images.filter((i) => i.op === "stroke" && typeof i.width === "number").map((i) => i.width);
+}
+
+/** The colour a paint operation used, as an [r,g,b] triple where it can be read. */
+function paintColour(paint) {
+  const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(String(paint?.style ?? ""));
+  if (m) return [Number(m[1]), Number(m[2]), Number(m[3])];
+  const hex = /#([0-9a-f]{6})/i.exec(String(paint?.style ?? ""));
+  if (hex) {
+    const h = hex[1];
+    return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  }
+  return undefined;
+}
+
+/**
+ * A CSS colour string as an [r,g,b] triple.
+ *
+ * `theme.background` is a string (`"rgb(30,33,39)"`) while the other theme fields
+ * are triples. Feeding the string to the luminance math produced NaN, every
+ * comparison against it was false, and the visibility sweep passed for months of
+ * runs without ever failing -- including with a probe that drew every mark in the
+ * canvas colour. The sweep now asserts that some class is strongly visible, so a
+ * vacuous pass cannot happen again.
+ */
+function cssColour(value) {
+  if (Array.isArray(value)) return value;
+  return paintColour({ style: value });
+}
+
+/** The strongest contrast any of a class's marks has against its canvas. */
+function bestContrast(paints, theme) {
+  const canvas = cssColour(theme.background);
+  return Math.max(0, ...paints.map((p) => contrastAgainst(paintColour(p), canvas) || 0));
+}
+
+/** WCAG contrast between a painted colour and the canvas behind it. */
+function contrastAgainst(colour, background) {
+  if (!colour) return 0;
+  const lin = (c) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  const L = (c) => 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
+  const [a, b] = [L(colour), L(background)].sort((x, y) => y - x);
+  return (a + 0.05) / (b + 0.05);
 }
 
 /** The paint operations, without the bookkeeping ones. */
@@ -541,11 +659,98 @@ function renderSettings(def) {
 }
 
 /** Everything painted for a class, under any of its parameter settings. */
-function renderAll(index, name, def) {
+function renderAll(index, name, def, theme) {
   const out = [];
-  for (const params of renderSettings(def)) out.push(...renderInstance(index, name, { params }));
+  for (const params of renderSettings(def)) out.push(...renderInstance(index, name, { params, theme }));
   return out;
 }
+
+test("no class silently drops a graphic it declares", { skip: !MSL && "no MSL installed" }, () => {
+  // The detector for the whole family this file keeps meeting: a primitive whose
+  // attribute could not be interpreted is DROPPED, and a dropped graphic is
+  // invisible. `Modelica.Fluid.Vessels.OpenTank` declares its water rectangle with
+  // `extent=DynamicSelect(...)`; the parser summarised the call as a string, the
+  // rectangle failed to build, and the tank drew empty with nothing anywhere saying
+  // why. The parser now records what it could not read, so the fault is a NAME
+  // rather than a missing shape.
+  //
+  // Asserted exactly, not as a budget: one dropped graphic is one too many, and the
+  // message says which class dropped which kind.
+  const dropped = [];
+  let classes = 0;
+  for (const f of msources()) {
+    let ast;
+    try {
+      ast = parserMod.parseModelica(fs.readFileSync(f, "utf8"));
+    } catch {
+      continue;
+    }
+    for (const c of flattenClasses(ast)) {
+      classes++;
+      if ((c.unparsedGraphics ?? []).length > 0) {
+        dropped.push(`${c.qualifiedName}: dropped ${c.unparsedGraphics.join(", ")}`);
+      }
+    }
+  }
+  assert.ok(classes > 2000, `the sweep actually ran: ${classes} classes`);
+  assert.deepEqual(
+    dropped.slice(0, 8),
+    [],
+    `${dropped.length} of ${classes} classes could not build a graphic they declare`
+  );
+});
+
+test("no graphic attribute is left as an expression nobody can read", { skip: !MSL && "no MSL installed" }, () => {
+  // The other half of the same family. A summarised call does not always cost a
+  // graphic: `textString=DynamicSelect("%level_start", String(level, …))` parsed to
+  // the STRING "DynamicSelect(...)" and was painted as the tank's level -- the
+  // annotation's own source, on screen, as a value.
+  //
+  // The shape of the summary is unmistakable (`name(...)` or `name(…)`), so it is
+  // looked for in every attribute that decides what a component looks like.
+  // The ellipsis is what makes it a SUMMARY: the parser writes exactly
+  // `name(...)` when it cannot read a call. A label that merely LOOKS like a call
+  // is a literal in the source -- MSL writes `textString="der()"` and `"change()"`
+  // for blocks that compute one -- and must not be reported. No literal label in
+  // MSL 4.1.0 contains an ellipsis, which is what makes the two distinguishable.
+  const SUMMARY = /^[A-Za-z_][\w.]*\s*\(\s*(\.\.\.|…)\s*\)$/;
+  const ATTRS = [
+    "extent",
+    "points",
+    "radius",
+    "center",
+    "textString",
+    "color",
+    "lineColor",
+    "fillColor",
+    "textColor",
+    "thickness",
+    "lineThickness",
+    "visible",
+  ];
+  const summarised = [];
+  let graphics = 0;
+  const index = new LibraryIndex();
+  index.addDirectory(MSL);
+  for (const c of index.listPlaceable()) {
+    const def = index.describe(c.name);
+    for (const g of def?.icon ?? []) {
+      graphics++;
+      for (const attr of ATTRS) {
+        const v = g[attr];
+        if (typeof v === "string" && SUMMARY.test(v.trim())) {
+          summarised.push(`${c.name}: ${attr}="${v}"`);
+        }
+      }
+    }
+  }
+  assert.ok(graphics > 5000, `the sweep actually ran: ${graphics} graphics`);
+  assert.deepEqual(
+    summarised.slice(0, 8),
+    [],
+    `${summarised.length} attributes are the source of an expression rather than a value`
+  );
+});
 
 test("no icon label paints a macro as written", { skip: !MSL && "no MSL installed" }, () => {
   // `textString="%C"` means the value of the parameter, and a macro with nothing
@@ -576,6 +781,11 @@ test("no icon label paints a macro as written", { skip: !MSL && "no MSL installe
         n === "class" ? def.shortName : def.parameters.find((p) => p.name === n)?.defaultValue
       );
       if (/%[A-Za-z_{]/.test(shown)) painted.push(`${c.name}: "${raw}" -> "${shown}"`);
+      // A label that is the SOURCE of an expression is the same fault wearing a
+      // different hat: the tank's level read `DynamicSelect(...)`.
+      if (/^[A-Za-z_][\w.]*\s*\(\s*(\.\.\.|…)\s*\)$/.test(shown.trim())) {
+        painted.push(`${c.name}: "${raw}" -> "${shown}" (a call, not a value)`);
+      }
       if (shown.includes("?")) unknown++;
     }
   }
@@ -612,6 +822,160 @@ test("every component the palette offers draws something", { skip: !MSL && "no M
     offenders.slice(0, 10),
     [],
     `${offenders.length} of ${checked} offered components draw nothing`
+  );
+});
+
+/* ------------------------------------------------------------------ *
+ * Looks.
+ *
+ * Every sweep below asks a question about what a component LOOKS like, over every
+ * class the palette offers, and names the class and the numbers when the answer is
+ * wrong. They exist because each fault found so far was noticed by a person
+ * looking at one component, and was then true of hundreds:
+ *
+ *   - a graphic whose extent was written `DynamicSelect(...)` was DROPPED, so the
+ *     tank drew empty and its level read the annotation's own source;
+ *   - every stroke was divided by the transform scale, so an outline came out 10px
+ *     thick on a normally-placed component;
+ *   - a label was drawn at the 1px floor (`Logical.And`), or wider than the symbol
+ *     it labelled (`ReceiveBoolean`);
+ *   - every fill pattern and line pattern was dropped, because the parser kept the
+ *     qualified name and the renderer compared against the short one.
+ *
+ * The lesson each time was the same: nothing was checking the picture, so the first
+ * detector was a human eye. A sweep cannot say whether a symbol is BEAUTIFUL, but
+ * it can say that every declared mark is drawn, at the weight it declares, visibly,
+ * and with its labels inside their boxes -- and that is where all of the above
+ * would have been caught on the day they were written.
+ * ------------------------------------------------------------------ */
+
+test("every declared mark is drawn, at the weight it declares", { skip: !MSL && "no MSL installed" }, () => {
+  // The fault this exists for: every stroke was divided by the transform scale, so
+  // a 0.5 outline on a +-10 component came out 10px thick against the 1px it should
+  // have been. Both halves below fail on that:
+  //
+  //   BOUND    no stroke may exceed the cap the weight is clamped to. Measured at
+  //            the default setting, where the cap is 6px: the fault drew 10.
+  //   PRESENCE the width a declared thickness WORKS OUT TO must actually appear.
+  //            With the division the widths were all 1/scale too big, so the
+  //            expected 1px was simply never painted.
+  //
+  // Deliberately not asserted: that every painted width is a declared one. A filled
+  // shape's hatching is drawn at its own texture weight (0.5px up to a fortieth of
+  // the shape), and so are the port rings; both are legitimate and neither is a
+  // stroke of a graphic.
+  const index = new LibraryIndex();
+  index.addDirectory(MSL);
+
+  // `renderInstance` draws a +-10 instance at 11 px per unit: one canonical unit is
+  // 1.1 px, so a graphic's declared thickness T should be drawn at 6.6*T px.
+  const K = 11 * 0.1;
+  const weightOf = (t) => 6 * t * K;
+  const CAP = 6;
+  const tooWide = [];
+  const missing = [];
+  let strokes = 0;
+  let classes = 0;
+
+  for (const c of index.listPlaceable()) {
+    const def = index.describe(c.name);
+    if (!def?.icon?.length) continue;
+    classes++;
+    const declared = [];
+    for (const g of def.icon) {
+      if (g.kind === "Text") continue;
+      if (g.pattern === "None") continue;
+      declared.push(g.thickness ?? g.lineThickness ?? 0.25);
+    }
+    const widths = paintWidths(renderAll(index, c.name, def));
+    if (widths.length === 0 || declared.length === 0) continue;
+    strokes += widths.length;
+
+    const widest = Math.max(...widths);
+    if (widest > CAP * 1.02) {
+      tooWide.push(`${c.name}: widest stroke ${widest.toFixed(2)}px, cap is ${CAP}`);
+    }
+
+    for (const t of declared) {
+      const want = Math.min(CAP, weightOf(t));
+      // Only where neither clamp is in play: a clamped weight is a floor or a
+      // ceiling and says nothing about proportionality.
+      if (weightOf(t) <= 1.05 || weightOf(t) >= CAP * 0.98) continue;
+      if (!widths.some((w) => Math.abs(w - want) < 0.06)) {
+        missing.push(
+          `${c.name}: thickness ${t} should be drawn at ${want.toFixed(2)}px; widths are ` +
+            [...new Set(widths.map((w) => w.toFixed(2)))].slice(0, 6).join("/")
+        );
+      }
+    }
+  }
+
+  assert.ok(classes > 500, `the sweep actually ran: ${classes} classes`);
+  assert.ok(strokes > 2000, `and saw enough strokes to mean something: ${strokes}`);
+  assert.deepEqual(tooWide.slice(0, 8), [], `${tooWide.length} classes draw a stroke wider than the cap`);
+  assert.deepEqual(
+    missing.slice(0, 8),
+    [],
+    `${missing.length} declared weights are not drawn at their weight`
+  );
+});
+
+test("no icon disappears into the canvas, in either theme", { skip: !MSL && "no MSL installed" }, () => {
+  // An icon drawn in one colour that matches its background is a component the user
+  // cannot see -- and it can be true in one theme only, which is how the whole
+  // HeatTransfer library looked on dark before the fills were adapted.
+  const index = new LibraryIndex();
+  index.addDirectory(MSL);
+  const invisible = [];
+  let checked = 0;
+  let strongest = 0;
+
+  for (const c of index.listPlaceable()) {
+    const def = index.describe(c.name);
+    if (!def?.icon?.length) continue;
+    checked++;
+    for (const [label, theme] of [
+      ["light", T.LIGHT_THEME],
+      ["dark", T.DARK_THEME],
+    ]) {
+      const paints = painted(renderAll(index, c.name, def, theme));
+      if (paints.length === 0) continue; // nothing drawn is reported by its own sweep
+      const best = bestContrast(paints, theme);
+      strongest = Math.max(strongest, best);
+      if (best < 3) {
+        invisible.push(`${c.name} on ${label}: strongest mark is ${best.toFixed(2)}:1`);
+      }
+    }
+  }
+
+  assert.ok(checked > 500, `the sweep actually ran: ${checked} classes`);
+
+  // A CONTROL, because this sweep once passed vacuously: `theme.background` is a CSS
+  // string while the luminance math wanted a triple, so every contrast came out NaN,
+  // `NaN < 3` was false, and nothing was ever reported -- including when a probe drew
+  // every mark in the canvas colour. `Math.Add` draws #6a6bb4 on the dark canvas,
+  // which is a known 3.4:1; the window is wide enough not to be fussy about the
+  // exact figure and narrow enough to catch a measurement that has stopped working.
+  const CONTROL = "Modelica.Blocks.Math.Add";
+  const controlStrokes = painted(renderAll(index, CONTROL, index.describe(CONTROL), T.DARK_THEME)).filter(
+    (p) => p.op === "stroke"
+  );
+  const controlBest = bestContrast(controlStrokes, T.DARK_THEME);
+  // 3.36:1, computed independently from the two colours (#6a6bb4 on #1e2127) rather
+  // than read back from this code. Narrow enough that a measurement returning the
+  // canvas colour, or NaN, cannot pass.
+  assert.ok(
+    controlBest > 3.0 && controlBest < 3.8,
+    `the measurement is calibrated on a known stroke: expected 3.36:1, measured ${controlBest.toFixed(2)}:1`
+  );
+  assert.ok(
+    strongest > 8,
+    `some class is strongly visible, so the numbers mean something (best was ${strongest})`
+  );
+  assert.deepEqual(
+    invisible.slice(0, 8),
+    [],
+    `${invisible.length} of ${checked} classes have nothing visible against their canvas`
   );
 });
 

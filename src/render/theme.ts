@@ -412,6 +412,20 @@ const DARK: Theme = {
  * Obsidian marks the dark theme with `theme-dark` on `body`, so that is the
  * signal rather than the OS preference — the user may override either way.
  */
+/**
+ * The two palettes, exported so a test can sweep BOTH.
+ *
+ * `currentTheme()` reads the document, which a Node test does not have, so a
+ * library-wide check for "does this icon vanish into the background" needs the
+ * dark palette by name rather than by imitation. Tests that hand-build theme
+ * objects from these values drift from the real palette; these cannot.
+ */
+export const LIGHT_THEME: Theme = LIGHT;
+export const DARK_THEME: Theme = DARK;
+
+/** Relative luminance, for contrast checks. */
+export { relativeLuminance };
+
 export function currentTheme(): Theme {
   if (typeof document === "undefined") return LIGHT;
   const body = document.body;

@@ -5,6 +5,42 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.55] — 2026-10-14
+
+### Added
+
+- **Four library-wide sweeps that catch a component which "looks wrong"**, rather
+  than waiting for someone to notice one. Each asserts an exact property over every
+  class the palette offers and names the class and the numbers when it fails:
+
+  | sweep | the fault it catches | falsified by |
+  |---|---|---|
+  | no class silently drops a graphic | the tank's `extent=DynamicSelect(...)` rectangle, and any attribute the parser cannot read | restoring the summariser: **19 of 15625 classes** |
+  | no attribute is left as an unreadable expression | a label or shape whose value is `name(...)` — the annotation's own source | keeping the call as text: **11 attributes** |
+  | every declared weight is drawn at its weight | the stroke divided by the transform scale — a 10px outline where 1px was due | restoring the division: **9027 weights** |
+  | no icon disappears into the canvas, in either theme | a component nothing can be seen of, in light or dark | drawing every mark in the canvas colour: the control reads **1.00:1** against 3.36 |
+
+  The parser now RECORDS what it could not interpret (`ParsedClass.unparsedGraphics`)
+  instead of dropping a primitive in silence — a dropped graphic is invisible, and
+  "the picture is missing something" is not a bug report anyone can act on.
+
+- The sweeps' method is written at the top of `test/icon-render.test.mjs`, including
+  the two rules learned from the faults found while writing them:
+
+  1. **Assert an exact property or a named set, never a tolerated count.** The
+     existing drop check allowed 46 under-parsed classes; the tank was one of them,
+     which is why nothing went red when its picture lost a rectangle.
+  2. **Calibrate the measurement on a case with an independently known answer.** The
+     theme-visibility sweep read `theme.background` — a CSS string — as if it were a
+     number, so every contrast came out `NaN`, `NaN < 3` was false, and the sweep
+     passed for its whole life, including against a probe that drew every mark in
+     the canvas colour. It now checks one known stroke against a contrast of 3.36:1
+     computed by hand from the two colours.
+
+  Two harness gaps were found by the same process and fixed: the recorder did not
+  carry stroke widths or the colour of text, so a text-only icon (`Electrical.Digital.Basic.And`
+  is an ampersand) looked invisible and a weight could not be judged at all.
+
 ## [0.2.0-beta.54] — 2026-10-14
 
 ### Fixed

@@ -58,6 +58,17 @@ export interface ParsedClass {
   /** Icon-layer graphics (short class name "Icon" or the class's own default icon). */
   icon: Graphic[];
   /**
+   * Primitives the class declares that could not be interpreted, by kind.
+   *
+   * A graphic whose `extent` is an expression the parser cannot read is DROPPED,
+   * and a dropped graphic is invisible: the tank's water rectangle is declared
+   * `extent=DynamicSelect(...)`, so the tank drew empty and nothing anywhere said
+   * why. Recording the drop turns "the picture is missing something" into a named
+   * fault a test can assert across the whole library. Empty for every class in MSL
+   * 4.1.0 -- which is the assertion.
+   */
+  unparsedGraphics: string[];
+  /**
    * Icons declared on this class's own components, used only when the class
    * declares no Icon of its own. MSL's `Boundary_pT` draws nothing itself and
    * gives its `medium` component the picture instead.
@@ -277,6 +288,7 @@ class Parser {
         connections: [],
         equations: [],
         icon: [],
+        unparsedGraphics: [],
         componentIcons: [],
         diagram: [],
         parameters: [],
@@ -302,6 +314,7 @@ class Parser {
       connections: [],
       equations: [],
       icon: [],
+      unparsedGraphics: [],
       componentIcons: [],
       diagram: [],
       parameters: [],
@@ -311,7 +324,12 @@ class Parser {
       endOffset: startTok.start,
     };
 
+    // Drops are attributed to the class whose body is being walked: the stack is
+    // pushed here and popped here, so a nested class's graphic is never charged to
+    // its parent.
+    this.dropStack.push(cls.unparsedGraphics);
     this.parseClassBody(cls, [...prefix, name]);
+    this.dropStack.pop();
     cls.endOffset = this.peek().start;
     return cls;
   }
@@ -1274,6 +1292,7 @@ class Parser {
         const args = this.parseArgumentListRaw(dyn);
         const g = buildGraphic(key, args, dyn);
         if (g) out[key] = g;
+        else this.dropStack[this.dropStack.length - 1]?.push(key);
         continue;
       }
 
@@ -1544,6 +1563,15 @@ class Parser {
    * idiom used by the whole Modelica Standard Library), the result is a list of
    * `Graphic` objects; otherwise it is a plain array of values.
    */
+  /**
+   * Primitives that could not be interpreted, per class being parsed.
+   *
+   * A stack, because a nested class's graphics belong to the nested class: its own
+   * body parse pushes and pops, so a parent is never charged with a child's drop
+   * (nor credited with its graphics).
+   */
+  private dropStack: string[][] = [];
+
   private parseBraceList(): unknown[] {
     const GRAPHICS = new Set([
       "Line", "Polygon", "Rectangle", "Ellipse", "Text", "Bitmap",
@@ -1570,6 +1598,7 @@ class Parser {
         const args = this.parseArgumentListRaw(dyn);
         const g = buildGraphic(kind, args, dyn);
         if (g) out.push(g);
+        else this.dropStack[this.dropStack.length - 1]?.push(kind);
         continue;
       }
 
