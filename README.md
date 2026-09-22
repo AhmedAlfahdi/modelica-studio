@@ -103,8 +103,9 @@ Not in the community plugin list yet. Two ways in.
 ### With BRAT, which keeps it updated
 
 [BRAT](https://tfthacker.com/BRAT) installs a plugin straight from its GitHub
-releases and updates it for you. This plugin is beta-only, so every release is a
-pre-release and BRAT is the intended route.
+releases and updates it for you. The plugin is pre-1.0, so the version numbers are
+0.x; from 0.3.0 the releases are ordinary releases rather than pre-releases, and the
+0.2.0-beta.* line stays available for anyone pinning an older build.
 
 1. Install **BRAT** from Settings → Community plugins → Browse.
 2. In BRAT's settings, **Add Beta Plugin**.
@@ -113,7 +114,7 @@ pre-release and BRAT is the intended route.
    Settings → Community plugins.
 
 To pin a version instead of tracking the latest, use BRAT's **frozen** option and
-name the release, for example `0.2.0-beta.58`.
+name the release, for example `0.3.0`.
 
 BRAT reports a mismatch if a release's tag, its name and the version inside the
 released `manifest.json` disagree. They are kept identical here on purpose, so an

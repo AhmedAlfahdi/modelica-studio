@@ -16,7 +16,7 @@ authors:
 license: GPL-3.0-or-later
 repository-code: "https://github.com/AhmedAlfahdi/modelica-studio"
 url: "https://github.com/AhmedAlfahdi/modelica-studio"
-version: 0.2.0-beta.58
+version: 0.3.0
 date-released: "2026-10-14"
 keywords:
   - modelica

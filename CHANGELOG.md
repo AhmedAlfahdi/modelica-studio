@@ -5,6 +5,45 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.0] — 2026-10-14
+
+The first release that is not tagged beta. **The code is beta.58's** — no drawing,
+parsing or simulation behaviour changed — so this entry is what 0.3.0 contains
+rather than what it fixes; the per-change detail is in the beta entries below.
+
+### What it is
+
+- **A visual Modelica editor for Obsidian**: drag components from the palette, wire
+  them, set parameters in the inspector, and simulate with the OpenModelica already
+  installed on the machine. Results plot beside the diagram, in the note or in the
+  studio.
+- **Drawn the way the library says.** Symbol outlines, wires, port colours and line
+  weights all come from the annotations MSL itself declares — including
+  `DynamicSelect`, so an animated icon (a tank's level) draws its editing state
+  rather than the source of its annotation.
+- **Settings for the things a reader adjusts**: label size, wire and component line
+  thickness (with a link that keeps the library's ratio), parameter-popup and
+  readout sizes, cursor snapping, and a reset that keeps the record of your work.
+- **Help in the application**, with a colour legend, the connection rules quoted
+  from the library, and the keyboard shortcuts read from the code that implements
+  them.
+
+### Licence
+
+**GPL-3.0-or-later**, copyright (C) 2026 Ahmed N. Alfahdi. It was MIT; that permits
+a fork to take the plugin closed, which is the one thing the licence is meant to
+prevent. Everything from this version on must stay open and stay attributed, and
+modified versions must say they are modified.
+
+Citation is *asked for* rather than required — see `CITATION.cff` and the README's
+Citing section. A citation requirement cannot be part of an open-source licence:
+the [GNU FAQ](https://www.gnu.org/licenses/gpl-faq.html#RequireCitation) says it goes
+beyond section 7(b), and Debian [patched exactly such a notice out of GNU
+`parallel`](https://bugs.debian.org/905674).
+
+Releases up to `0.2.0-beta.57` were MIT and stay MIT: a licence grant cannot be
+withdrawn from a copy already distributed.
+
 ## [0.2.0-beta.58] — 2026-10-14
 
 ### Changed

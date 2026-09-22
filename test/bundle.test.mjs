@@ -372,14 +372,27 @@ test("release artifacts match the distribution contract", () => {
   }
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.json"), "utf8"));
   assert.equal(manifest.isDesktopOnly, true, "must be desktop-only (spawns a compiler, uses Node fs)");
-  // Obsidian accepts a semver prerelease suffix, and a beta release needs one.
+  // Obsidian accepts a semver prerelease suffix, and which of the two forms is in
+  // use decides how the release is published: a tagged version is a pre-release,
+  // an untagged one is an ordinary release. The README tells the reader which to
+  // expect, so the two are checked against each other -- a version that hides
+  // which it is would either hide a beta from anyone tracking releases, or promise
+  // a stability the build does not have. (This assertion said "a beta version
+  // carries a prerelease tag" until 0.3.0, the first release not tagged beta.)
   assert.match(
     manifest.version,
     /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/,
     "version must be x.y.z or x.y.z-tag"
   );
-  // A beta must say so, or a user cannot tell this from a stable release.
-  assert.match(manifest.version, /-/, "a beta version carries a prerelease tag");
+  const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
+  const preRelease = manifest.version.includes("-");
+  assert.equal(
+    /ordinary releases rather than pre-releases/.test(readme),
+    !preRelease,
+    preRelease
+      ? `${manifest.version} is a pre-release, and the README must say releases are pre-releases`
+      : `${manifest.version} is not a pre-release, and the README must say releases are ordinary`
+  );
   assert.equal(manifest.id, manifest.id.toLowerCase(), "id must be lowercase");
   assert.ok(manifest.description.length <= 250, "description within Obsidian's limit");
   assert.ok(manifest.minAppVersion, "minAppVersion is required");
