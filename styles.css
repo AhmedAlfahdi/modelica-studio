@@ -2352,3 +2352,40 @@ body.modelica-studio-resizing * {
   background: var(--background-modifier-hover);
   font-weight: 600;
 }
+
+/* ------------------------------------------------------------------ *
+ * The wire legend in Help
+ *
+ * The rule for how a connection is drawn is easier to read than to describe, so
+ * the legend shows the four that cover the library: a short bar per row, in the
+ * colour the canvas would use, at its own weight — 2px for a single line and 4px
+ * for the double one a bus asks for. The colour itself is set from the drawing
+ * code, so the legend cannot drift from what is on screen, in either theme.
+ * ------------------------------------------------------------------ */
+.modelica-studio-help-wires {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.modelica-studio-help-wire-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.modelica-studio-help-wire {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 2px;
+  border-radius: 1px;
+}
+
+/* Double, as the library's thickness=0.5 asks for. Shown at twice the single
+   line rather than at a literal 2px, so the difference is what the eye sees. */
+.modelica-studio-help-wire.is-double {
+  height: 4px;
+}

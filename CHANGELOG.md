@@ -5,6 +5,29 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.42] — 2026-10-14
+
+### Added
+
+- **The rule for how a connection is drawn is now explained in Help**, in the
+  Diagrams tab, under "How a connection is drawn". Nothing on a diagram says why
+  one wire is blue and another is yellow at double width, and the answer is a
+  library convention rather than anything visible.
+
+  The section shows the four cases that cover MSL as short bars — an electrical
+  pin in the library's blue at a single line, a rotational flange in ink at a
+  single line, a signal or control bus in yellow at **double** width, and a
+  multibody frame in grey at double width — each coloured by the same function the
+  canvas draws with, so the legend cannot drift from what is on screen, in either
+  theme. It also states the measurement it rests on: of the library's 94
+  connectors, 80 ask for a single line and 14 for double.
+
+### Fixed
+
+- The Help text still pointed at "Settings → Modelica Studio → **Diagram labels**",
+  the section's name before it was renamed to "Diagram" in beta.37. A test now
+  fails if the old name comes back.
+
 ## [0.2.0-beta.41] — 2026-10-14
 
 ### Changed

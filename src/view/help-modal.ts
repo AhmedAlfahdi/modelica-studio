@@ -17,6 +17,9 @@ import type ModelicaStudioPlugin from "../main";
 import { libraryHelpUrl, libraryIconsUrl, libraryVersionFrom } from "../modelica/doclinks";
 import { openInBrowser } from "./studio-view";
 import { DOMAIN_INFO, domainAttributes } from "../render/domains";
+import { currentTheme, themedColor } from "../render/theme";
+import { rgb } from "../render/canvas";
+import type { Color } from "../modelica/types";
 
 /** What the modifier key is called on this platform. */
 const mod = Platform.isMacOS ? "Cmd" : "Ctrl";
@@ -257,6 +260,61 @@ export class HelpModal extends Modal {
       openInBrowser(libraryIconsUrl(libraryVersionFrom(this.plugin.libraryRootNames())))
     );
 
+    /* ---- how a wire is drawn ---- */
+    el.createEl("h4", { text: "How a connection is drawn" });
+    el.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "A wire takes its colour and its weight from the CONNECTOR it is attached " +
+        "to, not from the wire: the library's convention is that the first line " +
+        "element in a connector class's own icon says how a connection to it looks. " +
+        "That is the same set of codes as the table above, which is why an " +
+        "electrical connection is the electrical blue and a shaft is the diagram's " +
+        "own ink.",
+    });
+    // The four that cover the library, drawn the way the canvas draws them: the
+    // swatch is coloured by the same function the renderer uses, so this legend
+    // cannot drift from what is on screen, in either theme.
+    const wireRows = el.createDiv({ cls: "modelica-studio-help-wires" });
+    const wireRow = (color: Color, double: boolean, text: string) => {
+      const line = wireRows.createDiv({ cls: "modelica-studio-help-wire-row" });
+      const swatch = line.createSpan({
+        cls: `modelica-studio-help-wire${double ? " is-double" : ""}`,
+      });
+      swatch.style.background = rgb(themedColor(color, currentTheme(), "stroke"));
+      line.createSpan({ cls: "modelica-studio-help-wire-text", text });
+    };
+    wireRow([0, 0, 255], false, "An electrical pin — the library's {0,0,255}, a single line.");
+    wireRow(
+      [0, 0, 0],
+      false,
+      "A rotational flange, which names no colour of its own — black, and drawn as " +
+        "ink so it stays visible on a dark canvas. A single line."
+    );
+    wireRow(
+      [255, 204, 51],
+      true,
+      "A signal or control bus — {255,204,51}, and DOUBLE width: the library asks " +
+        "for thickness=0.5, and 0.25 is one line."
+    );
+    wireRow(
+      [95, 95, 95],
+      true,
+      "A multibody frame — {95,95,95}, also double width."
+    );
+    el.createEl("p", {
+      cls: "modelica-studio-muted",
+      text:
+        "Of the 94 connectors in the library, 80 ask for a single line and 14 for " +
+        "double — the signal and control buses, the StateGraph inflow and outflow " +
+        "connectors, and the multibody frames. A Line annotation written on the " +
+        "connect clause itself, which is what a tool records when a route is " +
+        "dragged by hand, wins over the connector. Wire thickness in Settings → " +
+        "Modelica Studio → Diagram scales all of them together, so a bus stays " +
+        "double at any weight; Component line thickness, in the same place, is " +
+        "about the symbols rather than the wires.",
+    });
+
     /* ---- reading the diagram ---- */
     //
     // Behaviour that has no visible affordance: nothing on screen says a hover
@@ -271,7 +329,7 @@ export class HelpModal extends Modal {
         "that differ from the class default first — reading a diagram's settings " +
         "otherwise means selecting each component in turn. Switch it off, and set " +
         "the size of the name under each component, in Settings → Modelica Studio → " +
-        "Diagram labels. Both apply to the Studio and to diagrams embedded in notes.",
+        "Diagram. Both apply to the Studio and to diagrams embedded in notes.",
     });
     el.createEl("p", {
       cls: "modelica-studio-muted",

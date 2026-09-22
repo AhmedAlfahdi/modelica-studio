@@ -552,6 +552,81 @@ test("the crossing-snap settings render, read the stored values, and grey each o
   assert.equal(d["the distance is still the one that was set"], "distance=14", "and it is not reset");
 });
 
+test("Help explains how a connection is drawn, with the colours themselves", async () => {
+  // The rule is MSL's, and the reader cannot guess it: nothing on a diagram says
+  // why one wire is blue and another is yellow at double width.
+  const out = page(
+    "const plugin = makePlugin(new StubVault(), {});",
+    "const modal = new HelpModal(plugin.app, plugin);",
+    "modal.open();",
+    "const el = modal.contentEl;",
+    "const diagrams = Array.from(el.querySelectorAll('.modelica-studio-help-panel')).find((p) => p.textContent.includes('Domain colours'));",
+    "",
+    "window.test('the section is in the Diagrams tab', () => {",
+    "  if (!diagrams) return 'NO DIAGRAMS PANEL';",
+    "  const headings = Array.from(diagrams.querySelectorAll('h4')).map((h) => h.textContent);",
+    "  return headings.join(' | ');",
+    "});",
+    "window.test('the rule is stated, with the numbers measured from the library', () => {",
+    "  const text = diagrams.textContent.replace(/\\s+/g, ' ');",
+    "  return ['first line element', '94 connectors', '80 ask for a single line', '14 for double', 'thickness=0.5']",
+    "    .map((k) => k + '=' + text.includes(k)).join(' ');",
+    "});",
+    "window.test('every example carries a swatch, coloured as the canvas draws it', () => {",
+    "  const rows = Array.from(diagrams.querySelectorAll('.modelica-studio-help-wire-row'));",
+    "  return rows.map((r) => {",
+    "    const sw = r.querySelector('.modelica-studio-help-wire');",
+    "    return (r.textContent.split('—')[0].trim()) + ':' + (sw ? sw.style.background + (sw.classList.contains('is-double') ? ' x2' : ' x1') : 'NO SWATCH');",
+    "  }).join(' | ');",
+    "});",
+    "window.test('the two that are double are the bus and the frame', () => {",
+    "  const dou = Array.from(diagrams.querySelectorAll('.modelica-studio-help-wire.is-double'));",
+    "  return dou.length + ' double: ' + dou.map((d) => d.parentElement.textContent.split('—')[0].trim()).join(',');",
+    "});",
+    "window.test('the settings it interacts with are named by their current names', () => {",
+    "  const text = diagrams.textContent.replace(/\\s+/g, ' ');",
+    "  return 'wireThickness=' + text.includes('Wire thickness') + ' componentLines=' + text.includes('Component line thickness') + ' staleName=' + text.includes('Diagram labels');",
+    "});",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const d = passed(out);
+
+  assert.match(
+    d["the section is in the Diagrams tab"],
+    /Domain colours.*How a connection is drawn/s,
+    "it follows the domain colours, which is what it builds on"
+  );
+  assert.equal(
+    d["the rule is stated, with the numbers measured from the library"],
+    "first line element=true 94 connectors=true 80 ask for a single line=true " +
+      "14 for double=true thickness=0.5=true",
+    "the rule and the measurement are both there"
+  );
+  assert.equal(
+    d["every example carries a swatch, coloured as the canvas draws it"],
+    // The flange names no colour, so it is the language's black — which the theme
+    // turns into ink; this page is the light theme, where ink IS black.
+    "An electrical pin:rgb(0, 0, 255) x1 | A rotational flange, which names no colour of its own:" +
+      "rgb(0, 0, 0) x1 | A signal or control bus:rgb(255, 204, 51) x2 | " +
+      "A multibody frame:rgb(95, 95, 95) x2",
+    "four examples, each in the colour the renderer would use"
+  );
+  assert.equal(
+    d["the two that are double are the bus and the frame"],
+    "2 double: A signal or control bus,A multibody frame",
+    "only the two the library asks 0.5 for"
+  );
+  assert.equal(
+    d["the settings it interacts with are named by their current names"],
+    "wireThickness=true componentLines=true staleName=false",
+    "and the renamed settings section is not referred to by its old name"
+  );
+});
+
 test("the palette renders, respects exclusions, and can be driven by keyboard", async () => {
   // The palette with exclusions applied was only ever measured by COUNT, never
   // rendered; and it had no keyboard support at all, which matters more now that
