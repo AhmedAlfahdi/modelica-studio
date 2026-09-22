@@ -148,8 +148,18 @@ export interface Placement {
 /** A connector (port) definition on a component class. */
 export interface PortDef {
   name: string;
-  /** Fully-qualified connector type, e.g. Modelica.Electrical.Analog.Interfaces.Pin */
+  /** The connector type as the model WROTE it — `Pin`, or a full path. */
   type: string;
+  /**
+   * The class that type resolves to, fully qualified, when it can be resolved.
+   *
+   * `type` is what the declaration says and `connectorClass` is what it means:
+   * MSL writes a bare `Pin` inside a package as often as the full path. The
+   * editor needs the resolved name to find the connector's OWN icon, because
+   * that icon is where MSL's rule for drawing a connection reads the line's
+   * colour and thickness from.
+   */
+  connectorClass?: string;
   /** true if the connector class contains a `flow` variable. */
   isFlow: boolean;
   /** Primitive-typed scalar connectors carry a direction. */

@@ -25,11 +25,13 @@ export interface LibrarySource {
   isPackageDir: boolean;
 }
 
-/** A connector type's essential shape. */
+/** A connector type's essential shape, and which class it turned out to be. */
 interface ConnectorInfo {
   isFlow: boolean;
   /** Number of potential variables (excluding flow) — 0 means a signal port. */
   hasPotential: boolean;
+  /** The class the declared name resolved to, fully qualified. */
+  qualifiedName: string;
 }
 
 /**
@@ -428,7 +430,7 @@ export class LibraryIndex {
       }
     }
 
-    const info: ConnectorInfo = { isFlow, hasPotential };
+    const info: ConnectorInfo = { isFlow, hasPotential, qualifiedName: cls.qualifiedName };
     this.connectorCache.set(cacheKey, info);
     return info;
   }
@@ -591,6 +593,9 @@ export class LibraryIndex {
         isFlow: prefixes.has("flow") || info?.isFlow === true,
         causality,
         condition: p.condition,
+        // Where the type resolved to, so a caller can look the connector class up
+        // without knowing the package the declaration sat in.
+        ...(info ? { connectorClass: info.qualifiedName } : {}),
       });
     }
 

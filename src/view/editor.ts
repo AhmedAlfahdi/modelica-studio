@@ -39,6 +39,7 @@ import type {
 } from "../modelica/types";
 import { emptyDiagram } from "../modelica/types";
 import { currentTheme, type Theme } from "../render/theme";
+import { connectorWireStyle, type ConnectorWireStyle } from "../render/connector-style";
 import {
   apply,
   defaultComponentSize,
@@ -2027,9 +2028,18 @@ export class SchematicEditor {
     // and their port rings all take their weight from these settings.
     const display = this.cb.display?.() ?? { labelScale: 1, hoverParameters: false };
 
+    // Resolved once per frame: a model of a hundred components has a couple of
+    // hundred connections, and looking each endpoint up by scanning would be
+    // quadratic on every paint.
+    const componentsById = new Map(this.model.components.map((c) => [c.id, c]));
+
     for (const conn of this.model.connections) {
       const picked = this.wireSelection.has(conn.id);
       const points = this.connectionPoints(conn);
+      // The connector's own colour, unless the model carries an explicit
+      // annotation on the connect clause, which is what a tool writes when a
+      // route is edited by hand — that wins.
+      const wire = this.connectionStyle(conn, componentsById);
       drawConnection(ctx, conn, points, vp, dpr, {
         // A wire is highlighted when it is selected itself, and also when a
         // component it attaches to is selected: moving a component takes its
@@ -2040,7 +2050,10 @@ export class SchematicEditor {
           this.selection.has(conn.from.component) ||
           this.selection.has(conn.to.component) ||
           this.hoveredWire === conn.id,
-        widthScale: this.wireScale(),
+        // The library's own ratio (0.5 is double) times the reader's preference:
+        // a bus stays double whatever weight they have chosen.
+        widthScale: this.wireScale() * (wire?.widthRatio ?? 1),
+        ...(conn.color ? {} : wire?.color ? { color: wire.color } : {}),
       });
       // Corners to drag, but only for the wire in hand: showing them for every
       // wire attached to a selected component would litter a multi-selection with
@@ -2499,6 +2512,30 @@ export class SchematicEditor {
   /** The wire-thickness setting, read per use rather than captured. */
   private wireScale(): number {
     return this.cb.display?.().wireScale ?? 1;
+  }
+
+  /**
+   * How MSL says a wire to this connection's connectors is drawn.
+   *
+   * The rule takes the colour and the weight from the connector's own icon — see
+   * `connectorWireStyle` — so this resolves each end's port to its connector
+   * class and asks it. The `from` end decides; the `to` end is the fallback for
+   * a wire whose first end is a plain signal port (`input Real u`) with no
+   * connector class of its own.
+   */
+  private connectionStyle(
+    conn: Connection,
+    byId: Map<string, ComponentInstance>
+  ): ConnectorWireStyle | undefined {
+    for (const end of [conn.from, conn.to]) {
+      const inst = byId.get(end.component);
+      if (!inst) continue;
+      const port = this.cb.lookup(inst.className)?.ports.find((p) => p.name === end.port);
+      if (!port?.connectorClass) continue;
+      const style = connectorWireStyle(this.cb.lookup(port.connectorClass));
+      if (style) return style;
+    }
+    return undefined;
   }
 
   private hitTestWire(

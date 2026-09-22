@@ -1976,7 +1976,20 @@ export function drawConnection(
   points: number[],
   vp: Viewport,
   dpr: number,
-  opts: { selected?: boolean; width?: number; widthScale?: number; theme?: Theme } = {}
+  opts: {
+    selected?: boolean;
+    width?: number;
+    widthScale?: number;
+    theme?: Theme;
+    /**
+     * The colour to draw with, resolved by the caller.
+     *
+     * MSL's rule is that a connection is coloured by its CONNECTOR's own icon, so
+     * the caller is the one that can find that out; `conn.color` is the explicit
+     * annotation a tool wrote on the connect clause, which wins when it is there.
+     */
+    color?: Color;
+  } = {}
 ): void {
   const theme = opts.theme ?? currentTheme();
   if (points.length < 4) return;
@@ -1997,7 +2010,8 @@ export function drawConnection(
   // transform in place scaled them by `dpr` a second time, which put every wire
   // at a different place from the symbols it connects.
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.strokeStyle = conn.color ? rgb(themedColor(conn.color, theme, "stroke")) : rgb(theme.wire);
+  const line = opts.color ?? conn.color;
+  ctx.strokeStyle = line ? rgb(themedColor(line, theme, "stroke")) : rgb(theme.wire);
   // `basePx` is a width in SCREEN pixels — that is what its clamps are for, and
   // what `wireWidthPx` documents — so under the identity transform it is used as
   // it stands. Dividing it by the zoom as well made the width inversely

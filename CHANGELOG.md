@@ -5,6 +5,42 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.41] — 2026-10-14
+
+### Changed
+
+- **A connection is now drawn the way MSL 4.1.0 says it should be.** The rule is
+  stated once in the library, in the UsersGuide of `Modelica.Blocks`:
+
+  > "the color and thickness of a connector line are taken from the first line
+  > element in the icon annotation of a connector class … the connecting line has
+  > the color of the "ControlBus" with double width (due to "thickness=0.5")."
+
+  The scale that sentence implies is the language's: the specification gives
+  `Line.thickness` and `FilledShape.lineThickness` the default 0.25, so 0.25 is one
+  line, 0.5 is double, 1.0 four times and 5.0 twenty. Measured over MSL 4.1.0: of
+  its 94 connectors, **80 declare nothing** (a single line) and **14 declare 0.5**
+  (double) — the signal and control buses, the StateGraph inflow/outflow
+  connectors, and the MultiBody frames.
+
+  So an electrical wire is now the domain's blue, a shaft is the ink colour, a
+  MultiBody frame is grey at double width and a bus is `{255,204,51}` at double
+  width. An explicit `Line` annotation written on the connect clause still wins —
+  that is what a tool records when a route is edited by hand — and the wire
+  thickness setting multiplies on top, so a bus stays double whatever weight you
+  prefer.
+
+  One decision worth recording: the rule says the **line** colour, and a mark that
+  names only a fill does not supply one. `Flange_a` and `Flange_b` are both filled
+  ellipses with no `lineColor` — grey and **white** — so reading the fill would
+  have drawn every rotational connection in white, invisible on a light canvas.
+  The specification's own default, black, is used instead, and the theme turns a
+  black stroke into ink so it stays visible on a dark canvas too.
+
+- Each port now carries the connector class its type resolved to, fully qualified,
+  so a relative declaration (`Pin`, `Flange_a`) can be looked up by something that
+  does not know which package it sat in.
+
 ## [0.2.0-beta.40] — 2026-10-14
 
 ### Added

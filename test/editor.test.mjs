@@ -1463,6 +1463,118 @@ test("the setting reaches the symbols and their pins, not the wires", () => {
   editor.destroy();
 });
 
+test("a connection is drawn as MSL says its connector declares", () => {
+  // The rule reaches the drawing: a wire to a bus connector is the bus colour at
+  // double width, a wire to a plain connector keeps the theme colour at one, and
+  // an annotation written on the connect clause still wins over both.
+  const classDef = (name, icon, ports) => ({
+    name,
+    shortName: name.split(".").pop(),
+    icon,
+    ports,
+    parameters: [],
+    hasIcon: true,
+  });
+  // The resistor-like class the fixture components use, with one port whose
+  // connector class is the bus, and one whose connector is a plain pin.
+  const busConnector = classDef("P.Bus", [
+    { kind: "Rectangle", extent: [-20, -2, 20, 2], lineColor: [255, 204, 51], lineThickness: 0.5 },
+  ], []);
+  const pinConnector = classDef("P.Pin", [
+    { kind: "Rectangle", extent: [-100, 100, 100, -100], lineColor: [0, 0, 255], fillPattern: "Solid" },
+  ], []);
+  const host = classDef("P.Host", [
+    { kind: "Rectangle", extent: [-10, -10, 10, 10], lineColor: [0, 0, 0] },
+  ], [
+    { name: "bus", type: "Bus", connectorClass: "P.Bus", isFlow: false, causality: "acausal" },
+    { name: "sig", type: "Pin", connectorClass: "P.Pin", isFlow: false, causality: "acausal" },
+  ]);
+  const DEFS2 = { "P.Host": host, "P.Bus": busConnector, "P.Pin": pinConnector };
+
+  const components = [
+    { id: "a", className: "P.Host", placement: { extent: [-60, -20, -20, 20], rotation: 0, visible: true }, params: {} },
+    { id: "b", className: "P.Host", placement: { extent: [20, -20, 60, 20], rotation: 0, visible: true }, params: {} },
+  ];
+
+  /** Draw a model and report the wire strokes: colour and weight per connection. */
+  const strokesFor = (connections) => {
+    const h = new StubElement("div");
+    const ed = new SchematicEditor(
+      h,
+      { name: "M", components, connections, graphics: [] },
+      {
+        lookup: (n) => DEFS2[n],
+        onChange: () => {},
+        onSelectionChange: () => {},
+        onStatus: () => {},
+        display: () => ({ labelScale: 1, hoverParameters: false, wireScale: 1, symbolStrokeScale: 1 }),
+      }
+    );
+    const c = canvasOf(ed);
+    layoutTo(c, 1000, 600);
+    ed.resize();
+    // The wire is the FIRST stroke after the grid, as the drawing order is
+    // grid → connections → symbols.
+    const seen = [];
+    let style = "";
+    let width = 1;
+    ed.ctx = new Proxy(
+      { canvas: { width: 1000, height: 600 }, measureText: () => ({ width: 10 }), lineWidth: 1 },
+      {
+        get(t, k) {
+          if (k in t) return t[k];
+          if (k === "stroke") return () => seen.push({ style, width });
+          return () => {};
+        },
+        set(t, k, v) {
+          if (k === "strokeStyle") style = String(v);
+          if (k === "lineWidth") width = v;
+          t[k] = v;
+          return true;
+        },
+      }
+    );
+    SchematicEditor.prototype.draw.call(ed);
+    ed.destroy();
+    return seen;
+  };
+
+  // The frame strokes the grid first, so identify it once and ignore it: the
+  // wire is the stroke that is not the grid.
+  const grid = strokesFor([])[0];
+  const wireIn = (seen) => seen.find((st) => st.style !== grid.style) ?? seen[0];
+
+  const busWire = strokesFor([
+    { id: "c1", from: { component: "a", port: "bus" }, to: { component: "b", port: "bus" }, points: [] },
+  ]);
+  const pinWire = strokesFor([
+    { id: "c2", from: { component: "a", port: "sig" }, to: { component: "b", port: "sig" }, points: [] },
+  ]);
+  const annotated = strokesFor([
+    {
+      id: "c3",
+      from: { component: "a", port: "bus" },
+      to: { component: "b", port: "bus" },
+      points: [],
+      color: [1, 2, 3],
+    },
+  ]);
+
+  const bus = wireIn(busWire);
+  const pin = wireIn(pinWire);
+  assert.ok(bus && pin, "wires were stroked");
+  // The connector's colour and double width for the bus …
+  assert.equal(bus.style, "rgb(255,204,51)", "the bus colour");
+  assert.ok(
+    Math.abs(bus.width - 2 * pin.width) < 1e-9,
+    `double width (${pin.width} -> ${bus.width})`
+  );
+  // … the domain colour at a single width for the pin …
+  assert.equal(pin.style, "rgb(0,0,255)", "the pin colour");
+  // … and the annotation on the connect clause wins over the connector.
+  assert.equal(wireIn(annotated).style, "rgb(1,2,3)", "the written annotation wins");
+});
+
 test("a wire never grows fatter on screen as the diagram shrinks", () => {
   // Reported from two screenshots: zoomed in, the wires looked right; zoomed out,
   // they covered the symbols they connect. The cause was the stroke being divided
