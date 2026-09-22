@@ -513,3 +513,57 @@ test("the same name with spaces still counts", () => {
   });
   assert.equal(problems.length, 1);
 });
+
+test("the licence and citation metadata agree with each other", () => {
+  // Licensing metadata is the easiest thing in a repository to leave stale, and the
+  // one place where being wrong matters beyond the build: a citation that names the
+  // wrong version, or a package.json that disagrees with the LICENSE, is a claim
+  // someone may rely on when they reuse the work.
+  const root = path.join(repoRoot);
+  const read = (f) => fs.readFileSync(path.join(root, f), "utf8");
+
+  const pkg = JSON.parse(read("package.json"));
+  const manifest = JSON.parse(read("manifest.json"));
+  const cff = read("CITATION.cff");
+
+  assert.equal(pkg.license, "GPL-3.0-or-later", "npm reads the licence from here");
+  assert.equal(pkg.author, "Ahmed N. Alfahdi", "and the author");
+  assert.equal(manifest.author, "Ahmed N. Alfahdi", "the store shows this as the author");
+
+  // The LICENSE file is the verbatim GPL-3.0 text with the "or later" appendix --
+  // checked for the two markers that distinguish that from GPL-2, from
+  // GPL-3.0-only, and from an empty file.
+  const licence = read("LICENSE");
+  assert.match(licence, /GNU GENERAL PUBLIC LICENSE\s+Version 3, 29 June 2007/, "GPL-3 text");
+  assert.match(
+    licence,
+    /either version 3 of the License, or \(at your option\) any later version/,
+    "applied as 'or later', which is what the metadata claims"
+  );
+  assert.ok(licence.length > 30000, `the whole text, not a summary (${licence.length} bytes)`);
+
+  // CITATION.cff: the version it names must be the version that exists.
+  const cffVersion = /^version:\s*(.+)$/m.exec(cff)?.[1]?.trim();
+  assert.equal(cffVersion, manifest.version, "the citation names the released version");
+  assert.match(cff, /^license:\s*GPL-3\.0-or-later$/m, "and the same licence as package.json");
+  assert.match(cff, /family-names:\s*Alfahdi/, "credited to the same person");
+
+  // The README is where a reader looks first: it must state the licence, and must
+  // present citation as a REQUEST. A requirement there would contradict the licence.
+  const readme = read("README.md");
+  assert.match(readme, /GNU General Public License, version 3 or later/, "the README says which licence");
+  assert.match(readme, /CITATION\.cff/, "and points at the citation file");
+  assert.match(
+    readme,
+    /not as a condition of the licence/,
+    "citation is asked for as a favour, not imposed -- a citation requirement is not an open-source licence"
+  );
+  assert.doesNotMatch(
+    readme,
+    /must cite|required to cite|shall cite/i,
+    "and nothing in the README imposes it"
+  );
+
+  // The whole point of the licence: a fork has to stay open and say so.
+  assert.match(readme, /Nobody can take it\s+closed|stays free/i, "the README says what a fork must do");
+});

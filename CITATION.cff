@@ -1,0 +1,26 @@
+# Citation metadata for this repository.
+#
+# GitHub renders this as the "Cite this repository" button. The `version` here is
+# kept in step with manifest.json by a test, because a citation that names the
+# wrong version is worse than one that names none.
+cff-version: 1.2.0
+message: "If you use this plugin in work you publish, please cite it as below."
+title: "Modelica Studio: a visual Modelica modelling and simulation environment for Obsidian"
+abstract: >-
+  An Obsidian plugin for modelling, simulating and plotting Modelica systems: a
+  visual drag-and-drop schematic editor whose simulations run on OpenModelica.
+type: software
+authors:
+  - family-names: Alfahdi
+    given-names: Ahmed N.
+license: GPL-3.0-or-later
+repository-code: "https://github.com/AhmedAlfahdi/modelica-studio"
+url: "https://github.com/AhmedAlfahdi/modelica-studio"
+version: 0.2.0-beta.58
+date-released: "2026-10-14"
+keywords:
+  - modelica
+  - openmodelica
+  - obsidian
+  - simulation
+  - schematic-editor

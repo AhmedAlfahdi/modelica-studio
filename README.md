@@ -113,7 +113,7 @@ pre-release and BRAT is the intended route.
    Settings → Community plugins.
 
 To pin a version instead of tracking the latest, use BRAT's **frozen** option and
-name the release, for example `0.2.0-beta.57`.
+name the release, for example `0.2.0-beta.58`.
 
 BRAT reports a mismatch if a release's tag, its name and the version inside the
 released `manifest.json` disagree. They are kept identical here on purpose, so an
@@ -138,7 +138,7 @@ To try it without your own vault, `examples/vault/` is a ready-made one — see
 npm install
 npm run build          # typecheck, then bundle to main.js
 npm run dev            # rebuild on change
-npm test               # 663 tests, including a numerical audit of every example
+npm test               # 664 tests, including a numerical audit of every example
 ```
 
 `npm test` runs the real OpenModelica compiler, so it needs `omc` on your PATH
@@ -559,7 +559,46 @@ scripts/               bundle checks
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
+**GNU General Public License, version 3 or later** — see [`LICENSE`](LICENSE).
+Copyright (C) 2026 Ahmed N. Alfahdi.
 
-Neither Modelica nor OpenModelica is bundled. OpenModelica is installed
-separately and is subject to its own licence.
+Use it for anything, including commercially, and change it however you like. Two
+things come with that, and they are the point of choosing this licence:
+
+- **It stays free.** Anyone who distributes this code or a modified version must
+  pass on the same freedoms — the source has to come with it. Nobody can take it
+  closed.
+- **It stays attributed.** The copyright notice and this licence travel with every
+  copy, and modified versions have to say that they are modified. A fork cannot
+  present itself as the original work.
+
+Nothing else is asked of you: running it, building models with it, publishing
+results from those models, or using it inside a company are all unrestricted.
+
+### Citing
+
+If this plugin contributes to work you publish, please cite it — as a favour to a
+student, not as a condition of the licence, because a citation requirement cannot
+be part of an open-source licence (the [GNU FAQ](https://www.gnu.org/licenses/gpl-faq.html#RequireCitation)
+says so explicitly, and Debian [patched exactly such a notice out of GNU `parallel`](https://bugs.debian.org/905674)).
+GitHub's "Cite this repository" button reads [`CITATION.cff`](CITATION.cff), which
+gives the version-independent form:
+
+> Alfahdi, A. N. (2026). *Modelica Studio: a visual Modelica modelling and
+> simulation environment for Obsidian* [Computer software].
+> https://github.com/AhmedAlfahdi/modelica-studio
+
+### Third-party notices
+
+Neither Modelica nor OpenModelica is bundled, so neither licence reaches this
+plugin:
+
+- **OpenModelica** is installed separately and invoked as a separate program
+  (`omc`); it is subject to its own licence.
+- **The Modelica Standard Library** is not redistributed either — it is parsed from
+  the copy already installed on the machine. It is licensed under the
+  [3-Clause BSD licence](https://modelica.org/licenses/modelica-3-clause-bsd),
+  which is compatible with this one. Two sentences of its documentation are quoted
+  in the Help window, with their source named where they appear.
+- **Obsidian's API** is imported at run time from the application, not distributed
+  with the plugin.

@@ -5,6 +5,47 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.58] — 2026-10-14
+
+### Changed
+
+- **Licensed under the GNU General Public License, version 3 or later.** It was
+  MIT, which permits a fork to take the plugin closed — the one thing the licence
+  was asked to prevent. GPL-3.0-or-later keeps it open and keeps it attributed:
+  anyone who distributes this code or a modified version must pass on the same
+  freedoms and keep the notices, and modified versions have to say they are
+  modified, so a fork cannot present itself as the original work. Copyright
+  (C) 2026 Ahmed N. Alfahdi, who is now named in `LICENSE`, `package.json` and
+  `manifest.json` (the name the community store displays).
+
+  **Why not a citation requirement as well:** it cannot be one. The
+  [GNU FAQ](https://www.gnu.org/licenses/gpl-faq.html#RequireCitation) is explicit
+  that requiring citation "in research papers which use the GPL-covered software"
+  is not permitted — it goes beyond what section 7(b) allows and is an additional
+  restriction — and copyright law does not let a licence place conditions on the
+  output of software. Debian [patched exactly such a notice out of GNU
+  `parallel`](https://bugs.debian.org/905674) for the same reason. So citation is
+  asked for as a favour, in [`CITATION.cff`](CITATION.cff) (which GitHub renders as
+  "Cite this repository") and in a **Citing** section of the README, and the
+  licence covers what is enforceable: staying open and staying attributed.
+
+  **Compatibility was measured, not assumed.** `main.js` imports only Node builtins
+  and `obsidian`, so no third-party code is bundled and nothing constrains the
+  choice; the Modelica Standard Library is 3-Clause BSD and is parsed from the
+  user's own copy rather than redistributed; OpenModelica is invoked as a separate
+  program. All three are recorded in the README's third-party notices.
+
+- `CITATION.cff`, with the version a test holds in step with `manifest.json` — a
+  citation that names a version that no longer exists is worse than one that names
+  none. The same test checks the licence identifiers agree across `LICENSE`,
+  `package.json`, `manifest.json` and the citation file, that the `LICENSE` is the
+  verbatim GPL-3 text applied as "or later" rather than "only", and that the README
+  asks for citation rather than imposing it. Each check is falsified: naming a
+  retired version, shipping GPL-3.0-only, and writing "you must cite" all fail it.
+
+  Also added: an SPDX header in `src/main.ts`, and the repository/author fields npm
+  and GitHub read.
+
 ## [0.2.0-beta.57] — 2026-10-14
 
 ### Added

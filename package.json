@@ -1,6 +1,6 @@
 {
   "name": "modelica-studio",
-  "version": "0.2.0-beta.57",
+  "version": "0.2.0-beta.58",
   "description": "Obsidian plugin for visual Modelica modeling and simulation. Beta.",
   "main": "main.js",
   "type": "module",
@@ -12,12 +12,17 @@
     "check:bundle": "node scripts/check-bundle.mjs",
     "check:repo": "node scripts/check-repo.mjs"
   },
+  "author": "Ahmed N. Alfahdi",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AhmedAlfahdi/modelica-studio.git"
+  },
   "keywords": [
     "obsidian",
     "modelica",
     "simulation"
   ],
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "devDependencies": {
     "@types/node": "^22.10.2",
     "builtin-modules": "^4.0.0",
