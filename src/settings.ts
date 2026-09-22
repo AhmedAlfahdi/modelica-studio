@@ -340,10 +340,11 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         .setName("Wire thickness")
         .setDesc(
           "Scales every wire, as a percentage of the thickness its own connector " +
-            "declares: 100% draws a single line at 1.5 px and a double one at 3 px " +
-            "at 100% zoom, and the library's ratio between them is kept at any " +
-            "setting. The area a wire can be clicked in follows, or a thick wire " +
-            "would look right and be hard to grab. Symbols and the grid are " +
+            "declares: 100% is the library's own weight, which draws a single line " +
+            "at 1.5 px and a double one at 3 px at 100% zoom, and the ratio between " +
+            "them is kept at any setting. The default, 90%, is a touch lighter than " +
+            "the library draws them. The area a wire can be clicked in follows, or a " +
+            "thick wire would look right and be hard to grab. Symbols and the grid are " +
             "unaffected — link the two if you would rather set them together. 400% " +
             "is the ceiling because past it a wire is heavier than the pin it " +
             "lands on."
@@ -363,9 +364,11 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         .setName("Component line thickness")
         .setDesc(
           "Scales the lines the component symbols are drawn with, as a percentage " +
-            "of the thickness each graphic declares: 100% draws a single line at " +
-            "1.5 px and the library's own double and quadruple lines at 3 px and " +
-            "6 px. Lines are drawn in proportion to a symbol's own size, so a " +
+            "of the thickness each graphic declares: 100% is the library's own " +
+            "weight, which draws a single line at 1.5 px and the library's double " +
+            "and quadruple lines at 3 px and 6 px. The default, 190%, draws them " +
+            "heavier than the library does, which is what reads best on screen. " +
+            "Lines are drawn in proportion to a symbol's own size, so a " +
             "small symbol keeps the same look as a large one. The pins on a " +
             "component follow it; text, fills and the selection outline do not. " +
             "400% is the ceiling: past it a symbol stops being a symbol."

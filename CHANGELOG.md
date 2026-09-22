@@ -5,6 +5,27 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.47] — 2026-10-14
+
+### Changed
+
+- **The thickness sliders start at 90% (wires) and 190% (components)** — a taste,
+  chosen by looking at diagrams rather than derived from anything, and now the
+  default. Measured through the drawing code at 100% zoom:
+
+  | | at the old default (100%) | at the new default |
+  |---|---|---|
+  | a pin wire (0.25) | 1.50 px | **1.35 px** |
+  | a bus wire (0.5) | 3.00 px | **2.70 px** |
+  | a ±10 component's outline (0.5) | 1.00 px | **1.90 px** |
+  | a reference-size symbol's outline (0.5) | 3.00 px | **5.70 px** |
+
+  So the wires are a touch lighter than the library draws them and the symbols
+  noticeably heavier. **100% stays what the percentages are measured against** —
+  the library's own weight — and both sliders still cover 50–400%; the default is
+  simply where they start. A stored value always wins, so no existing diagram
+  moves: this changes what a fresh install (or a reset) begins with.
+
 ## [0.2.0-beta.46] — 2026-10-14
 
 ### Fixed

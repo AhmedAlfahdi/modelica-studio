@@ -317,7 +317,9 @@ export class HelpModal extends Modal {
         "sliders run from 50% to 400% of the library's own weight, which is the " +
         "range in which the numbers still mean something: at 100% a single line is " +
         "1.5 px and a double one 3 px at 100% zoom, and past 400% a wire is heavier " +
-        "than the pin it lands on.",
+        "than the pin it lands on. 100% is the library's weight rather than the " +
+        "default: the sliders start at 90% for the wires and 190% for the symbols, " +
+        "which is a taste and yours to change.",
     });
 
     /* ---- reading the diagram ---- */

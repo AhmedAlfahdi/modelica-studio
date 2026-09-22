@@ -300,8 +300,14 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   paletteWidth: 210,
   labelScale: 1,
   hoverParameters: true,
-  wireScale: 1,
-  symbolStrokeScale: 1,
+  // The weights these sliders start at, as a multiple of what MSL declares. 100%
+  // is the library's own weight and stays the reference — the range's midpoint in
+  // meaning, not in number — but the defaults are a taste: wires a little lighter
+  // than the library draws them, and symbols noticeably heavier, which is what
+  // reads best on a screen at the sizes these diagrams are looked at. A stored
+  // value always wins, so changing this does not move an existing diagram.
+  wireScale: 0.9,
+  symbolStrokeScale: 1.9,
   syncStrokeScale: false,
   plotReadoutScale: 1,
   diagramReadoutScale: 1,

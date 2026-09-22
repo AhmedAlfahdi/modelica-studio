@@ -57,6 +57,9 @@ fs.writeFileSync(
 );
 const merge = await import(path.join(staging, "settings.js"));
 const { DEFAULT_SETTINGS, mergeSettings } = merge;
+// The band, from the module that defines it: a test-local copy could drift.
+const STROKE_SCALE_MIN_D = merge.STROKE_SCALE_MIN;
+const STROKE_SCALE_MAX_D = merge.STROKE_SCALE_MAX;
 
 // The plot, for the one number the two modules have to agree on: the snap
 // distance the settings ship with, and the distance the plot falls back to when
@@ -81,13 +84,33 @@ test("wire weight and the two readout sizes are settings of their own", () => {
   // Asked for separately, and separate they are: wires are diagram geometry, the
   // plot readout is read on the plot, and the parameter popup is read over a
   // diagram. Wanting one larger says nothing about the others.
-  for (const key of ["wireScale", "symbolStrokeScale", "plotReadoutScale", "diagramReadoutScale"]) {
+  // The readouts start at the standard size. The two WEIGHTS do not: 100% is the
+  // library's own weight and stays the reference the percentages are measured
+  // against, but the defaults are a taste — wires a little lighter than the
+  // library draws them and symbols noticeably heavier — chosen from looking at
+  // diagrams rather than derived from anything.
+  for (const key of ["plotReadoutScale", "diagramReadoutScale"]) {
     assert.equal(DEFAULT_SETTINGS[key], 1, `${key} starts at the standard size`);
   }
+  assert.equal(DEFAULT_SETTINGS.wireScale, 0.9, "the wire default is a taste, not the standard");
+  assert.equal(DEFAULT_SETTINGS.symbolStrokeScale, 1.9, "and so is the component default");
+  for (const key of ["wireScale", "symbolStrokeScale"]) {
+    const v = DEFAULT_SETTINGS[key];
+    assert.ok(
+      v >= STROKE_SCALE_MIN_D && v <= STROKE_SCALE_MAX_D,
+      `${key} is inside the band the sliders offer (${v})`
+    );
+  }
 
+  // An older data.json gains them, and a stored value always wins over them.
   const older = mergeSettings(DEFAULT_SETTINGS, { stopTime: 5 });
-  assert.equal(older.wireScale, 1, "an older data.json gains the wire weight");
-  assert.equal(older.symbolStrokeScale, 1, "and the component line weight");
+  assert.equal(older.wireScale, 0.9, "an older data.json gains the wire default");
+  assert.equal(older.symbolStrokeScale, 1.9, "and the component default");
+  assert.equal(
+    mergeSettings(DEFAULT_SETTINGS, { wireScale: 1.4 }).wireScale,
+    1.4,
+    "while a value that was stored is left exactly as it was"
+  );
   assert.equal(
     older.syncStrokeScale,
     false,
