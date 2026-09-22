@@ -673,16 +673,27 @@ test("linking the thicknesses gives one slider, and drives both settings", async
     "const toggle = () => item('Link wire and component thickness').components.find((c) => c.inputEl.getAttribute('data-control') === 'toggle');",
     "const slider = (n) => { const i = item(n); return i ? i.components.find((c) => c.inputEl.getAttribute('data-control') === 'slider') : null; };",
     "",
-    "window.test('unlinked there are two sliders, each on its own value', () =>",
+    "// Which rows are SHOWN: all of them exist, and the link decides visibility.",
+    "const shown = () => Array.from(tab.containerEl.querySelectorAll('.setting-item'))",
+    "  .filter((i) => /thickness/i.test(i.querySelector('.setting-item-name').textContent))",
+    "  .filter((i) => !i.classList.contains('modelica-studio-hidden'))",
+    "  .map((i) => i.querySelector('.setting-item-name').textContent).join(',');",
+    "window.test('unlinked, the two sliders are shown on their own values', () =>",
     "  'wire=' + (slider('Wire thickness') ? slider('Wire thickness').value : 'none') +",
     "  ' symbol=' + (slider('Component line thickness') ? slider('Component line thickness').value : 'none') +",
-    "  ' both=' + names().filter((n) => /thickness/i.test(n)).join(','));",
-    "window.test('turning the link on sets the wires to the component weight and rebuilds', () => {",
+    "  ' shown=' + shown());",
+    "window.test('turning the link on sets the wires to the component weight, in place', () => {",
+    "  // In place: the tab is NOT rebuilt, which is what used to throw the reader",
+    "  // to the top of Settings.",
+    "  let empties = 0;",
+    "  const empty = tab.containerEl.empty.bind(tab.containerEl);",
+    "  tab.containerEl.empty = () => { empties++; empty(); };",
     "  const t = toggle();",
     "  t.setValue(true);",
     "  t.inputEl.dispatchEvent(new Event('change'));",
+    "  tab.containerEl.empty = empty;",
     "  return 'wireScale=' + plugin.settings.wireScale + ' symbol=' + plugin.settings.symbolStrokeScale +",
-    "    ' sync=' + plugin.settings.syncStrokeScale + ' rows=' + names().filter((n) => /thickness/i.test(n)).join(',');",
+    "    ' sync=' + plugin.settings.syncStrokeScale + ' shown=' + shown() + ' rebuilds=' + empties;",
     "});",
     "window.test('and the single slider then moves both', () => {",
     "  const shared = slider('Line thickness');",
@@ -699,14 +710,14 @@ test("linking the thicknesses gives one slider, and drives both settings", async
   const d = passed(out);
 
   assert.equal(
-    d["unlinked there are two sliders, each on its own value"],
-    "wire=300 symbol=220 both=Link wire and component thickness,Wire thickness,Component line thickness",
-    "off by default: the stored pair is used as stored"
+    d["unlinked, the two sliders are shown on their own values"],
+    "wire=300 symbol=220 shown=Link wire and component thickness,Wire thickness,Component line thickness",
+    "off by default: the stored pair is used as stored, and the shared row is hidden"
   );
   assert.equal(
-    d["turning the link on sets the wires to the component weight and rebuilds"],
-    "wireScale=2.2 symbol=2.2 sync=true rows=Link wire and component thickness,Line thickness",
-    "one slider replaces the two, and nothing is left out of step"
+    d["turning the link on sets the wires to the component weight, in place"],
+    "wireScale=2.2 symbol=2.2 sync=true shown=Link wire and component thickness,Line thickness rebuilds=0",
+    "one slider replaces the two, nothing is left out of step, and the tab is not rebuilt"
   );
   assert.equal(
     d["and the single slider then moves both"],
@@ -1016,6 +1027,7 @@ test("rebuilding the tab does not throw the reader back to the top", async () =>
     "  empty();",
     "  void scroller.scrollHeight;",
     "  window.__clamped = scroller.scrollTop;",
+    "  window.__empties = (window.__empties || 0) + 1;",
     "};",
     "const link = () => item('Link wire and component thickness').components.find((c) => c.inputEl.getAttribute('data-control') === 'toggle');",
     "window.test('emptying the container really does drop the offset', () => {",
@@ -1029,10 +1041,13 @@ test("rebuilding the tab does not throw the reader back to the top", async () =>
     "});",
     "window.test('scrolling to the link switch and toggling it keeps the place', () => {",
     "  scroller.scrollTop = 160;",
+    "  window.__empties = 0;",
     "  const t = link();",
     "  t.setValue(true);",
     "  t.inputEl.dispatchEvent(new Event('change'));",
-    "  return 'after=' + scroller.scrollTop + ' linked=' + (!!item('Line thickness')) + ' dropped=' + (window.__clamped === 0);",
+    "  return 'after=' + scroller.scrollTop + ' rebuilds=' + window.__empties +",
+    "    ' shared=' + !item('Line thickness').classList.contains('modelica-studio-hidden') +",
+    "    ' wireHidden=' + item('Wire thickness').classList.contains('modelica-studio-hidden');",
     "});",
     "window.test('and toggling it back does too', () => {",
     "  scroller.scrollTop = 160;",
@@ -1059,8 +1074,8 @@ test("rebuilding the tab does not throw the reader back to the top", async () =>
   );
   assert.equal(
     d["scrolling to the link switch and toggling it keeps the place"],
-    "after=160 linked=true dropped=true",
-    "the offset survives a rebuild that really did clamp it to zero"
+    "after=160 rebuilds=0 shared=true wireHidden=true",
+    "the offset does not move because nothing is emptied: the rows change visibility in place"
   );
   assert.equal(
     d["and toggling it back does too"],

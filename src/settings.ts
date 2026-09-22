@@ -360,6 +360,33 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
       this.plugin.refreshEmbeds();
     };
 
+    // All three rows exist, and the link chooses which of them are SHOWN.
+    //
+    // Building only the applicable rows and rebuilding the tab on every toggle was
+    // the first attempt, and it dropped the reader at the top of Settings: the tab
+    // is scrolled inside Obsidian's container, and emptying it lets the browser
+    // clamp the scroll offset before the new rows go in. Hiding a row changes no
+    // offset at all, so the jump is impossible rather than compensated for — and
+    // the toggle is instant.
+    let sharedRow: Setting | null = null;
+    let wireRow: Setting | null = null;
+    let symbolRow: Setting | null = null;
+    let sharedSlider: { setValue: (v: number) => unknown } | null = null;
+    let wireSlider: { setValue: (v: number) => unknown } | null = null;
+    let symbolSlider: { setValue: (v: number) => unknown } | null = null;
+
+    const applyStrokeLink = (linked: boolean) => {
+      sharedRow?.settingEl.toggleClass("modelica-studio-hidden", !linked);
+      wireRow?.settingEl.toggleClass("modelica-studio-hidden", linked);
+      symbolRow?.settingEl.toggleClass("modelica-studio-hidden", linked);
+      // The sliders show the values in force, which linking may have changed.
+      if (linked) sharedSlider?.setValue(Math.round(this.plugin.settings.symbolStrokeScale * 100));
+      else {
+        wireSlider?.setValue(Math.round(this.plugin.settings.wireScale * 100));
+        symbolSlider?.setValue(Math.round(this.plugin.settings.symbolStrokeScale * 100));
+      }
+    };
+
     new Setting(containerEl)
       .setName("Link wire and component thickness")
       .setDesc(
@@ -372,88 +399,88 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         t.setValue(this.plugin.settings.syncStrokeScale).onChange(async (v) => {
           this.plugin.settings.syncStrokeScale = v;
           if (v) this.plugin.settings.wireScale = this.plugin.settings.symbolStrokeScale;
-          // The rows below depend on it, so the tab is rebuilt — before the save
-          // round-trip, so the control the reader just moved is the one they see
-          // change rather than one that lags a frame behind it.
-          this.rebuildKeepingPlace();
-          await this.plugin.saveSettings();
-          this.plugin.getView()?.refreshDiagram();
-          this.plugin.refreshEmbeds();
+          // Shown and hidden in place: nothing is rebuilt, so the reader keeps
+          // their place and the control they moved stays under the pointer.
+          applyStrokeLink(v);
+          await strokeCommit();
         })
       );
 
-    if (this.plugin.settings.syncStrokeScale) {
-      new Setting(containerEl)
-        .setName("Line thickness")
-        .setDesc(
-          "Both wires and component lines, as a percentage of the weight the " +
-            "library declares: 100% draws a single line at 1.5 px and a double one " +
-            "at 3 px at 100% zoom, and each line keeps its own thickness relative " +
-            "to that — a bus stays double a signal wire, a shaft outline stays " +
-            "half a body outline. 50% is a hairline for a dense diagram; 400% is " +
-            "as heavy as a wire or a symbol can take before it stops reading."
-        )
-        .addSlider((sl) =>
-          sl
-            .setLimits(STROKE_SCALE_MIN * 100, STROKE_SCALE_MAX * 100, 10)
-            .setValue(Math.round(this.plugin.settings.symbolStrokeScale * 100))
-            .setDynamicTooltip()
-            .onChange(async (v) => {
-              // One value, two settings: there is nothing to keep in step.
-              this.plugin.settings.symbolStrokeScale = v / 100;
-              this.plugin.settings.wireScale = v / 100;
-              await strokeCommit();
-            })
-        );
-    } else {
-      new Setting(containerEl)
-        .setName("Wire thickness")
-        .setDesc(
-          "Scales every wire, as a percentage of the thickness its own connector " +
-            "declares: 100% is the library's own weight, which draws a single line " +
-            "at 1.5 px and a double one at 3 px at 100% zoom, and the ratio between " +
-            "them is kept at any setting. The default, 90%, is a touch lighter than " +
-            "the library draws them. The area a wire can be clicked in follows, or a " +
-            "thick wire would look right and be hard to grab. Symbols and the grid are " +
-            "unaffected — link the two if you would rather set them together. 400% " +
-            "is the ceiling because past it a wire is heavier than the pin it " +
-            "lands on."
-        )
-        .addSlider((sl) =>
-          sl
-            .setLimits(STROKE_SCALE_MIN * 100, STROKE_SCALE_MAX * 100, 10)
-            .setValue(Math.round(this.plugin.settings.wireScale * 100))
-            .setDynamicTooltip()
-            .onChange(async (v) => {
-              this.plugin.settings.wireScale = v / 100;
-              await strokeCommit();
-            })
-        );
+    sharedRow = new Setting(containerEl)
+      .setName("Line thickness")
+      .setDesc(
+        "Both wires and component lines, as a percentage of the weight the " +
+          "library declares: 100% draws a single line at 1.5 px and a double one " +
+          "at 3 px at 100% zoom, and each line keeps its own thickness relative " +
+          "to that — a bus stays double a signal wire, a shaft outline stays " +
+          "half a body outline. 50% is a hairline for a dense diagram; 400% is " +
+          "as heavy as a wire or a symbol can take before it stops reading."
+      )
+      .addSlider((sl) => {
+        sharedSlider = sl;
+        return sl
+          .setLimits(STROKE_SCALE_MIN * 100, STROKE_SCALE_MAX * 100, 10)
+          .setValue(Math.round(this.plugin.settings.symbolStrokeScale * 100))
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            // One value, two settings: there is nothing to keep in step.
+            this.plugin.settings.symbolStrokeScale = v / 100;
+            this.plugin.settings.wireScale = v / 100;
+            await strokeCommit();
+          });
+      });
 
-      new Setting(containerEl)
-        .setName("Component line thickness")
-        .setDesc(
-          "Scales the lines the component symbols are drawn with, as a percentage " +
-            "of the thickness each graphic declares: 100% is the library's own " +
-            "weight, which draws a single line at 1.5 px and the library's double " +
-            "and quadruple lines at 3 px and 6 px. The default, 190%, draws them " +
-            "heavier than the library does, which is what reads best on screen. " +
-            "Lines are drawn in proportion to a symbol's own size, so a " +
-            "small symbol keeps the same look as a large one. The pins on a " +
-            "component follow it; text, fills and the selection outline do not. " +
-            "400% is the ceiling: past it a symbol stops being a symbol."
-        )
-        .addSlider((sl) =>
-          sl
-            .setLimits(STROKE_SCALE_MIN * 100, STROKE_SCALE_MAX * 100, 10)
-            .setValue(Math.round(this.plugin.settings.symbolStrokeScale * 100))
-            .setDynamicTooltip()
-            .onChange(async (v) => {
-              this.plugin.settings.symbolStrokeScale = v / 100;
-              await strokeCommit();
-            })
-        );
-    }
+    wireRow = new Setting(containerEl)
+      .setName("Wire thickness")
+      .setDesc(
+        "Scales every wire, as a percentage of the thickness its own connector " +
+          "declares: 100% is the library's own weight, which draws a single line " +
+          "at 1.5 px and a double one at 3 px at 100% zoom, and the ratio between " +
+          "them is kept at any setting. The default, 90%, is a touch lighter than " +
+          "the library draws them. The area a wire can be clicked in follows, or a " +
+          "thick wire would look right and be hard to grab. Symbols and the grid are " +
+          "unaffected — link the two if you would rather set them together. 400% " +
+          "is the ceiling because past it a wire is heavier than the pin it " +
+          "lands on."
+      )
+      .addSlider((sl) => {
+        wireSlider = sl;
+        return sl
+          .setLimits(STROKE_SCALE_MIN * 100, STROKE_SCALE_MAX * 100, 10)
+          .setValue(Math.round(this.plugin.settings.wireScale * 100))
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.wireScale = v / 100;
+            await strokeCommit();
+          });
+      });
+
+    symbolRow = new Setting(containerEl)
+      .setName("Component line thickness")
+      .setDesc(
+        "Scales the lines the component symbols are drawn with, as a percentage " +
+          "of the thickness each graphic declares: 100% is the library's own " +
+          "weight, which draws a single line at 1.5 px and the library's double " +
+          "and quadruple lines at 3 px and 6 px. The default, 190%, draws them " +
+          "heavier than the library does, which is what reads best on screen. " +
+          "Lines are drawn in proportion to a symbol's own size, so a " +
+          "small symbol keeps the same look as a large one. The pins on a " +
+          "component follow it; text, fills and the selection outline do not. " +
+          "400% is the ceiling: past it a symbol stops being a symbol."
+      )
+      .addSlider((sl) => {
+        symbolSlider = sl;
+        return sl
+          .setLimits(STROKE_SCALE_MIN * 100, STROKE_SCALE_MAX * 100, 10)
+          .setValue(Math.round(this.plugin.settings.symbolStrokeScale * 100))
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.symbolStrokeScale = v / 100;
+            await strokeCommit();
+          });
+      });
+
+    applyStrokeLink(this.plugin.settings.syncStrokeScale);
 
     new Setting(containerEl)
       .setName("Show parameters when hovering a component")

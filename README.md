@@ -113,7 +113,7 @@ pre-release and BRAT is the intended route.
    Settings → Community plugins.
 
 To pin a version instead of tracking the latest, use BRAT's **frozen** option and
-name the release, for example `0.2.0-beta.50`.
+name the release, for example `0.2.0-beta.51`.
 
 BRAT reports a mismatch if a release's tag, its name and the version inside the
 released `manifest.json` disagree. They are kept identical here on purpose, so an

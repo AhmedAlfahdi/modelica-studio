@@ -5,6 +5,26 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.51] — 2026-10-14
+
+### Fixed
+
+- **The thickness link no longer rebuilds the tab, so nothing can move it.**
+  beta.50 tried to put the scroll offset back after the rebuild; the jump
+  remained, which means the offset was being reset somewhere that restoring it did
+  not reach. The rebuild was the wrong tool: all three rows — the shared slider and
+  the two separate ones — now exist, and the link switches which of them are
+  **shown**. Hiding a row changes no scroll offset at all, so the jump is
+  impossible rather than compensated for, and the toggle is instant.
+
+  The test asserts the stronger property directly: toggling the link calls
+  `empty()` on the tab **zero times**. Putting the rebuild back fails it with
+  `rebuilds=1`, so this cannot creep back in.
+
+  The scroll restoration added in beta.50 stays for the four settings that still
+  have to rebuild the tab (the AI provider preset, the model list, the AI model
+  choice and the key migration).
+
 ## [0.2.0-beta.50] — 2026-10-14
 
 ### Fixed

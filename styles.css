@@ -673,6 +673,13 @@ body.modelica-studio-resizing * {
   display: none;
 }
 
+/* A setting row that does not apply. Used by the thickness link, where all three
+   rows exist and the link chooses which are shown: hiding a row keeps the pane's
+   scroll offset where the reader left it, which rebuilding the tab did not. */
+.modelica-studio-hidden {
+  display: none;
+}
+
 .modelica-studio-examples-group {
   margin: 8px 6px 2px;
   font-size: 11px;
