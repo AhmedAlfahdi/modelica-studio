@@ -99,6 +99,8 @@ export interface EditorCallbacks {
     readoutScale?: number;
     /** Stroke weight of the wires, as a multiple of the standard. */
     wireScale?: number;
+    /** Multiplier on the weight of the lines the component symbols are drawn with. */
+    symbolStrokeScale?: number;
   };
   /** Read text from the system clipboard. */
   readClipboard?: () => Promise<string>;
@@ -2021,6 +2023,10 @@ export class SchematicEditor {
 
     this.drawGrid(ctx);
 
+    // Read once per frame, before anything that needs it: the wires, the symbols
+    // and their port rings all take their weight from these settings.
+    const display = this.cb.display?.() ?? { labelScale: 1, hoverParameters: false };
+
     for (const conn of this.model.connections) {
       const picked = this.wireSelection.has(conn.id);
       const points = this.connectionPoints(conn);
@@ -2042,8 +2048,6 @@ export class SchematicEditor {
       if (picked) drawWireVertices(ctx, points, vp, dpr, theme);
     }
 
-    const display = this.cb.display?.() ?? { labelScale: 1, hoverParameters: false };
-
     for (const inst of this.model.components) {
       drawComponent(ctx, inst, this.cb.lookup(inst.className), vp, dpr, {
         lookup: this.cb.lookup,
@@ -2052,6 +2056,7 @@ export class SchematicEditor {
         hovered: this.hovered,
         showCentre: this.showProbe,
         labelScale: display.labelScale,
+        strokeScale: display.symbolStrokeScale ?? 1,
       });
     }
 
@@ -2091,7 +2096,11 @@ export class SchematicEditor {
           : this.interaction.kind === "wire" && this.interaction.from.component === inst.id
             ? this.interaction.from.port
             : undefined;
-      drawPorts(ctx, inst, def, vp, dpr, highlight, { emphasised, componentPx: size });
+      drawPorts(ctx, inst, def, vp, dpr, highlight, {
+        emphasised,
+        componentPx: size,
+        strokeScale: display.symbolStrokeScale ?? 1,
+      });
     }
 
     this.drawEmptyState(ctx, theme);

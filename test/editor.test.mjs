@@ -1328,6 +1328,141 @@ test("the wire-thickness setting reaches the drawing, and the click area", () =>
   editor.destroy();
 });
 
+test("the component-line setting scales the symbols' own weights", () => {
+  // Asked for as "the ability to adjust the thickness of the lines of the
+  // components themselves". Every symbol stroke resolves its weight in one place,
+  // so the setting scales that whole curve — clamps included, which is the point:
+  // without scaling the cap it would do nothing above 200% zoom, where every
+  // graphic already sits at the ceiling.
+  const { editor } = makeEditor();
+  const canvas = canvasOf(editor);
+  layoutTo(canvas, 1000, 600);
+  editor.resize();
+
+  // The fixture's class draws one Rectangle, and its icon is 140x60 inside a
+  // 40x40 extent, so the drawn stroke is the graphic's own weight.
+  const widthsAt = (scale) => {
+    const strokes = [];
+    editor.cb.display = () => ({
+      labelScale: 1,
+      hoverParameters: false,
+      wireScale: 1,
+      symbolStrokeScale: scale,
+    });
+    editor.ctx = new Proxy(
+      { canvas: { width: 1000, height: 600 }, measureText: () => ({ width: 10 }), lineWidth: 1 },
+      {
+        get(t, k) {
+          if (k in t) return t[k];
+          // The SYMBOL's stroke is the one drawn inside the viewport transform, so
+          // its `lineWidth` is in pre-transform units: multiply by the zoom to get
+          // what lands on screen.
+          if (k === "stroke") return () => strokes.push({ w: t.lineWidth, m: t.__m ?? 1 });
+          // `setTransform(a, b, ...)` is how the symbol's own transform arrives.
+          if (k === "setTransform") {
+            return (a, b) => {
+              const m = Math.hypot(a, b);
+              if (m > 1.5) t.__m = m; // the symbol pass, not the identity one
+            };
+          }
+          return () => {};
+        },
+        set(t, k, v) {
+          t[k] = v;
+          return true;
+        },
+      }
+    );
+    strokes.length = 0;
+    SchematicEditor.prototype.draw.call(editor);
+    // The heaviest screen weight in the frame: the symbol's outline.
+    return Math.max(...strokes.map((st) => st.w * st.m));
+  };
+
+  const at100 = widthsAt(1);
+  const at200 = widthsAt(2);
+  const at400 = widthsAt(4);
+  assert.ok(at100 > 0, `the symbol is stroked (${at100})`);
+  assert.ok(
+    Math.abs(at200 / at100 - 2) < 0.05,
+    `twice the setting is twice the weight (${at100.toFixed(2)} -> ${at200.toFixed(2)})`
+  );
+  assert.ok(
+    Math.abs(at400 / at100 - 4) < 0.05,
+    `and four times is four times (${at100.toFixed(2)} -> ${at400.toFixed(2)})`
+  );
+  editor.destroy();
+});
+
+test("the setting reaches the symbols and their pins, not the wires", () => {
+  // The pins are drawn outside the graphic path, with fixed screen weights, so
+  // they have to be told; and the wires have their OWN setting, which this one
+  // must leave alone.
+  const { editor } = makeEditor();
+  const canvas = canvasOf(editor);
+  layoutTo(canvas, 1000, 600);
+  editor.resize();
+  editor.showPorts = true;
+
+  const rings = [];
+  const pending = [];
+  const strokeWidths = (symbolStrokeScale) => {
+    const widths = [];
+    editor.cb.display = () => ({
+      labelScale: 1,
+      hoverParameters: false,
+      wireScale: 1,
+      symbolStrokeScale,
+    });
+    editor.ctx = new Proxy(
+      { canvas: { width: 1000, height: 600 }, measureText: () => ({ width: 10 }), lineWidth: 1 },
+      {
+        get(t, k) {
+          if (k in t) return t[k];
+          // A pin ring is an arc, filled, then stroked: the stroke that follows an
+          // arc is the ring's own width.
+          if (k === "arc") {
+            return () => {
+              pending.push(true);
+            };
+          }
+          if (k === "stroke") {
+            return () => {
+              const afterArc = pending.pop() === true;
+              if (afterArc) rings.push(t.lineWidth);
+              widths.push({ kind: afterArc ? "ring" : "stroke", w: t.lineWidth });
+            };
+          }
+          return () => {};
+        },
+        set(t, k, v) {
+          t[k] = v;
+          return true;
+        },
+      }
+    );
+    widths.length = 0;
+    rings.length = 0;
+    pending.length = 0;
+    SchematicEditor.prototype.draw.call(editor);
+    return { all: widths, rings: rings.slice() };
+  };
+
+  const one = strokeWidths(1);
+  const four = strokeWidths(4);
+  // The ring weights (1.25 and 1.5 in the fixture) scale by four; the wire's 2
+  // (its own setting is 1 in both) does not.
+  assert.ok(
+    one.rings.some((w) => Math.abs(w - 1.25) < 1e-9),
+    `a pin ring is 1.25px at the standard setting (${one.rings.join(", ")})`
+  );
+  assert.ok(
+    four.rings.some((w) => Math.abs(w - 5) < 1e-9),
+    `and 5px at four times it (${four.rings.join(", ")})`
+  );
+  editor.destroy();
+});
+
 test("a wire never grows fatter on screen as the diagram shrinks", () => {
   // Reported from two screenshots: zoomed in, the wires looked right; zoomed out,
   // they covered the symbols they connect. The cause was the stroke being divided

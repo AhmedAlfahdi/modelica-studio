@@ -307,6 +307,7 @@ test("the settings tab renders every section, with the solver's details in its b
     "  labelScale: 1.4,",
     "  hoverParameters: false,",
     "  wireScale: 1.6,",
+    "  symbolStrokeScale: 2.2,",
     "  diagramReadoutScale: 1.3,",
     "  plotReadoutScale: 1.8,",
     "  ai: { secretName: 'modelica-studio-api-key', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-flash', temperature: 0.2, systemPrompt: '', thinking: 'off', style: 'visual', timeoutSeconds: 300 },",
@@ -363,7 +364,7 @@ test("the settings tab renders every section, with the solver's details in its b
     "});",
     "window.test('the diagram controls exist and show the stored values', () => {",
     "  const item = (n) => Array.from(root.querySelectorAll('.setting-item')).find((i) => i.querySelector('.setting-item-name').textContent === n);",
-    "  const names = ['Label size', 'Wire thickness', 'Show parameters when hovering a component', 'Parameter popup size'];",
+    "  const names = ['Label size', 'Wire thickness', 'Component line thickness', 'Show parameters when hovering a component', 'Parameter popup size'];",
     "  const missing = names.filter((n) => !item(n));",
     "  if (missing.length) return 'MISSING: ' + missing.join();",
     "  // The component carries the value, so the tab is reading the setting rather",
@@ -374,12 +375,14 @@ test("the settings tab renders every section, with the solver's details in its b
     "  };",
     "  // The stub records `setLimits` so a range can be asserted, not just a value.",
     "  const wire = item('Wire thickness').components.find((x) => typeof x.setDynamicTooltip === 'function');",
-    "  window.__wireLimits = wire && wire.limits ? wire.limits.join('-') : 'not recorded';",
+    "  const symbol = item('Component line thickness').components.find((x) => typeof x.setDynamicTooltip === 'function');",
+    "  window.__limits = [wire, symbol].map((c) => (c && c.limits ? c.limits.join('-') : 'not recorded')).join(' ');",
     "  const toggle = item('Show parameters when hovering a component').components",
     "    .find((c) => typeof c.setValue === 'function' && typeof c.setDynamicTooltip !== 'function');",
     "  return 'label=' + sliderAt('Label size') + ' wire=' + sliderAt('Wire thickness')",
     "    + ' popup=' + sliderAt('Parameter popup size') + ' hover=' + (toggle ? toggle.value : '?')",
-    "    + ' wireLimits=' + window.__wireLimits;",
+    "    + ' symbol=' + sliderAt('Component line thickness')",
+    "    + ' limits=' + window.__limits;",
     "});",
     "window.test('the plot readout has its own size, in the plot section', () => {",
     "  const item = Array.from(root.querySelectorAll('.setting-item')).find((i) => i.querySelector('.setting-item-name').textContent === 'Readout size');",
@@ -436,7 +439,7 @@ test("the settings tab renders every section, with the solver's details in its b
   // defaults, so a tab that ignored the setting would show 100/true and fail.
   assert.equal(
     d["the diagram controls exist and show the stored values"],
-    "label=140 wire=160 popup=130 hover=false wireLimits=50-1000-10",
+    "label=140 wire=160 popup=130 hover=false symbol=220 limits=50-1000-10 50-400-10",
     "every diagram control reflects its own stored setting, and the wire weight reaches 1000%"
   );
   assert.equal(

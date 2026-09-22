@@ -300,6 +300,30 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Component line thickness")
+      .setDesc(
+        "Scales the lines the component symbols are drawn with, as a percentage " +
+          "of the default: 100% is the standard weight, 400% is four times it. The " +
+          "library draws its own emphasis this way — a body outline at 0.5 against " +
+          "a shaft or a flange at 1.0 — and the whole curve scales together, so " +
+          "those differences survive instead of all landing on the same ceiling. " +
+          "The pins on a component follow it. Text, fills and the selection outline " +
+          "are unaffected."
+      )
+      .addSlider((sl) =>
+        sl
+          .setLimits(50, 400, 10)
+          .setValue(Math.round(this.plugin.settings.symbolStrokeScale * 100))
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            this.plugin.settings.symbolStrokeScale = v / 100;
+            await this.plugin.saveSettings();
+            this.plugin.getView()?.refreshDiagram();
+            this.plugin.refreshEmbeds();
+          })
+      );
+
+    new Setting(containerEl)
       .setName("Show parameters when hovering a component")
       .setDesc(
         "While the pointer rests on a component, shows what its parameters are " +

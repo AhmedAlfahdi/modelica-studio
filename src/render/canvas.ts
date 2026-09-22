@@ -769,7 +769,12 @@ const MIN_STROKE_PX = 1;
 /** Keeps outlines from swallowing small symbols when zoomed in. */
 const MAX_STROKE_PX = 6;
 
-function screenStrokePx(g: Graphic, totalScale: number, strokePx?: number): number {
+function screenStrokePx(
+  g: Graphic,
+  totalScale: number,
+  strokePx?: number,
+  strokeScale = 1
+): number {
   // A caller that draws into a scaled context — the palette thumbnails, where
   // the canonical box is squeezed to a few dozen pixels — states the weight it
   // wants on screen. Without this the floor below was applied in CONTEXT units
@@ -787,17 +792,25 @@ function screenStrokePx(g: Graphic, totalScale: number, strokePx?: number): numb
   // Derive from the component's on-screen size so every weight shares one scale.
   const iconPx = MSL_COMPONENT_SIZE * Math.max(totalScale, 1e-6);
   const px = (thickness / MSL_LINE_CANONICAL) * REFERENCE_STROKE_PX * (iconPx / REFERENCE_ICON_PX);
-  return Math.max(MIN_STROKE_PX, Math.min(MAX_STROKE_PX, px));
+  // The "component line thickness" setting multiplies the whole curve — the
+  // clamps included, as the wire weight does. Both matter: without scaling the
+  // cap the setting would do nothing above 200% zoom, where every graphic already
+  // sits at 6px, and the library's own emphasis (0.5 outlines against 1.0
+  // details against the six graphics that ask for 5.0) would stay flattened.
+  const lo = MIN_STROKE_PX * strokeScale;
+  const hi = MAX_STROKE_PX * strokeScale;
+  return Math.max(lo, Math.min(hi, px * strokeScale));
 }
 
 function strokeStyleFor(
   g: Graphic,
   totalScale: number,
   theme: Theme,
-  strokePx?: number
+  strokePx?: number,
+  strokeScale = 1
 ): { color: string; width: number; dash: number[]; none: boolean } {
   const lc = (g as { lineColor?: Color }).lineColor ?? (g as { color?: Color }).color;
-  const px = screenStrokePx(g, totalScale, strokePx);
+  const px = screenStrokePx(g, totalScale, strokePx, strokeScale);
   // lineWidth is interpreted in pre-transform units, so undo the scale.
   const scale = Math.max(totalScale, 1e-6);
   return {
@@ -825,22 +838,24 @@ export function drawGraphic(
   totalScale: number,
   theme: Theme,
   /** Fixed on-screen stroke weight; omit to derive it from the scale. */
-  strokePx?: number
+  strokePx?: number,
+  /** Multiplier on the derived weight, from the settings. 1 is the default. */
+  strokeScale = 1
 ): void {
   if (!isGraphicVisible(g)) return;
 
   switch (g.kind) {
     case "Line":
-      drawLine(ctx, g, t, totalScale, theme, strokePx);
+      drawLine(ctx, g, t, totalScale, theme, strokePx, strokeScale);
       break;
     case "Polygon":
-      drawPolygon(ctx, g, t, totalScale, theme, strokePx);
+      drawPolygon(ctx, g, t, totalScale, theme, strokePx, strokeScale);
       break;
     case "Rectangle":
-      drawRectangle(ctx, g, t, totalScale, theme, strokePx);
+      drawRectangle(ctx, g, t, totalScale, theme, strokePx, strokeScale);
       break;
     case "Ellipse":
-      drawEllipse(ctx, g, t, totalScale, theme, strokePx);
+      drawEllipse(ctx, g, t, totalScale, theme, strokePx, strokeScale);
       break;
     case "Text":
       drawText(ctx, g, t, totalScale, theme);
@@ -871,9 +886,11 @@ function drawLine(
   totalScale: number,
   theme: Theme,
   strokePx?: number
-): void {
+,
+  /** Multiplier on the derived weight, from the settings. */
+  strokeScale = 1): void {
   if (g.points.length < 4) return;
-  const style = strokeStyleFor(g, totalScale, theme, strokePx);
+  const style = strokeStyleFor(g, totalScale, theme, strokePx, strokeScale);
   ctx.save();
   ctx.strokeStyle = style.color;
   ctx.lineWidth = style.width;
@@ -985,7 +1002,9 @@ function drawPolygon(
   totalScale: number,
   theme: Theme,
   strokePx?: number
-): void {
+,
+  /** Multiplier on the derived weight, from the settings. */
+  strokeScale = 1): void {
   if (g.points.length < 4) return;
   ctx.save();
   pathFromPoints(ctx, g.points, t);
@@ -996,7 +1015,7 @@ function drawPolygon(
     ctx.fillStyle = rgb(themedColor(g.fillColor, theme, "fill"), theme.paper);
     ctx.fill();
   }
-  const style = strokeStyleFor(g, totalScale, theme, strokePx);
+  const style = strokeStyleFor(g, totalScale, theme, strokePx, strokeScale);
   ctx.strokeStyle = style.color;
   ctx.lineWidth = style.width;
   ctx.lineJoin = "round";
@@ -1033,7 +1052,9 @@ function drawRectangle(
   totalScale: number,
   theme: Theme,
   strokePx?: number
-): void {
+,
+  /** Multiplier on the derived weight, from the settings. */
+  strokeScale = 1): void {
   const [x1, y1, x2, y2] = g.extent;
   const pts = flatTransformed([x1, y1, x2, y1, x2, y2, x1, y2], t);
   const b = pointsBounds(pts);
@@ -1042,7 +1063,7 @@ function drawRectangle(
   if (w <= 0 || h <= 0) return;
 
   ctx.save();
-  const style = strokeStyleFor(g, totalScale, theme, strokePx);
+  const style = strokeStyleFor(g, totalScale, theme, strokePx, strokeScale);
   const r = g.radius ? Math.min(g.radius, Math.min(w, h) / 2) : 0;
 
   ctx.beginPath();
@@ -1103,7 +1124,9 @@ function drawEllipse(
   totalScale: number,
   theme: Theme,
   strokePx?: number
-): void {
+,
+  /** Multiplier on the derived weight, from the settings. */
+  strokeScale = 1): void {
   // An ellipse under an affine transform is still an ellipse, so we can use
   // the transformed bounding box and canvas' own ellipse primitive.
   const [x1, y1, x2, y2] = g.extent;
@@ -1135,7 +1158,7 @@ function drawEllipse(
     ctx.fillStyle = rgb(themedColor(g.fillColor, theme, "fill"), theme.paper);
     ctx.fill();
   }
-  const style = strokeStyleFor(g, totalScale, theme, strokePx);
+  const style = strokeStyleFor(g, totalScale, theme, strokePx, strokeScale);
   ctx.strokeStyle = style.color;
   ctx.lineWidth = style.width;
   if (style.dash.length) ctx.setLineDash(style.dash);
@@ -1314,6 +1337,15 @@ export interface DrawOptions {
    * shrinks with zoom and grows with the component.
    */
   labelScale?: number;
+  /**
+   * Multiplier on the weight of the lines the SYMBOLS are drawn with.
+   *
+   * The graphics' own widths are already screen-space and follow the zoom (see
+   * `screenStrokePx`); this scales that whole curve, clamps included, so the
+   * library's own emphasis — 0.5 outlines against 1.0 details — survives at any
+   * setting instead of piling into the cap.
+   */
+  strokeScale?: number;
 }
 
 /**
@@ -1421,7 +1453,15 @@ export function drawComponent(
       // `true`, not the original condition: `drawGraphic` re-checks visibility on
       // its own and would reject the unresolved expression it just approved.
       drewSomething = true;
-      drawGraphic(ctx, { ...resolved, visible: true } as Graphic, t, totalScale, theme);
+      drawGraphic(
+        ctx,
+        { ...resolved, visible: true } as Graphic,
+        t,
+        totalScale,
+        theme,
+        undefined,
+        opts.strokeScale ?? 1
+      );
     }
     // A class whose every graphic is conditional, and off for THIS instance,
     // would otherwise draw nothing at all: a component that is invisible on the
@@ -2257,7 +2297,7 @@ export function drawPorts(
   vp: Viewport,
   dpr: number,
   highlight?: string,
-  opts: { emphasised?: boolean; componentPx?: number; theme?: Theme } = {}
+  opts: { emphasised?: boolean; componentPx?: number; theme?: Theme; strokeScale?: number } = {}
 ): void {
   const theme = opts.theme ?? currentTheme();
   if (!classDef || classDef.ports.length === 0) return;
@@ -2295,7 +2335,9 @@ export function drawPorts(
       : emphasised
         ? theme.pinStroke
         : theme.pinStrokeMuted;
-    ctx.lineWidth = isHot ? 2 : emphasised ? 1.5 : 1.25;
+    // The ring follows the component-line setting: a symbol drawn with a 12px
+    // outline and a hairline pin would look like two different drawings.
+    ctx.lineWidth = (isHot ? 2 : emphasised ? 1.5 : 1.25) * (opts.strokeScale ?? 1);
     ctx.stroke();
     ctx.restore();
   }

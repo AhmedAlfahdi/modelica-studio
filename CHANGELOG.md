@@ -5,6 +5,34 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.40] — 2026-10-14
+
+### Added
+
+- **Component line thickness**, in Settings → Modelica Studio → Diagram: 50% to
+  400% of the standard weight of the lines a symbol is drawn with. Studied first,
+  as asked: every stroke a symbol makes resolves its weight in one function, so
+  this is a multiplier on that whole curve — the clamps included, which is the
+  part that matters:
+
+  MSL 4.1.0 asks for `thickness=0.5` in 1,163 graphics, `1.0` in about 100 and
+  `5.0` in six, and the weight is
+  `clamp(thickness x 6 x zoom, 1px, 6px)`. From **200% zoom upward every graphic
+  already sits at the 6px ceiling**, so a flange the library draws heavy is drawn
+  identically to a hairline body outline, at the zoom where a symbol is being
+  read. Scaling the ceiling with the setting is what keeps those differences:
+
+  | zoom | 0.5 outline | 1.0 detail | 5.0 heaviest |
+  |---|---|---|---|
+  | 1 | 3px | 6px | 6px |
+  | 2 | 6px | 6px | 6px |
+
+  A component's **pins follow** the setting — a 12px outline with a hairline pin
+  ring would look like two different drawings. Text inside symbols, fills, the
+  selection and hover outlines, and the palette thumbnails are unaffected, and the
+  wires keep their own separate setting. Figures and embedded blocks follow
+  automatically, since they draw through the same code.
+
 ## [0.2.0-beta.39] — 2026-10-14
 
 ### Fixed

@@ -159,6 +159,15 @@ export interface ModelicaStudioSettings {
    */
   wireScale: number;
   /**
+   * Multiplier on the weight of the lines the component symbols are drawn with.
+   *
+   * The symbols' own weights are already screen-space and follow the zoom; this
+   * scales that whole curve, clamps included, so the library's own emphasis (0.5
+   * outlines against 1.0 details against the few that ask for 5.0) survives at
+   * any setting instead of piling into the cap.
+   */
+  symbolStrokeScale: number;
+  /**
    * Font scale of the cursor readout drawn on a result plot.
    *
    * Separate from the diagram's own readout: a plot is read on its own, often in
@@ -269,6 +278,7 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   labelScale: 1,
   hoverParameters: true,
   wireScale: 1,
+  symbolStrokeScale: 1,
   plotReadoutScale: 1,
   diagramReadoutScale: 1,
   plotDeltas: true,

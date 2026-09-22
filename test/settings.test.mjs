@@ -80,21 +80,24 @@ test("wire weight and the two readout sizes are settings of their own", () => {
   // Asked for separately, and separate they are: wires are diagram geometry, the
   // plot readout is read on the plot, and the parameter popup is read over a
   // diagram. Wanting one larger says nothing about the others.
-  for (const key of ["wireScale", "plotReadoutScale", "diagramReadoutScale"]) {
+  for (const key of ["wireScale", "symbolStrokeScale", "plotReadoutScale", "diagramReadoutScale"]) {
     assert.equal(DEFAULT_SETTINGS[key], 1, `${key} starts at the standard size`);
   }
 
   const older = mergeSettings(DEFAULT_SETTINGS, { stopTime: 5 });
   assert.equal(older.wireScale, 1, "an older data.json gains the wire weight");
+  assert.equal(older.symbolStrokeScale, 1, "and the component line weight");
   assert.equal(older.plotReadoutScale, 1, "and the plot readout size");
   assert.equal(older.diagramReadoutScale, 1, "and the popup size");
 
   const chosen = mergeSettings(DEFAULT_SETTINGS, {
     wireScale: 1.6,
+    symbolStrokeScale: 2.2,
     plotReadoutScale: 1.8,
     diagramReadoutScale: 1.3,
   });
   assert.equal(chosen.wireScale, 1.6, "a stored value wins");
+  assert.equal(chosen.symbolStrokeScale, 2.2, "including the component line weight");
   assert.equal(chosen.plotReadoutScale, 1.8);
   assert.equal(chosen.diagramReadoutScale, 1.3);
   // And they are not the same key: the diagram's popup has its own.

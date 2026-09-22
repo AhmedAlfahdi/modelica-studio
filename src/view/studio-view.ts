@@ -404,6 +404,7 @@ export class ModelicaStudioView extends ItemView {
         hoverParameters: this.plugin.settings.hoverParameters,
         readoutScale: this.plugin.settings.diagramReadoutScale,
         wireScale: this.plugin.settings.wireScale,
+        symbolStrokeScale: this.plugin.settings.symbolStrokeScale,
       }),
       readClipboard: () => navigator.clipboard.readText(),
       writeClipboard: (text) => navigator.clipboard.writeText(text),

@@ -472,6 +472,7 @@ export class EmbeddedDiagram {
         hoverParameters: this.host.settings.hoverParameters,
         readoutScale: this.host.settings.diagramReadoutScale,
         wireScale: this.host.settings.wireScale,
+        symbolStrokeScale: this.host.settings.symbolStrokeScale,
       }),
       // Without this the editor draws `%C` where the heat capacity should be:
       // the icon says `textString="%C"`, and a macro with no resolver to ask is
