@@ -1329,6 +1329,141 @@ test("the wire-thickness setting reaches the drawing, and the click area", () =>
   editor.destroy();
 });
 
+test("every committed edit asks for a repaint", () => {
+  // Reported: rotating with R "lags more than a second". The model changed at
+  // once; the CANVAS did not, because rotation was the one edit that neither
+  // moved the selection nor asked for a frame — and `setSelection` is what had
+  // been requesting one for paste, delete and add. The picture therefore stayed
+  // as it was until the pointer moved, so the rotation appeared when the next
+  // hover repainted.
+  //
+  // The assertion is the general one, over every edit entry point, because the
+  // bug was a missing frame rather than a broken rotation.
+  const frames = [];
+  const realRaf = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = (cb) => {
+    frames.push(cb);
+    return frames.length;
+  };
+  const painted = () => frames.length;
+  // The editor coalesces: a request while one is pending is dropped, which is
+  // what keeps a drag to one frame. So a test has to RUN the frames it records,
+  // or every case after the first would be swallowed by the pending one.
+  const drain = () => {
+    for (const cb of frames.splice(0)) cb();
+  };
+
+  const { editor } = makeEditor();
+  const canvas = canvasOf(editor);
+  layoutTo(canvas, 900, 600);
+  editor.resize();
+  const id = editor.model.components[0]?.id;
+  assert.ok(id, `the fixture has a component to edit (${editor.model.components.length})`);
+  // Selected, because rotation and nudging act on the selection: with nothing
+  // selected they are correctly no-ops, which would pass for the wrong reason.
+  editor.setSelection([id, ...editor.model.components.slice(1).map((c) => c.id)]);
+
+  const cases = [
+    ["rotate", () => editor.rotateSelection(90)],
+    ["nudge", () => editor.nudge(10, 0)],
+    // A selection that actually CHANGES: selecting the same set again is
+    // correctly a no-op, and would pass for the wrong reason.
+    ["re-select", () => editor.setSelection([id])],
+    ["set a parameter", () => editor.setParam(id, "R", "220")],
+    ["rename", () => editor.renameInstance(id, "renamed")],
+    // These replace or extend the model rather than editing in place, so they are
+    // the other places a repaint could be forgotten.
+    ["delete", () => editor.deleteSelection()],
+    ["undo", () => editor.undo()],
+    ["redo", () => editor.redo()],
+  ];
+  const missing = [];
+  for (const [what, run] of cases) {
+    drain();
+    frames.length = 0;
+    run();
+    if (painted() === 0) missing.push(what);
+  }
+
+  // And a burst coalesces: five rotations in one frame ask for one repaint.
+  drain();
+  editor.setSelection(editor.model.components.map((c) => c.id));
+  drain();
+  frames.length = 0;
+  for (let i = 0; i < 5; i++) editor.rotateSelection(90);
+  const burst = painted();
+
+  globalThis.requestAnimationFrame = realRaf;
+  editor.destroy();
+
+  assert.deepEqual(missing, [], "every edit asks for a frame");
+  assert.equal(burst, 1, `a burst of five rotations is one frame (${burst})`);
+  void id;
+});
+
+test("a rotation is visible in the next frame it asks for", () => {
+  // The end of the same story: the frame that rotation asks for must actually
+  // draw the rotated symbol, not the one before it.
+  const frames = [];
+  const realRaf = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = (cb) => {
+    frames.push(cb);
+    return frames.length;
+  };
+
+  const { editor } = makeEditor();
+  const canvas = canvasOf(editor);
+  layoutTo(canvas, 900, 600);
+  editor.resize();
+  editor.addComponent?.("Resistor", 0, 0);
+  const id = editor.model.components[0]?.id;
+  assert.ok(id, "the fixture has a component");
+
+  /** The strokes a frame paints, so two frames can be told apart. */
+  const paint = () => {
+    const strokes = [];
+    let m = 1;
+    editor.ctx = new Proxy(
+      { canvas: { width: 900, height: 600 }, measureText: () => ({ width: 10 }), lineWidth: 1 },
+      {
+        get(t, k) {
+          if (k in t) return t[k];
+          if (k === "setTransform") {
+            return (...args) => {
+              const mat = args.length === 1 ? args[0] : { a: args[0], b: args[1] };
+              m = Math.hypot(mat.a ?? 1, mat.b ?? 0) || 1;
+            };
+          }
+          if (k === "lineTo" || k === "moveTo") {
+            return (x, y) => strokes.push([Math.round(x * m), Math.round(y * m)]);
+          }
+          return () => {};
+        },
+        set(t, k, v) {
+          t[k] = v;
+          return true;
+        },
+      }
+    );
+    SchematicEditor.prototype.draw.call(editor);
+    return strokes.map((p) => p.join(",")).join(" ");
+  };
+
+  editor.setSelection([id]);
+  for (const cb of frames.splice(0)) cb();
+  const before = paint();
+  frames.length = 0;
+  editor.rotateSelection(90);
+  assert.equal(frames.length, 1, "the rotation asked for a frame");
+  // Run the frame it asked for, then paint by hand: what the frame WOULD draw.
+  for (const cb of frames.splice(0)) cb();
+  const after = paint();
+  globalThis.requestAnimationFrame = realRaf;
+  editor.destroy();
+
+  assert.notEqual(after, before, "and the frame it asked for draws something different");
+});
+
 test("the component names can be hidden, and only the names", () => {
   // For a course note a diagram is a picture of a circuit, and twenty copies of
   // "resistor1" are noise. Off, the SYMBOL is untouched: the library's own in-box

@@ -1450,6 +1450,16 @@ export class SchematicEditor {
       coalesce: this.pendingCoalesce,
     });
     this.cb.onChange?.(this.model);
+    // A committed change MUST be painted, here rather than at each call site.
+    //
+    // Rotation was the edit that forgot, and nothing else covered for it: a
+    // paste, a delete or an add moves the selection, and `setSelection` asks for a
+    // frame, so those repainted by accident. Pressing R changed the model and left
+    // the picture as it was until the pointer happened to move — reported as a
+    // rotation that "lags more than a second", which was the wait for the next
+    // hover. The guard inside `requestDraw` coalesces a burst into one frame, so
+    // calling it here costs nothing where call sites already do.
+    this.requestDraw();
   }
 
   undo(): void {

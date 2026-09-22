@@ -5,6 +5,30 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.52] — 2026-10-14
+
+### Fixed
+
+- **Rotating with R repaints immediately.** Reported as a rotation that "lags so
+  much (more than a second)": the model turned at once and the PICTURE did not.
+  Rotation was the one edit that neither moved the selection nor asked for a
+  frame — and `setSelection` is what had been requesting one, so paste, delete,
+  add, nudge and a parameter change all repainted *by accident*, through a
+  selection change that happened to accompany them. Rotating changes no selection,
+  so nothing repainted until the pointer moved over the canvas: the rotation
+  appeared with the next hover, which is the second the report was measuring.
+
+  The request is now in `commitEdit`, where every edit lands, rather than at each
+  call site: a committed change that is not painted is a change the user cannot
+  see, and that belongs to the edit machinery rather than to rotation. The guard
+  in `requestDraw` already coalesces a burst into one frame, so the call sites that
+  also ask for one cost nothing extra.
+
+  The test asserts the general property over every edit entry point — rotate,
+  nudge, re-select, set a parameter, rename, delete, undo, redo — and that five
+  rotations in one frame coalesce to a single repaint. Removing the request fails
+  it with four of the eight edits unrepainted.
+
 ## [0.2.0-beta.51] — 2026-10-14
 
 ### Fixed
