@@ -423,6 +423,74 @@ export function migrateSettings(
 }
 
 /**
+ * The settings that record WORK rather than describe how the plugin behaves.
+ *
+ * A reset must not take these. The first three are the product of the user's
+ * sessions — which file each model lives in, the stop time and the chart set up
+ * for it — and losing them means re-creating work, not re-choosing a preference.
+ * The last two are the models added to the AI picker and the name of the secret
+ * holding the API key: a pointer to a key that lives in Obsidian's secret
+ * storage, and resetting it to a default name would point the assistant at a
+ * secret that does not exist, which reads as a lost key.
+ */
+export const PRESERVED_ON_RESET = [
+  "modelFiles",
+  "modelStopTimes",
+  "charts",
+  "aiModels",
+] as const;
+
+/**
+ * Every setting back to its default, except the ones that record work.
+ *
+ * Returns a NEW object rather than mutating: the caller assigns it onto the live
+ * settings so that everything already holding a reference keeps working, and a
+ * pure function can be tested without one.
+ *
+ * `reset` and `kept` are names, for the notice and for the test — the reader is
+ * told what happened to their settings, not just that something did.
+ */
+export function resetPreferences(settings: ModelicaStudioSettings): {
+  settings: ModelicaStudioSettings;
+  reset: string[];
+  kept: string[];
+} {
+  const next = { ...DEFAULT_SETTINGS } as ModelicaStudioSettings & Record<string, unknown>;
+  const reset: string[] = [];
+  const kept: string[] = [];
+
+  for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof ModelicaStudioSettings)[]) {
+    if ((PRESERVED_ON_RESET as readonly string[]).includes(key as string)) continue;
+    if (key === "ai") continue;
+    if (JSON.stringify(settings[key]) !== JSON.stringify(DEFAULT_SETTINGS[key])) {
+      reset.push(key as string);
+    }
+  }
+
+  // The AI config is a preference and the secret's NAME is not: the key itself
+  // lives in Obsidian's secret storage, and only this name finds it.
+  const secretName = settings.ai?.secretName ?? DEFAULT_SETTINGS.ai.secretName;
+  if (JSON.stringify({ ...settings.ai, secretName: "" }) !== JSON.stringify({ ...DEFAULT_SETTINGS.ai, secretName: "" })) {
+    reset.push("ai");
+  }
+  next.ai = { ...DEFAULT_SETTINGS.ai, secretName };
+
+  for (const key of PRESERVED_ON_RESET) {
+    // The live records themselves, shared rather than copied: the object the rest
+    // of the plugin holds keeps pointing at the same data either way, and a copy
+    // would only be a second thing to keep in step.
+    (next as Record<string, unknown>)[key] = settings[key];
+    if (key === "aiModels") {
+      if ((settings.aiModels ?? []).length > 0) kept.push(key);
+      continue;
+    }
+    if (Object.keys((settings[key] ?? {}) as object).length > 0) kept.push(key);
+  }
+
+  return { settings: next, reset, kept };
+}
+
+/**
  * The weights the renderer should draw with, after the link is applied.
  *
  * One place decides this, so the Studio, an embedded diagram and the Help legend

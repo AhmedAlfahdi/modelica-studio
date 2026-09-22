@@ -101,10 +101,20 @@ test("the dialog offers deletion and history, safely", () => {
 });
 
 test("the confirmation focuses the safe button", () => {
-  // A stray Enter on a destructive dialog should cancel, not delete.
-  const src = fs.readFileSync(path.join(repoRoot, "src/view/saved-models-modal.ts"), "utf8");
-  const confirm = /function confirm\([\s\S]*?\n\}/.exec(src);
+  // A stray Enter on a destructive dialog should cancel, not delete. One helper
+  // serves both destructive actions — deleting a model and resetting the
+  // settings — so the guard cannot be present in one and missing in the other.
+  const src = fs.readFileSync(path.join(repoRoot, "src/view/confirm.ts"), "utf8");
+  const confirm = /export function confirm\([\s\S]*?\n\}/.exec(src);
   assert.ok(confirm, "the confirmation is present");
   assert.match(confirm[0], /no\.focus\(\)/, "Cancel takes focus");
   assert.match(confirm[0], /modal\.onClose = \(\) => done\(false\)/, "and dismissing it is a no");
+
+  for (const [file, what] of [
+    ["src/view/saved-models-modal.ts", "deleting a model"],
+    ["src/settings.ts", "resetting the settings"],
+  ]) {
+    const user = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    assert.match(user, /import \{ confirm \} from "\.\/(view\/)?confirm"/, `${what} asks through the shared helper`);
+  }
 });

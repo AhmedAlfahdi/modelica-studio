@@ -21,7 +21,12 @@ import { SOLVERS, solverDescription, AI_THINKING_LEVELS, MODEL_STYLES, type AiTh
 
 // Used by the thickness sliders, and re-exported below for anything that needs
 // to know the band without importing the merge module.
-import { STROKE_SCALE_MAX, STROKE_SCALE_MIN } from "./settings-merge";
+import {
+  resetPreferences,
+  STROKE_SCALE_MAX,
+  STROKE_SCALE_MIN,
+} from "./settings-merge";
+import { confirm } from "./view/confirm";
 
 export class ModelicaStudioSettingTab extends PluginSettingTab {
   plugin: ModelicaStudioPlugin;
@@ -996,6 +1001,58 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           "equation \u2014 pays for a rebuild. That is why the studio answers immediately " +
           "while you drag a value or switch between models.",
     });
+
+    /* ---- reset ---- */
+    //
+    // Last, where a setting that undoes other settings belongs: after everything
+    // it affects has been seen. It keeps what records WORK — the saved-model
+    // registry, each model's stop time and chart, the AI model list, the name of
+    // the API-key secret — and says so, because "reset" beside a plugin whose
+    // settings include a model registry is a button someone presses carefully.
+    containerEl.createEl("h3", { text: "Reset" });
+    new Setting(containerEl)
+      .setName("Reset settings to defaults")
+      .setDesc(
+        "Puts every appearance, simulation and behaviour setting back to its " +
+          "default. Kept, because they record work rather than a preference: the " +
+          "saved-model list, each model's stop time and chart setup, the models " +
+          "added to the AI picker, and the name of the secret holding the API key. " +
+          "Files in the vault are never touched."
+      )
+      .addButton((b) =>
+        b
+          .setButtonText("Reset")
+          .setWarning()
+          .onClick(async () => {
+            const confirmed = await confirm(
+              this.app as App,
+              "Reset settings to defaults?",
+              "Every setting in this tab goes back to its default value, including " +
+                "the solver, the panel widths and the line weights. Your saved " +
+                "models, each model's stop time and chart, the AI model list and the " +
+                "name of the API-key secret are kept, and no file is touched.",
+              "Reset"
+            );
+            if (!confirmed) return;
+
+            const { settings: next, reset, kept } = resetPreferences(this.plugin.settings);
+            // Onto the live object, not in place of it: the studio, the embeds and
+            // the toolchain all hold this reference.
+            Object.assign(this.plugin.settings, next);
+            await this.plugin.saveSettings();
+            // The library exclusions are part of what was reset, and they change
+            // what the palette and completion offer.
+            this.plugin.applyExclusions();
+            this.display();
+            this.plugin.getView()?.refreshDiagram();
+            this.plugin.refreshEmbeds();
+            new Notice(
+              `Modelica Studio: ${reset.length} setting${reset.length === 1 ? "" : "s"} ` +
+                `reset to defaults.` +
+                (kept.length > 0 ? ` Kept your ${kept.join(", ")}.` : "")
+            );
+          })
+      );
   }
 }
 
@@ -1004,6 +1061,8 @@ export {
   effectiveStrokeScales,
   mergeSettings,
   migrateSettings,
+  PRESERVED_ON_RESET,
+  resetPreferences,
   STROKE_SCALE_MAX,
   STROKE_SCALE_MIN,
 } from "./settings-merge";

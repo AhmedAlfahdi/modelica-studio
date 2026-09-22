@@ -299,6 +299,7 @@ export class StubDropdown {
 export class StubButton {
   text = "";
   disabled = false;
+  warning = false;
   clicked = 0;
   constructor(public buttonEl: HTMLElement) {}
   setButtonText(t: string): this {
@@ -308,6 +309,12 @@ export class StubButton {
   }
   setDisabled(d: boolean): this {
     this.disabled = d;
+    return this;
+  }
+  /** Obsidian marks a destructive button with `mod-warning`. */
+  setWarning(w = true): this {
+    this.warning = w;
+    if (w) this.buttonEl.addClass("mod-warning");
     return this;
   }
   setTooltip(t: string): this {

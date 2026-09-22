@@ -712,6 +712,194 @@ test("linking the thicknesses gives one slider, and drives both settings", async
   );
 });
 
+test("the reset button asks first, then resets preferences and keeps the work", async () => {
+  // "Reset" in a tab whose settings include the saved-model registry is a button
+  // someone presses carefully, so it has to (a) ask, (b) put the preferences back,
+  // and (c) not touch anything that records work.
+  const out = page(
+    `import { ModelicaStudioSettingTab, DEFAULT_SETTINGS } from "${ROOT}/src/settings";`,
+    "const vault = new StubVault();",
+    "const plugin = makePlugin(vault, { settings: {",
+    "  solver: 'ida',",
+    "  stopTime: 42,",
+    "  excludedLibraries: 'Modelica.Fluid',",
+    "  debugLog: false,",
+    "  labelScale: 2.4,",
+    "  hoverParameters: true,",
+    "  wireScale: 3.5,",
+    "  symbolStrokeScale: 1.2,",
+    "  syncStrokeScale: false,",
+    "  plotSnapCrossings: true,",
+    "  plotSnapTolerance: 14,",
+    "  plotDeltas: false,",
+    "  modelFiles: { Tank: 'Modelica/Tank.mo' },",
+    "  modelStopTimes: { Tank: 20 },",
+    "  charts: { Tank: { hidden: ['tank.level'] } },",
+    "  aiModels: ['gpt-5'],",
+    "  ai: { secretName: 'MY_KEY', baseUrl: '', model: 'someone-elses', temperature: 0.2, systemPrompt: '', thinking: 'off', style: 'visual', timeoutSeconds: 300 },",
+    "} });",
+    "plugin.library = { size: 0, packages: () => [], hasPlaceableClass: () => false, isExcluded: () => false };",
+    "plugin.toolchainSummary = () => 'omc';",
+    "plugin.hasSecretStorage = () => false;",
+    "plugin.applyExclusions = () => { window.__exclusionsApplied = (window.__exclusionsApplied || 0) + 1; };",
+    "plugin.setStopTime = () => {};",
+    "plugin.stopTime = () => 1;",
+    "plugin.getView = () => null;",
+    "plugin.refreshEmbeds = () => {};",
+    "const tab = new ModelicaStudioSettingTab(plugin);",
+    "tab.display();",
+    "const row = () => Array.from(tab.containerEl.querySelectorAll('.setting-item')).find((i) => i.querySelector('.setting-item-name').textContent === 'Reset settings to defaults');",
+    "const nameOf = (n) => row().querySelector('.setting-item-name').textContent;",
+    "const button = () => row().components.find((c) => c.buttonEl);",
+    "const modal = () => document.querySelector('.modal');",
+    "",
+    "window.test('the row is there, with a button that says what it does', () => {",
+    "  if (!row()) return 'NO ROW';",
+    "  const b = button();",
+    "  return (b && b.buttonEl ? b.buttonEl.textContent : 'NO BUTTON') + ' | ' + nameOf();",
+    "});",
+    "window.test('clicking it asks first, and changes nothing yet', () => {",
+    "  button().buttonEl.click();",
+    "  // The handler awaits the dialog, and the dialog is built before that await,",
+    "  // so this is observable synchronously.",
+    "  return 'modal=' + !!modal() + ' solver=' + plugin.settings.solver + ' wire=' + plugin.settings.wireScale;",
+    "});",
+    "window.test('the dialog names what goes and what stays', () => {",
+    "  const text = modal() ? modal().textContent.replace(/\\s+/g, ' ') : 'NO MODAL';",
+    "  return ['Reset settings to defaults?', 'saved', 'models', 'kept'].map((k) => k + '=' + text.includes(k)).join(' ') +",
+    "    ' buttons=' + Array.from(document.querySelectorAll('.modelica-studio-prompt-buttons button')).map((b) => b.textContent).join(',');",
+    "});",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  const d = passed(out);
+
+  assert.equal(
+    d["the row is there, with a button that says what it does"],
+    "Reset | Reset settings to defaults",
+    "the control says what it is"
+  );
+  assert.equal(
+    d["clicking it asks first, and changes nothing yet"],
+    "modal=true solver=ida wire=3.5",
+    "nothing moves until it is confirmed"
+  );
+  assert.equal(
+    d["the dialog names what goes and what stays"],
+    "Reset settings to defaults?=true saved=true models=true kept=true buttons=Reset,Cancel",
+    "and the reader is told, before they agree"
+  );
+  assert.ok(out.results.every((r) => r.ok), "every step ran");
+});
+
+test("confirming the reset applies the defaults and keeps the work", async () => {
+  const out = page(
+    `import { ModelicaStudioSettingTab, DEFAULT_SETTINGS } from "${ROOT}/src/settings";`,
+    "const vault = new StubVault();",
+    "const plugin = makePlugin(vault, { settings: {",
+    "  solver: 'ida',",
+    "  stopTime: 42,",
+    "  excludedLibraries: 'Modelica.Fluid',",
+    "  debugLog: false,",
+    "  labelScale: 2.4,",
+    "  hoverParameters: true,",
+    "  wireScale: 3.5,",
+    "  symbolStrokeScale: 1.2,",
+    "  syncStrokeScale: false,",
+    "  plotSnapCrossings: true,",
+    "  plotSnapTolerance: 14,",
+    "  plotDeltas: false,",
+    "  modelFiles: { Tank: 'Modelica/Tank.mo' },",
+    "  modelStopTimes: { Tank: 20 },",
+    "  charts: { Tank: { hidden: ['tank.level'] } },",
+    "  aiModels: ['gpt-5'],",
+    "  ai: { secretName: 'MY_KEY', baseUrl: '', model: 'someone-elses', temperature: 0.2, systemPrompt: '', thinking: 'off', style: 'visual', timeoutSeconds: 300 },",
+    "} });",
+    "plugin.library = { size: 0, packages: () => [], hasPlaceableClass: () => false, isExcluded: () => false };",
+    "plugin.toolchainSummary = () => 'omc';",
+    "plugin.hasSecretStorage = () => false;",
+    "plugin.applyExclusions = () => { window.__exclusionsApplied = (window.__exclusionsApplied || 0) + 1; };",
+    "plugin.setStopTime = () => {};",
+    "plugin.stopTime = () => 1;",
+    "plugin.getView = () => null;",
+    "plugin.refreshEmbeds = () => { window.__embeds = (window.__embeds || 0) + 1; };",
+    "const tab = new ModelicaStudioSettingTab(plugin);",
+    "tab.display();",
+    "const row = () => Array.from(tab.containerEl.querySelectorAll('.setting-item')).find((i) => i.querySelector('.setting-item-name').textContent === 'Reset settings to defaults');",
+    "window.__click = () => row().components.find((c) => c.buttonEl).buttonEl.click();",
+    "window.__slider = (n) => {",
+    "  const i = Array.from(tab.containerEl.querySelectorAll('.setting-item')).find((x) => x.querySelector('.setting-item-name').textContent === n);",
+    "  const c = i && i.components.find((y) => y.inputEl.getAttribute('data-control') === 'slider');",
+    "  return c ? c.value : 'none';",
+    "};",
+    "// The reset runs after the dialog is answered, which is a microtask later, so",
+    "// the page body awaits it and finishes only then.",
+    "(async () => {",
+    "  window.__click();",
+    "  await Promise.resolve();",
+    "  const yes = Array.from(document.querySelectorAll('.modelica-studio-prompt-buttons button')).find((b) => b.textContent === 'Reset');",
+    "  window.__confirm = !!yes;",
+    "  if (yes) yes.click();",
+    "  await Promise.resolve();",
+    "  await Promise.resolve();",
+    "  window.test('the dialog offered a way to go ahead', () => window.__confirm);",
+    "  const D = DEFAULT_SETTINGS;",
+    "  window.test('after confirming, every preference is back to its default', () =>",
+    "    'solver=' + (plugin.settings.solver === D.solver) + ' (was ida)' +",
+    "    ' stopTime=' + (plugin.settings.stopTime === D.stopTime) +",
+    "    ' intervals=' + (plugin.settings.numberOfIntervals === D.numberOfIntervals) +",
+    "    ' exclusions=' + (plugin.settings.excludedLibraries === D.excludedLibraries) +",
+    "    ' label=' + (plugin.settings.labelScale === D.labelScale) +",
+    "    ' aiModel=' + (plugin.settings.ai.model === D.ai.model) +",
+    "    ' wire=' + plugin.settings.wireScale + ' symbol=' + plugin.settings.symbolStrokeScale);",
+    "  window.test('and nothing that records work was touched', () =>",
+    "    'files=' + JSON.stringify(plugin.settings.modelFiles) +",
+    "    ' stopTimes=' + JSON.stringify(plugin.settings.modelStopTimes) +",
+    "    ' charts=' + JSON.stringify(plugin.settings.charts) +",
+    "    ' aiModels=' + JSON.stringify(plugin.settings.aiModels) +",
+    "    ' secret=' + plugin.settings.ai.secretName);",
+    "  window.test('the library exclusions are reapplied and the diagrams redraw', () =>",
+    "    'exclusions=' + (window.__exclusionsApplied ?? 0) + ' embeds=' + (window.__embeds ?? 0));",
+    "  window.test('and the tab shows the default in its slider', () => window.__slider('Wire thickness'));",
+    "  window.test('nothing was left in a half-applied state', () =>",
+    "    'solver=' + plugin.settings.solver + ' wire=' + plugin.settings.wireScale);",
+    "  window.finish();",
+    "})();"
+  );
+  if (out.skip) return;
+  const d = passed(out);
+  assert.equal(d["the dialog offered a way to go ahead"], "true");
+
+  // The values the page compared, against the module's OWN defaults: `solver: ""`
+  // and `stopTime: 1` are the defaults, and a test that hard-codes its own idea of
+  // them drifts. The two weights are named outright, because 0.9 and 1.9 are the
+  // documented taste rather than the library's 1.
+  assert.equal(
+    d["after confirming, every preference is back to its default"],
+    "solver=true (was ida) stopTime=true intervals=true exclusions=true label=true " +
+      "aiModel=true wire=0.9 symbol=1.9",
+    "every preference is back to its default, and the weights to the documented taste"
+  );
+  assert.equal(
+    d["and nothing that records work was touched"],
+    'files={"Tank":"Modelica/Tank.mo"} stopTimes={"Tank":20} charts={"Tank":{"hidden":["tank.level"]}} ' +
+      'aiModels=["gpt-5"] secret=MY_KEY',
+    "the model registry, the per-model stop time and chart, the AI model list and the secret's name all survive"
+  );
+  assert.equal(
+    d["the library exclusions are reapplied and the diagrams redraw"],
+    "exclusions=1 embeds=1",
+    "the exclusions are reapplied and the diagrams redraw"
+  );
+  assert.equal(d["and the tab shows the default in its slider"], "90", "the tab re-renders with the default");
+  assert.equal(
+    d["nothing was left in a half-applied state"],
+    "solver= wire=0.9",
+    "and the settings object the plugin holds is the one that changed"
+  );
+});
+
 test("the palette renders, respects exclusions, and can be driven by keyboard", async () => {
   // The palette with exclusions applied was only ever measured by COUNT, never
   // rendered; and it had no keyboard support at all, which matters more now that

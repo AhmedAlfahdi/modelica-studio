@@ -49,6 +49,9 @@ fs.writeFileSync(
     // with `instanceof TFile` -- so it must be a real class here, not a type.
     // Notice is called by the saved-models repair button.
     "export class Notice { constructor(message) { this.message = message; } }\n" +
+    // The reset button asks first, and the confirmation is a Modal.
+    "export class Modal { constructor(app) { this.app = app; this.titleEl = { setText() {} }; " +
+    "this.contentEl = document.createElement('div'); } open() {} close() {} }\n" +
     "export class TFile { constructor(path) { this.path = path; this.extension = (path.split('.').pop() || ''); } }\n" +
     // The settings tab builds a SecretComponent, so the stub must export it or
     // the module fails to instantiate at import time.
@@ -267,4 +270,62 @@ test("a stored thickness above the standard's band is brought into it", () => {
     { wires: 1.5, symbols: 1.5 },
     "linked, the wire takes the component value whatever was stored"
   );
+});
+
+test("a reset puts the preferences back and keeps the work", () => {
+  // The settings object holds BOTH: how the plugin looks and behaves, and what
+  // records the user's sessions. A reset that took the second would be a data
+  // loss disguised as a preference.
+  const { resetPreferences, PRESERVED_ON_RESET } = merge;
+  const live = {
+    ...DEFAULT_SETTINGS,
+    solver: "ida",
+    stopTime: 42,
+    jobs: 1,
+    labelScale: 2.4,
+    wireScale: 3.5,
+    symbolStrokeScale: 1.2,
+    inspectorWidth: 500,
+    editorMode: "code",
+    excludedLibraries: "Modelica.Fluid",
+    ai: { ...DEFAULT_SETTINGS.ai, model: "someone-elses-model", secretName: "MY_KEY" },
+    // The work:
+    modelFiles: { Tank: "Modelica/Tank.mo", Motor: "Modelica/DCMotor.mo" },
+    modelStopTimes: { Tank: 20 },
+    charts: { Tank: { hidden: ["tank.level"], xMin: 0, xMax: 5 } },
+    aiModels: ["gpt-5", "local-llama"],
+  };
+
+  const { settings: next, reset, kept } = resetPreferences(live);
+
+  // Preferences: back to the defaults.
+  for (const key of ["solver", "stopTime", "jobs", "labelScale", "wireScale", "symbolStrokeScale", "inspectorWidth", "editorMode", "excludedLibraries"]) {
+    assert.deepEqual(next[key], DEFAULT_SETTINGS[key], `${key} is back to its default`);
+  }
+  assert.equal(next.ai.model, DEFAULT_SETTINGS.ai.model, "the AI model choice is a preference");
+  assert.equal(next.ai.secretName, "MY_KEY", "but the secret's NAME is a pointer to a stored key");
+  assert.ok(reset.includes("solver") && reset.includes("wireScale"), `the notice names what changed (${reset.join(", ")})`);
+
+  // Work: untouched, and by reference, because the plugin keeps using the object
+  // it already holds.
+  for (const key of PRESERVED_ON_RESET) {
+    assert.deepEqual(next[key], live[key], `${key} is kept`);
+  }
+  assert.deepEqual(kept.sort(), ["aiModels", "charts", "modelFiles", "modelStopTimes"], `kept names them (${kept.join(", ")})`);
+
+  // Applying it must leave the live object with the same records, and the
+  // defaults everywhere else.
+  Object.assign(live, next);
+  assert.equal(live.solver, DEFAULT_SETTINGS.solver);
+  assert.equal(live.modelFiles.Motor, "Modelica/DCMotor.mo", "the model registry survives the reset");
+  assert.equal(live.modelStopTimes.Tank, 20, "and the per-model stop time");
+  assert.deepEqual(live.charts.Tank.hidden, ["tank.level"], "and the chart setup");
+  assert.deepEqual(live.aiModels, ["gpt-5", "local-llama"], "and the AI model list");
+});
+
+test("a reset with nothing to keep says so", () => {
+  const { resetPreferences } = merge;
+  const { reset, kept } = resetPreferences({ ...DEFAULT_SETTINGS });
+  assert.deepEqual(reset, [], "nothing was changed, so nothing is named");
+  assert.deepEqual(kept, [], "and there was no work to keep");
 });

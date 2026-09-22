@@ -12,6 +12,7 @@
  */
 
 import { App, Menu, Modal, Notice, Setting, TFile, setIcon } from "obsidian";
+import { confirm } from "./confirm";
 import type ModelicaStudioPlugin from "../main";
 import { describeRow, describeSavedModels, repairModelFiles, type SavedModelRow } from "../modelica/saved-models";
 import type { Revision } from "../modelica/revisions";
@@ -274,30 +275,6 @@ export class SavedModelsModal extends Modal {
  * `Modal` rather than a `confirm()`: the latter blocks the renderer, cannot be
  * styled, and reads as a browser warning rather than as part of the app.
  */
-function confirm(app: App, title: string, body: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const modal = new Modal(app);
-    modal.titleEl.setText(title);
-    modal.contentEl.createEl("p", { text: body });
-    let answered = false;
-    const done = (value: boolean) => {
-      if (answered) return;
-      answered = true;
-      modal.close();
-      resolve(value);
-    };
-    const buttons = modal.contentEl.createDiv({ cls: "modelica-studio-prompt-buttons" });
-    const yes = buttons.createEl("button", { cls: "mod-warning", text: "Delete" });
-    yes.addEventListener("click", () => done(true));
-    const no = buttons.createEl("button", { text: "Cancel" });
-    no.addEventListener("click", () => done(false));
-    modal.onClose = () => done(false);
-    modal.open();
-    // Focus the safe button, so a stray Enter does not delete anything.
-    window.setTimeout(() => no.focus(), 0);
-  });
-}
-
 /** One model's earlier versions. */
 class RevisionModal extends Modal {
   constructor(

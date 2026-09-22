@@ -5,6 +5,35 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.48] — 2026-10-14
+
+### Added
+
+- **Reset settings to defaults**, at the bottom of Settings → Modelica Studio. It
+  asks first, naming what goes and what stays, and then puts every appearance,
+  simulation and behaviour setting back — the solver, the panel widths, the line
+  weights, the library exclusions (which are reapplied, so the palette and
+  completion follow), and the AI configuration.
+
+  **What it keeps is the point.** These settings also hold the record of your
+  work, and a reset that took them would be a data loss wearing a preference's
+  clothes:
+
+  - the saved-model registry — which file each model lives in;
+  - each model's stop time and chart setup (which traces, which window);
+  - the models added to the AI picker;
+  - the **name** of the secret holding the API key. That is a pointer into
+    Obsidian's secret storage: resetting it to a default name would point the
+    assistant at a secret that does not exist, which reads as a lost key.
+
+  No file in the vault is touched, and the notice says how many settings were
+  reset and what was kept.
+
+- The confirmation dialog is now one shared helper (`src/view/confirm.ts`) used by
+  both destructive actions — deleting a model and resetting the settings — so the
+  guard cannot be present in one and missing in the other. It marks the button
+  that goes ahead and focuses Cancel, so a stray Enter cancels.
+
 ## [0.2.0-beta.47] — 2026-10-14
 
 ### Changed
