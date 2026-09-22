@@ -446,3 +446,29 @@ test("both surfaces that draw a cursor readout obey the snap settings", () => {
     assert.match(merge, new RegExp(`^\\s+${key}:`, "m"), `${key} is a declared setting`);
   }
 });
+
+test("turning the component names off reaches both surfaces that draw them", () => {
+  // The drawing honours the flag — that is checked in editor.test.mjs against
+  // real pixels and recorded text. This is the other half: the two surfaces that
+  // BUILD the display callback have to pass it, or the setting exists in the tab
+  // and does nothing in the diagram.
+  const studio = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  const embed = fs.readFileSync(path.join(repoRoot, "src/view/embed.ts"), "utf8");
+  assert.match(
+    studio,
+    /instanceLabels: this\.plugin\.settings\.showInstanceLabels/,
+    "the Studio passes the switch"
+  );
+  assert.match(
+    embed,
+    /instanceLabels: this\.host\.settings\.showInstanceLabels/,
+    "an embedded diagram passes it too"
+  );
+  assert.match(
+    fs.readFileSync(path.join(repoRoot, "src/render/canvas.ts"), "utf8"),
+    /opts\.instanceLabels \?\? true/,
+    "and the renderer reads it, defaulting to showing them"
+  );
+  const merge = fs.readFileSync(path.join(repoRoot, "src/settings-merge.ts"), "utf8");
+  assert.match(merge, /^\s+showInstanceLabels: true,/m, "the setting is declared, on by default");
+});

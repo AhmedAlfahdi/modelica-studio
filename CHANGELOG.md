@@ -5,6 +5,26 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.49] — 2026-10-14
+
+### Added
+
+- **Show component names**, a switch at the top of Settings → Diagram: off, the
+  diagram is the symbols alone, which is what a screenshot in a course note
+  usually wants. On by default, because the names are how a diagram is read while
+  it is being built.
+
+  It hides the name **beside** a symbol and nothing else. The library's own text
+  *inside* a symbol — a valve's state, a machine's rating — is part of the drawing
+  rather than a label on it, and a component with no icon keeps the name inside
+  its placeholder box, because that is the only thing identifying it. Both are
+  asserted, not assumed: falsifying them in either direction fails the test.
+
+  With the names off, **Label size** greys out and says why: a control that looks
+  live but is read by nothing is how a setting appears to do nothing. The greying
+  happens on the first render too, not only when the switch moves — a stored "off"
+  must not come up looking live.
+
 ## [0.2.0-beta.48] — 2026-10-14
 
 ### Added

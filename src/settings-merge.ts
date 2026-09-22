@@ -132,6 +132,16 @@ export interface ModelicaStudioSettings {
    * with the zoom and start the labels overlapping on a large model. This moves
    * the whole curve up or down.
    */
+  /**
+   * Whether the name under each component is drawn.
+   *
+   * The names are how a diagram is read while it is being built and clutter once
+   * it is understood: a screenshot in a course note needs the symbols, not twenty
+   * repetitions of "resistor1". Hiding them does not touch the SYMBOL: the
+   * library's own in-box text (a valve's state, a machine's rating) stays, because
+   * that is part of the drawing rather than a label beside it.
+   */
+  showInstanceLabels: boolean;
   labelScale: number;
 
   /**
@@ -298,6 +308,7 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   editorMode: "diagram",
   inspectorWidth: 380,
   paletteWidth: 210,
+  showInstanceLabels: true,
   labelScale: 1,
   hoverParameters: true,
   // The weights these sliders start at, as a multiple of what MSL declares. 100%

@@ -402,6 +402,7 @@ export class ModelicaStudioView extends ItemView {
       display: () => {
         return {
           labelScale: this.plugin.settings.labelScale,
+          instanceLabels: this.plugin.settings.showInstanceLabels,
           hoverParameters: this.plugin.settings.hoverParameters,
           readoutScale: this.plugin.settings.diagramReadoutScale,
           wireScale: this.plugin.settings.wireScale,

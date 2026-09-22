@@ -1367,6 +1367,14 @@ export interface DrawOptions {
    */
   labelScale?: number;
   /**
+   * Whether to draw the name under each component. Default true.
+   *
+   * Only the name BESIDE a symbol: the library's own in-box text and the label a
+   * placeholder box carries are part of the drawing, and hiding them would leave
+   * a component that cannot be identified at all.
+   */
+  instanceLabels?: boolean;
+  /**
    * Multiplier on the weight of the lines the SYMBOLS are drawn with.
    *
    * The graphics' own widths are already screen-space and follow the zoom (see
@@ -1550,7 +1558,7 @@ export function drawComponent(
   // a diagram coordinate: the offset was multiplied by the zoom, pushing the
   // label further below the symbol the further in you zoomed. The transform is
   // therefore reset for the label, which is screen-space furniture.
-  if (onScreenSize > 14) {
+  if (onScreenSize > 14 && (opts.instanceLabels ?? true)) {
     ctx.save();
     // `vb` comes from `transformedBounds(viewportTransform(vp, dpr), ...)`, so it
     // is already in DEVICE pixels. The transform must therefore be IDENTITY:

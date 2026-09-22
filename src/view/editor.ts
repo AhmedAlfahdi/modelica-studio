@@ -105,6 +105,8 @@ export interface EditorCallbacks {
     readoutScale?: number;
     /** Stroke weight of the wires, as a multiple of the standard. */
     wireScale?: number;
+    /** Whether the name under each component is drawn. */
+    instanceLabels?: boolean;
     /** Multiplier on the weight of the lines the component symbols are drawn with. */
     symbolStrokeScale?: number;
     /**
@@ -2086,6 +2088,7 @@ export class SchematicEditor {
         hovered: this.hovered,
         showCentre: this.showProbe,
         labelScale: display.labelScale,
+        instanceLabels: display.instanceLabels ?? true,
         strokeScale: scales.symbols,
       });
     }

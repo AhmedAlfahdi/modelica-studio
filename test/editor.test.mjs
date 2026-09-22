@@ -1329,6 +1329,87 @@ test("the wire-thickness setting reaches the drawing, and the click area", () =>
   editor.destroy();
 });
 
+test("the component names can be hidden, and only the names", () => {
+  // For a course note a diagram is a picture of a circuit, and twenty copies of
+  // "resistor1" are noise. Off, the SYMBOL is untouched: the library's own in-box
+  // text and the label inside a placeholder box are part of the drawing, not
+  // labels beside it.
+  const sym = {
+    name: "P.Sym",
+    shortName: "Sym",
+    icon: [
+      { kind: "Rectangle", extent: [-10, -10, 10, 10], lineColor: [120, 0, 0] },
+      // The library's own readout, inside the symbol's box.
+      { kind: "Text", extent: [-8, 4, 8, -4], textString: "R=100" },
+    ],
+    ports: [],
+    parameters: [],
+    hasIcon: true,
+  };
+  const DEFS5 = { "P.A": sym, "P.Bare": { name: "P.Bare", shortName: "Bare", icon: [], ports: [], parameters: [], hasIcon: false } };
+
+  const textsDrawn = (instanceLabels) => {
+    const h = new StubElement("div");
+    const ed = new SchematicEditor(
+      h,
+      {
+        name: "M",
+        components: [
+          { id: "motor", className: "P.A", placement: { extent: [-60, -20, -20, 20], rotation: 0, visible: true }, params: {} },
+          { id: "helper", className: "P.Bare", placement: { extent: [20, -20, 60, 20], rotation: 0, visible: true }, params: {} },
+        ],
+        connections: [],
+        graphics: [],
+      },
+      {
+        lookup: (n) => DEFS5[n],
+        onChange: () => {},
+        onSelectionChange: () => {},
+        onStatus: () => {},
+        display: () => ({ labelScale: 1, hoverParameters: false, instanceLabels }),
+      }
+    );
+    const c = canvasOf(ed);
+    layoutTo(c, 1000, 600);
+    ed.resize();
+    const out = [];
+    let font = "";
+    ed.ctx = new Proxy(
+      { canvas: { width: 1000, height: 600 }, measureText: () => ({ width: 10 }), lineWidth: 1 },
+      {
+        get(t, k) {
+          if (k in t) return t[k];
+          if (k === "fillText") return (text) => out.push({ text: String(text), font });
+          return () => {};
+        },
+        set(t, k, v) {
+          if (k === "font") font = String(v);
+          t[k] = v;
+          return true;
+        },
+      }
+    );
+    SchematicEditor.prototype.draw.call(ed);
+    ed.destroy();
+    return out;
+  };
+
+  const shown = textsDrawn(true).map((t) => t.text);
+  const hidden = textsDrawn(false).map((t) => t.text);
+
+  assert.ok(shown.includes("motor"), `the name is drawn by default (${shown.join(", ")})`);
+  assert.ok(shown.includes("R=100"), "and the library's own in-box text with it");
+  assert.ok(!hidden.includes("motor"), `the name is gone when hidden (${hidden.join(", ")})`);
+  assert.ok(
+    hidden.includes("R=100"),
+    `but the symbol's own text stays — it is part of the drawing (${hidden.join(", ")})`
+  );
+  assert.ok(
+    hidden.some((t) => t.includes("helper") || t.includes("Bare")),
+    `and a component with no icon still says which it is (${hidden.join(", ")})`
+  );
+});
+
 test("the editor applies the thickness link itself", () => {
   // The link is a rule about how the two settings COMBINE, so it is resolved
   // where the drawing happens. A surface that forgot to apply it would draw a

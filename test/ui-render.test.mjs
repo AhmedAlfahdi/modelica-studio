@@ -304,6 +304,7 @@ test("the settings tab renders every section, with the solver's details in its b
     "  solver: 'cvode',",
     "  excludedLibraries: 'Modelica.Magnetic',",
     "  debugLog: false,",
+    "  showInstanceLabels: true,",
     "  labelScale: 1.4,",
     "  hoverParameters: false,",
     "  wireScale: 1.6,",
@@ -365,7 +366,7 @@ test("the settings tab renders every section, with the solver's details in its b
     "});",
     "window.test('the diagram controls exist and show the stored values', () => {",
     "  const item = (n) => Array.from(root.querySelectorAll('.setting-item')).find((i) => i.querySelector('.setting-item-name').textContent === n);",
-    "  const names = ['Label size', 'Link wire and component thickness', 'Wire thickness', 'Component line thickness', 'Show parameters when hovering a component', 'Parameter popup size'];",
+    "  const names = ['Show component names', 'Label size', 'Link wire and component thickness', 'Wire thickness', 'Component line thickness', 'Show parameters when hovering a component', 'Parameter popup size'];",
     "  const missing = names.filter((n) => !item(n));",
     "  if (missing.length) return 'MISSING: ' + missing.join();",
     "  // The component carries the value, so the tab is reading the setting rather",
@@ -384,6 +385,8 @@ test("the settings tab renders every section, with the solver's details in its b
     "    + ' popup=' + sliderAt('Parameter popup size') + ' hover=' + (toggle ? toggle.value : '?')",
     "    + ' symbol=' + sliderAt('Component line thickness')",
     "    + ' link=' + ((item('Link wire and component thickness').components.find((c) => typeof c.setValue === 'function' && typeof c.setDynamicTooltip !== 'function') || {}).value)",
+    "    + ' names=' + ((item('Show component names').components.find((c) => typeof c.setValue === 'function' && typeof c.setDynamicTooltip !== 'function') || {}).value)",
+    "    + ' labelRowDisabled=' + item('Label size').classList.contains('is-disabled')",
     "    + ' limits=' + window.__limits;",
     "});",
     "window.test('the plot readout has its own size, in the plot section', () => {",
@@ -443,7 +446,7 @@ test("the settings tab renders every section, with the solver's details in its b
     d["the diagram controls exist and show the stored values"],
     // Both sliders offer the band the STANDARD defines, not a range invented for a
     // scale that turned out to be wrong.
-    "label=140 wire=160 popup=130 hover=false symbol=220 link=false limits=50-400-10 50-400-10",
+    "label=140 wire=160 popup=130 hover=false symbol=220 link=false names=true labelRowDisabled=false limits=50-400-10 50-400-10",
     "every diagram control reflects its own stored setting, and the wire weight reaches 1000%"
   );
   assert.equal(
@@ -897,6 +900,64 @@ test("confirming the reset applies the defaults and keeps the work", async () =>
     d["nothing was left in a half-applied state"],
     "solver= wire=0.9",
     "and the settings object the plugin holds is the one that changed"
+  );
+});
+
+test("turning the component names off greys the size that no longer reads", async () => {
+  // A control that looks live but is not read is how a setting appears to do
+  // nothing. With the names off, the size below has nothing to size.
+  const out = page(
+    `import { ModelicaStudioSettingTab } from "${ROOT}/src/settings";`,
+    "const vault = new StubVault();",
+    "const plugin = makePlugin(vault, { settings: {",
+    "  solver: 'cvode',",
+    "  excludedLibraries: '',",
+    "  debugLog: false,",
+    "  showInstanceLabels: false,",
+    "  labelScale: 1.4,",
+    "  hoverParameters: true,",
+    "  plotSnapCrossings: true,",
+    "  plotSnapTolerance: 14,",
+    "  plotDeltas: false,",
+    "  aiModels: [],",
+    "  ai: { secretName: '', baseUrl: '', model: '', temperature: 0.2, systemPrompt: '', thinking: 'off', style: 'visual', timeoutSeconds: 300 },",
+    "} });",
+    "plugin.library = { size: 0, packages: () => [], hasPlaceableClass: () => false, isExcluded: () => false };",
+    "plugin.toolchainSummary = () => 'omc';",
+    "plugin.hasSecretStorage = () => false;",
+    "plugin.applyExclusions = () => {};",
+    "plugin.setStopTime = () => {};",
+    "plugin.stopTime = () => 1;",
+    "plugin.getView = () => null;",
+    "plugin.refreshEmbeds = () => { window.__embeds = (window.__embeds || 0) + 1; };",
+    "const tab = new ModelicaStudioSettingTab(plugin);",
+    "tab.display();",
+    "const item = (n) => Array.from(tab.containerEl.querySelectorAll('.setting-item')).find((i) => i.querySelector('.setting-item-name').textContent === n);",
+    "const toggle = () => item('Show component names').components.find((c) => c.inputEl.getAttribute('data-control') === 'toggle');",
+    "window.test('a stored off comes up off, with the size already greyed', () =>",
+    "  'names=' + toggle().value + ' disabled=' + item('Label size').classList.contains('is-disabled') +",
+    "    ' input=' + item('Label size').querySelector('input').disabled);",
+    "window.test('turning it back on lets the size read again', () => {",
+    "  const t = toggle();",
+    "  t.setValue(true);",
+    "  t.inputEl.dispatchEvent(new Event('change'));",
+    "  return 'stored=' + plugin.settings.showInstanceLabels + ' disabled=' + item('Label size').classList.contains('is-disabled') +",
+    "    ' input=' + item('Label size').querySelector('input').disabled + ' embeds=' + (window.__embeds || 0);",
+    "});",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  const d = passed(out);
+  assert.equal(
+    d["a stored off comes up off, with the size already greyed"],
+    "names=false disabled=true input=true",
+    "the row is greyed on the FIRST render, not only after the switch moves"
+  );
+  assert.equal(
+    d["turning it back on lets the size read again"],
+    "stored=true disabled=false input=false embeds=1",
+    "the setting is stored, the row comes back, and the diagrams redraw"
   );
 });
 

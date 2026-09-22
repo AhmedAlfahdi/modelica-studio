@@ -258,7 +258,33 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
     /* ---- the diagram ---- */
     containerEl.createEl("h3", { text: "Diagram" });
 
+    // The names are how a diagram is read while it is being built and clutter
+    // once it is understood, so they can be switched off. The SIZE below then has
+    // nothing to read, and says so by being greyed rather than looking live.
+    let labelScaleRow: Setting | null = null;
+
     new Setting(containerEl)
+      .setName("Show component names")
+      .setDesc(
+        "Draws the name under each component — `motor`, `load`, `resistor1`. Off, " +
+          "the diagram is the symbols alone, which is what a screenshot in a note " +
+          "usually wants. The library's own text INSIDE a symbol (a valve's state, " +
+          "a machine's rating) is part of the drawing and stays, as does the name on " +
+          "a component with no icon, which is the only thing identifying it."
+      )
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.showInstanceLabels).onChange(async (v) => {
+          this.plugin.settings.showInstanceLabels = v;
+          // Applied before the write, so the row greys as the switch moves rather
+          // than one disk round-trip later.
+          labelScaleRow?.setDisabled(!v);
+          this.plugin.getView()?.refreshDiagram();
+          this.plugin.refreshEmbeds();
+          await this.plugin.saveSettings();
+        })
+      );
+
+    labelScaleRow = new Setting(containerEl)
       .setName("Label size")
       .setDesc(
         "Scales the name under each component in the diagram, as a percentage " +
@@ -266,7 +292,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           "size, so this moves that whole curve rather than pinning one size: " +
           "it still shrinks when you zoom out, and two components side by side " +
           "do not start overlapping. Applies to the Studio and to diagrams " +
-          "embedded in notes."
+          "embedded in notes, and reads nothing while the names are hidden."
       )
       .addSlider((sl) =>
         sl
@@ -284,6 +310,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
             this.plugin.refreshEmbeds();
           })
       );
+    labelScaleRow.setDisabled(!this.plugin.settings.showInstanceLabels);
 
     // The two thickness settings are two knobs on ONE curve. MSL's `thickness`
     // is a single scale — a connector asking for 0.5 draws a double line, and a

@@ -335,8 +335,10 @@ export class HelpModal extends Modal {
         "Hovering a component shows what its parameters are set to, with the ones " +
         "that differ from the class default first — reading a diagram's settings " +
         "otherwise means selecting each component in turn. Switch it off, and set " +
-        "the size of the name under each component, in Settings → Modelica Studio → " +
-        "Diagram. Both apply to the Studio and to diagrams embedded in notes.",
+        "the size of the name under each component — or hide those names entirely, " +
+        "which is what a screenshot in a note usually wants — in Settings → " +
+        "Modelica Studio → Diagram. All of it applies to the Studio and to diagrams " +
+        "embedded in notes.",
     });
     el.createEl("p", {
       cls: "modelica-studio-muted",

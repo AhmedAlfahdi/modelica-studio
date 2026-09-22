@@ -470,6 +470,7 @@ export class EmbeddedDiagram {
       display: () => {
         return {
           labelScale: this.host.settings.labelScale,
+          instanceLabels: this.host.settings.showInstanceLabels,
           hoverParameters: this.host.settings.hoverParameters,
           readoutScale: this.host.settings.diagramReadoutScale,
           wireScale: this.host.settings.wireScale,
