@@ -281,47 +281,47 @@ test("scaled port grab radius stays usable at typical zoom levels", () => {
 });
 
 test("wire weight stays legible and proportionate across zoom levels", () => {
-  // Regression: the wire stroke was multiplied by the zoom twice (written as a
-  // diagram-space width, then scaled again by the canvas transform), so it grew
-  // quadratically — thinner than the symbol when zoomed out, many times thicker
-  // when zoomed in. It now tracks the zoom linearly with a legibility floor.
-  const wirePx = (ts) => Math.max(C.MIN_WIRE_WIDTH_PX, C.WIRE_WIDTH_PX * Math.max(1, ts));
-
+  // Measured through the function the renderer calls, not through a copy of its
+  // formula: the copy here used to re-derive the weight and drifted from the code
+  // it was supposed to be checking.
   assert.ok(C.WIRE_WIDTH_PX > 0 && C.WIRE_WIDTH_PX <= 4, `sane base weight, got ${C.WIRE_WIDTH_PX}`);
-  assert.ok(C.MIN_WIRE_WIDTH_PX >= 1, `legible floor, got ${C.MIN_WIRE_WIDTH_PX}`);
 
   let prev = 0;
   for (const ts of [0.25, 0.5, 1, 2, 4, 8]) {
-    const px = wirePx(ts);
-    assert.ok(px >= C.MIN_WIRE_WIDTH_PX, `zoom ${ts}: never below the floor, got ${px}`);
-    assert.ok(px <= 40, `zoom ${ts}: never absurd, got ${px}`);
-    // Within the tracking region the weight must grow with zoom, not shrink.
-    if (ts >= 1) {
-      assert.ok(px >= prev - 1e-9, `zoom ${ts}: weight must not shrink as we zoom in`);
-    }
+    const px = C.wireWidthPx(ts);
+    assert.ok(px >= C.MIN_STROKE_PX - 1e-9, `zoom ${ts}: never below the floor, got ${px}`);
+    assert.ok(px <= C.MAX_STROKE_PX + 1e-9, `zoom ${ts}: never above the cap, got ${px}`);
+    assert.ok(px >= prev - 1e-9, `zoom ${ts}: weight must not shrink as we zoom in (${prev} -> ${px})`);
     prev = px;
   }
+  // Linear in the band where neither clamp bites: twice the zoom, twice the line.
+  assert.ok(
+    Math.abs(C.wireWidthPx(2) - 2 * C.wireWidthPx(1)) < 1e-9,
+    `twice the zoom is twice the wire (${C.wireWidthPx(1)} -> ${C.wireWidthPx(2)})`
+  );
 });
 
-test("wire and symbol strokes stay in a schematic-like ratio across zoom", () => {
-  // The wire should read slightly heavier than a symbol's outline, and both
-  // must stay visible. Previously the symbol stroke computed to 0.1px at every
-  // zoom (invisible) while the wire grew quadratically, so they never matched.
-  const SIZE = C.MSL_COMPONENT_SIZE;
-  const wirePx = (ts) => Math.max(C.MIN_WIRE_WIDTH_PX, C.WIRE_WIDTH_PX * Math.max(1, ts));
-  const strokePx = (ts) => Math.max(1, Math.min(6, 1.6 * ((SIZE * ts) / 40)));
+test("a wire and a symbol outline share one scale, at the library's ratio", () => {
+  // MSL's `thickness` is one scale for both, so the ratio between a single line
+  // (0.25), a double one (0.5) and a quadruple one (1.0) is the library's, and a
+  // wire and a graphic declaring the same number come out the same weight.
+  const single = (z) => C.strokePxFor(C.MSL_LINE_CANONICAL, z);
+  assert.equal(C.wireWidthPx(2), single(2), "a wire IS a 0.25 line");
 
-  for (const ts of [0.5, 1, 1.5, 2, 4]) {
-    const wire = wirePx(ts);
-    const stroke = strokePx(ts);
-    assert.ok(stroke >= 1, `symbol outline legible at scale ${ts} (${stroke}px)`);
-    assert.ok(wire >= C.MIN_WIRE_WIDTH_PX, `wire legible at scale ${ts} (${wire}px)`);
-    const ratio = wire / stroke;
-    assert.ok(
-      ratio > 0.7 && ratio < 3,
-      `wire/symbol ratio should look like a schematic at scale ${ts}, got ${ratio.toFixed(2)}`
-    );
+  // The ratio is exact in the band where NEITHER clamp bites, which is narrow by
+  // nature: a 0.25 line must clear the 1px floor (z >= 0.67) and a 1.0 line must
+  // stay under the 6px cap (z <= 1).
+  for (const z of [0.75, 1]) {
+    const one = single(z);
+    const two = C.strokePxFor(2 * C.MSL_LINE_CANONICAL, z);
+    const four = C.strokePxFor(4 * C.MSL_LINE_CANONICAL, z);
+    assert.ok(Math.abs(two - 2 * one) < 1e-9, `0.5 is double 0.25 at scale ${z} (${one} -> ${two})`);
+    assert.ok(Math.abs(four - 4 * one) < 1e-9, `1.0 is four times at scale ${z} (${one} -> ${four})`);
   }
+  // And at the ends of the range they collapse onto the same floor and cap, which
+  // is what a legibility floor and a blob-avoiding cap mean.
+  assert.equal(C.strokePxFor(5, 0.02), C.strokePxFor(0.25, 0.02), "both at the floor when tiny");
+  assert.equal(C.strokePxFor(5, 8), C.strokePxFor(1, 8), "both at the cap when huge");
 });
 
 test("dropped components use the MSL standard size", () => {

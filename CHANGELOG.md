@@ -5,6 +5,47 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.44] — 2026-10-14
+
+### Fixed
+
+- **Component lines were drawn up to ten times too heavy.** Asked for while
+  recalibrating the thickness settings, and it turned out to be the same fault as
+  the wires, still present on the symbol path: `drawComponent` sets the canvas to
+  IDENTITY and maps every coordinate to device pixels itself, so a `lineWidth` is
+  already an on-screen width — and the symbol path was dividing it by the
+  transform scale anyway. The smaller a component's placement scale, the fatter
+  its outline, which is how MSL places nearly everything:
+
+  | zoom | the same symbol at a ±10 extent | at its ±100 canonical size |
+  |---|---|---|
+  | 0.5 | **30 px** | 2 px |
+  | 1 | **10 px** | 2 px |
+  | 2 | 4 px | 2 px |
+
+  Both declare `thickness = 0.5`. Resizing a component changed its line weight,
+  which is why diagrams looked heavy and inconsistent. The dash pattern was
+  divided the same way, so a dashed outline had dashes four times too long.
+
+### Changed
+
+- **One scale for wires and component lines.** MSL's `thickness` is a single
+  scale — a connector asking for 0.5 draws a DOUBLE line, and a graphic asking for
+  0.5 draws a line of the same weight — but the two had separate curves, and a
+  wire came out 1.47x the weight of a symbol line declaring exactly the same
+  thing. Both now go through `strokePxFor`, so 100% means the library's own
+  weight on both sliders: a single line is 1.5 px and a double one 3 px at 100%
+  zoom, and the ratio between them survives at any setting.
+- **Link wire and component thickness**, a new switch in Settings → Diagram: one
+  slider for both, so the library's ratio cannot be broken by accident. It is
+  **off** by default — an added setting should not move an existing diagram — and
+  while it is on the wires follow the component weight. The editor applies the
+  link itself, so the Studio and an embedded diagram cannot disagree about what
+  the settings mean.
+- Both sliders now say what they mean in pixels, since the numbers are the
+  library's rather than arbitrary: the shared one spans 50–400% (as heavy as a
+  symbol takes before it turns into a blob), the wire slider keeps its 50–1000%.
+
 ## [0.2.0-beta.43] — 2026-10-14
 
 ### Fixed

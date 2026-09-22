@@ -39,7 +39,12 @@ import type {
 } from "../modelica/types";
 import { emptyDiagram } from "../modelica/types";
 import { currentTheme, type Theme } from "../render/theme";
-import { connectorWireStyle, type ConnectorWireStyle } from "../render/connector-style";
+import { effectiveStrokeScales } from "../settings-merge";
+import {
+  connectorWireStyle,
+  LINE_THICKNESS_UNIT,
+  type ConnectorWireStyle,
+} from "../render/connector-style";
 import {
   apply,
   defaultComponentSize,
@@ -102,6 +107,14 @@ export interface EditorCallbacks {
     wireScale?: number;
     /** Multiplier on the weight of the lines the component symbols are drawn with. */
     symbolStrokeScale?: number;
+    /**
+     * Whether the two weights above are one setting.
+     *
+     * Resolved HERE, not by each surface: the link is a rule about how the two
+     * settings combine, and a surface that forgot to apply it would draw a
+     * different diagram from the same settings.
+     */
+    syncStrokeScale?: boolean;
   };
   /** Read text from the system clipboard. */
   readClipboard?: () => Promise<string>;
@@ -2032,6 +2045,8 @@ export class SchematicEditor {
     // hundred connections, and looking each endpoint up by scanning would be
     // quadratic on every paint.
     const componentsById = new Map(this.model.components.map((c) => [c.id, c]));
+    // One resolution per frame, used by the wires, the symbols and their pins.
+    const scales = this.strokeScales();
 
     for (const conn of this.model.connections) {
       const picked = this.wireSelection.has(conn.id);
@@ -2050,9 +2065,11 @@ export class SchematicEditor {
           this.selection.has(conn.from.component) ||
           this.selection.has(conn.to.component) ||
           this.hoveredWire === conn.id,
-        // The library's own ratio (0.5 is double) times the reader's preference:
-        // a bus stays double whatever weight they have chosen.
-        widthScale: this.wireScale() * (wire?.widthRatio ?? 1),
+        // The connector's own thickness, so the wire is drawn through the same
+        // clamp the symbols use: 0.5 is double 0.25, as MSL's documentation says
+        // a bus line is. `widthScale` is then only the reader's preference.
+        thickness: LINE_THICKNESS_UNIT * (wire?.widthRatio ?? 1),
+        widthScale: scales.wires,
         ...(conn.color ? {} : wire?.color ? { color: wire.color } : {}),
       });
       // Corners to drag, but only for the wire in hand: showing them for every
@@ -2069,7 +2086,7 @@ export class SchematicEditor {
         hovered: this.hovered,
         showCentre: this.showProbe,
         labelScale: display.labelScale,
-        strokeScale: display.symbolStrokeScale ?? 1,
+        strokeScale: scales.symbols,
       });
     }
 
@@ -2112,7 +2129,7 @@ export class SchematicEditor {
       drawPorts(ctx, inst, def, vp, dpr, highlight, {
         emphasised,
         componentPx: size,
-        strokeScale: display.symbolStrokeScale ?? 1,
+        strokeScale: scales.symbols,
       });
     }
 
@@ -2509,9 +2526,22 @@ export class SchematicEditor {
    * tested nearest-first so that crossing wires pick the one on top, which is the
    * one drawn last.
    */
-  /** The wire-thickness setting, read per use rather than captured. */
+  /** The wire weight, for the grab radius: a thick wire must stay grabbable. */
   private wireScale(): number {
-    return this.cb.display?.().wireScale ?? 1;
+    return this.strokeScales().wires;
+  }
+
+  /**
+   * The two thickness weights, with the link applied — read per use rather than
+   * captured, so a settings change shows on the next redraw.
+   */
+  private strokeScales(): { wires: number; symbols: number } {
+    const display = this.cb.display?.() ?? { labelScale: 1, hoverParameters: false };
+    return effectiveStrokeScales({
+      wireScale: display.wireScale ?? 1,
+      symbolStrokeScale: display.symbolStrokeScale ?? 1,
+      syncStrokeScale: display.syncStrokeScale === true,
+    });
   }
 
   /**

@@ -309,10 +309,13 @@ export class HelpModal extends Modal {
         "double — the signal and control buses, the StateGraph inflow and outflow " +
         "connectors, and the multibody frames. A Line annotation written on the " +
         "connect clause itself, which is what a tool records when a route is " +
-        "dragged by hand, wins over the connector. Wire thickness in Settings → " +
-        "Modelica Studio → Diagram scales all of them together, so a bus stays " +
-        "double at any weight; Component line thickness, in the same place, is " +
-        "about the symbols rather than the wires.",
+        "dragged by hand, wins over the connector. Wire thickness and Component " +
+        "line thickness in Settings → Modelica Studio → Diagram scale the wires and " +
+        "the symbols, and Link wire and component thickness there gives the two one " +
+        "slider — the wires then follow the component weight, so the library's ratio " +
+        "between a single, a double and a quadruple line cannot drift apart. At the " +
+        "standard 100% a single line is 1.5 px and a double one is 3 px at 100% " +
+        "zoom.",
     });
 
     /* ---- reading the diagram ---- */

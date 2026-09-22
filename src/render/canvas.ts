@@ -653,7 +653,10 @@ function hasFill(g: Graphic): boolean {
 
 /** Line dash patterns, scaled to the current zoom so they stay legible. */
 function dashFor(pattern: LinePattern | undefined, scale: number): number[] {
-  const s = Math.max(1, Math.min(4, 1 / Math.max(scale, 0.05)));
+  // Dashes are in DEVICE pixels too, so they grow with the drawing rather than
+  // being divided by it — the division was the same leftover as the stroke's. A
+  // dash longer than the symbol it borders is unreadable, hence the clamp.
+  const s = Math.max(0.5, Math.min(4, Math.max(scale, 1e-6)));
   switch (pattern) {
     case "Dash":
       return [6 * s, 4 * s];
@@ -754,7 +757,7 @@ function applyFillPattern(
  * scale keeps symbols legible at every zoom, and lets the outline and the wire
  * read as parts of the same drawing.
  */
-const MSL_LINE_CANONICAL = 0.25;
+export const MSL_LINE_CANONICAL = 0.25;
 
 /**
  * Reference on-screen size, in pixels, of a standard 20-unit component at 1:1
@@ -765,9 +768,33 @@ const REFERENCE_ICON_PX = 40;
 const REFERENCE_STROKE_PX = 1.5;
 
 /** Keeps outlines visible when zoomed out; they are the only thing showing. */
-const MIN_STROKE_PX = 1;
+export const MIN_STROKE_PX = 1;
 /** Keeps outlines from swallowing small symbols when zoomed in. */
-const MAX_STROKE_PX = 6;
+export const MAX_STROKE_PX = 6;
+
+/**
+ * The weight, in screen pixels, of a line the library declares as `thickness`.
+ *
+ * ONE function for both kinds of line, which is the point: MSL's convention is
+ * that `thickness` is a single scale — a connector that asks for 0.5 draws a
+ * DOUBLE line, and a graphic that asks for 0.5 draws a line of the same weight.
+ * The two used to have their own curves, and a wire came out 1.47x the weight of
+ * a symbol line declaring the same thing, so the library's ratios held within a
+ * symbol and not between a symbol and its wires.
+ *
+ * `totalScale` is the device scale the drawing is happening at (zoom x dpr), so
+ * a stroke follows the symbols down to a legible floor and up to a cap, both of
+ * which the reader's setting scales with it.
+ */
+export function strokePxFor(thickness: number, totalScale: number, strokeScale = 1): number {
+  const iconPx = MSL_COMPONENT_SIZE * Math.max(totalScale, 1e-6);
+  const px = (thickness / MSL_LINE_CANONICAL) * REFERENCE_STROKE_PX * (iconPx / REFERENCE_ICON_PX);
+  // The "line thickness" settings multiply the whole curve — the clamps included,
+  // or a setting could not reach past them at either end.
+  const lo = MIN_STROKE_PX * strokeScale;
+  const hi = MAX_STROKE_PX * strokeScale;
+  return Math.max(lo, Math.min(hi, px * strokeScale));
+}
 
 function screenStrokePx(
   g: Graphic,
@@ -790,16 +817,10 @@ function screenStrokePx(
   // drawing the way a real schematic viewer does — but never below a legible
   // floor, which is what made everything vanish at low zoom.
   // Derive from the component's on-screen size so every weight shares one scale.
-  const iconPx = MSL_COMPONENT_SIZE * Math.max(totalScale, 1e-6);
-  const px = (thickness / MSL_LINE_CANONICAL) * REFERENCE_STROKE_PX * (iconPx / REFERENCE_ICON_PX);
-  // The "component line thickness" setting multiplies the whole curve — the
-  // clamps included, as the wire weight does. Both matter: without scaling the
-  // cap the setting would do nothing above 200% zoom, where every graphic already
-  // sits at 6px, and the library's own emphasis (0.5 outlines against 1.0
-  // details against the six graphics that ask for 5.0) would stay flattened.
-  const lo = MIN_STROKE_PX * strokeScale;
-  const hi = MAX_STROKE_PX * strokeScale;
-  return Math.max(lo, Math.min(hi, px * strokeScale));
+  // The library's own emphasis (0.5 outlines against 1.0 details against the six
+  // graphics that ask for 5.0) survives because the clamps scale with the setting
+  // rather than flattening everything onto the cap.
+  return strokePxFor(thickness, totalScale, strokeScale);
 }
 
 function strokeStyleFor(
@@ -811,11 +832,19 @@ function strokeStyleFor(
 ): { color: string; width: number; dash: number[]; none: boolean } {
   const lc = (g as { lineColor?: Color }).lineColor ?? (g as { color?: Color }).color;
   const px = screenStrokePx(g, totalScale, strokePx, strokeScale);
-  // lineWidth is interpreted in pre-transform units, so undo the scale.
+  // `px` IS the on-screen width: `drawComponent` sets the context to IDENTITY and
+  // maps every coordinate to device pixels itself, so a lineWidth is not in
+  // pre-transform units and must not be divided by the scale. It was, and the
+  // effect was the same one reported for the wires — the smaller the placement
+  // scale, the fatter the line: a symbol declaring thickness 0.5 placed the way
+  // MSL places nearly everything (a +/-10 extent against a +/-100 icon box) drew
+  // a 10px outline at 100% zoom, while the identical symbol at its canonical size
+  // drew 2px. Every symbol in every diagram was affected, and resizing one
+  // changed its line weight.
   const scale = Math.max(totalScale, 1e-6);
   return {
     color: rgb(themedColor(lc, theme, "stroke")),
-    width: px / scale,
+    width: px,
     dash: dashFor(g.pattern, scale),
     // MLS: "The LinePattern attribute Solid indicates a normal line, None an
     // invisible line". `dashFor` cannot express this -- it returns [] for both
@@ -1930,14 +1959,7 @@ export function resizeExtent(
  * belonged to the same drawing. Dividing by the scale keeps the stroke a
  * constant on-screen weight, which is what a schematic needs.
  */
-export const WIRE_WIDTH_PX = 2.2;
-/**
- * Wire weight floor, in screen pixels. A wire that thins away when zoomed out
- * is worse than one that is slightly heavy, so it never drops below this.
- */
-export const MIN_WIRE_WIDTH_PX = 1.2;
-/** Wire weight cap, so a wire never becomes a slab when zoomed far in. */
-export const MAX_WIRE_WIDTH_PX = 8;
+export const WIRE_WIDTH_PX = REFERENCE_STROKE_PX;
 
 /**
  * On-screen width of a standard component, in pixels, at a given zoom.
@@ -1949,15 +1971,15 @@ export function componentPx(zoom: number): number {
 }
 
 /**
- * Wire stroke weight in screen pixels.
+ * Weight of a SINGLE wire line, in screen pixels, at a given zoom.
  *
- * Chosen as a fixed fraction of the component's on-screen size — about 5% —
- * so a wire always reads as slightly heavier than a symbol outline without
- * ever overwhelming it. Clamped at both ends for legibility.
+ * The same curve the symbols are drawn with, evaluated at the canonical
+ * thickness — so a wire to a connector declaring 0.25 is exactly as heavy as a
+ * graphic declaring 0.25, and one to a connector declaring 0.5 (a bus) is double
+ * it, which is what MSL's own documentation says a bus connection is.
  */
 export function wireWidthPx(zoom: number): number {
-  const c = componentPx(zoom);
-  return Math.max(MIN_WIRE_WIDTH_PX, Math.min(MAX_WIRE_WIDTH_PX, c * 0.055));
+  return strokePxFor(MSL_LINE_CANONICAL, zoom);
 }
 
 /**
@@ -1978,7 +2000,15 @@ export function drawConnection(
   dpr: number,
   opts: {
     selected?: boolean;
-    width?: number;
+    /**
+     * The thickness the connector declares, in MSL's units — 0.25 for the
+     * ordinary case, 0.5 for the buses and frames that ask for a double line.
+     *
+     * Passed as a THICKNESS rather than as a multiplier on purpose: it goes
+     * through the same clamp the symbols do, so a line declaring 0.5 is drawn at
+     * exactly the weight of a symbol graphic declaring 0.5, at every zoom.
+     */
+    thickness?: number;
     widthScale?: number;
     theme?: Theme;
     /**
@@ -2001,8 +2031,8 @@ export function drawConnection(
   // Follow the zoom so the wire stays proportional to the symbols.
   // The wire-thickness setting multiplies the whole curve — including its clamps,
   // because a clamp the user cannot exceed would make the setting do nothing at
-  // one end. `opts.width` is for callers that already know the weight.
-  const basePx = (opts.width ?? wireWidthPx(scale)) * (opts.widthScale ?? 1);
+  // one end.
+  const basePx = strokePxFor(opts.thickness ?? MSL_LINE_CANONICAL, scale, opts.widthScale ?? 1);
 
   ctx.save();
   // The points below are already in DEVICE pixels (via `vt`, which includes the

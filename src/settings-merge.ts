@@ -159,6 +159,18 @@ export interface ModelicaStudioSettings {
    */
   wireScale: number;
   /**
+   * Whether the wire weight and the component line weight are one setting.
+   *
+   * MSL's `thickness` is a single scale: a connector asking for 0.5 draws a
+   * DOUBLE line, and a graphic asking for 0.5 draws a line of the same weight, so
+   * the two settings are two knobs on one curve. Linked, there is one knob, and
+   * the library's ratio between wires and symbols cannot be broken by accident.
+   *
+   * Off by default: it changes what a stored pair of values means, and existing
+   * diagrams should not move because a setting was added.
+   */
+  syncStrokeScale: boolean;
+  /**
    * Multiplier on the weight of the lines the component symbols are drawn with.
    *
    * The symbols' own weights are already screen-space and follow the zoom; this
@@ -279,6 +291,7 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   hoverParameters: true,
   wireScale: 1,
   symbolStrokeScale: 1,
+  syncStrokeScale: false,
   plotReadoutScale: 1,
   diagramReadoutScale: 1,
   plotDeltas: true,
@@ -375,4 +388,21 @@ export function migrateSettings(
   // the prompt already preferred.
   if (ai.style !== "visual" && ai.style !== "equations") ai.style = "visual";
   return settings;
+}
+
+/**
+ * The weights the renderer should draw with, after the link is applied.
+ *
+ * One place decides this, so the Studio, an embedded diagram and the Help legend
+ * cannot disagree about what the settings mean.
+ */
+export function effectiveStrokeScales(settings: {
+  wireScale: number;
+  symbolStrokeScale: number;
+  syncStrokeScale: boolean;
+}): { wires: number; symbols: number } {
+  const symbols = settings.symbolStrokeScale;
+  return settings.syncStrokeScale
+    ? { wires: symbols, symbols }
+    : { wires: settings.wireScale, symbols };
 }

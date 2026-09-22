@@ -55,7 +55,8 @@ fs.writeFileSync(
     "export class SecretComponent { constructor(app, el) { this.app = app; this.el = el; } " +
     "setValue(v) { this.value = v; return this; } onChange(cb) { this.cb = cb; return this; } }\n"
 );
-const { DEFAULT_SETTINGS, mergeSettings } = await import(path.join(staging, "settings.js"));
+const merge = await import(path.join(staging, "settings.js"));
+const { DEFAULT_SETTINGS, mergeSettings } = merge;
 
 // The plot, for the one number the two modules have to agree on: the snap
 // distance the settings ship with, and the distance the plot falls back to when
@@ -87,6 +88,11 @@ test("wire weight and the two readout sizes are settings of their own", () => {
   const older = mergeSettings(DEFAULT_SETTINGS, { stopTime: 5 });
   assert.equal(older.wireScale, 1, "an older data.json gains the wire weight");
   assert.equal(older.symbolStrokeScale, 1, "and the component line weight");
+  assert.equal(
+    older.syncStrokeScale,
+    false,
+    "the link is off for a stored document: an added setting must not move an existing diagram"
+  );
   assert.equal(older.plotReadoutScale, 1, "and the plot readout size");
   assert.equal(older.diagramReadoutScale, 1, "and the popup size");
 
@@ -196,4 +202,20 @@ test("diagram label settings have usable defaults", () => {
   const chosen = mergeSettings(DEFAULT_SETTINGS, { labelScale: 1.6, hoverParameters: false });
   assert.equal(chosen.labelScale, 1.6);
   assert.equal(chosen.hoverParameters, false);
+});
+
+test("the link resolves the two thicknesses in one place", () => {
+  // The Studio, an embedded diagram and the Help legend all ask this, so the
+  // meaning of "linked" is decided once.
+  const { effectiveStrokeScales } = merge;
+  assert.deepEqual(
+    effectiveStrokeScales({ wireScale: 3, symbolStrokeScale: 2.2, syncStrokeScale: false }),
+    { wires: 3, symbols: 2.2 },
+    "unlinked, each keeps its own value"
+  );
+  assert.deepEqual(
+    effectiveStrokeScales({ wireScale: 3, symbolStrokeScale: 2.2, syncStrokeScale: true }),
+    { wires: 2.2, symbols: 2.2 },
+    "linked, the wires follow the component weight — the symbol is the reference, because the library draws its graphics and the wire follows the connector"
+  );
 });

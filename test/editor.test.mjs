@@ -245,7 +245,8 @@ const { SchematicEditor, GRID } = await import(path.join(buildLibs("editor-lib",
 
 // Canvas geometry, for assertions about what is clickable.
 const C0 = await import(path.join(buildLibs("canvas-lib", ["src/render/canvas.ts"]), "canvas.js"));
-const { MIN_WIRE_WIDTH_PX, MAX_WIRE_WIDTH_PX, WIRE_WIDTH_PX } = C0;
+// One scale for wires and symbols, so the floor and the cap are shared too.
+const { MIN_STROKE_PX, MAX_STROKE_PX, WIRE_WIDTH_PX } = C0;
 
 /* ------------------------------------------------------------------ */
 /* Fixtures                                                           */
@@ -1328,6 +1329,225 @@ test("the wire-thickness setting reaches the drawing, and the click area", () =>
   editor.destroy();
 });
 
+test("the editor applies the thickness link itself", () => {
+  // The link is a rule about how the two settings COMBINE, so it is resolved
+  // where the drawing happens. A surface that forgot to apply it would draw a
+  // different diagram from the same settings, which is the class of bug this
+  // session kept producing.
+  const sym = {
+    name: "P.Sym",
+    shortName: "Sym",
+    icon: [{ kind: "Rectangle", extent: [-10, -10, 10, 10], lineColor: [120, 0, 0] }],
+    ports: [{ name: "sig", type: "Pin", connectorClass: "P.Wire", isFlow: false, causality: "acausal" }],
+    portPositions: { sig: [100, 0] },
+    parameters: [],
+    hasIcon: true,
+  };
+  const DEFS4 = {
+    "P.A": sym,
+    "P.B": { ...sym, name: "P.B" },
+    "P.Wire": {
+      name: "P.Wire",
+      shortName: "Wire",
+      icon: [{ kind: "Rectangle", extent: [-20, -2, 20, 2], lineColor: [0, 0, 200] }],
+      ports: [],
+      parameters: [],
+      hasIcon: true,
+    },
+  };
+  const components = [
+    { id: "a", className: "P.A", placement: { extent: [-160, -20, -120, 20], rotation: 0, visible: true }, params: {} },
+    { id: "b", className: "P.B", placement: { extent: [120, -20, 160, 20], rotation: 0, visible: true }, params: {} },
+  ];
+  const connections = [
+    { id: "c1", from: { component: "a", port: "sig" }, to: { component: "b", port: "sig" }, points: [] },
+  ];
+
+  /** Draw with these display settings and report the two stroke weights. */
+  const widths = (display) => {
+    const h = new StubElement("div");
+    const ed = new SchematicEditor(
+      h,
+      { name: "M", components, connections, graphics: [] },
+      {
+        lookup: (n) => DEFS4[n],
+        onChange: () => {},
+        onSelectionChange: () => {},
+        onStatus: () => {},
+        display: () => ({ labelScale: 1, hoverParameters: false, ...display }),
+      }
+    );
+    const c = canvasOf(ed);
+    layoutTo(c, 1000, 600);
+    ed.resize();
+    const seen = [];
+    let width = 1;
+    let style = "";
+    ed.ctx = new Proxy(
+      { canvas: { width: 1000, height: 600 }, measureText: () => ({ width: 10 }), lineWidth: 1 },
+      {
+        get(t, k) {
+          if (k in t) return t[k];
+          if (k === "stroke") return () => seen.push({ w: width, style });
+          return () => {};
+        },
+        set(t, k, v) {
+          if (k === "lineWidth") width = v;
+          if (k === "strokeStyle") style = String(v);
+          t[k] = v;
+          return true;
+        },
+      }
+    );
+    SchematicEditor.prototype.draw.call(ed);
+    ed.destroy();
+    const wire = seen.find((st) => st.style === "rgb(0,0,200)");
+    const symbol = seen.find((st) => st.style === "rgb(120,0,0)");
+    assert.ok(wire && symbol, "both were stroked");
+    return { wire: wire.w, symbol: symbol.w };
+  };
+
+  // The two weights are not proportional to each other at every setting — each is
+  // clamped for its own legibility, and the fixture's symbol sits on its floor —
+  // so the claims are about which VALUE reaches the wire, not about a ratio.
+  const base = widths({ wireScale: 1, symbolStrokeScale: 1, syncStrokeScale: false });
+  const heavy = widths({ wireScale: 3, symbolStrokeScale: 1, syncStrokeScale: false });
+  assert.ok(
+    Math.abs(heavy.wire - 3 * base.wire) < 1e-9,
+    `unlinked: the wire slider scales the wire (${base.wire} -> ${heavy.wire})`
+  );
+  assert.ok(
+    Math.abs(heavy.symbol - base.symbol) < 1e-9,
+    "and leaves the component lines alone"
+  );
+
+  const linked = widths({ wireScale: 3, symbolStrokeScale: 1, syncStrokeScale: true });
+  assert.ok(
+    Math.abs(linked.wire - base.wire) < 1e-9,
+    `linked: the wire ignores its own value and takes the component's (${linked.wire}, was ${heavy.wire})`
+  );
+  assert.ok(
+    Math.abs(linked.symbol - base.symbol) < 1e-9,
+    "linking does not change the component lines themselves"
+  );
+});
+
+test("a wire and a symbol declaring the same thickness are the same weight", () => {
+  // The reason the two settings can be spoken of together at all. MSL's
+  // `thickness` is ONE scale: a connector that asks for 0.5 draws a double line,
+  // and a graphic that asks for 0.5 draws a line of the same weight. The two used
+  // to have their own curves, and a wire came out 1.47x the weight of a symbol
+  // line declaring exactly the same thing — so the library's ratios held inside a
+  // symbol and not between a symbol and its wires.
+  const symbol = (thickness) => ({
+    name: "P.Sym" + thickness,
+    shortName: "Sym",
+    icon: [
+      { kind: "Rectangle", extent: [-10, -10, 10, 10], lineColor: [120, 0, 0], lineThickness: thickness },
+    ],
+    ports: [
+      { name: "sig", type: "Pin", connectorClass: "P.Wire", isFlow: false, causality: "acausal" },
+    ],
+    portPositions: { sig: [100, 0] },
+    parameters: [],
+    hasIcon: true,
+  });
+  // The connector declares the thickness the wire is drawn at.
+  const DEFS3 = {
+    "P.A": symbol(0.5),
+    "P.B": symbol(0.5),
+    "P.Wire": {
+      name: "P.Wire",
+      shortName: "Wire",
+      icon: [{ kind: "Rectangle", extent: [-20, -2, 20, 2], lineColor: [0, 0, 200], lineThickness: 0.5 }],
+      ports: [],
+      parameters: [],
+      hasIcon: true,
+    },
+  };
+  const components = [
+    // Extents equal to the class's canonical box, so the placement transform is
+    // 1:1 and the symbol is drawn at the reference size the wire's weight is
+    // defined against. A symbol scaled DOWN is drawn thinner on purpose — its
+    // strokes follow its own on-screen size — so comparing at any other size
+    // would be comparing two different things.
+    { id: "a", className: "P.A", placement: { extent: [-260, -100, -60, 100], rotation: 0, visible: true }, params: {} },
+    { id: "b", className: "P.B", placement: { extent: [60, -100, 260, 100], rotation: 0, visible: true }, params: {} },
+  ];
+  const connections = [
+    { id: "c1", from: { component: "a", port: "sig" }, to: { component: "b", port: "sig" }, points: [] },
+  ];
+
+  /** The screen width of the symbol's own stroke, and of the wire, at this zoom. */
+  const widthsAt = (zoom) => {
+    const h = new StubElement("div");
+    const ed = new SchematicEditor(
+      h,
+      { name: "M", components, connections, graphics: [] },
+      {
+        lookup: (n) => DEFS3[n],
+        onChange: () => {},
+        onSelectionChange: () => {},
+        onStatus: () => {},
+        display: () => ({ labelScale: 1, hoverParameters: false, wireScale: 1, symbolStrokeScale: 1 }),
+      }
+    );
+    const c = canvasOf(ed);
+    layoutTo(c, 1000, 600);
+    ed.resize();
+    ed.viewport.scale = zoom;
+    ed.viewport.x = 500;
+    ed.viewport.y = 300;
+    // `setTransform(a, b, ...)` carries the scale each stroke is drawn under, so
+    // the width in screen pixels is `lineWidth x that` — and the wire's own
+    // transform is identity, so its width is already on screen.
+    const seen = [];
+    let width = 1;
+    let scale = 1;
+    let style = "";
+    ed.ctx = new Proxy(
+      { canvas: { width: 1000, height: 600 }, measureText: () => ({ width: 10 }), lineWidth: 1 },
+      {
+        get(t, k) {
+          if (k in t) return t[k];
+          if (k === "setTransform") {
+            return (...args) => {
+              // `setTransform(matrix)` is how a symbol's own transform arrives;
+              // `setTransform(a, b, c, d, e, f)` is the canvas one.
+              const m = args.length === 1 ? args[0] : { a: args[0], b: args[1] };
+              scale = Math.hypot(m.a ?? 1, m.b ?? 0) || 1;
+            };
+          }
+          if (k === "stroke") return () => seen.push({ w: width * scale, style });
+          return () => {};
+        },
+        set(t, k, v) {
+          if (k === "lineWidth") width = v;
+          if (k === "strokeStyle") style = String(v);
+          t[k] = v;
+          return true;
+        },
+      }
+    );
+    SchematicEditor.prototype.draw.call(ed);
+    ed.destroy();
+    // By colour, so nothing depends on the order the frame draws in.
+    const of = (rgb) => seen.find((st) => st.style === rgb);
+    const wire = of("rgb(0,0,200)");
+    const sym = of("rgb(120,0,0)");
+    assert.ok(wire && sym, `both were stroked (${seen.map((st) => st.style).join(", ")})`);
+    return { wire: wire.w, symbol: sym.w };
+  };
+
+  for (const zoom of [0.5, 1, 2]) {
+    const { wire, symbol: sym } = widthsAt(zoom);
+    assert.ok(
+      Math.abs(wire - sym) < 1e-9,
+      `at zoom ${zoom} a wire declaring 0.5 is ${wire.toFixed(2)}px and a symbol declaring 0.5 is ${sym.toFixed(2)}px`
+    );
+  }
+});
+
 test("the component-line setting scales the symbols' own weights", () => {
   // Asked for as "the ability to adjust the thickness of the lines of the
   // components themselves". Every symbol stroke resolves its weight in one place,
@@ -1664,16 +1884,16 @@ test("a wire never grows fatter on screen as the diagram shrinks", () => {
     );
   }
   assert.ok(
-    Math.abs(widths[0] - MIN_WIRE_WIDTH_PX) < 1e-9,
-    `zoomed far out it stops at the floor (${widths[0]} of ${MIN_WIRE_WIDTH_PX})`
+    Math.abs(widths[0] - MIN_STROKE_PX) < 1e-9,
+    `zoomed far out it stops at the floor (${widths[0]} of ${MIN_STROKE_PX})`
   );
   assert.ok(
     Math.abs(widths[zooms.indexOf(1)] - WIRE_WIDTH_PX) < 1e-9,
     `at 100% it is the standard weight (${widths[zooms.indexOf(1)]} of ${WIRE_WIDTH_PX})`
   );
   assert.ok(
-    Math.abs(widths[widths.length - 1] - MAX_WIRE_WIDTH_PX) < 1e-9,
-    `and zoomed in it stops at the cap (${widths[widths.length - 1]} of ${MAX_WIRE_WIDTH_PX})`
+    Math.abs(widths[widths.length - 1] - MAX_STROKE_PX) < 1e-9,
+    `and zoomed in it stops at the cap (${widths[widths.length - 1]} of ${MAX_STROKE_PX})`
   );
   // The regression in one number: a wire must not be fatter on screen when the
   // diagram is smaller. This was 12px at 0.1 against 2.2px at 1.

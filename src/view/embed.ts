@@ -467,13 +467,17 @@ export class EmbeddedDiagram {
       // readout -- so the setting existed, said it applied to hovering a
       // component, and did nothing in a note, which is the surface most people
       // read a diagram on.
-      display: () => ({
-        labelScale: this.host.settings.labelScale,
-        hoverParameters: this.host.settings.hoverParameters,
-        readoutScale: this.host.settings.diagramReadoutScale,
-        wireScale: this.host.settings.wireScale,
-        symbolStrokeScale: this.host.settings.symbolStrokeScale,
-      }),
+      display: () => {
+        return {
+          labelScale: this.host.settings.labelScale,
+          hoverParameters: this.host.settings.hoverParameters,
+          readoutScale: this.host.settings.diagramReadoutScale,
+          wireScale: this.host.settings.wireScale,
+          symbolStrokeScale: this.host.settings.symbolStrokeScale,
+          // The editor applies the link, so both surfaces cannot disagree.
+          syncStrokeScale: this.host.settings.syncStrokeScale,
+        };
+      },
       // Without this the editor draws `%C` where the heat capacity should be:
       // the icon says `textString="%C"`, and a macro with no resolver to ask is
       // painted exactly as written. The Studio has passed one all along, so the

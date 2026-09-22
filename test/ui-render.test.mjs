@@ -308,6 +308,7 @@ test("the settings tab renders every section, with the solver's details in its b
     "  hoverParameters: false,",
     "  wireScale: 1.6,",
     "  symbolStrokeScale: 2.2,",
+    "  syncStrokeScale: false,",
     "  diagramReadoutScale: 1.3,",
     "  plotReadoutScale: 1.8,",
     "  ai: { secretName: 'modelica-studio-api-key', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-flash', temperature: 0.2, systemPrompt: '', thinking: 'off', style: 'visual', timeoutSeconds: 300 },",
@@ -364,7 +365,7 @@ test("the settings tab renders every section, with the solver's details in its b
     "});",
     "window.test('the diagram controls exist and show the stored values', () => {",
     "  const item = (n) => Array.from(root.querySelectorAll('.setting-item')).find((i) => i.querySelector('.setting-item-name').textContent === n);",
-    "  const names = ['Label size', 'Wire thickness', 'Component line thickness', 'Show parameters when hovering a component', 'Parameter popup size'];",
+    "  const names = ['Label size', 'Link wire and component thickness', 'Wire thickness', 'Component line thickness', 'Show parameters when hovering a component', 'Parameter popup size'];",
     "  const missing = names.filter((n) => !item(n));",
     "  if (missing.length) return 'MISSING: ' + missing.join();",
     "  // The component carries the value, so the tab is reading the setting rather",
@@ -382,6 +383,7 @@ test("the settings tab renders every section, with the solver's details in its b
     "  return 'label=' + sliderAt('Label size') + ' wire=' + sliderAt('Wire thickness')",
     "    + ' popup=' + sliderAt('Parameter popup size') + ' hover=' + (toggle ? toggle.value : '?')",
     "    + ' symbol=' + sliderAt('Component line thickness')",
+    "    + ' link=' + ((item('Link wire and component thickness').components.find((c) => typeof c.setValue === 'function' && typeof c.setDynamicTooltip !== 'function') || {}).value)",
     "    + ' limits=' + window.__limits;",
     "});",
     "window.test('the plot readout has its own size, in the plot section', () => {",
@@ -439,7 +441,7 @@ test("the settings tab renders every section, with the solver's details in its b
   // defaults, so a tab that ignored the setting would show 100/true and fail.
   assert.equal(
     d["the diagram controls exist and show the stored values"],
-    "label=140 wire=160 popup=130 hover=false symbol=220 limits=50-1000-10 50-400-10",
+    "label=140 wire=160 popup=130 hover=false symbol=220 link=false limits=50-1000-10 50-400-10",
     "every diagram control reflects its own stored setting, and the wire weight reaches 1000%"
   );
   assert.equal(
@@ -585,7 +587,7 @@ test("Help explains how a connection is drawn, with the colours themselves", asy
     "});",
     "window.test('the settings it interacts with are named by their current names', () => {",
     "  const text = diagrams.textContent.replace(/\\s+/g, ' ');",
-    "  return 'wireThickness=' + text.includes('Wire thickness') + ' componentLines=' + text.includes('Component line thickness') + ' staleName=' + text.includes('Diagram labels');",
+    "  return 'wireThickness=' + text.includes('Wire thickness') + ' componentLines=' + text.includes('Component line thickness') + ' link=' + text.includes('Link wire and component thickness') + ' staleName=' + text.includes('Diagram labels');",
     "});",
     "window.finish();"
   );
@@ -624,8 +626,87 @@ test("Help explains how a connection is drawn, with the colours themselves", asy
   );
   assert.equal(
     d["the settings it interacts with are named by their current names"],
-    "wireThickness=true componentLines=true staleName=false",
+    "wireThickness=true componentLines=true link=true staleName=false",
     "and the renamed settings section is not referred to by its old name"
+  );
+});
+
+test("linking the thicknesses gives one slider, and drives both settings", async () => {
+  // MSL's `thickness` is one scale, so the two sliders are two knobs on one
+  // curve. Linked, there is one knob: the wires follow the component weight, and
+  // the ratio the library draws with cannot be broken by accident.
+  const out = page(
+    `import { ModelicaStudioSettingTab } from "${ROOT}/src/settings";`,
+    "const vault = new StubVault();",
+    "const plugin = makePlugin(vault, { settings: {",
+    "  solver: 'cvode',",
+    "  excludedLibraries: '',",
+    "  debugLog: false,",
+    "  labelScale: 1,",
+    "  hoverParameters: true,",
+    "  wireScale: 3,",
+    "  symbolStrokeScale: 2.2,",
+    "  syncStrokeScale: false,",
+    "  plotSnapCrossings: true,",
+    "  plotSnapTolerance: 14,",
+    "  plotDeltas: false,",
+    "  aiModels: [],",
+    "  ai: { secretName: '', baseUrl: '', model: '', temperature: 0.2, systemPrompt: '', thinking: 'off', style: 'visual', timeoutSeconds: 300 },",
+    "} });",
+    "plugin.library = { size: 0, packages: () => [], hasPlaceableClass: () => false, isExcluded: () => false };",
+    "plugin.toolchainSummary = () => 'omc';",
+    "plugin.hasSecretStorage = () => false;",
+    "plugin.applyExclusions = () => {};",
+    "plugin.setStopTime = () => {};",
+    "plugin.stopTime = () => 1;",
+    "plugin.getView = () => null;",
+    "plugin.refreshEmbeds = () => {};",
+    "const tab = new ModelicaStudioSettingTab(plugin);",
+    "tab.display();",
+    "const names = () => Array.from(tab.containerEl.querySelectorAll('.setting-item-name')).map((n) => n.textContent);",
+    "const item = (n) => Array.from(tab.containerEl.querySelectorAll('.setting-item')).find((i) => i.querySelector('.setting-item-name').textContent === n);",
+    "const toggle = () => item('Link wire and component thickness').components.find((c) => c.inputEl.getAttribute('data-control') === 'toggle');",
+    "const slider = (n) => { const i = item(n); return i ? i.components.find((c) => c.inputEl.getAttribute('data-control') === 'slider') : null; };",
+    "",
+    "window.test('unlinked there are two sliders, each on its own value', () =>",
+    "  'wire=' + (slider('Wire thickness') ? slider('Wire thickness').value : 'none') +",
+    "  ' symbol=' + (slider('Component line thickness') ? slider('Component line thickness').value : 'none') +",
+    "  ' both=' + names().filter((n) => /thickness/i.test(n)).join(','));",
+    "window.test('turning the link on sets the wires to the component weight and rebuilds', () => {",
+    "  const t = toggle();",
+    "  t.setValue(true);",
+    "  t.inputEl.dispatchEvent(new Event('change'));",
+    "  return 'wireScale=' + plugin.settings.wireScale + ' symbol=' + plugin.settings.symbolStrokeScale +",
+    "    ' sync=' + plugin.settings.syncStrokeScale + ' rows=' + names().filter((n) => /thickness/i.test(n)).join(',');",
+    "});",
+    "window.test('and the single slider then moves both', () => {",
+    "  const shared = slider('Line thickness');",
+    "  if (!shared) return 'NO SHARED SLIDER';",
+    "  shared.setValue(150);",
+    "  shared.inputEl.dispatchEvent(new Event('change'));",
+    "  return 'wireScale=' + plugin.settings.wireScale + ' symbol=' + plugin.settings.symbolStrokeScale +",
+    "    ' limits=' + shared.limits.join('-');",
+    "});",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  const d = passed(out);
+
+  assert.equal(
+    d["unlinked there are two sliders, each on its own value"],
+    "wire=300 symbol=220 both=Link wire and component thickness,Wire thickness,Component line thickness",
+    "off by default: the stored pair is used as stored"
+  );
+  assert.equal(
+    d["turning the link on sets the wires to the component weight and rebuilds"],
+    "wireScale=2.2 symbol=2.2 sync=true rows=Link wire and component thickness,Line thickness",
+    "one slider replaces the two, and nothing is left out of step"
+  );
+  assert.equal(
+    d["and the single slider then moves both"],
+    "wireScale=1.5 symbol=1.5 limits=50-400-10",
+    "the shared range is the band both accept"
   );
 });
 

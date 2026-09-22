@@ -399,13 +399,17 @@ export class ModelicaStudioView extends ItemView {
       resolveParam: (inst, name) => this.resolveInstanceParam(inst, name),
       // Read per frame rather than captured, so a settings change shows on the
       // next redraw instead of after the editor is rebuilt.
-      display: () => ({
-        labelScale: this.plugin.settings.labelScale,
-        hoverParameters: this.plugin.settings.hoverParameters,
-        readoutScale: this.plugin.settings.diagramReadoutScale,
-        wireScale: this.plugin.settings.wireScale,
-        symbolStrokeScale: this.plugin.settings.symbolStrokeScale,
-      }),
+      display: () => {
+        return {
+          labelScale: this.plugin.settings.labelScale,
+          hoverParameters: this.plugin.settings.hoverParameters,
+          readoutScale: this.plugin.settings.diagramReadoutScale,
+          wireScale: this.plugin.settings.wireScale,
+          symbolStrokeScale: this.plugin.settings.symbolStrokeScale,
+          // The editor applies the link, so both surfaces cannot disagree.
+          syncStrokeScale: this.plugin.settings.syncStrokeScale,
+        };
+      },
       readClipboard: () => navigator.clipboard.readText(),
       writeClipboard: (text) => navigator.clipboard.writeText(text),
       // Recorded to the debug log when it is enabled, so a press that behaves
