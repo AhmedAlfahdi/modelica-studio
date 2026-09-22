@@ -590,7 +590,12 @@ test("every image the README shows exists, and every image is shown", () => {
   // directions are checked, because both are silent: markdown renders a broken image
   // as nothing at all in some viewers.
   const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
-  const referenced = [...readme.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((m) => m[1]);
+  // Markdown images AND the HTML <img> tags the side-by-side theme pairs use: a
+  // check that only knew about one spelling would wave a broken image through.
+  const referenced = [
+    ...[...readme.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((m) => m[1]),
+    ...[...readme.matchAll(/<img\s+src="([^"]+)"/g)].map((m) => m[1]),
+  ];
   assert.ok(referenced.length >= 3, `the README shows pictures (${referenced.length})`);
 
   for (const link of referenced) {
@@ -616,4 +621,9 @@ test("every image the README shows exists, and every image is shown", () => {
     "and the script that renders them is in the repository"
   );
   assert.ok(referenced.every((r) => r.startsWith("docs/images/")), "images live together under docs/images");
+  // Both themes for every scene, so a reader in either one sees the real thing.
+  const names = referenced.map((r) => path.basename(r));
+  for (const stem of ["diagram", "plot", "help"]) {
+    assert.ok(names.includes(`${stem}-light.png`) && names.includes(`${stem}-dark.png`), `${stem} is shown in both themes`);
+  }
 });

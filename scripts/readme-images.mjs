@@ -77,7 +77,7 @@ const CSS = fs.readFileSync(path.join(ROOT, "styles.css"), "utf8");
 const APP_CSS = fs.existsSync("/tmp/app.css") ? fs.readFileSync("/tmp/app.css", "utf8") : "";
 const PLUGIN = bundle("scripts/readme-scenes.ts", path.join(TMP, "page.js"), "browser");
 const THEME_VARS = `
-:root, body { --color-accent: hsl(254, 80%, 68%); --color-accent-2: hsl(254, 80%, 76%);
+.theme-light { --color-accent: hsl(254, 80%, 68%); --color-accent-2: hsl(254, 80%, 76%);
   --text-accent: var(--color-accent); --text-accent-hover: var(--color-accent-2);
   --color-base-40: hsl(0, 0%, 40%); --background-modifier-border-focus: var(--color-base-40); }`;
 
@@ -140,13 +140,22 @@ app.whenReady().then(async () => {
   // The call, with the data INLINE: the page cannot see this file's variables, and a
   // function serialised with toString() would carry their names without their values.
   const DATA = JSON.stringify(SCENES);
-  // Canvas scenes hand back their own pixels at the ratio the editor gave them.
+  // Canvas scenes hand back their own pixels at the ratio the editor gave them, once
+  // per theme: the editor and the plot read the theme from the page, so switching the
+  // body class is what switches the drawing.
   const CANVAS = [["diagram", "window.__sceneDiagram(" + DATA + ")"], ["plot", "window.__scenePlot(" + DATA + ")"]];
-  for (const [name, call] of CANVAS) {
-    const out = JSON.parse(await win.webContents.executeJavaScript("(async () => JSON.stringify(await (" + call + ")))()"));
-    if (out.error) { console.log("SCENE FAILED " + name + ": " + out.error); continue; }
-    fs.writeFileSync(path.join(${JSON.stringify(OUT)}, name + ".png"), Buffer.from(String(out.data).split(",")[1], "base64"));
-    console.log("wrote " + name + ".png  " + out.width + "x" + out.height);
+  for (const theme of ["light", "dark"]) {
+    await win.webContents.executeJavaScript("document.body.className = 'theme-" + theme + "'");
+    await new Promise((r) => setTimeout(r, 150));
+    for (const [name, call] of CANVAS) {
+      const out = JSON.parse(await win.webContents.executeJavaScript("(async () => JSON.stringify(await (" + call + ")))()"));
+      if (out.error) { console.log("SCENE FAILED " + name + ": " + out.error); continue; }
+      fs.writeFileSync(
+        path.join(${JSON.stringify(OUT)}, name + "-" + theme + ".png"),
+        Buffer.from(String(out.data).split(",")[1], "base64")
+      );
+      console.log("wrote " + name + "-" + theme + ".png  " + out.width + "x" + out.height);
+    }
   }
 
   // The Help panel, in a page of its own: markup taken from the app page and rendered
@@ -176,13 +185,17 @@ app.whenReady().then(async () => {
           " const r = el.getBoundingClientRect(); return { x: 0, y: 0, width: Math.ceil(r.width) + 32, height: Math.ceil(r.height) + 32 }; })())"
       )
     );
-    const image = await win.webContents.capturePage(rect);
-    const png = image.toPNG();
-    if (png.length < 12000) {
-      console.log("SCENE BLANK help: only " + png.length + " bytes");
-    } else {
-      fs.writeFileSync(path.join(${JSON.stringify(OUT)}, "help.png"), png);
-      console.log("wrote help.png  " + image.getSize().width + "x" + image.getSize().height + "  " + Math.round(png.length / 1024) + " KB");
+    for (const theme of ["light", "dark"]) {
+      await win.webContents.executeJavaScript("document.body.className = 'theme-" + theme + "'");
+      await new Promise((r) => setTimeout(r, 250));
+      const image = await win.webContents.capturePage(rect);
+      const png = image.toPNG();
+      if (png.length < 12000) {
+        console.log("SCENE BLANK help-" + theme + ": only " + png.length + " bytes");
+        continue;
+      }
+      fs.writeFileSync(path.join(${JSON.stringify(OUT)}, "help-" + theme + ".png"), png);
+      console.log("wrote help-" + theme + ".png  " + image.getSize().width + "x" + image.getSize().height + "  " + Math.round(png.length / 1024) + " KB");
     }
   }
 

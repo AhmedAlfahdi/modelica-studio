@@ -58,6 +58,8 @@ const canvasShot = (host: HTMLElement, canvas: HTMLCanvasElement) => ({
 window.__sceneDiagram = (data) => {
   try {
     const host = document.getElementById("diagram")!;
+    // Cleared first: the same scene is rendered twice, once per theme.
+    host.textContent = "";
     host.style.height = "340px";
     const editor = new SchematicEditor(host, data.model, {
       lookup: (n) => data.defs[n],
@@ -84,6 +86,7 @@ window.__sceneDiagram = (data) => {
 window.__scenePlot = (data) => {
   try {
     const host = document.getElementById("plot")!;
+    host.textContent = "";
     host.style.height = "360px";
     const canvas = document.createElement("canvas");
     const width = host.clientWidth || 900;

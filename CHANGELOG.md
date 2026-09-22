@@ -5,6 +5,25 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.6] — 2026-10-14
+
+### Changed
+
+- **Every screenshot is now a light/dark pair, side by side.** The plugin is used in
+  both themes and the difference is not cosmetic: on a dark canvas a wire that would
+  vanish into the background is lifted until it clears 3:1 against it, and the Help
+  window's domain colours are lifted the same way. One theme's picture could not show
+  that. `scripts/readme-images.mjs` renders each scene twice — the editor and the plot
+  read the theme from the page, so switching the body class is what switches the
+  drawing — and the README shows the two in a table with a caption per column.
+
+- **The in-note example is the same `MassSpringDamper` as the worked example**, at
+  `//@ time=5`, replacing the RC divider. A reader now meets one model three times —
+  as a diagram, as a plot, and as the block they would paste into a note — instead of
+  a new circuit appearing in the middle of the page to demonstrate syntax. The block's
+  text is byte-for-byte the file the studio opens from **Examples**, so the note and
+  the studio cannot disagree.
+
 ## [0.3.5] — 2026-10-14
 
 ### Fixed

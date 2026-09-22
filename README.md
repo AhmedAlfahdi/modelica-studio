@@ -4,12 +4,17 @@ Model, simulate and plot **Modelica** systems inside Obsidian: drag components o
 a schematic canvas, wire them, run them with the OpenModelica already installed on
 your machine, and read the result as a plot — in the studio, or in the note itself.
 
-![Two masses coupled by a spring and damper, drawn by the editor](docs/images/diagram.png)
+<table>
+<tr>
+<td width="50%"><img src="docs/images/diagram-light.png" alt="Two masses coupled by a spring and damper, drawn by the editor (light theme)"></td>
+<td width="50%"><img src="docs/images/diagram-dark.png" alt="Two masses coupled by a spring and damper, drawn by the editor (dark theme)"></td>
+</tr>
+<tr>
+<td><sub>Light theme</sub></td><td><sub>Dark theme</sub></td>
+</tr>
+</table>
 
-*`MassSpringDamper` — two free masses joined by a spring and damper, with a 1 N step
-forced on the first. The signal wire is the Blocks library's dark blue, the
-mechanical wires are translational green: colours and line weights come from the
-library's own annotations, not from this plugin.*
+*`MassSpringDamper` — two free masses joined by a spring and damper, with a 1 N step forced on the first. The signal wire is the Blocks library's dark blue, the mechanical wires are translational green: colours and line weights come from the library's own annotations, not from this plugin — including on a dark canvas, where a wire that would vanish is lifted just enough to stay visible.*
 
 **Status: pre-1.0**, and experimental — it works, its examples are verified
 numerically against independent calculations, and there are rough edges. See
@@ -43,7 +48,7 @@ releases and updates it for you. The plugin is pre-1.0, so the version numbers a
    Settings → Community plugins.
 
 To pin a version instead of tracking the latest, use BRAT's **frozen** option and
-name the release, for example `0.3.5`.
+name the release, for example `0.3.6`.
 
 BRAT reports a mismatch if a release's tag, its name and the version inside the
 released `manifest.json` disagree. They are kept identical here on purpose, so an
@@ -104,13 +109,17 @@ result. Traces are grouped onto one or two value axes by magnitude, so a pressur
 in the hundreds of thousands and a flow in hundredths are both readable; the legend
 names the run, and the cursor reads every visible trace at the instant under it.
 
-![The result of that model, plotted](docs/images/plot.png)
+<table>
+<tr>
+<td width="50%"><img src="docs/images/plot-light.png" alt="The result of that model, plotted (light theme)"></td>
+<td width="50%"><img src="docs/images/plot-dark.png" alt="The result of that model, plotted (dark theme)"></td>
+</tr>
+<tr>
+<td><sub>Light theme</sub></td><td><sub>Dark theme</sub></td>
+</tr>
+</table>
 
-*The two masses' positions, with a step force on the first at t = 0.1 s. Nothing is
-anchored, so the pair drifts together — both curves bend upward — while the spring
-and damper between them ring and settle: that is the wiggle in the first second, and
-the gap between the curves is the spring's extension. Both curves are the numbers
-OpenModelica returned; nothing in this README is redrawn by hand.*
+*The two masses' positions, with a step force on the first at t = 0.1 s. Nothing is anchored, so the pair drifts together — both curves bend upward — while the spring and damper between them ring and settle: that is the wiggle in the first second, and the gap between the curves is the spring's extension. Both curves are the numbers OpenModelica returned; nothing in this README is redrawn by hand.*
 
 A **sweep** runs the model once per value of one parameter and overlays the results
 as a family, dotted per run; **Δ vs** measures a trace against the run on screen, so
@@ -121,8 +130,9 @@ a structural change recompiles.
 ### The same thing, in a note
 
 A fenced `modelica` block renders a live diagram and a plot, and simulates when the
-note opens. The block's text is the model, so the diagram lives in the note and the
-note travels with it.
+note opens. The block's text is the model — the one below is the `MassSpringDamper`
+from the worked example — so the diagram lives in the note and the note travels with
+it.
 
 A block runs itself once, when the note opens; after that the **Simulate** button
 starts a run. Dragging a component inside the block writes the note back — see
@@ -137,7 +147,17 @@ colours, the connection rules quoted from the library's own documentation, and w
 this installation actually is — the OpenModelica version, the library, the class
 count.
 
-![Help → Diagrams: the connection rules and the domain colour table](docs/images/help.png)
+<table>
+<tr>
+<td width="50%"><img src="docs/images/help-light.png" alt="Help, on the Diagrams tab: the domain colours and the connection rules (light theme)"></td>
+<td width="50%"><img src="docs/images/help-dark.png" alt="Help, on the Diagrams tab: the domain colours and the connection rules (dark theme)"></td>
+</tr>
+<tr>
+<td><sub>Light theme</sub></td><td><sub>Dark theme</sub></td>
+</tr>
+</table>
+
+*Every colour in that table is measured from the installed library by a test, so a row cannot describe a library that no longer says it. The connection rules are quoted from the library's own UsersGuide.*
 
 ### The rest of it
 
@@ -212,20 +232,30 @@ equations and a table comparing them with what the simulation returns.
 
 ````markdown
 ```modelica
-//@ time=2
-model Divider
-  Modelica.Electrical.Analog.Sources.ConstantVoltage source(V=10);
-  Modelica.Electrical.Analog.Basic.Resistor r1(R=100);
-  Modelica.Electrical.Analog.Basic.Resistor r2(R=100);
-  Modelica.Electrical.Analog.Basic.Ground ground;
+//@ time=5
+model MassSpringDamper "Two masses coupled by a spring and damper"
+  Modelica.Mechanics.Translational.Sources.Force force
+    annotation(Placement(transformation(extent={{-80,-10},{-60,10}})));
+  Modelica.Mechanics.Translational.Components.Mass mass1(m=1)
+    annotation(Placement(transformation(extent={{-40,-10},{-20,10}})));
+  Modelica.Mechanics.Translational.Components.SpringDamper coupling(c=50, d=1)
+    annotation(Placement(transformation(extent={{-10,-10},{10,10}})));
+  Modelica.Mechanics.Translational.Components.Mass mass2(m=2)
+    annotation(Placement(transformation(extent={{20,-10},{40,10}})));
+  Modelica.Blocks.Sources.Step step(height=1, startTime=0.1)
+    annotation(Placement(transformation(extent={{-80,30},{-60,50}})));
 equation
-  connect(source.p, r1.p);
-  connect(r1.n, r2.p);
-  connect(r2.n, source.n);
-  connect(source.n, ground.p);
-end Divider;
+  connect(step.y, force.f);
+  connect(force.flange, mass1.flange_a);
+  connect(mass1.flange_b, coupling.flange_a);
+  connect(coupling.flange_b, mass2.flange_a);
+end MassSpringDamper;
 ```
 ````
+
+That is the model from [the worked example](#a-worked-example-two-masses-and-a-spring)
+— the same file the studio opens from **Examples** — so a block in a note and the
+studio show the same diagram and the same numbers.
 
 To put a block in a note, use the command palette: **Embed a simulation in the
 current note** asks which model — the one open in the studio, a built-in example, or
