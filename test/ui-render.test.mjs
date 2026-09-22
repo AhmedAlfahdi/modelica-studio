@@ -961,6 +961,114 @@ test("turning the component names off greys the size that no longer reads", asyn
   );
 });
 
+test("rebuilding the tab does not throw the reader back to the top", async () => {
+  // Reported: the link switch rebuilds the rows below it, and the page jumped to
+  // the top — the settings pane is scrolled inside Obsidian's container, and
+  // emptying it drops scrollTop to zero.
+  const out = page(
+    `import { ModelicaStudioSettingTab } from "${ROOT}/src/settings";`,
+    "const vault = new StubVault();",
+    "const plugin = makePlugin(vault, { settings: {",
+    "  solver: 'cvode',",
+    "  excludedLibraries: '',",
+    "  debugLog: false,",
+    "  showInstanceLabels: true,",
+    "  labelScale: 1,",
+    "  hoverParameters: true,",
+    "  wireScale: 0.9,",
+    "  symbolStrokeScale: 1.9,",
+    "  syncStrokeScale: false,",
+    "  plotSnapCrossings: true,",
+    "  plotSnapTolerance: 14,",
+    "  plotDeltas: false,",
+    "  aiModels: [],",
+    "  ai: { secretName: '', baseUrl: '', model: '', temperature: 0.2, systemPrompt: '', thinking: 'off', style: 'visual', timeoutSeconds: 300 },",
+    "} });",
+    "plugin.library = { size: 0, packages: () => [], hasPlaceableClass: () => false, isExcluded: () => false };",
+    "plugin.toolchainSummary = () => 'omc';",
+    "plugin.hasSecretStorage = () => false;",
+    "plugin.applyExclusions = () => {};",
+    "plugin.setStopTime = () => {};",
+    "plugin.stopTime = () => 1;",
+    "plugin.getView = () => null;",
+    "plugin.refreshEmbeds = () => {};",
+    "const tab = new ModelicaStudioSettingTab(plugin);",
+    "tab.display();",
+    "// The pane as Obsidian has it: the tab's container inside a scroller.",
+    "const scroller = document.createElement('div');",
+    "scroller.className = 'vertical-tab-content-container';",
+    "scroller.style.overflowY = 'auto';",
+    "scroller.style.height = '200px';",
+    "document.body.appendChild(scroller);",
+    "scroller.appendChild(tab.containerEl);",
+    "const item = (n) => Array.from(tab.containerEl.querySelectorAll('.setting-item')).find((i) => i.querySelector('.setting-item-name').textContent === n);",
+    "window.__scroller = scroller;",
+    "window.__tab = tab;",
+    "window.test('the pane scrolls at all, so the test means something', () =>",
+    "  'scrollHeight=' + (scroller.scrollHeight > 200) + ' clientHeight=' + scroller.clientHeight);",
+    "// `display()` empties the container and refills it synchronously. A browser",
+    "// only clamps the scroll when it LAYS OUT the empty container, which any read",
+    "// of a scroll property forces -- and Obsidian reads them. The wrapper makes",
+    "// that layout happen, so the jump is reproduced rather than assumed: it is",
+    "// what the fix has to survive.",
+    "const empty = tab.containerEl.empty.bind(tab.containerEl);",
+    "tab.containerEl.empty = () => {",
+    "  empty();",
+    "  void scroller.scrollHeight;",
+    "  window.__clamped = scroller.scrollTop;",
+    "};",
+    "const link = () => item('Link wire and component thickness').components.find((c) => c.inputEl.getAttribute('data-control') === 'toggle');",
+    "window.test('emptying the container really does drop the offset', () => {",
+    "  scroller.scrollTop = 160;",
+    "  tab.containerEl.empty();",
+    "  const clamped = window.__clamped;",
+    "  // Put the rows back, since this case emptied them on purpose.",
+    "  tab.display();",
+    "  scroller.scrollTop = 160;",
+    "  return 'clamped=' + clamped;",
+    "});",
+    "window.test('scrolling to the link switch and toggling it keeps the place', () => {",
+    "  scroller.scrollTop = 160;",
+    "  const t = link();",
+    "  t.setValue(true);",
+    "  t.inputEl.dispatchEvent(new Event('change'));",
+    "  return 'after=' + scroller.scrollTop + ' linked=' + (!!item('Line thickness')) + ' dropped=' + (window.__clamped === 0);",
+    "});",
+    "window.test('and toggling it back does too', () => {",
+    "  scroller.scrollTop = 160;",
+    "  const t = link();",
+    "  t.setValue(false);",
+    "  t.inputEl.dispatchEvent(new Event('change'));",
+    "  return 'after=' + scroller.scrollTop + ' twoSliders=' + (!!item('Wire thickness') && !!item('Component line thickness'));",
+    "});",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  const d = passed(out);
+
+  assert.equal(
+    d["the pane scrolls at all, so the test means something"],
+    "scrollHeight=true clientHeight=200",
+    "the container really scrolls, or the assertion below would pass for free"
+  );
+  assert.equal(
+    d["emptying the container really does drop the offset"],
+    "clamped=0",
+    "the harness reproduces the jump, so the assertions below mean something"
+  );
+  assert.equal(
+    d["scrolling to the link switch and toggling it keeps the place"],
+    "after=160 linked=true dropped=true",
+    "the offset survives a rebuild that really did clamp it to zero"
+  );
+  assert.equal(
+    d["and toggling it back does too"],
+    "after=160 twoSliders=true",
+    "and the same the other way, when the tab grows a row"
+  );
+});
+
 test("the palette renders, respects exclusions, and can be driven by keyboard", async () => {
   // The palette with exclusions applied was only ever measured by COUNT, never
   // rendered; and it had no keyboard support at all, which matters more now that

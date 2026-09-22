@@ -5,6 +5,32 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.50] — 2026-10-14
+
+### Fixed
+
+- **Toggling a setting that rebuilds the tab no longer throws you back to the
+  top.** Reported for the thickness link, which by design rebuilds the rows below
+  it: the pane scrolls inside Obsidian's own container, and rebuilding empties it,
+  so the browser clamps the scroll offset to zero before the new rows go in — you
+  land at the top of Settings and have to find your place again.
+
+  The offset is now read before the rebuild and restored after it. The offset
+  rather than an anchor element's position, because the rebuild destroys the
+  element: a control above the rows that change does not move on the page, so the
+  offset IS the reader's place there. The browser still clamps when the rebuilt
+  tab is genuinely shorter, which is correct.
+
+  Five rebuilds went through `this.display()` directly — the thickness link, the
+  AI provider preset, the model list, the AI model choice, and the key migration —
+  and all five now keep the place.
+
+  The test reproduces the jump rather than assuming it: a browser only clamps the
+  scroll when it LAYS OUT the emptied container (any read of a scroll property
+  forces that, and Obsidian reads them), so the harness makes that layout happen
+  and asserts the offset really did drop to zero. Removing the fix then fails with
+  `after=0`, which is the reported symptom.
+
 ## [0.2.0-beta.49] — 2026-10-14
 
 ### Added

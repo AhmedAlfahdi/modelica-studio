@@ -52,6 +52,44 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
     if (this.packagesReady === null) this.display();
   }
 
+  /**
+   * Rebuild the tab without losing the reader's place.
+   *
+   * `display()` empties the container, and the settings pane is scrolled inside
+   * Obsidian's own `.vertical-tab-content-container` — emptying it drops the
+   * scroll offset to zero, so a switch halfway down the page threw the reader
+   * back to the top. Reported from the link switch, which rebuilds the rows below
+   * it by design.
+   *
+   * The offset is restored rather than an anchor element's position, because the
+   * anchor is destroyed by the rebuild: what the reader wants is the same place
+   * on the page, and for a control whose own row does not move (it is above the
+   * rows that change) the offset IS that place. The browser clamps it when the
+   * rebuilt content is shorter, which is the correct behaviour for a tab that
+   * just lost a row.
+   */
+  private rebuildKeepingPlace(): void {
+    const scroller = this.scroller();
+    const before = scroller?.scrollTop ?? 0;
+    this.display();
+    if (scroller) scroller.scrollTop = before;
+  }
+
+  /** The element the settings pane actually scrolls in. */
+  private scroller(): HTMLElement | null {
+    for (let el = this.containerEl?.parentElement ?? null; el; el = el.parentElement) {
+      const overflowY = el.style?.overflowY || "";
+      if (overflowY === "auto" || overflowY === "scroll") return el;
+      // Obsidian's own class, for the case where the style is set in CSS rather
+      // than inline.
+      if (el.classList?.contains("vertical-tab-content-container")) return el;
+      // Or anything that is in fact scrolling: the class is Obsidian's private
+      // DOM, and a pane that scrolls is the pane whose offset matters.
+      if (el.scrollHeight > el.clientHeight) return el;
+    }
+    return null;
+  }
+
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
@@ -337,7 +375,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           // The rows below depend on it, so the tab is rebuilt — before the save
           // round-trip, so the control the reader just moved is the one they see
           // change rather than one that lags a frame behind it.
-          this.display();
+          this.rebuildKeepingPlace();
           await this.plugin.saveSettings();
           this.plugin.getView()?.refreshDiagram();
           this.plugin.refreshEmbeds();
@@ -607,7 +645,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           .addButton((b) =>
             b.setButtonText("Move").onClick(async () => {
               await this.plugin.migrateLegacyAiKey();
-              this.display();
+              this.rebuildKeepingPlace();
             })
           );
       }
@@ -643,7 +681,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           // A list fetched from one provider says nothing about another.
           this.plugin.settings.aiModels = [];
           await this.plugin.saveSettings();
-          this.display();
+          this.rebuildKeepingPlace();
         });
       });
 
@@ -697,7 +735,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           if (!v) return;
           this.plugin.settings.ai.model = v;
           await this.plugin.saveSettings();
-          this.display();
+          this.rebuildKeepingPlace();
         });
       });
     }
@@ -723,7 +761,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           modelStatus.setText(result.text);
           modelStatus.toggleClass("is-ok", result.ok);
           modelStatus.toggleClass("is-bad", !result.ok);
-          if (result.ok) this.display();
+          if (result.ok) this.rebuildKeepingPlace();
         })
       );
 
@@ -1070,7 +1108,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
             // The library exclusions are part of what was reset, and they change
             // what the palette and completion offer.
             this.plugin.applyExclusions();
-            this.display();
+            this.rebuildKeepingPlace();
             this.plugin.getView()?.refreshDiagram();
             this.plugin.refreshEmbeds();
             new Notice(
