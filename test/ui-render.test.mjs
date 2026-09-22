@@ -615,14 +615,24 @@ test("Help explains how a connection is drawn, with the colours themselves", asy
   );
   assert.equal(
     d["every example carries a swatch, coloured as the canvas draws it"],
-    // The flange names no colour, so it is the language's black — which the theme
-    // turns into ink; this page is the light theme, where ink IS black. The bus is
-    // the library's {255,204,51} darkened to clear 3:1 on a pale canvas, which is
-    // the wire floor; on a dark canvas the library's own value is used unchanged.
-    "An electrical pin:rgb(0, 0, 255) x1 | A rotational flange, which names no colour of its own:" +
-      "rgb(0, 0, 0) x1 | A signal or control bus:rgb(166, 133, 33) x2 | " +
-      "A multibody frame:rgb(95, 95, 95) x2",
-    "four examples, each in the colour the renderer would use"
+    // One row per domain, and each swatch is the colour the canvas would use. The
+    // flange names no colour, so it is the language's black — which the theme turns
+    // into ink; this page is the light theme, where ink IS black. The bus is the
+    // library's {255,204,51} darkened to clear 3:1 on a pale canvas, which is the
+    // wire floor; on a dark canvas the library's own value is used unchanged.
+    "An electrical pin:rgb(0, 0, 255) x1 | A fluid port, on a tank or a pipe:rgb(0, 127, 255) x1 | " +
+      "A thermal port:rgb(191, 0, 0) x1 | A signal port:rgb(0, 0, 127) x1 | " +
+      "A translational flange, on a mass or a spring:rgb(0, 127, 0) x1 | " +
+      "A rotational flange, and a magnetic port, which name no colour of their own:rgb(0, 0, 0) x1 | " +
+      "A signal or control bus:rgb(166, 133, 33) x2 | A multibody frame:rgb(95, 95, 95) x2",
+    "eight domains, each in the colour the renderer would use — FLUID among them, which the first version of this list left out"
+  );
+  // The report that started this: a fluid connector's wire is the library's pale
+  // blue, and the Help window has to say so.
+  assert.match(
+    d["every example carries a swatch, coloured as the canvas draws it"],
+    /fluid port[^|]*rgb\(0, 127, 255\)/,
+    "the fluid row is there, with the Fluid library's own colour"
   );
   assert.equal(
     d["the two that are double are the bus and the frame"],

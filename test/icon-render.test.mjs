@@ -66,12 +66,14 @@ const MSL = MSL_CANDIDATES.find((c) => fs.existsSync(c)) ?? null;
 // `modelica/` rather than at the top.
 const LIB = buildLibs("icon-render", [
   "src/render/canvas.ts",
+  "src/render/connector-style.ts",
   "src/render/theme.ts",
   "src/modelica/library.ts",
   "src/modelica/parser.ts",
   "src/modelica/types.ts",
 ]);
 const C = await import(path.join(LIB, "render/canvas.js"));
+const { connectorWireStyle } = await import(path.join(LIB, "render/connector-style.js"));
 const T = await import(path.join(LIB, "render/theme.js"));
 const { LibraryIndex } = await import(path.join(LIB, "modelica/library.js"));
 const parserMod = await import(path.join(LIB, "modelica/parser.js"));
@@ -1080,4 +1082,55 @@ end Tank;`;
     !texts.some((t) => t.includes("DynamicSelect")),
     `and the annotation is never drawn as text (${JSON.stringify(texts)})`
   );
+});
+
+test("the Help table of connector colours matches the library", { skip: !MSL && "no MSL installed" }, async () => {
+  // The Help window tells the reader what colour a wire will be, by domain, and
+  // names the class each row is measured from. If a row and the library disagree,
+  // the Help is worse than silent: it is where someone goes to check a rule they
+  // have already been surprised by. The first version of that table left FLUID out
+  // altogether -- the domain a course on tanks and pipes meets every day.
+  // The table lives in the Help module, which imports Obsidian; importing it here
+  // would need the stub. It is a plain data array, so it is read out of the source
+  // instead -- which also means a row that stops being data fails this test.
+  const src = fs.readFileSync(path.join(import.meta.dirname, "..", "src/view/help-modal.ts"), "utf8");
+  const body = /export const CONNECTOR_ROWS[\s\S]*?= \[([\s\S]*?)\n\];/.exec(src);
+  assert.ok(body, "the connector table is present as data");
+  const rows = [];
+  for (const m of body[1].matchAll(
+    /sample: "([^"]+)",\s*color: \[(\d+), (\d+), (\d+)\],\s*double: (true|false)/g
+  )) {
+    rows.push({
+      sample: m[1],
+      color: [Number(m[2]), Number(m[3]), Number(m[4])],
+      double: m[5] === "true",
+    });
+  }
+  assert.ok(rows.length >= 8, `every row was read: ${rows.length}`);
+  const CONNECTOR_ROWS = rows;
+  assert.ok(CONNECTOR_ROWS.length >= 8, `the table covers the domains: ${CONNECTOR_ROWS.length} rows`);
+
+  const index = new LibraryIndex();
+  index.addDirectory(MSL);
+  const wrong = [];
+  for (const row of CONNECTOR_ROWS) {
+    const def = index.component(row.sample);
+    if (!def) {
+      wrong.push(`${row.sample}: not in the library`);
+      continue;
+    }
+    const style = connectorWireStyle(def);
+    if (!style) {
+      wrong.push(`${row.sample}: declares no line at all`);
+      continue;
+    }
+    const want = { color: row.color, widthRatio: row.double ? 2 : 1 };
+    if (JSON.stringify(style) !== JSON.stringify(want)) {
+      wrong.push(
+        `${row.sample}: library says {${style.color.join(",")}} x${style.widthRatio}, Help says ` +
+          `{${want.color.join(",")}} x${want.widthRatio}`
+      );
+    }
+  }
+  assert.deepEqual(wrong, [], `${wrong.length} of ${CONNECTOR_ROWS.length} Help rows disagree with the library`);
 });

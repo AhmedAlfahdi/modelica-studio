@@ -24,6 +24,83 @@ import type { Color } from "../modelica/types";
 /** What the modifier key is called on this platform. */
 const mod = Platform.isMacOS ? "Cmd" : "Ctrl";
 
+/**
+ * The connector colours a diagram is actually read through, by domain.
+ *
+ * `sample` is the class each row is measured from, and a test resolves every one of
+ * them through the installed library and requires the colour and weight to match —
+ * so a row cannot describe a library that no longer says that. Written as data
+ * rather than as prose for the same reason: the Help window is where a reader checks
+ * a rule, and a rule that has drifted is worse than no rule.
+ *
+ * One row per domain rather than a sample of four: the first version of this list
+ * left FLUID out, which is the domain a course on tanks and pipes meets every day.
+ */
+export const CONNECTOR_ROWS: Array<{
+  sample: string;
+  color: Color;
+  double: boolean;
+  text: string;
+}> = [
+  {
+    sample: "Modelica.Electrical.Analog.Interfaces.Pin",
+    color: [0, 0, 255],
+    double: false,
+    text: "An electrical pin — the library's {0,0,255}, a single line.",
+  },
+  {
+    sample: "Modelica.Fluid.Interfaces.FluidPort_a",
+    color: [0, 127, 255],
+    double: false,
+    text:
+      "A fluid port, on a tank or a pipe — {0,127,255}, the pale blue of the Fluid " +
+      "library. A single line, like every port below unless it says otherwise.",
+  },
+  {
+    sample: "Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_a",
+    color: [191, 0, 0],
+    double: false,
+    text: "A thermal port — {191,0,0}, the dark red of HeatTransfer.",
+  },
+  {
+    sample: "Modelica.Blocks.Interfaces.RealInput",
+    color: [0, 0, 127],
+    double: false,
+    text:
+      "A signal port — {0,0,127} for a Real and {255,0,255} for a Boolean: the " +
+      "colour says the type, and a wire between two types that do not match is a " +
+      "model that will not compile.",
+  },
+  {
+    sample: "Modelica.Mechanics.Translational.Interfaces.Flange_a",
+    color: [0, 127, 0],
+    double: false,
+    text: "A translational flange, on a mass or a spring — {0,127,0}, green.",
+  },
+  {
+    sample: "Modelica.Mechanics.Rotational.Interfaces.Flange_a",
+    color: [0, 0, 0],
+    double: false,
+    text:
+      "A rotational flange, and a magnetic port, which name no colour of their own " +
+      "— black, drawn as ink so the wire stays visible on a dark canvas.",
+  },
+  {
+    sample: "Modelica.Icons.SignalBus",
+    color: [255, 204, 51],
+    double: true,
+    text:
+      "A signal or control bus — {255,204,51}, and DOUBLE width: the library asks " +
+      "for thickness=0.5, and 0.25 is one line.",
+  },
+  {
+    sample: "Modelica.Mechanics.MultiBody.Interfaces.Frame_a",
+    color: [95, 95, 95],
+    double: true,
+    text: "A multibody frame — {95,95,95}, also double width.",
+  },
+];
+
 interface Shortcut {
   keys: string;
   what: string;
@@ -284,24 +361,9 @@ export class HelpModal extends Modal {
       swatch.style.background = rgb(wireColorFor(color, currentTheme()));
       line.createSpan({ cls: "modelica-studio-help-wire-text", text });
     };
-    wireRow([0, 0, 255], false, "An electrical pin — the library's {0,0,255}, a single line.");
-    wireRow(
-      [0, 0, 0],
-      false,
-      "A rotational flange, which names no colour of its own — black, and drawn as " +
-        "ink so it stays visible on a dark canvas. A single line."
-    );
-    wireRow(
-      [255, 204, 51],
-      true,
-      "A signal or control bus — {255,204,51}, and DOUBLE width: the library asks " +
-        "for thickness=0.5, and 0.25 is one line."
-    );
-    wireRow(
-      [95, 95, 95],
-      true,
-      "A multibody frame — {95,95,95}, also double width."
-    );
+    // One row per domain, from the table above — which a test checks against the
+    // installed library, so the two cannot drift apart.
+    for (const row of CONNECTOR_ROWS) wireRow(row.color, row.double, row.text);
     el.createEl("p", {
       cls: "modelica-studio-muted",
       text:

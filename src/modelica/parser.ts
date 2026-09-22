@@ -274,35 +274,13 @@ class Parser {
     if (nameTok.type !== "ident" && nameTok.type !== "keyword") return null;
     const name = nameTok.value;
 
-    // Optional specialisation / constraining clause, e.g. `type X = Real;`
-    if (this.at("=")) {
-      while (!this.isEof() && !this.at(";")) this.next();
-      this.eat(";");
-      return {
-        kind: kindTok.value,
-        name,
-        qualifiedName: [...prefix, name].join("."),
-        isPartial: modifiers.includes("partial"),
-        extendsTypes: [],
-        components: [],
-        connections: [],
-        equations: [],
-        icon: [],
-        unparsedGraphics: [],
-        componentIcons: [],
-        diagram: [],
-        parameters: [],
-        nestedClassNames: [],
-        nested: [],
-        startOffset: startTok.start,
-        endOffset: this.peek().start,
-      };
-    }
-
-    // String comment after the class name
+    // String comment after the class name. Read BEFORE the short-definition branch,
+    // so both forms carry it: `connector RealInput = input Real "..." annotation(…)`
+    // has its comment in the same place as a long definition does.
     let comment: string | undefined;
     if (this.peek().type === "string") comment = this.next().value;
 
+    /** The class this definition makes, filled in as the definition is read. */
     const cls: ParsedClass = {
       kind: kindTok.value,
       name,
@@ -323,6 +301,33 @@ class Parser {
       startOffset: startTok.start,
       endOffset: startTok.start,
     };
+
+    // Optional specialisation / constraining clause, e.g. `type X = Real;`
+    if (this.at("=")) {
+      // A SHORT class definition may still carry an annotation, and for a connector
+      // that annotation is where the library says how a connection to it is drawn.
+      // `Modelica.Blocks.Interfaces.RealInput` is exactly this form --
+      //
+      //   connector RealInput = input Real "..." annotation (Icon(graphics={Polygon(
+      //     lineColor={0,0,127}, fillColor={0,0,127}, fillPattern=Solid)}));
+      //
+      // -- and skipping to the `;` threw the icon away, so the colour and weight of
+      // every signal wire to a block were unreadable: the wire fell back to the
+      // theme's own colour, and the Help window could not list Blocks at all.
+      while (!this.isEof() && !this.at(";")) {
+        if (this.at("annotation")) {
+          this.dropStack.push(cls.unparsedGraphics);
+          this.parseAnnotationInto(cls, null);
+          this.dropStack.pop();
+          break;
+        }
+        this.next();
+      }
+      while (!this.isEof() && !this.at(";")) this.next();
+      this.eat(";");
+      cls.endOffset = this.peek().start;
+      return cls;
+    }
 
     // Drops are attributed to the class whose body is being walked: the stack is
     // pushed here and popped here, so a nested class's graphic is never charged to

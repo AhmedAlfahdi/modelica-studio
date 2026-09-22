@@ -5,6 +5,45 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.57] — 2026-10-14
+
+### Added
+
+- **The Help window lists a wire colour for every domain, not a sample of four.**
+  Asked whether fluid components have that blue for their connectors — they do,
+  `{0,127,255}` from `Modelica.Fluid.Interfaces.FluidPort_a` — and the table had left
+  the whole Fluid library out, which is the domain a course on tanks and pipes meets
+  every day. It now covers electrical, fluid, thermal, signal, translational,
+  rotational (and magnetic, which names no colour of its own), plus the two
+  double-width cases.
+
+  The rows are DATA, with the connector class each is measured from, and a test
+  resolves every row through the installed library and requires the colour and weight
+  to match — a wrong colour fails with `1 of 8 Help rows disagree with the library`,
+  and deleting a row (as fluid's absence was) fails with `every row was read: 7`.
+
+  Measured, domain by domain: electrical `{0,0,255}`, fluid `{0,127,255}`, thermal
+  `{191,0,0}` (FluidHeatFlow `{255,0,0}`), translational `{0,127,0}`, rotational and
+  magnetic black-to-ink, MultiBody `{95,95,95}` at double width, buses
+  `{255,204,51}` at double width, StateGraph ink at double width.
+
+### Fixed
+
+- **A connector declared as a SHORT class definition lost its icon**, so the colour
+  and weight the library states for it were unreadable. `Modelica.Blocks.Interfaces.RealInput`
+  is written
+
+  ```
+  connector RealInput = input Real "..." annotation (Icon(graphics={Polygon(
+    lineColor={0,0,127}, fillColor={0,0,127}, fillPattern=Solid)}));
+  ```
+
+  and the parser skipped from `=` to the `;`, annotation and all. Every signal wire
+  in a diagram therefore fell back to the theme's own colour instead of the library's:
+  `{0,0,127}` for a Real and `{255,0,255}` for a Boolean, the colours that also say
+  the TYPE — a wire between two types that do not match is a model that will not
+  compile, which is exactly what those colours are for.
+
 ## [0.2.0-beta.56] — 2026-10-14
 
 ### Fixed
