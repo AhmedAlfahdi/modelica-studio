@@ -5,6 +5,43 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.4] — 2026-10-14
+
+### Changed
+
+- **The README was rewritten around what the plugin does, with screenshots.** The
+  old one opened with a paragraph and then buried its capabilities in a list; it now
+  opens with a picture of a real model and a sentence, and each capability has the
+  image that goes with it — the editor, a plotted result, the Help window — followed
+  by a worked example, then the reference material.
+
+  The in-block example is now `MassSpringDamper`, "two masses coupled by a spring and
+  damper": a force step on one mass with nothing anchored, so the pair drifts while
+  the spring-damper between them rings and settles. It replaces an RC divider that
+  demonstrated the syntax and nothing else. The new one has a physical point worth
+  stating — the gap settles at `F·m₂/(c(m₁+m₂))`, not at `F/c`, because both ends are
+  free — and it is one of the plugin's own built-in examples, so a reader can open it
+  and run it.
+
+- **`scripts/readme-images.mjs` renders every screenshot from the plugin's own
+  code**, at 2x, with a real simulation behind the plot:
+
+  - `diagram.png` — the editor drawing `MassSpringDamper` with the library's own
+    icons; the signal wire is Blocks blue and the mechanical wires translational
+    green, because those come from MSL's annotations.
+  - `plot.png` — the numbers OpenModelica returned for that model, drawn by the same
+    plot renderer the studio and an embedded block use.
+  - `help.png` — the Help window's connection rules and domain colour table.
+
+  Nothing is mocked up in an image editor, so a screenshot cannot show a capability
+  the plugin does not have. The simulation is real: `omc` compiles and runs the
+  example, and the plot shows what came back — including the ripple in the first
+  second that the coupling produces.
+
+  A test checks the README's images in both directions: every image it references
+  must exist, and every rendered image must be referenced somewhere. Falsified three
+  ways — a missing file, an orphan image, and an image dropped from the text.
+
 ## [0.3.3] — 2026-10-14
 
 ### Fixed

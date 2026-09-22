@@ -1,104 +1,33 @@
 # Modelica Studio
 
-An Obsidian plugin for building Modelica models on a visual schematic canvas,
-simulating them with a local OpenModelica installation, and plotting the results
-— all inside a note.
+Model, simulate and plot **Modelica** systems inside Obsidian: drag components onto
+a schematic canvas, wire them, run them with the OpenModelica already installed on
+your machine, and read the result as a plot — in the studio, or in the note itself.
 
-**Status: beta.** Experimental software that has not been widely tested. It works,
-and its examples are verified numerically against independent calculations, but
-expect rough edges. See [Beta status](#beta-status).
+![Two masses coupled by a spring and damper, drawn by the editor](docs/images/diagram.png)
 
-What that verification actually cost — twelve expectations that turned out to be
-wrong, the models that were abandoned rather than fixed, and how each
-discrepancy was settled — is in
-**[Testing findings](docs/testing-findings.md)**.
+*`MassSpringDamper` — two free masses joined by a spring and damper, with a 1 N step
+forced on the first. The signal wire is the Blocks library's dark blue, the
+mechanical wires are translational green: colours and line weights come from the
+library's own annotations, not from this plugin.*
 
----
+**Status: pre-1.0**, and experimental — it works, its examples are verified
+numerically against independent calculations, and there are rough edges. See
+[Beta status](#beta-status).
 
-## New to Modelica?
-
-Modelica describes a physical system by writing down its equations and letting
-the tool work out how to solve them, rather than by writing the steps to solve
-them. Two introductions by Michael Tiller:
-
-- **[Why Would Anybody Care About Modelica?](https://www.youtube.com/watch?v=Hl1vjQWxvOA)**
-  — what the language is for, and why equations are a different way to program.
-- **[Modelica by Example](https://mbe.modelica.university/)** — a book readable
-  online, building the language up from a first-order equation through events,
-  arrays and functions to object-oriented modelling, with every chapter worked
-  through and reviewed.
-
-There is also a ten-minute introduction in this repository —
-[`showcase/notes/00-modelica-intro.md`](showcase/notes/00-modelica-intro.md) —
-written to be read before any of the examples.
+- [Install](#install) · [What it does](#what-it-does) ·
+  [A worked example](#a-worked-example-two-masses-and-a-spring) ·
+  [Using it in a note](#using-it-in-a-note) · [AI assistance](#ai-assistance) ·
+  [Testing and verification](#testing) · [Licence](#license)
 
 ---
-
-## What it does
-
-- **Schematic editor.** Drag components from a library tree onto a canvas, wire
-  their pins together, edit parameters. The search box matches fuzzily, so
-  `tank` finds `OpenTank`, and whole libraries can be left out of the palette,
-  search and completion. Drawing follows the Modelica
-  specification's graphical annotations, so library icons look as their authors
-  drew them.
-- **A diagram that explains itself.** Hovering a component shows what its
-  parameters are set to, with the ones you have changed first — reading a
-  diagram's settings otherwise means selecting each component in turn. A
-  connector the class only declares conditionally, such as a heat port before
-  `useHeatPort` is true, is dimmed and cannot be wired until the parameter is on.
-  Label size is a setting, and the hover readout can be switched off.
-- **Simulation.** Serializes the diagram to Modelica source, compiles and runs it
-  with OpenModelica, and reads the results back.
-- **Plots.** Time-series traces with automatic axis grouping, a resizable pane,
-  and a full-screen view with a cursor readout.
-- **Diagram and code modes.** The same model, either built by dragging or edited
-  as Modelica source with syntax highlighting, completion from the library, and
-  inline diagnostics. Long models scroll, and the caret keeps itself in view.
-- **Models as files.** Create a model and save it as `.mo` source. Models go
-  into a `Modelica/` folder at the vault root by default — they are source for a
-  compiler, not notes, and a vault whose root mixes the two is unreadable. The
-  folder is a setting, and is created on the first save.
-
-  A saved model opens **four ways**: right-click it in the file explorer →
-  *Open in Modelica Studio*; drag it onto the canvas or the code pane; run
-  *Open the active .mo file in Modelica Studio* from the command palette; or
-  click it and read the source as text. That last one is deliberately still the
-  default — the file *is* source, and reading it in an editor is a reasonable
-  thing to want. The plugin does not take the click away.
-- **Optional AI assistance.** With your own API key, describe a model in words
-  and have it written into the editor, or ask for a compile error to be fixed.
-  The form follows the request: a circuit, a fluid network, a mechanism or a
-  control loop comes back as **wired components you can see on the canvas**, and
-  only a subject with no structure to draw — a projectile, a transfer function —
-  comes back as equations.
-- **Inline results in notes.** A fenced `modelica` block renders a live diagram
-  and simulates when the note opens.
-- **Worked examples.** 30 models across electrical, mechanical, fluid, thermal,
-  aerospace, control and discrete domains, each with a derivation, the live
-  model, and a table comparing an independent calculation against the
-  simulation.
-- **A worked case for learning.** `showcase/01-learning-with-a-simulator.md`
-  demonstrates using the plugin to learn a new subject, worked through with two
-  aerospace models.
-- **A record of what went wrong.** [Testing findings](docs/testing-findings.md)
-  lists every expectation that failed, which side was wrong, and the five models
-  dropped for being unverifiable.
-
-Diagrams are stored as **real Modelica source with graphical annotations**, so
-files round-trip through OMEdit and other Modelica tools.
-
-## Requirements
-
-- Obsidian 1.5.0 or later, **desktop only** — it runs a compiler, and mobile is
-  not supported.
-- **OpenModelica**, installed separately. The plugin detects `omc` on your PATH
-  and offers download guidance if it is missing. Developed against 1.27.
-- A Modelica Standard Library, which ships with OpenModelica.
 
 ## Install
 
-Not in the community plugin list yet. Two ways in.
+**Requirements:** Obsidian 1.11.4+ on **desktop** (it runs a compiler — mobile is
+not supported), and **OpenModelica** installed separately. The plugin finds `omc`
+on your PATH, tells you if it is missing, and uses the Modelica Standard Library
+that ships with it.
 
 ### With BRAT, which keeps it updated
 
@@ -114,7 +43,7 @@ releases and updates it for you. The plugin is pre-1.0, so the version numbers a
    Settings → Community plugins.
 
 To pin a version instead of tracking the latest, use BRAT's **frozen** option and
-name the release, for example `0.3.3`.
+name the release, for example `0.3.4`.
 
 BRAT reports a mismatch if a release's tag, its name and the version inside the
 released `manifest.json` disagree. They are kept identical here on purpose, so an
@@ -126,34 +55,159 @@ update is never held back by a version string.
    (below).
 2. Create `<your-vault>/.obsidian/plugins/modelica-studio/`.
 3. Copy those three files into it.
-4. **Reload Obsidian** — a plugin's `manifest.json` is read at startup, so
-   copying one in while the app is running does not register it.
+4. **Reload Obsidian** — a plugin's `manifest.json` is read at startup, so copying
+   one in while the app is running does not register it.
 5. Enable **Modelica Studio** in Settings → Community plugins.
 
 To try it without your own vault, `examples/vault/` is a ready-made one — see
 [Testing](#testing).
 
-## Build
+### Build it yourself
 
 ```bash
 npm install
 npm run build          # typecheck, then bundle to main.js
 npm run dev            # rebuild on change
-npm test               # 668 tests, including a numerical audit of every example
+npm test               # 669 tests, including a numerical audit of every example
 ```
 
-`npm test` runs the real OpenModelica compiler, so it needs `omc` on your PATH
-and takes a few minutes. Without it, the simulation-dependent tests skip.
+`npm test` runs the real OpenModelica compiler, so it needs `omc` on your PATH and
+takes a few minutes. Without it, the simulation-dependent tests skip.
 
-## Use
+---
 
-- **Open the studio** from the ribbon icon or the command palette.
-- **Examples** in the toolbar loads a built-in model. Start there.
-- **Simulate** compiles the diagram and plots the result.
-- The **Source** tab shows the Modelica the diagram serializes to. In a note, the
-  block's text updates as you edit, so the diagram lives in the note.
+## What it does
 
-### Inline blocks
+Each of these is a capability, with the picture that goes with it. The screenshots
+are rendered from the plugin's own code by `scripts/readme-images.mjs`, so they
+cannot show something the plugin does not do — and regenerating them after a change
+is one command.
+
+### A schematic editor that draws what the library declares
+
+Drag a class from the palette onto the canvas, wire the pins, drag a wire vertex to
+route it, rotate, resize, copy and paste, undo. The search is fuzzy (`tank` finds
+`OpenTank`), whole libraries can be hidden, and the diagram is stored as real
+Modelica source with graphical annotations — so a file round-trips through OMEdit
+and the other Modelica tools.
+
+Symbol outlines, wire colours, wire weights and pin shapes are read from the
+library: an electrical connection is the electrical blue, a shaft is ink, a bus is
+yellow at double width, and a component's own icon text (`R=100`, a valve's state)
+is drawn as the library wrote it. **Help → Diagrams** lists every domain's colour,
+measured from the installed library rather than copied into the source.
+
+### Run it, and read the result where you are
+
+**Simulate** serializes the diagram, compiles it with `omc`, runs it and plots the
+result. Traces are grouped onto one or two value axes by magnitude, so a pressure
+in the hundreds of thousands and a flow in hundredths are both readable; the legend
+names the run, and the cursor reads every visible trace at the instant under it.
+
+![The result of that model, plotted](docs/images/plot.png)
+
+*A step force on the first mass at t = 0.1 s. Nothing is anchored, so the pair
+drifts — position curving upward — while the spring-damper between them rings and
+settles: that is the ripple in the first second. Both curves are the numbers
+OpenModelica returned; nothing in this README is redrawn by hand.*
+
+A **sweep** runs the model once per value of one parameter and overlays the results
+as a family, dotted per run; **Δ vs** measures a trace against the run on screen, so
+"this valve opens 12 ms later" is a number rather than an impression. A changed
+*parameter* re-runs in tens of milliseconds by overriding it in the compiled binary;
+a structural change recompiles.
+
+### The same thing, in a note
+
+A fenced `modelica` block renders a live diagram and a plot, and simulates when the
+note opens. The block's text is the model, so the diagram lives in the note and the
+note travels with it.
+
+A block runs itself once, when the note opens; after that the **Simulate** button
+starts a run. Dragging a component inside the block writes the note back — see
+[Using it in a note](#using-it-in-a-note) for why that does not start a loop, and
+what the directive on the block's first line can set.
+
+### Help that quotes the library
+
+The Help window, in the studio, carries the shortcuts (read from the code that
+implements them, so a key that does not exist cannot be documented), the domain
+colours, the connection rules quoted from the library's own documentation, and what
+this installation actually is — the OpenModelica version, the library, the class
+count.
+
+![Help → Diagrams: the connection rules and the domain colour table](docs/images/help.png)
+
+### The rest of it
+
+- **Diagram and code modes.** The same model, built by dragging or edited as source
+  with syntax highlighting, completion from the library, and inline diagnostics.
+- **Models as files.** Create a model and save it as `.mo`. Models go into a
+  `Modelica/` folder at the vault root by default — they are source for a compiler,
+  not notes. A saved model opens four ways: right-click → *Open in Modelica Studio*,
+  drag it onto the canvas or the code pane, the command palette, or click it and
+  read the source as text (that last one is deliberately still the default: the file
+  *is* source).
+- **Parameters, without hunting.** Hovering a component shows what its parameters
+  are set to, with the ones this instance overrides first. A connector a class only
+  declares conditionally — a heat port before `useHeatPort` is true — is dimmed and
+  cannot be wired until the parameter is on.
+- **Optional AI assistance.** With your own API key, describe a model in words and
+  have it written into the editor, or ask for a compile error to be fixed. See
+  [AI assistance](#ai-assistance).
+- **30 worked examples** across electrical, mechanical, fluid, thermal, aerospace,
+  control and discrete domains, each with a derivation, the live model, and a table
+  comparing an independent calculation against the simulation.
+- **A record of what went wrong.**
+  [Testing findings](docs/testing-findings.md) lists every expectation that failed,
+  which side was wrong, and the five models dropped for being unverifiable.
+
+---
+
+## A worked example: two masses and a spring
+
+The picture at the top of this page is this model — one of the built-in examples, so
+you can open it from **Examples** in the toolbar and run it yourself:
+
+```modelica
+//@ time=5
+model MassSpringDamper "Two masses coupled by a spring and damper"
+  Modelica.Mechanics.Translational.Sources.Force force
+    annotation(Placement(transformation(extent={{-80,-10},{-60,10}})));
+  Modelica.Mechanics.Translational.Components.Mass mass1(m=1)
+    annotation(Placement(transformation(extent={{-40,-10},{-20,10}})));
+  Modelica.Mechanics.Translational.Components.SpringDamper coupling(c=50, d=1)
+    annotation(Placement(transformation(extent={{-10,-10},{10,10}})));
+  Modelica.Mechanics.Translational.Components.Mass mass2(m=2)
+    annotation(Placement(transformation(extent={{20,-10},{40,10}})));
+  Modelica.Blocks.Sources.Step step(height=1, startTime=0.1)
+    annotation(Placement(transformation(extent={{-80,30},{-60,50}})));
+equation
+  connect(step.y, force.f);
+  connect(force.flange, mass1.flange_a);
+  connect(mass1.flange_b, coupling.flange_a);
+  connect(coupling.flange_b, mass2.flange_a);
+end MassSpringDamper;
+```
+
+A 1 N force is switched on at t = 0.1 s and pushes `mass1`; `mass2` is joined to it
+by nothing but a spring and damper. **Nothing is bolted down**, which is what makes
+it worth reading: the two masses bob relative to each other *and* drift away
+together, and the gap between them settles somewhere other than `F/c` — the value it
+would settle at if one end were nailed to the ground.
+
+- **Reduced mass** `μ = m₁m₂/(m₁+m₂) = 2/3 kg` — the effective inertia of the
+  relative motion, always smaller than either mass alone.
+- **Centre of mass** `ẍ_cm = F/(m₁+m₂) = 1/3 m/s²` — the drift, visible as the
+  curve bending upward in the plot.
+- **Steady gap** `F·m₂/(c(m₁+m₂)) = 1/75 m` — the trap, if you expect `F/c`.
+
+`showcase/mass-spring-damper.md` works the whole thing through, including the
+equations and a table comparing them with what the simulation returns.
+
+---
+
+## Using it in a note
 
 ````markdown
 ```modelica
@@ -172,41 +226,31 @@ end Divider;
 ```
 ````
 
-To put one in a note, use the command palette: **Embed a simulation in the current
-note** asks which model — the one open in the studio, a built-in example, or a saved
-`.mo` file — and writes the block at the cursor with its options filled in (how long
-to run for, how tall it is, and whether it opens on the plot or the diagram). The
-span follows whichever model you pick. The same dialog will copy the block to the
-clipboard instead, and **Embed the open model in the current note** skips the
-question and uses the model in the studio.
+To put a block in a note, use the command palette: **Embed a simulation in the
+current note** asks which model — the one open in the studio, a built-in example, or
+a saved `.mo` file — and writes the block at the cursor with its options filled in.
+**Embed the open model in the current note** skips the question.
 
 The first line is an optional **directive**: `time` sets the simulation span,
-`height` the height of the pane (the plot and the diagram are the same box, shown
-one at a time), `result`/`edit` which of the two starts open, and
-`noauto`/`manual` to keep the block from running itself at all. It lives inside
-the block because Obsidian does not pass a fenced block's info string to a
-plugin, so a fence reading `modelica time=2` never reaches the code.
+`height` the height of the pane (the plot and the diagram are the same box, shown one
+at a time), `result`/`edit` which of the two starts open, and `noauto`/`manual` to
+keep the block from running itself at all. It lives inside the block because
+Obsidian does not pass a fenced block's info string to a plugin.
 
 **A block runs itself once**, when the note is opened. After that the **Simulate**
 button is what starts a run — the plot has a `t_end` field beside it, and typing a
-span there re-runs the block over it and records it in the directive. The reason is
-that an edit made in a block's own diagram writes the note back, and a note that
-re-renders rebuilds the block: without the rule, dragging one component ran four
-simulations, which is the flicker you would see while moving something. A rebuilt
-block repaints the result it already had; if the model has changed since that run,
-the line above the plot says so rather than the stale curve passing itself off as
-current.
+span there re-runs the block and records it in the directive. The reason is that an
+edit made in a block's own diagram writes the note back, and a note that re-renders
+rebuilds the block: without the rule, dragging one component ran four simulations.
+A rebuilt block repaints the result it already had; if the model has changed since
+that run, the line above the plot says so rather than the stale curve passing itself
+off as current.
 
 Blocks follow the studio: change the plot scale, the visible traces or the
-simulation span there and the blocks follow. Parameter values travel with it, and
-a block re-simulates when a value it ran with changes.
-
-A block answers the pointer the way the studio does. Resting on a component shows
-what its parameters are set to — the ones the instance overrides first — which is
-the **Show parameters when hovering a component** setting under
-**Settings → Modelica Studio → Diagram labels**, and it applies to embedded
-diagrams as well as the studio. Moving the pointer across the plot reads the time
-and every visible trace's value at that point, with a crosshair on it.
+simulation span there and the blocks follow, and a block re-simulates when a
+parameter value it ran with changes. A block answers the pointer the way the studio
+does — resting on a component shows its parameters, and moving across the plot reads
+the time and every visible trace's value with a crosshair on it.
 
 ## AI assistance
 

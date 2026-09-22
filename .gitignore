@@ -48,3 +48,6 @@ examples/vault/.obsidian/plugins/modelica-studio/styles.css
 examples/vault/.obsidian/plugins/modelica-studio/manifest.json
 examples/vault/.obsidian/plugins/modelica-studio/library-index.json
 examples/vault/.obsidian/plugins/modelica-studio/data.json
+
+# Scratch directory used while rendering the README's screenshots.
+.readme-images-*/

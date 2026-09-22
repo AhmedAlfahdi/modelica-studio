@@ -583,3 +583,37 @@ test("the licence and citation metadata agree with each other", () => {
   );
   assert.match(help, /CITATION\.cff/, "with a link to the citation file");
 });
+
+test("every image the README shows exists, and every image is shown", () => {
+  // A README whose screenshots are missing looks broken, and a screenshot nobody
+  // references is either dead weight or a picture the text forgot to mention. Both
+  // directions are checked, because both are silent: markdown renders a broken image
+  // as nothing at all in some viewers.
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+  const referenced = [...readme.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((m) => m[1]);
+  assert.ok(referenced.length >= 3, `the README shows pictures (${referenced.length})`);
+
+  for (const link of referenced) {
+    assert.ok(
+      fs.existsSync(path.join(repoRoot, link)),
+      `${link} is referenced by the README and must exist`
+    );
+  }
+
+  const dir = path.join(repoRoot, "docs", "images");
+  const available = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(".png")) : [];
+  const shown = new Set(referenced.map((r) => path.basename(r)));
+  assert.deepEqual(
+    available.filter((f) => !shown.has(f)),
+    [],
+    "every rendered image is used somewhere in the README"
+  );
+
+  // The images are produced by a script, so they can be regenerated rather than
+  // re-photographed by hand when the UI changes.
+  assert.ok(
+    fs.existsSync(path.join(repoRoot, "scripts/readme-images.mjs")),
+    "and the script that renders them is in the repository"
+  );
+  assert.ok(referenced.every((r) => r.startsWith("docs/images/")), "images live together under docs/images");
+});
