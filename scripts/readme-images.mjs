@@ -90,11 +90,15 @@ fs.writeFileSync(
 <style>
   body { margin: 0; background: var(--background-primary); }
   .shot { padding: 0; }
-  #diagram, #plot { width: 900px; background: var(--background-primary); }
+  #diagram, #plot, #embed, #embedPlot { width: 900px; background: var(--background-primary); }
 </style>
 <body class="theme-light">
 <div id="diagram" class="shot"></div>
 <div id="plot" class="shot"></div>
+<div id="embed" class="shot"></div>
+<div id="embedPlot" class="shot"></div>
+<div id="hover" class="shot" style="width: 900px;"></div>
+<div id="sweep" class="shot" style="width: 900px;"></div>
 <div id="help" class="shot" style="width: 640px; padding: 14px;"></div>
 <div id="settings" class="shot" style="width: 640px; padding: 14px;"></div>
 <script type="module" src="./page.js"></script>
@@ -109,6 +113,8 @@ fs.writeFileSync(
   JSON.stringify({
     example: data.example,
     result: data.result,
+    family: data.family,
+    currentLabel: data.currentLabel,
     model: data.model,
     defs: data.defs,
   })
@@ -125,11 +131,33 @@ const path = require("node:path");
 app.commandLine.appendSwitch("force-device-scale-factor", "${ESCALE}");
 app.disableHardwareAcceleration();
 const SCENES = JSON.parse(fs.readFileSync(path.join(__dirname, "scenes.json"), "utf8"));
+
+/** Crop a whole-window capture down to the scene's own box.
+ *
+ * capturePage ignores the rect it is given in this Electron version and returns the
+ * whole window, at a device ratio only the result reveals: the ratio of the image to
+ * the page's own CSS width.
+ */
+async function cropToScene(win, image, rect) {
+  const cssWidth = await win.webContents.executeJavaScript("window.innerWidth");
+  const ratio = cssWidth > 0 ? image.getSize().width / cssWidth : 1;
+  const size = image.getSize();
+  return image.crop({
+    x: Math.max(0, Math.round(rect.x * ratio)),
+    y: Math.max(0, Math.round(rect.y * ratio)),
+    width: Math.min(Math.round(rect.width * ratio), size.width),
+    height: Math.min(Math.round(rect.height * ratio), size.height),
+  });
+}
 app.whenReady().then(async () => {
   // A watchdog: a scene that never resolves should fail the run, not hang it.
   const guard = setTimeout(() => { console.log("TIMED OUT waiting for a scene"); app.exit(1); }, 60000);
   void guard;
-  const win = new BrowserWindow({ width: 1000, height: 900, show: false, webPreferences: { offscreen: true } });
+  // Shown, and not offscreen. Both alternatives fail for the images that matter here:
+  // in offscreen mode capturePage returns an empty surface for anything drawn into a
+  // canvas, and a hidden window refuses the capture altogether (UnknownVizError). The
+  // window is never focused and closes when the run ends.
+  const win = new BrowserWindow({ width: 1000, height: 900, show: true, focusable: false });
   const errors = [];
   win.webContents.on("console-message", (_e, level, message) => {
     if (level >= 2 && !/Security Warning/.test(message)) errors.push(String(message));
@@ -143,10 +171,20 @@ app.whenReady().then(async () => {
   // Canvas scenes hand back their own pixels at the ratio the editor gave them, once
   // per theme: the editor and the plot read the theme from the page, so switching the
   // body class is what switches the drawing.
-  const CANVAS = [["diagram", "window.__sceneDiagram(" + DATA + ")"], ["plot", "window.__scenePlot(" + DATA + ")"]];
+  const CANVAS = [
+    ["diagram", "window.__sceneDiagram(" + DATA + ")"],
+    ["plot", "window.__scenePlot(" + DATA + ")"],
+    ["hover", "window.__sceneHover(" + DATA + ")"],
+    ["sweep", "window.__sceneSweep(" + DATA + ")"],
+  ];
+  const DOM_SCENES = [
+    ["embed", "window.__sceneEmbed(" + DATA + ")"],
+    ["embedPlot", "window.__sceneEmbedPlot(" + DATA + ")"],
+  ];
   for (const theme of ["light", "dark"]) {
+    win.setContentSize(1000, 900);
     await win.webContents.executeJavaScript("document.body.className = 'theme-" + theme + "'");
-    await new Promise((r) => setTimeout(r, 150));
+    await new Promise((r) => setTimeout(r, 200));
     for (const [name, call] of CANVAS) {
       const out = JSON.parse(await win.webContents.executeJavaScript("(async () => JSON.stringify(await (" + call + ")))()"));
       if (out.error) { console.log("SCENE FAILED " + name + ": " + out.error); continue; }
@@ -158,12 +196,82 @@ app.whenReady().then(async () => {
     }
   }
 
+  // Scenes that are DOM rather than canvas: staged at the top-left with the others
+  // hidden, because capturePage refuses a box outside the window. After the canvas
+  // passes, since sizing the window to a DOM scene changes what the canvas scenes
+  // would measure.
+  for (const theme of ["light", "dark"]) {
+    win.setContentSize(1000, 900);
+    await win.webContents.executeJavaScript("document.body.className = 'theme-" + theme + "'");
+    await new Promise((r) => setTimeout(r, 200));
+    for (const [name, call] of DOM_SCENES) {
+      const staged = await win.webContents.executeJavaScript(
+        "(() => { try {" +
+          "document.querySelectorAll('.shot').forEach((el) => { el.style.display = 'none'; });" +
+          "const stage = document.getElementById('" + name + "');" +
+          "if (!stage) return 'no element #' + '" + name + "';" +
+          "stage.style.display = 'block'; stage.style.position = 'absolute';" +
+          "stage.style.left = '0'; stage.style.top = '0';" +
+          "stage.style.background = 'var(--background-primary)';" +
+          "return 'ok'; } catch (e) { return String(e); } })()"
+      );
+      if (staged !== "ok") { console.log("SCENE STAGE FAILED " + name + ": " + staged); continue; }
+      await new Promise((r) => setTimeout(r, 200));
+      const rect = JSON.parse(await win.webContents.executeJavaScript(
+        "(async () => { try { return JSON.stringify(await (" + call + ")); } catch (e) { return JSON.stringify({ error: String(e && e.stack || e) }); } })()"
+      ));
+      if (rect.error) { console.log("SCENE FAILED " + name + ": " + rect.error); continue; }
+      await new Promise((r) => setTimeout(r, 400));
+      // Inspect the LIVE element rather than calling the scene again, which would
+      // rebuild it and measure an empty one.
+      const live = JSON.parse(await win.webContents.executeJavaScript(
+        "JSON.stringify((() => { const el = document.getElementById('" + name + "');" +
+          " return { children: el.children.length, text: (el.textContent || '').slice(0, 50) }; })())"
+      ));
+      const cv = JSON.parse(await win.webContents.executeJavaScript(
+        "JSON.stringify((() => { const c = document.getElementById('" + name + "').querySelector('canvas');" +
+          " return c ? { w: c.width, h: c.height, cssW: c.clientWidth, cssH: c.clientHeight } : null; })())"
+      ));
+      console.log("  " + name + ": " + live.children + " children, canvas=" + JSON.stringify(cv) + ", text=" + JSON.stringify(live.text));
+      // The window is sized to the scene and the WHOLE window captured: a rect passed
+      // to capturePage is not interpreted in the same space as getBoundingClientRect
+      // here (a 820x300 box came back as 2050x750 and clipped the bottom), and the
+      // scene is staged at the top-left, so the window and the content agree.
+      let image;
+      try {
+        win.setContentSize(Math.ceil(rect.width), Math.ceil(rect.height) + 6);
+        await new Promise((r) => setTimeout(r, 350));
+        image = await win.webContents.capturePage();
+        // The whole window comes back, so it is cropped to the scene's own box.
+        image = await cropToScene(win, image, rect);
+      } catch (err) {
+        console.log("SCENE CAPTURE FAILED " + name + "-" + theme + ": " + err);
+        continue;
+      }
+      const png = image.toPNG();
+      if (png.length < 12000) {
+        console.log("SCENE BLANK " + name + "-" + theme + ": only " + png.length + " bytes");
+        continue;
+      }
+      fs.writeFileSync(path.join(${JSON.stringify(OUT)}, name + "-" + theme + ".png"), png);
+      console.log("wrote " + name + "-" + theme + ".png  " + image.getSize().width + "x" + image.getSize().height + "  " + Math.round(png.length / 1024) + " KB");
+    }
+  }
+
   // The Help panel, in a page of its own: markup taken from the app page and rendered
   // where nothing hides it. Obsidian's modal CSS and the tab strip keep an inactive
   // panel unpainted even with its display forced, which is how a blank 3 KB image
   // reached the README once. (Note for future edits: this whole runner is a template
   // literal, so a backtick anywhere in here -- even in a comment -- ends it early.)
-  const helpScene = JSON.parse(await win.webContents.executeJavaScript("(async () => JSON.stringify(await (window.__sceneHelp())))()"));
+  // Wrapped: a scene that fails should leave the other images written and say so, not
+  // take the run down (which is what happened here -- the Help capture kept killing the
+  // generator after every other image had been written).
+  let helpScene = { error: "" };
+  try {
+    helpScene = JSON.parse(await win.webContents.executeJavaScript("(async () => JSON.stringify(await (window.__sceneHelp())))()"));
+  } catch (err) {
+    helpScene = { error: String(err) };
+  }
   if (helpScene.error) {
     console.log("SCENE FAILED help: " + helpScene.error);
   } else {
@@ -185,10 +293,16 @@ app.whenReady().then(async () => {
           " const r = el.getBoundingClientRect(); return { x: 0, y: 0, width: Math.ceil(r.width) + 32, height: Math.ceil(r.height) + 32 }; })())"
       )
     );
+    // The window is left at the size the canvas passes used, big enough for the panel,
+    // and the capture takes the panel's own rect. Sizing the window FROM that rect fed
+    // back on itself -- a narrower window reflows the panel taller -- and the window
+    // does not take the size asked for exactly, so both were dead ends.
+    win.setContentSize(1000, 1000);
+    await new Promise((r) => setTimeout(r, 300));
     for (const theme of ["light", "dark"]) {
       await win.webContents.executeJavaScript("document.body.className = 'theme-" + theme + "'");
-      await new Promise((r) => setTimeout(r, 250));
-      const image = await win.webContents.capturePage(rect);
+      await new Promise((r) => setTimeout(r, 300));
+      const image = cropToScene(win, await win.webContents.capturePage(), rect);
       const png = image.toPNG();
       if (png.length < 12000) {
         console.log("SCENE BLANK help-" + theme + ": only " + png.length + " bytes");
@@ -203,6 +317,11 @@ app.whenReady().then(async () => {
 });
 `
 );
+
+// The runner is generated from a template literal, so a stray backtick anywhere in
+// it -- even inside a comment -- silently ends the template and produces a syntax
+// error that points at the wrong line. Check the file that was actually written.
+execFileSync(process.execPath, ["--check", runner], { stdio: "pipe" });
 
 fs.mkdirSync(OUT, { recursive: true });
 console.log("rendering…");

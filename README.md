@@ -48,7 +48,7 @@ releases and updates it for you. The plugin is pre-1.0, so the version numbers a
    Settings → Community plugins.
 
 To pin a version instead of tracking the latest, use BRAT's **frozen** option and
-name the release, for example `0.3.6`.
+name the release, for example `0.3.7`.
 
 BRAT reports a mismatch if a release's tag, its name and the version inside the
 released `manifest.json` disagree. They are kept identical here on purpose, so an
@@ -134,6 +134,30 @@ note opens. The block's text is the model — the one below is the `MassSpringDa
 from the worked example — so the diagram lives in the note and the note travels with
 it.
 
+<table>
+<tr>
+<td width="50%"><img src="docs/images/embed-light.png" alt="A modelica block in a note, showing the live diagram (light theme)"></td>
+<td width="50%"><img src="docs/images/embed-dark.png" alt="A modelica block in a note, showing the live diagram (dark theme)"></td>
+</tr>
+<tr>
+<td><sub>Light theme</sub></td><td><sub>Dark theme</sub></td>
+</tr>
+</table>
+
+*A block in a note, opened on its diagram. It carries its own toolbar: **Simulate**, the span it runs over, **Open diagram** to take the model into the studio, **Fit**, and the switch between the two panes. It simulates once when the note opens.*
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/embedPlot-light.png" alt="The same block switched to its plot (light theme)"></td>
+<td width="50%"><img src="docs/images/embedPlot-dark.png" alt="The same block switched to its plot (dark theme)"></td>
+</tr>
+<tr>
+<td><sub>Light theme</sub></td><td><sub>Dark theme</sub></td>
+</tr>
+</table>
+
+*The same block on its plot — this is what `//@ result` in the block's first line opens on. The diagram is always there underneath, a scroll away: a plot is the result *of* the diagram, and hiding one to show the other loses the thing the reader came for.*
+
 A block runs itself once, when the note opens; after that the **Simulate** button
 starts a run. Dragging a component inside the block writes the note back — see
 [Using it in a note](#using-it-in-a-note) for why that does not start a loop, and
@@ -158,6 +182,44 @@ count.
 </table>
 
 *Every colour in that table is measured from the installed library by a test, so a row cannot describe a library that no longer says it. The connection rules are quoted from the library's own UsersGuide.*
+
+### Ask the diagram what it is set to
+
+Resting the pointer on a component shows what its parameters are set to — the ones
+*this instance* overrides first, so the answer to "why is this different from the
+library default" is one hover away. Reading a diagram's settings otherwise means
+selecting every component in turn.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/hover-light.png" alt="The parameter popup over a component on the canvas (light theme)"></td>
+<td width="50%"><img src="docs/images/hover-dark.png" alt="The parameter popup over a component on the canvas (dark theme)"></td>
+</tr>
+<tr>
+<td><sub>Light theme</sub></td><td><sub>Dark theme</sub></td>
+</tr>
+</table>
+
+*Resting on the coupling in `MassSpringDamper`: `c=50, d=1`, the two values this instance sets, with the library's own defaults for the rest. On a class with a conditional connector, the connector is dimmed and cannot be wired until the parameter that declares it is on.*
+
+### Sweep a parameter, and measure the difference
+
+A **sweep** runs the model once per value of one parameter and overlays the results as
+a family — the run on screen solid, the others dashed, so which curve is which is
+never in doubt. **Δ vs** then reads how far each member is from the run on screen at
+the cursor, which turns "this valve opens a little later" into a number.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/sweep-light.png" alt="A parameter sweep: three runs of the same model over a spring stiffness (light theme)"></td>
+<td width="50%"><img src="docs/images/sweep-dark.png" alt="A parameter sweep: three runs of the same model over a spring stiffness (dark theme)"></td>
+</tr>
+<tr>
+<td><sub>Light theme</sub></td><td><sub>Dark theme</sub></td>
+</tr>
+</table>
+
+*`MassSpringDamper` swept over the coupling stiffness — `c=25`, `c=50` (the run on screen) and `c=100` — with each family member's distance from it at the cursor. Each value is one simulation of the *same* compiled binary: a parameter change overrides it at run time, which is why a sweep is seconds rather than minutes. A structural change recompiles.*
 
 ### The rest of it
 

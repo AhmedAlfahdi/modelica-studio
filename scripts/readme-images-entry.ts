@@ -31,6 +31,10 @@ export interface SceneOptions {
 export interface SceneData {
   example: ExampleModel;
   result: SimResult;
+  /** The same model over three values of the coupling stiffness, for the sweep. */
+  family: Array<{ label: string; result: SimResult }>;
+  /** Which of those the plot treats as the run on screen. */
+  currentLabel: string;
   model: DiagramModel;
   /** Every class the diagram draws with, by qualified name. */
   defs: Record<string, ComponentClass>;
@@ -51,13 +55,25 @@ export async function buildSceneData(opts: SceneOptions): Promise<SceneData> {
   const index = new LibraryIndex();
   for (const root of opts.roots) index.addDirectory(root);
 
-  const result = await backend.simulate({
-    modelName: EXAMPLE.name,
-    source: EXAMPLE.source,
-    startTime: 0,
-    stopTime: EXAMPLE.stopTime,
-    numberOfIntervals: 500,
-  });
+  const run = (parameters?: Record<string, string>) =>
+    backend.simulate({
+      modelName: EXAMPLE.name,
+      source: EXAMPLE.source,
+      parameters,
+      startTime: 0,
+      stopTime: EXAMPLE.stopTime,
+      numberOfIntervals: 500,
+    });
+
+  const result = await run();
+  // A sweep, as the plugin's own sweep runs it: one simulation per value, of the SAME
+  // compiled binary — the parameter is overridden at run time, which is the fast path
+  // and the one a reader gets. The middle value is the run on screen.
+  const family: Array<{ label: string; result: SimResult }> = [];
+  for (const c of ["25", "100"]) {
+    family.push({ label: `c=${c}`, result: await run({ "coupling.c": c }) });
+  }
+  family.splice(1, 0, { label: "c=50", result });
 
   const parsed = parseModelica(EXAMPLE.source)[0];
   const lookup = (n: string) => index.describe(n);
@@ -75,5 +91,5 @@ export async function buildSceneData(opts: SceneOptions): Promise<SceneData> {
   };
   for (const component of model.components) add(component.className);
 
-  return { example: EXAMPLE, result, model, defs };
+  return { example: EXAMPLE, result, family, currentLabel: "c=50", model, defs };
 }

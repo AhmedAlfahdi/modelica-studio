@@ -8,13 +8,18 @@
  */
 
 import { SchematicEditor } from "../src/view/editor";
-import { drawPlot, plotThemeFrom } from "../src/view/plot";
+import { drawPlot, plotThemeFrom, seriesColor } from "../src/view/plot";
 import { currentTheme } from "../src/render/theme";
 import { HelpModal } from "../src/view/help-modal";
+import { EmbeddedDiagram } from "../src/view/embed";
+import { overlayResults } from "../src/view/family";
+import { DEFAULT_SETTINGS } from "../src/settings-merge";
 
 /** Everything the Node side resolved, handed over as data. */
 interface SceneData {
   example: { name: string; description: string; stopTime: number; series: string[] };
+  family: Array<{ label: string; result: SceneData["result"] }>;
+  currentLabel: string;
   result: {
     time: number[];
     series: { name: string; values: number[]; unit?: string }[];
@@ -31,6 +36,10 @@ declare global {
   interface Window {
     __sceneDiagram: (data: SceneData) => unknown;
     __scenePlot: (data: SceneData) => unknown;
+    __sceneEmbed: (data: SceneData) => unknown;
+    __sceneEmbedPlot: (data: SceneData) => unknown;
+    __sceneHover: (data: SceneData) => unknown;
+    __sceneSweep: (data: SceneData) => unknown;
     __sceneHelp: () => unknown;
     __SCENES__: SceneData;
   }
@@ -163,3 +172,183 @@ window.__sceneHelp = () => {
 };
 
 
+
+/**
+ * The plugin's settings, as a fresh installation has them.
+ *
+ * Spread rather than listed: a scene that hand-writes the settings object goes stale
+ * the moment a setting is added, and the failure is an exception in a section the
+ * image does not even show (which is how the first settings screenshot died).
+ */
+const settings = () => JSON.parse(JSON.stringify(DEFAULT_SETTINGS)) as never;
+
+/** A backend that returns a result the Node side already computed. */
+const stubBackend = (result: unknown) =>
+  ({
+    simulate: async () => result,
+    info: { available: true, label: "omc", detail: "OpenModelica 1.27.0" },
+  }) as never;
+
+/**
+ * A block in a note, in its two modes.
+ *
+ * The real `EmbeddedDiagram`: its own toolbar, its own diagram, its own plot. The
+ * simulation is the one the Node side ran — the page cannot spawn a compiler — so the
+ * numbers are real and only the spawning is stubbed.
+ */
+async function embedScene(host: HTMLElement, data: SceneData, showPlot: boolean) {
+  // `result` in the block's directive is what opens a note on the plot; that is also
+  // what the README tells a reader to write, so the picture shows the real route.
+  const source = showPlot ? `//@ time=${data.example.stopTime} result\n${data.example.source}` : data.example.source;
+  host.textContent = "";
+  // What the reader last chose wins over the directive (so a note does not reopen the
+  // plot on every re-render), and the first scene here chose the diagram. Clear the
+  // remembered choice so the second block starts where its directive says.
+  try {
+    localStorage.clear();
+  } catch {
+    /* no storage in this page */
+  }
+  // No fixed height: the block sizes its own canvas, and pinning the host clipped the
+  // bottom of the diagram out of the screenshot.
+  host.style.height = "";
+  host.style.width = "820px";
+  const embedded = new EmbeddedDiagram(
+    {
+      app: {} as never,
+      library: { component: (n: string) => data.defs[n] as never },
+      backend: stubBackend(data.result),
+      settings: settings(),
+      stopTimeFor: () => data.example.stopTime,
+      showSetupHelp: () => {},
+      // The embed reports what it cannot do instead of throwing; without a sink its
+      // reasons vanish and the screenshot is simply blank.
+      report: (message: string) => console.log("EMBED " + message),
+    } as never,
+    host,
+    source,
+    // `autoSimulate` true is what a block in a note does: it runs when the note opens.
+    // With it false there is no result, so the plot pane has nothing to draw and the
+    // block stays as tall as its toolbar.
+    { showPlot, height: showPlot ? 300 : 280, autoSimulate: true, stopTime: data.example.stopTime },
+    () => {}
+  );
+  // `mount()` is what builds the DOM and loads the model; the constructor only reads
+  // the block's directive.
+  embedded.mount();
+  // The embed renders on its own schedule — it measures its container and draws from
+  // there — so the scene waits for the element to have content rather than guessing a
+  // delay and capturing an empty box.
+  // Wait for a canvas that has actually been SIZED: `mount()` builds the toolbar
+  // synchronously, and the diagram inside it is sized by a resize observer on a later
+  // frame. Waiting for children alone captured the toolbar over an empty box.
+  const canvases = () => Array.from(host.querySelectorAll("canvas")).filter((c) => c.width > 2 && c.height > 2);
+  for (let i = 0; i < 60; i++) {
+    if (canvases().length >= (showPlot ? 2 : 1)) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  await new Promise((r) => setTimeout(r, 250));
+  return { ...box(host), children: host.children.length, text: (host.textContent ?? "").slice(0, 60) };
+}
+
+window.__sceneEmbed = async (data) => {
+  try {
+    return await embedScene(document.getElementById("embed")!, data, false);
+  } catch (err) {
+    return fail(err);
+  }
+};
+
+window.__sceneEmbedPlot = async (data) => {
+  try {
+    return await embedScene(document.getElementById("embedPlot")!, data, true);
+  } catch (err) {
+    return fail(err);
+  }
+};
+
+/**
+ * The parameter popup, over a component on the canvas.
+ *
+ * Driven by a real `pointermove` at the component's own screen position rather than
+ * by setting the editor's internals, so the picture is the one a pointer produces.
+ */
+window.__sceneHover = (data) => {
+  try {
+    const host = document.getElementById("hover")!;
+    host.textContent = "";
+    host.style.height = "340px";
+    const editor = new SchematicEditor(host, data.model, {
+      lookup: (n) => data.defs[n],
+      onChange: () => {},
+      onSelectionChange: () => {},
+      onStatus: () => {},
+      display: () => ({ labelScale: 1, hoverParameters: true }),
+    } as never);
+    editor.resize();
+    editor.zoomToFit();
+    editor.draw();
+
+    // The component to rest on, at the middle of its own box, mapped through the
+    // canvas's transform — the same mapping `toDiagram` inverts.
+    const target = data.model.components.find((c) => c.className.includes("SpringDamper")) ?? data.model.components[0];
+    const [x1, y1, x2, y2] = target.placement.extent;
+    const t = editor.sceneTransform();
+    const px = ((x1 + x2) / 2) * t.scale + t.x;
+    const py = ((y1 + y2) / 2) * t.yScale + t.y;
+    const rect = editor.canvasEl.getBoundingClientRect();
+    const at = { clientX: rect.left + px, clientY: rect.top + py, bubbles: true };
+    editor.canvasEl.dispatchEvent(new PointerEvent("pointerenter", at));
+    editor.canvasEl.dispatchEvent(new PointerEvent("pointermove", at));
+    editor.draw();
+    return canvasShot(host, editor.canvasEl);
+  } catch (err) {
+    return fail(err);
+  }
+};
+
+/**
+ * A sweep: the same model over three values of one parameter, the run on screen
+ * solid and the others dashed, with each one's distance from it at the cursor.
+ */
+window.__sceneSweep = (data) => {
+  try {
+    const host = document.getElementById("sweep")!;
+    host.textContent = "";
+    host.style.height = "320px";
+    const canvas = document.createElement("canvas");
+    const width = host.clientWidth || 900;
+    const height = 320;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    host.appendChild(canvas);
+
+    const { result, familyNames } = overlayResults(data.result, data.family.filter((f) => f.label !== data.currentLabel), data.currentLabel);
+    const styles: Record<string, { color: string; visible: boolean; dashed?: boolean }> = {};
+    const wanted = ["mass1.s", "mass2.s"];
+    result.series.forEach((s, i) => {
+      const base = s.name.split(" · ")[0];
+      styles[s.name] = {
+        color: seriesColor(wanted.indexOf(base) >= 0 ? wanted.indexOf(base) : i),
+        visible: wanted.includes(base),
+        dashed: familyNames.has(s.name),
+      };
+    });
+    drawPlot(canvas.getContext("2d")!, width, height, result as never, {
+      styles,
+      view: { xMin: 0, xMax: data.example.stopTime },
+      dpr,
+      theme: plotThemeFrom(currentTheme()),
+      readoutScale: 1,
+      showDeltas: true,
+      currentLabel: data.currentLabel,
+      cursorX: width * 0.62,
+    } as never);
+    return canvasShot(host, canvas);
+  } catch (err) {
+    return fail(err);
+  }
+};

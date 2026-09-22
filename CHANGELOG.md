@@ -5,6 +5,40 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.7] — 2026-10-14
+
+### Added
+
+- **Screenshots of the embedded block, in both of its modes**, and of two features that
+  needed more than a sentence:
+
+  - `embed-light/dark` — a `modelica` block in a note, opened on its diagram, with its
+    own toolbar: **Simulate**, the span, **Open diagram**, **Fit**, and the switch
+    between panes.
+  - `embedPlot-light/dark` — the same block on its plot, which is what `//@ result`
+    opens on.
+  - `hover-light/dark` — the parameter popup over a component: `c=50, d=1` on the
+    coupling, the two values that instance sets, with the library's defaults for the
+    rest.
+  - `sweep-light/dark` — a real parameter sweep: three simulations of the coupling
+    stiffness, the run on screen solid and the family dashed, with each member's
+    distance from it read at the cursor.
+
+  These are RENDERED, not photographed: `scripts/readme-images.mjs` mounts the real
+  `EmbeddedDiagram`, dispatches a real `pointermove` over a component, and runs the
+  sweep through the backend's parameter-override path — one simulation per value of the
+  same compiled binary, which is what makes a sweep seconds rather than minutes.
+
+### Fixed
+
+- The image generator had accumulated three faults, each of which produced a wrong
+  image rather than an error: the embed's plot pane was empty because a block with
+  `autoSimulate: false` has no result to draw; the second embed inherited the first
+  one's remembered pane choice; and `capturePage` ignores the rect it is given in this
+  Electron version, returning the whole window — so the requested framing is now
+  cropped out of the result by the ratio the image actually came back at. Two
+  blank-image guards stay in place: a capture under 12 KB is reported, not written.
+
 ## [0.3.6] — 2026-10-14
 
 ### Changed

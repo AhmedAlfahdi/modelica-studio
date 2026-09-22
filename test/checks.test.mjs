@@ -623,7 +623,7 @@ test("every image the README shows exists, and every image is shown", () => {
   assert.ok(referenced.every((r) => r.startsWith("docs/images/")), "images live together under docs/images");
   // Both themes for every scene, so a reader in either one sees the real thing.
   const names = referenced.map((r) => path.basename(r));
-  for (const stem of ["diagram", "plot", "help"]) {
+  for (const stem of ["diagram", "plot", "help", "embed", "embedPlot", "hover", "sweep"]) {
     assert.ok(names.includes(`${stem}-light.png`) && names.includes(`${stem}-dark.png`), `${stem} is shown in both themes`);
   }
 });
