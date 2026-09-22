@@ -5,6 +5,31 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.8] — 2026-10-14
+
+### Fixed
+
+- **The two embed screenshots showed the wrong panes.** Reported as "wrong pic here",
+  against the pair that documents a block in a note: the image captioned *opened on its
+  diagram* was the plot, and the one captioned *switched to its plot* was the diagram.
+
+  Not a swap of the files — a real behaviour of the block that the scene had not
+  accounted for. A block **simulates when the note opens and reveals the plot when the
+  run finishes**, so a scene that let it auto-simulate could not photograph the diagram
+  without clicking back; and which pane is open is not only the block's own setting,
+  because the reader's last choice is remembered per model so that a note does not
+  reopen the plot on every re-render.
+
+  Both scenes now settle on the pane they document, and settle on it rather than click
+  once: the reveal arrives on its own schedule *after* the run, so a single click can be
+  undone a moment later. The tooltip is what decides it — the label says what a click
+  will DO, so the pane that is showing is the one whose label offers the other, and the
+  first version of this loop had that exactly backwards and produced two diagrams.
+
+  The captions are unchanged and now describe what is in the pictures: the diagram pane
+  with a finished run's statistics in the toolbar, and the plot a note opens on with
+  `//@ result`.
+
 ## [0.3.7] — 2026-10-14
 
 ### Added

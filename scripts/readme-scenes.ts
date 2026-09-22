@@ -242,6 +242,40 @@ async function embedScene(host: HTMLElement, data: SceneData, showPlot: boolean)
   // Wait for a canvas that has actually been SIZED: `mount()` builds the toolbar
   // synchronously, and the diagram inside it is sized by a resize observer on a later
   // frame. Waiting for children alone captured the toolbar over an empty box.
+  const waitFor = async (ready: () => boolean, ticks = 60) => {
+    for (let i = 0; i < ticks; i++) {
+      if (ready()) return true;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return false;
+  };
+
+  // A block simulates when the note opens, and reveals the plot when the run finishes —
+  // both the plugin's intended behaviour, and the reason a block that auto-simulates
+  // cannot be photographed on its diagram without a click. One click back is the state
+  // a reader is actually in when they go looking at the structure after seeing the
+  // result, and the run's statistics stay in the toolbar.
+  // Which pane is open is not just this block's `showPlot`: the reader's last choice is
+  // remembered per model (so a note does not reopen the plot on every re-render), and
+  // in this page that memory outlives the directive. Because the block also reveals the
+  // plot by itself when a run finishes, whichever pane is wanted is settled by clicking
+  // until the label has stopped changing for a few checks.
+  await waitFor(() => /\d+\s*samples/.test(host.textContent ?? ""));
+  // The label says what a click WILL DO, so the wanted pane is the one whose label
+  // offers the OTHER: "Switch to diagram" means the plot is showing.
+  const wanted = showPlot ? /switch to diagram/i : /switch to plot/i;
+  const toggle = () => Array.from(host.querySelectorAll("button")).find((b) => /switch to/i.test(b.textContent ?? ""));
+  let settled = 0;
+  for (let i = 0; i < 60 && settled < 3; i++) {
+    if (!wanted.test(toggle()?.textContent ?? "")) {
+      toggle()?.click();
+      settled = 0;
+    } else {
+      settled++;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+
   const canvases = () => Array.from(host.querySelectorAll("canvas")).filter((c) => c.width > 2 && c.height > 2);
   for (let i = 0; i < 60; i++) {
     if (canvases().length >= (showPlot ? 2 : 1)) break;
