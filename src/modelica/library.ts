@@ -39,8 +39,14 @@ interface ConnectorInfo {
  *
  * Bump when the parsed shape changes, so a stale cache is ignored rather than
  * read as if it were current — the same reasoning as the persisted-model schema.
+ *
+ * 7: `DynamicSelect` is read as its editing argument. Version 6 caches hold the
+ *    text `"DynamicSelect(...)"` where a graphic's extent belongs and as an icon's
+ *    label, so an index built by the previous parser draws an empty tank and the
+ *    annotation's own source on its label. The parser fix alone changed nothing on
+ *    screen: the app reads the cache, not the parser.
  */
-export const INDEX_CACHE_VERSION = 6;
+export const INDEX_CACHE_VERSION = 7;
 
 /**
  * Whether a class belongs to the library's own scaffolding rather than to the

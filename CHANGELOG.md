@@ -5,6 +5,26 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.54] — 2026-10-14
+
+### Fixed
+
+- **The `DynamicSelect` fix in beta.53 reached nobody who had opened the plugin
+  before**, which is why the tank still drew empty and still labelled itself
+  `DynamicSelect(...)`. The library index is cached in `library-index.json` and the
+  cache version had not been bumped, so the app read the PREVIOUS parser's output:
+  `"DynamicSelect(...)"` where a graphic's extent belongs. The parser was right and
+  the screen was wrong.
+
+  `INDEX_CACHE_VERSION` is now 7, and the test that guards it says so. The first
+  launch after this update re-parses the library — about a second longer than a
+  cached start — and every launch after that is cached again.
+
+  The lesson is in the code comment: the cache holds the PARSED classes, so any
+  change to what the parser produces needs a bump, while a change to a value derived
+  on the way out (`describe`, a pin's position from its placement's origin) does
+  not. This one changed the parsed shape and should have come with the bump.
+
 ## [0.2.0-beta.53] — 2026-10-14
 
 ### Fixed

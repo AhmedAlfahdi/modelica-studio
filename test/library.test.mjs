@@ -346,7 +346,14 @@ test("the index cache version reflects the classes the index holds", () => {
   // a pin's position from its placement's `origin`, say -- reaches every user
   // without one. Check `toJSON` before bumping for a fix like that: a needless
   // bump costs every existing user a full reindex of the library.
-  assert.equal(INDEX_CACHE_VERSION, 6);
+  //
+  // 7 is here because a change to the parsed SHAPE was shipped without one, and
+  // the fix reached nobody who had opened the plugin before: `DynamicSelect` began
+  // being read as its editing argument, but every existing index kept the text
+  // `"DynamicSelect(...)"` where a graphic's extent belongs, so the tank still drew
+  // empty and still labelled itself with the annotation's source. The parser was
+  // right and the screen was wrong, which is what this test is for.
+  assert.equal(INDEX_CACHE_VERSION, 7);
 });
 
 test("a package named Utilities still contributes components", () => {
