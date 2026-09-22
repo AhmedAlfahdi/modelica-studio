@@ -2396,3 +2396,54 @@ body.modelica-studio-resizing * {
 .modelica-studio-help-wire.is-double {
   height: 4px;
 }
+
+/* ------------------------------------------------------------------ *
+ * A link, as a button
+ *
+ * The Help window's About panel states values — a licence, a repository, a citation
+ * file — and each of those is somewhere to go. They were rendered with the plugin's
+ * button style, which is a form control: a bordered box sitting inline with a line
+ * of monospace text, reading as a control to fill in rather than a place to follow.
+ *
+ * A button rather than an `<a>`, because a plain anchor click navigates the Obsidian
+ * window away from the app (the reason the inspector's documentation link redirects
+ * through `openInBrowser`). This makes that button LOOK like the link it is: accent
+ * coloured, no box, underlined on hover, with a small external-link mark so it is
+ * clear the click leaves the application.
+ * ------------------------------------------------------------------ */
+.modelica-studio-link {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  height: auto;
+  font: inherit;
+  color: var(--text-accent);
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.modelica-studio-link:hover {
+  color: var(--text-accent-hover);
+  text-decoration: underline;
+}
+
+.modelica-studio-link:focus-visible {
+  outline: 2px solid var(--background-modifier-border-focus);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+/* The mark that says the click leaves the application, sized to the text it
+   follows rather than to Obsidian's default icon box. */
+.modelica-studio-link .svg-icon {
+  width: 11px;
+  height: 11px;
+  margin-left: 2px;
+  vertical-align: -1px;
+  opacity: 0.75;
+}

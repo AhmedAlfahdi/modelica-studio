@@ -25,6 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { buildLibs } from "./helpers/build.mjs";
 import { runInDom, DOM_PREAMBLE } from "./helpers/dom-runner.mjs";
+import { THEME_CSS, THEME_VARS } from "./helpers/theme-css.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const MSL_CANDIDATES = [
@@ -191,5 +192,77 @@ test("a sample of the library paints on a real canvas, at both pixel ratios", as
     by["twice the pixel ratio draws the same symbol twice as large"],
     "",
     "the device pixel ratio scales the drawing once, not twice and not not at all"
+  );
+});
+
+test("the About panel's links look like links, not like form controls", async () => {
+  // Reported from a screenshot: the linked values read as boxed buttons sitting
+  // inline with a line of monospace text — a control to fill in rather than a place
+  // to follow. The stylesheet decides that, so the stylesheet has to be loaded for
+  // the assertion to mean anything: an earlier version of this measured the
+  // browser's DEFAULT button style and called it a pass.
+  const CSS = fs.readFileSync(path.join(ROOT, "styles.css"), "utf8");
+  const out = await runInDom(
+    [
+      DOM_PREAMBLE,
+      `import { HelpModal } from "${ROOT}/src/view/help-modal";`,
+      `import { StubVault } from "${ROOT}/test/helpers/obsidian-stub";`,
+      "const style = document.createElement('style');",
+      `style.textContent = ${JSON.stringify(THEME_VARS + THEME_CSS + CSS)};`,
+      "document.head.appendChild(style);",
+      "document.body.classList.add('theme-dark');",
+      "const plugin = { app: { vault: new StubVault(), workspace: { getLeavesOfType: () => [] } },",
+      "  manifest: { id: 'modelica-studio', version: '0.3.3', author: 'Ahmed N. Alfahdi' },",
+      "  settings: { modelFolder: 'Modelica', modelFiles: {} },",
+      "  library: { size: 0, allNames: () => [], packages: () => [] },",
+      "  libraryRootNames: () => [], saveSettings: async () => {}, getView: () => null };",
+      "const modal = new HelpModal(plugin.app, plugin);",
+      "modal.open();",
+      "const panel = Array.from(modal.contentEl.querySelectorAll('.modelica-studio-help-panel')).find((p) => p.textContent.includes('About'));",
+      "const links = Array.from(panel.querySelectorAll('.modelica-studio-link'));",
+      "window.test('the link is not a box', () => {",
+      "  if (links.length === 0) return 'NO LINKS';",
+      "  const s2 = getComputedStyle(links[0]);",
+      "  return 'count=' + links.length + ' border=' + s2.borderStyle + ' radius=' + s2.borderTopLeftRadius +",
+      "    ' background=' + s2.backgroundColor + ' shadow=' + s2.boxShadow + ' padding=' + s2.paddingLeft +",
+      "    ' height=' + (s2.height === 'auto' ? 'auto' : s2.height) +",
+      // Underlining on hover, not permanently: an always-underlined row of values
+      // reads as a list of links where only three words are.
+      "    ' underline=' + s2.textDecorationLine;",
+      "});",
+      "window.test('and it is coloured and marked like one', () => {",
+      "  const s2 = getComputedStyle(links[0]);",
+      // Resolved by the browser rather than compared as text: the variable is an
+      // `hsl()` and a computed colour is an `rgb()`, so a string comparison of the
+      // two reports a mismatch that is not there.
+      "  const probe = document.createElement('span');",
+      "  probe.style.color = 'var(--text-accent)';",
+      "  document.body.appendChild(probe);",
+      "  const accent = getComputedStyle(probe).color;",
+      "  const mark = links[0].querySelector('.svg-icon');",
+      "  return 'colour=' + s2.color + ' accent=' + accent + ' matches=' + (s2.color === accent) +",
+      "    ' cursor=' + s2.cursor + ' mark=' + !!mark + ' text=' + links[0].textContent.trim();",
+      "});",
+      "window.finish();",
+    ].join("\n")
+  );
+  assert.ok(!out.fatal, out.fatal);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const by = Object.fromEntries(out.results.map((r) => [r.name, r.detail]));
+
+  assert.equal(
+    by["the link is not a box"],
+    "count=3 border=none radius=0px background=rgba(0, 0, 0, 0) shadow=none padding=0px height=auto " +
+      "underline=none",
+    "no border, no fill, no shadow, no padding of its own: a link, not a control"
+  );
+  assert.equal(
+    by["and it is coloured and marked like one"],
+    // The accent value comes from the harness's own theme variables, so it is stable
+    // here; in the application it is whatever the user's theme defines.
+    "colour=rgb(139, 108, 239) accent=rgb(139, 108, 239) matches=true cursor=pointer " +
+      "mark=true text=GPL-3.0-or-later",
+    "accent-coloured, clickable, with the external mark beside its own text"
   );
 });

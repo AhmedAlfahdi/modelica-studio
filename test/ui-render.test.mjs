@@ -1112,10 +1112,12 @@ test("the About panel states the author, the licence and how to cite", async () 
     "  return 'version=' + text.includes('0.3.0') + ' author=' + text.includes('Ahmed N. Alfahdi') +",
     "    ' preBeta=' + /pre-1\\.0/.test(text) + ' saysBeta=' + /\\bbeta\\b/i.test(text);",
     "});",
-    "window.test('it states the licence and links to the full text', () => {",
+    "window.test('it states the licence, and the links carry their own text', () => {",
     "  const text = panel.textContent.replace(/\\s+/g, ' ');",
-    "  const buttons = Array.from(panel.querySelectorAll('button')).map((b) => b.textContent);",
-    "  return 'licence=' + text.includes('GPL-3.0-or-later') + ' buttons=' + buttons.join(',');",
+    "  const links = Array.from(panel.querySelectorAll('.modelica-studio-link'));",
+    "  return 'licence=' + text.includes('GPL-3.0-or-later') +",
+    "    ' links=' + links.map((l) => l.textContent.trim()).join('|') +",
+    "    ' marks=' + links.filter((l) => l.querySelector('.svg-icon')).length;",
     "});",
     "window.test('and it asks for citation rather than requiring it', () => {",
     "  const text = panel.textContent.replace(/\\s+/g, ' ');",
@@ -1134,10 +1136,13 @@ test("the About panel states the author, the licence and how to cite", async () 
     "the version and author come from the manifest, and the wording is pre-1.0 rather than beta — 0.3.0 is the first release not tagged beta"
   );
   assert.equal(
-    d["it states the licence and links to the full text"],
-    "licence=true buttons=the full text,open,how",
-    "the licence is named, with the full text, the source and the citation one click away"
+    d["it states the licence, and the links carry their own text"],
+    "licence=true links=GPL-3.0-or-later|AhmedAlfahdi/modelica-studio|CITATION.cff marks=3",
+    "each linked value is the value itself, with the external mark beside it (setIcon replaces an element's first child, so the mark needs its own span or the label disappears)"
   );
+  // Their APPEARANCE is asserted in component-render.test.mjs, where the plugin's
+  // stylesheet and the theme's variables are loaded. This page has neither, so a
+  // computed style here measured the browser's default button and called it a pass.
   assert.equal(
     d["and it asks for citation rather than requiring it"],
     "cites=true demands=false whatForks=true",

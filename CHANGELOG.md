@@ -5,6 +5,40 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.3] — 2026-10-14
+
+### Fixed
+
+- **The About panel's links looked like form controls.** Reported from a screenshot:
+  boxed buttons — "the full text", "open", "how" — sitting inline with a line of
+  monospace text, reading as fields to fill in rather than places to follow. They are
+  now what they are:
+
+  | row | was | now |
+  |---|---|---|
+  | Licence | `GPL-3.0-or-later` **[the full text]** | **GPL-3.0-or-later** — use it, change it, keep it free |
+  | Source | `AhmedAlfahdi/modelica-studio` **[open]** | **AhmedAlfahdi/modelica-studio** |
+  | Cite it | `Please cite it in published work` **[how]** | Please cite it in published work: **CITATION.cff** |
+
+  The linked words are the value itself, accent-coloured, with a small external-link
+  mark beside them; they underline on hover rather than permanently, and take the
+  focus ring. Still a `<button>` under the styling, because a plain anchor navigates
+  the Obsidian window away from the app — the reason the inspector's documentation
+  link already redirects through `openInBrowser`.
+
+- `setIcon` writes into the element it is given and removes its **first child**, which
+  is the text node when the element already has a label. Writing the mark straight
+  into the link erased all three labels and left three anonymous icons; the mark now
+  has its own span. A UI test caught it in the same run that introduced it.
+
+  The appearance is asserted where it can be: the harness that renders the panel for
+  the styling test loads the plugin's real `styles.css` **and** the theme variables
+  it reads, and the assertion reads the computed style — no border, no fill, no
+  shadow, no padding, accent colour, pointer cursor, mark present, underline only on
+  hover. The first version of that assertion lived in a page with no stylesheet at
+  all, so it measured the browser's default button and passed; it is now falsified by
+  restyling the link as a box.
+
 ## [0.3.2] — 2026-10-14
 
 ### Fixed

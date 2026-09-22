@@ -18,6 +18,24 @@ import { repoRoot } from "./build.mjs";
 export const PLUGIN_CSS = fs.readFileSync(path.join(repoRoot, "styles.css"), "utf8");
 
 /**
+ * The theme variables a computed style may be read against.
+ *
+ * The app defines these; a test page that does not would report an inherited colour
+ * as if it were a rule's — which is how a "the link is accent coloured" assertion
+ * first passed with the accent variable unset. Values from the default dark theme.
+ */
+export const THEME_VARS = `
+:root, body {
+  --color-accent: hsl(254, 80%, 68%);
+  --color-accent-1: hsl(254, 80%, 68%);
+  --color-accent-2: hsl(254, 80%, 76%);
+  --text-accent: var(--color-accent);
+  --text-accent-hover: var(--color-accent-2);
+  --color-base-40: hsl(0, 0%, 40%);
+  --background-modifier-border-focus: var(--color-base-40);
+}`;
+
+/**
  * The theme rules that decide this plugin's controls.
  *
  * `select`/`.dropdown`: where the chevron lives, and why a bare `select` has none

@@ -12,7 +12,7 @@
  * failure rather than as a lie.
  */
 
-import { App, Modal, Platform } from "obsidian";
+import { App, Modal, Platform, setIcon } from "obsidian";
 import type ModelicaStudioPlugin from "../main";
 import { libraryHelpUrl, libraryIconsUrl, libraryVersionFrom } from "../modelica/doclinks";
 import { openInBrowser } from "./studio-view";
@@ -533,26 +533,54 @@ export class HelpModal extends Modal {
     // Who made it, what it may be used under, and how to cite it. Read from the
     // manifest and the constants above rather than typed twice.
     const rows = el.createDiv({ cls: "modelica-studio-help-facts" });
-    const aboutRow = (label: string, value: string, link?: { text: string; url: string }) => {
+    /**
+     * One row: a label, then the value, part of which may be somewhere to go.
+     *
+     * The linked part is the value itself — the licence, the repository, the citation
+     * file — rather than a word beside it. These were boxed "the full text / open /
+     * how" buttons sitting inline with a line of monospace text, which read as a
+     * control to fill in rather than a place to follow. A button styled as a link
+     * (`modelica-studio-link`) keeps the click going through `openInBrowser`, which a
+     * plain anchor would not.
+     */
+    const aboutRow = (
+      label: string,
+      parts: Array<string | { text: string; url: string }>
+    ) => {
       const line = rows.createDiv({ cls: "modelica-studio-help-fact" });
       line.createSpan({ cls: "modelica-studio-help-fact-label", text: label });
       const cell = line.createSpan({ cls: "modelica-studio-help-fact-value" });
-      cell.createSpan({ text: value });
-      if (link) {
-        const b = cell.createEl("button", { cls: "modelica-studio-btn", text: link.text });
-        b.addEventListener("click", () => openInBrowser(link.url));
+      for (const part of parts) {
+        if (typeof part === "string") {
+          cell.createSpan({ text: part });
+          continue;
+        }
+        const link = cell.createEl("button", {
+          cls: "modelica-studio-link",
+          text: part.text,
+          // The click leaves the application, and the mark says so. The text is the
+          // accessible name; the icon is decoration.
+          attr: { "aria-label": `${part.text} — opens in your browser` },
+        });
+        // The mark goes in its OWN span: `setIcon` writes into the element it is
+        // given and removes that element's first child, which is the text node --
+        // the label vanished the first time this was written, leaving three
+        // anonymous icons in the panel.
+        const mark = link.createSpan({ cls: "modelica-studio-link-mark" });
+        setIcon(mark, "external-link");
+        link.addEventListener("click", () => openInBrowser(part.url));
       }
     };
-    aboutRow("Author", this.plugin.manifest.author ?? "—");
-    aboutRow("Licence", PLUGIN_LICENSE, { text: "the full text", url: PLUGIN_LICENSE_URL });
-    aboutRow("Source", PLUGIN_REPO.replace("https://github.com/", ""), {
-      text: "open",
-      url: PLUGIN_REPO,
-    });
-    aboutRow("Cite it", "Please cite it in published work", {
-      text: "how",
-      url: `${PLUGIN_REPO}/blob/main/CITATION.cff`,
-    });
+    aboutRow("Author", [this.plugin.manifest.author ?? "—"]);
+    aboutRow("Licence", [
+      { text: PLUGIN_LICENSE, url: PLUGIN_LICENSE_URL },
+      " — use it, change it, keep it free",
+    ]);
+    aboutRow("Source", [{ text: PLUGIN_REPO.replace("https://github.com/", ""), url: PLUGIN_REPO }]);
+    aboutRow("Cite it", [
+      "Please cite it in published work: ",
+      { text: "CITATION.cff", url: `${PLUGIN_REPO}/blob/main/CITATION.cff` },
+    ]);
 
     el.createEl("p", {
       cls: "modelica-studio-muted",
