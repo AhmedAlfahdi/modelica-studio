@@ -609,9 +609,11 @@ test("Help explains how a connection is drawn, with the colours themselves", asy
   assert.equal(
     d["every example carries a swatch, coloured as the canvas draws it"],
     // The flange names no colour, so it is the language's black — which the theme
-    // turns into ink; this page is the light theme, where ink IS black.
+    // turns into ink; this page is the light theme, where ink IS black. The bus is
+    // the library's {255,204,51} darkened to clear 3:1 on a pale canvas, which is
+    // the wire floor; on a dark canvas the library's own value is used unchanged.
     "An electrical pin:rgb(0, 0, 255) x1 | A rotational flange, which names no colour of its own:" +
-      "rgb(0, 0, 0) x1 | A signal or control bus:rgb(255, 204, 51) x2 | " +
+      "rgb(0, 0, 0) x1 | A signal or control bus:rgb(166, 133, 33) x2 | " +
       "A multibody frame:rgb(95, 95, 95) x2",
     "four examples, each in the colour the renderer would use"
   );

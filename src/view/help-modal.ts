@@ -17,7 +17,7 @@ import type ModelicaStudioPlugin from "../main";
 import { libraryHelpUrl, libraryIconsUrl, libraryVersionFrom } from "../modelica/doclinks";
 import { openInBrowser } from "./studio-view";
 import { DOMAIN_INFO, domainAttributes } from "../render/domains";
-import { currentTheme, themedColor } from "../render/theme";
+import { currentTheme, wireColorFor } from "../render/theme";
 import { rgb } from "../render/canvas";
 import type { Color } from "../modelica/types";
 
@@ -281,7 +281,7 @@ export class HelpModal extends Modal {
       const swatch = line.createSpan({
         cls: `modelica-studio-help-wire${double ? " is-double" : ""}`,
       });
-      swatch.style.background = rgb(themedColor(color, currentTheme(), "stroke"));
+      swatch.style.background = rgb(wireColorFor(color, currentTheme()));
       line.createSpan({ cls: "modelica-studio-help-wire-text", text });
     };
     wireRow([0, 0, 255], false, "An electrical pin — the library's {0,0,255}, a single line.");

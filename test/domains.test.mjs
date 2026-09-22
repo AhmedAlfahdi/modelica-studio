@@ -19,6 +19,9 @@ import { buildLibs, repoRoot } from "./helpers/build.mjs";
 
 const { DOMAINS, DOMAIN_INFO, domainInfo, domainOfPackage, domainOfLabel, domainAttributes } =
   await import(path.join(buildLibs("domains", ["src/render/domains.ts"]), "domains.js"));
+const theme = await import(
+  path.join(buildLibs("domain-theme", ["src/render/theme.ts"]), "theme.js")
+);
 
 /** Obsidian's own `--background-secondary`, which is what these sit on. */
 const LIGHT_BG = "#f2f3f5";
@@ -360,4 +363,72 @@ test("no two domains are close enough to be confused", () => {
     }
   }
   assert.deepEqual(tooClose, [], `colours too close to tell apart:\n  ${tooClose.join("\n  ")}`);
+});
+
+/**
+ * A wire is coloured by its connector's own icon, so the palette a diagram is
+ * read through is the LIBRARY's, not this plugin's: `{0,0,255}` electrical,
+ * `{191,0,0}` thermal, `{0,0,127}` blocks, `{95,95,95}` multibody frames, and
+ * black where a connector names no line colour at all.
+ *
+ * Those values were chosen to fill a white icon, and a wire is a thin line on a
+ * canvas — so they are measured here the same way the domain colours above are.
+ * It matters: before the wire path had its own floor, five of the eight sat
+ * between 1.0:1 and 2.5:1 against the dark canvas, which is a wire you cannot
+ * follow.
+ */
+test("a wire's colour is legible on the canvas it is drawn on", () => {
+  const LIGHT_CANVAS = [250, 251, 253];
+  const DARK_CANVAS = [30, 33, 39];
+  const themes = {
+    light: { dark: false, ink: [0, 0, 0], paper: LIGHT_CANVAS, minInkLuminance: 0, fillLuminanceCap: 0, fillBlend: 0 },
+    dark: { dark: true, ink: [235, 238, 245], paper: DARK_CANVAS, minInkLuminance: 0.145, fillLuminanceCap: 0.5, fillBlend: 0.45 },
+  };
+  const hexOf = (c) => "#" + c.map((v) => v.toString(16).padStart(2, "0")).join("");
+  // Every colour MSL 4.1.0 uses for a connector's line, plus the default black.
+  const used = {
+    "electrical {0,0,255}": [0, 0, 255],
+    "thermal {191,0,0}": [191, 0, 0],
+    "fluid {0,127,255}": [0, 127, 255],
+    "magnetic {255,127,0}": [255, 127, 0],
+    "blocks {0,0,127}": [0, 0, 127],
+    "bus {255,204,51}": [255, 204, 51],
+    "multibody {95,95,95}": [95, 95, 95],
+    "no line colour": [0, 0, 0],
+  };
+
+  const failures = [];
+  for (const [name, colour] of Object.entries(used)) {
+    for (const [which, t] of Object.entries(themes)) {
+      const wire = theme.wireColorFor(colour, t);
+      const canvas = which === "light" ? LIGHT_CANVAS : DARK_CANVAS;
+      const ratio = contrast(hexOf(wire), hexOf(canvas));
+      // 3:1 is the WCAG threshold for a graphical object, which a line is; 4.5:1
+      // is for text.
+      if (ratio < 3) failures.push(`${name} on ${which} = ${ratio.toFixed(2)}:1`);
+    }
+  }
+  assert.deepEqual(failures, [], "every wire colour clears 3:1 on both canvases");
+
+  // And the ICONS keep the library's own greys: the wire floor is not applied to
+  // them, because there a grey is shading rather than a line to follow.
+  // Lifted just past the floor, and no further: a wire stays as close to the
+  // library's own colour as legibility allows.
+  const lifted = theme.wireColorFor([95, 95, 95], themes.dark);
+  // The blend moves in steps of 5%, so it clears the floor by a little rather
+  // than landing on it exactly — and no further, which is the point.
+  const liftedRatio = contrast(hexOf(lifted), hexOf(DARK_CANVAS));
+  assert.ok(
+    liftedRatio >= 3 && liftedRatio < 3.8,
+    `the multibody grey is lifted just past the floor, got ${liftedRatio.toFixed(2)}:1`
+  );
+  assert.ok(lifted[0] > 95 && lifted[0] < 140, `and stays a grey, got rgb(${lifted.join(",")})`);
+  assert.deepEqual(
+    theme.themedColor([95, 95, 95], themes.dark, "stroke"),
+    [95, 95, 95],
+    "while an icon's stroke is left exactly as the library asked"
+  );
+  // Black is the one that must change most: a black wire on a dark canvas is
+  // 1.3:1, which is why the language's default is drawn as ink.
+  assert.deepEqual(theme.wireColorFor([0, 0, 0], themes.dark), [235, 238, 245]);
 });

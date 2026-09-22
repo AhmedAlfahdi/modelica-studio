@@ -20,7 +20,7 @@
  *     pre-3.6 wording misplaces every rotated component.
  */
 
-import { currentTheme, themedColor, type Theme } from "./theme";
+import { currentTheme, themedColor, wireColorFor, type Theme } from "./theme";
 
 import type {
   BitmapGraphic,
@@ -2011,7 +2011,9 @@ export function drawConnection(
   // at a different place from the symbols it connects.
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   const line = opts.color ?? conn.color;
-  ctx.strokeStyle = line ? rgb(themedColor(line, theme, "stroke")) : rgb(theme.wire);
+  // Through `wireColorFor`, not `themedColor`: a wire has to be followable, and
+  // the library's own greys are shading tones that the icon path leaves dark.
+  ctx.strokeStyle = line ? rgb(wireColorFor(line, theme)) : rgb(theme.wire);
   // `basePx` is a width in SCREEN pixels — that is what its clamps are for, and
   // what `wireWidthPx` documents — so under the identity transform it is used as
   // it stands. Dividing it by the zoom as well made the width inversely

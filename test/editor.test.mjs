@@ -1563,8 +1563,11 @@ test("a connection is drawn as MSL says its connector declares", () => {
   const bus = wireIn(busWire);
   const pin = wireIn(pinWire);
   assert.ok(bus && pin, "wires were stroked");
-  // The connector's colour and double width for the bus …
-  assert.equal(bus.style, "rgb(255,204,51)", "the bus colour");
+  // The connector's colour and double width for the bus. Not the library's raw
+  // {255,204,51}: as a LINE on a pale canvas that is 1.46:1, which is a wire you
+  // cannot see, so the wire floor darkens it and leaves it a yellow. This page is
+  // the light theme; on a dark canvas the library's own value is used unchanged.
+  assert.equal(bus.style, "rgb(166,133,33)", "the bus colour, legible on this canvas");
   assert.ok(
     Math.abs(bus.width - 2 * pin.width) < 1e-9,
     `double width (${pin.width} -> ${bus.width})`

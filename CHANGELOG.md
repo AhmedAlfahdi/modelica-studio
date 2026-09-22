@@ -5,6 +5,36 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.2.0-beta.43] — 2026-10-14
+
+### Fixed
+
+- **A wire's colour is now legible on the canvas it is drawn on.** Taking the
+  colour from the library, as MSL says to, meant drawing wires in values the
+  library chose to FILL a white icon. Measured against the canvas, five of the
+  eight MSL wire colours were unreadable as lines on the dark canvas and two were
+  unreadable on the pale one:
+
+  | connector colour | light canvas | dark canvas |
+  |---|---|---|
+  | black (no colour named) | 20.3:1 | **1.30:1** |
+  | blocks `{0,0,127}` | 15.5:1 | **1.00:1** |
+  | electrical `{0,0,255}` | 8.3:1 | **1.88:1** |
+  | thermal `{191,0,0}` | 6.3:1 | **2.47:1** |
+  | multibody `{95,95,95}` | 6.2:1 | **2.53:1** |
+  | bus `{255,204,51}` | **1.46:1** | 10.7:1 |
+  | magnetic `{255,127,0}` | **2.45:1** | 6.4:1 |
+
+  A wire is the line a diagram is read through, so it is lifted towards the
+  theme's ink — in the smallest steps that clear 3:1, the WCAG threshold for a
+  graphical object — and **only** wires: an icon's greys are shading, and they are
+  left exactly as the library asked. In practice a shaft stays ink, a multibody
+  frame's grey is lifted until it can be followed, and the bus is the library's
+  yellow on a dark canvas and a darker yellow on a pale one.
+
+- The Help legend's swatches use the same function as the canvas, so the two
+  cannot drift apart in either theme.
+
 ## [0.2.0-beta.42] — 2026-10-14
 
 ### Added

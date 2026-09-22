@@ -246,6 +246,45 @@ export function themedColor(
   return isTooDarkForTheme(c, theme) ? lightenForTheme(c, theme) : c;
 }
 
+/**
+ * The colour to draw a WIRE in, for this theme.
+ *
+ * `themedColor` deliberately leaves unsaturated dark tones alone: in an icon a
+ * grey is shading, and lifting it would make the shading brighter than the symbol
+ * it exists to shade. A wire is not shading — it is the line the diagram is read
+ * through — and MSL's `{95,95,95}` multibody frame, which 14 connectors use to
+ * draw a DOUBLE-width line, measures about 2.4:1 against the dark canvas: a wire
+ * you cannot follow. So a wire's colour is lifted to the same floor the rest of
+ * the diagram's ink uses, and no further.
+ *
+ * Only for wires. The icons keep the library's own greys.
+ */
+export function wireColorFor(c: Color | undefined, theme: Theme): Color {
+  const base = themedColor(c, theme, "stroke");
+  if (wireContrast(base, theme.paper) >= MIN_WIRE_CONTRAST) return base;
+  // Toward the theme's ink, which is black on a light canvas and near-white on a
+  // dark one, in the smallest steps that clear the floor.
+  for (let t = 0.15; t <= 0.9; t += 0.05) {
+    const candidate = blendToward(base, theme.ink, t);
+    if (wireContrast(candidate, theme.paper) >= MIN_WIRE_CONTRAST) return candidate;
+  }
+  return theme.ink;
+}
+
+/**
+ * Contrast a wire needs against the canvas.
+ *
+ * 3:1 is the WCAG threshold for a graphical object, which a line is; the 4.5:1
+ * the palette's text uses is for reading words.
+ */
+const MIN_WIRE_CONTRAST = 3;
+
+/** WCAG contrast ratio between two colours. */
+function wireContrast(a: Color, b: Color): number {
+  const [x, y] = [relativeLuminance(a), relativeLuminance(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+}
+
 /** `rgb(...)` for a colour tuple. */
 function cssColor(c: Color): string {
   return `rgb(${c[0]},${c[1]},${c[2]})`;
