@@ -276,11 +276,11 @@ const HEATEXCHANGER = `model HeatExchanger "A heated mass losing heat to ambient
   Modelica.Thermal.HeatTransfer.Components.HeatCapacitor mass(C=2000, T(start=293.15, fixed=true))
     annotation(Placement(transformation(extent={{-30,10},{-10,30}})));
   Modelica.Thermal.HeatTransfer.Components.ThermalConductor loss(G=0.5)
-    annotation(Placement(transformation(extent={{0,-30},{20,-10}})));
+    annotation(Placement(transformation(extent={{10,0},{30,20}})));
   Modelica.Thermal.HeatTransfer.Sources.FixedTemperature ambient(T=293.15)
-    annotation(Placement(transformation(extent={{50,-30},{70,-10}})));
+    annotation(Placement(transformation(extent={{60,0},{80,20}})));
   Modelica.Blocks.Sources.Ramp ramp(height=500, duration=100, startTime=10)
-    annotation(Placement(transformation(extent={{-110,-10},{-90,10}})));
+    annotation(Placement(transformation(extent={{-100,-10},{-80,10}})));
 equation
   connect(ramp.y, heater.Q_flow);
   connect(heater.port, mass.port);

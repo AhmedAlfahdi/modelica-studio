@@ -139,7 +139,12 @@ test("no part is stranded from what it connects to", () => {
  * exists and who asked for it. This one is the example's author's own arrangement — the
  * ramp moved left so its signal reaches the heater without crossing the thermal path.
  */
-const OUTSIDE_THE_BOX = new Map([["HeatExchanger: ramp", { minX: -120 }]]);
+// Empty, and it was not always: `HeatExchanger: ramp` had a minX allowance of -120
+// while the example's author had the ramp at x -110..-90, reaching the heater without
+// crossing the thermal path. Their later arrangement puts it at -100..-80, so the
+// allowance is gone and the rule is the rule again. The mechanism stays, so the next
+// exception is a named entry with a reason rather than a wider box.
+const OUTSIDE_THE_BOX = new Map();
 
 test("the drawing stays in the box a Modelica diagram is drawn in", () => {
   // ±100 is the extent of a default icon and the frame OMEdit shows. Content outside it
