@@ -2878,3 +2878,103 @@ test("a paste is one step, and its undo leaves no half-pasted state", () => {
   editor.undo();
   assert.equal(editor.getModel().components.length, 2, "and undo takes it away again");
 });
+
+test("every gesture produces a model the save path can write", async () => {
+  // The combination, not either half: an edit the editor accepts but the save path
+  // refuses would leave the file untouched (the plugin says so rather than losing
+  // text), and the user's work would be sitting on a canvas that is not what the
+  // file says. A rename that strands a connection, a delete whose declaration the
+  // writer cannot find, a rotation it cannot express -- all of that lands here.
+  const { patchDiagramEdits, lastPatchRefusal } = await import(
+    path.join(buildLibs("gesture-save-edit", ["src/modelica/text-edit.ts"]), "text-edit.js")
+  );
+  const { parseModelica, toDiagramModel } = await import(
+    path.join(buildLibs("gesture-save-parse", ["src/modelica/parser.ts"]), "parser.js")
+  );
+
+  const SOURCE = [
+    "model M",
+    "  // Kept by the patcher, dropped by a rebuild: the save path is the patcher.",
+    "  Modelica.Blocks.Math.Gain r1(k = 1)",
+    "    annotation(Placement(transformation(extent={{-20,-20},{20,20}})));",
+    "  Modelica.Blocks.Math.Gain r2(k = 1)",
+    "    annotation(Placement(transformation(extent={{180,-20},{220,20}})));",
+    "equation",
+    "end M;",
+    "",
+  ].join("\n");
+
+  /** A fresh editor over the source, so each gesture starts from the same model. */
+  const fresh = () => makeEditor(toDiagramModel(parseModelica(SOURCE)[0], () => undefined).components);
+
+  const written = (editor) => {
+    const patched = patchDiagramEdits(SOURCE, editor.getModel());
+    assert.ok(patched, `the save path refused the model (${lastPatchRefusal() ?? ""})`);
+    const back = toDiagramModel(parseModelica(patched.text)[0], () => undefined);
+    assert.deepEqual(
+      back.components.map((c) => c.id).sort(),
+      editor.getModel().components.map((c) => c.id).sort(),
+      "the file declares exactly the components on the canvas"
+    );
+    assert.match(patched.text, /\/\/ Kept by the patcher/, "and kept a comment a rebuild would drop");
+    return { text: patched.text, back };
+  };
+
+  // ---- rotate ----
+  {
+    const { editor } = fresh();
+    click(editor, 0, 0);
+    editor.rotateSelection(90);
+    const { text, back } = written(editor);
+    assert.match(text, /rotation\s*=\s*90/, "the rotation reached the file");
+    assert.equal(
+      back.components.find((c) => c.id === "r1").placement.rotation,
+      90,
+      "and reads back as 90"
+    );
+  }
+
+  // ---- add a component ----
+  {
+    const { editor } = fresh();
+    const added = editor.addComponent("M.R", 500, 60);
+    const { text, back } = written(editor);
+    assert.ok(added, "a component was added");
+    assert.match(text, new RegExp(`\\b${added.id}\\b`), "its declaration is in the file");
+    assert.equal(back.components.length, 3, "and the file has three");
+  }
+
+  // ---- delete one, with a wire on it ----
+  {
+    const { editor } = fresh();
+    editor.addConnection({ component: "r1", port: "n" }, { component: "r2", port: "p" });
+    assert.equal(editor.getModel().connections.length, 1, "the wire is there to start with");
+    click(editor, 0, 0);
+    editor.deleteSelection();
+    const { text, back } = written(editor);
+    assert.doesNotMatch(text, /\br1\b/, "the deleted component is gone from the file");
+    assert.doesNotMatch(text, /connect\(/, "and so is its wire, or the file would not compile");
+    assert.equal(back.connections.length, 0);
+  }
+
+  // ---- rename, with the wire following it ----
+  {
+    const { editor } = fresh();
+    editor.addConnection({ component: "r1", port: "n" }, { component: "r2", port: "p" });
+    const res = editor.renameInstance("r1", "gain1");
+    assert.equal(res.ok, true, res.error ?? "");
+    const { text, back } = written(editor);
+    assert.match(text, /\bgain1\b/, "the new name is declared");
+    assert.doesNotMatch(text, /\br1\b/, "the old one is not");
+    assert.equal(back.connections[0].from.component, "gain1", "and the wire points at it");
+  }
+
+  // ---- duplicate ----
+  {
+    const { editor } = fresh();
+    click(editor, 0, 0);
+    editor.duplicate();
+    const { back } = written(editor);
+    assert.equal(back.components.length, 3, "the copy is declared too");
+  }
+});
