@@ -220,3 +220,14 @@ test("the two copies of the notes are the same notes", () => {
   );
   assert.deepEqual(differ, [], `${differ.length} notes differ between showcase/notes and examples/vault/showcase`);
 });
+
+test("the model checker is present and knows how to call omc", () => {
+  // `scripts/check-models.mjs` is what a reader uses to work through a folder of their
+  // own models. It is not part of the plugin, so nothing else would notice if it broke.
+  const script = path.join(repoRoot, "scripts", "check-models.mjs");
+  const text = fs.readFileSync(script, "utf8");
+  assert.match(text, /checkModel\(/, "it checks models rather than only loading them");
+  assert.match(text, /loadFile\(/, "and loads each file by path");
+  assert.match(text, /completed successfully/, "and looks for the line omc prints on success");
+  assert.match(text, /ONE AT A TIME|one at a time|mkdtempSync/, "one file per omc process");
+});
