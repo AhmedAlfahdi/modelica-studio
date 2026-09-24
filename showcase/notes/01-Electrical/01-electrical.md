@@ -14,18 +14,18 @@
 //@ time=1
 model Electrical "RC step response: a capacitor charging through a resistor"
   Modelica.Electrical.Analog.Sources.ConstantVoltage source(V=10)
-    annotation(Placement(transformation(extent={{-60,20},{-40,40}})));
+    annotation(Placement(transformation(extent={{-60,0},{-40,20}}, rotation=90)));
   Modelica.Electrical.Analog.Basic.Resistor resistor(R=100)
     annotation(Placement(transformation(extent={{-20,20},{0,40}})));
   Modelica.Electrical.Analog.Basic.Capacitor capacitor(C=0.001)
-    annotation(Placement(transformation(extent={{20,20},{40,40}})));
+    annotation(Placement(transformation(extent={{20,-10},{40,10}}, rotation=90)));
   Modelica.Electrical.Analog.Basic.Ground ground
-    annotation(Placement(transformation(extent={{20,-40},{40,-20}})));
+    annotation(Placement(transformation(extent={{-20,-40},{0,-20}})));
 equation
-  connect(source.p, resistor.p);
-  connect(resistor.n, capacitor.p);
-  connect(capacitor.n, source.n);
-  connect(source.n, ground.p);
+  connect(source.n, resistor.p) annotation(Line(points={{-50,20},{-50,30},{-35,30},{-20,30}}));
+  connect(resistor.n, capacitor.n) annotation(Line(points={{0,30},{15,30},{30,30},{30,10}}));
+  connect(capacitor.p, ground.p) annotation(Line(points={{30,-10},{30,-20},{10,-20},{-10,-20}}));
+  connect(ground.p, source.p) annotation(Line(points={{-10,-20},{-30,-20},{-50,-20},{-50,0}}));
 end Electrical;
 ```
 
