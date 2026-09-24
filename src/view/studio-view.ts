@@ -3304,23 +3304,38 @@ export class ModelicaStudioView extends ItemView {
       return;
     }
     if (!parameter) return;
-    this.beginBusy();
     if (this.plugin.stopTime() <= this.plugin.settings.startTime) {
       const msg =
         `the run window is empty: start ${this.plugin.settings.startTime} s, ` +
         `end ${this.plugin.stopTime()} s. The end time must be greater than the start.`;
       this.setStatus(`Not swept — ${msg}`);
       if (!opts.silent) new Notice(`Modelica: ${msg}`, 8000);
-      this.endBusy();
       return;
     }
     this.flushEditorIntoModel();
+    // Read BEFORE the busy state is taken. A throw from either of these — the
+    // source is produced by the patcher, which can refuse but must not be trusted
+    // not to throw — used to leave `busy` set and the pane marked for good, so no
+    // run, sweep or check could start again. Nothing is taken now until the
+    // preparation has succeeded.
+    let source: string;
+    let base: Record<string, string>;
+    try {
+      source = this.plugin.sourceForSave();
+      base = collectParameters(this.plugin.model);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.setStatus(`Sweep failed. ${msg}`);
+      if (!opts.silent) new Notice(`Modelica: the sweep could not start — ${msg}`, 8000);
+      return;
+    }
     this.busy = true;
-    // The same text Check, Save and a note block compile. Simulating the
-    // serializer's rebuild instead made one model behave two ways: Check said it
-    // compiled, and Simulate failed on a declaration the rebuild had dropped.
-    const source = this.plugin.sourceForSave();
-    const base = collectParameters(this.plugin.model);
+    this.beginBusy();
+    // The same text Check, Save and a note block compile (read above, before the
+    // busy state): simulating the serializer's rebuild instead made one model
+    // behave two ways -- Check said it compiled, and Simulate failed on a
+    // declaration the rebuild had dropped.
+    //
     // As in `runSimulation`: a sweep can take a minute, and the model can be
     // replaced while it runs. Everything below names the model it started on.
     const ranModel = this.plugin.model;

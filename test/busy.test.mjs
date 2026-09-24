@@ -490,3 +490,64 @@ test("a sweep that cannot start says so instead of doing nothing", async () => {
   assert.match(said, /^family=0 /, "the sweep did not run");
   assert.match(said, /already going/, `and the notice says why: ${said}`);
 });
+
+test("a sweep that cannot prepare does not leave the studio stuck", async () => {
+  // The busy share is taken for the whole sweep, so anything that can throw before
+  // the work starts must throw before the share is taken: `sourceForSave` is
+  // produced by the patcher, which refuses rather than throws but must not be
+  // trusted not to, and a throw used to leave `busy` set and the pane marked for
+  // good -- no further run, sweep or check could start.
+  const out = await runInDom(
+    [
+      HEAD,
+      "const { view, pane } = makeView();",
+      // On the PLUGIN, which is what the sweep asks for the text.
+      "view.plugin.sourceForSave = () => { throw new Error('the source could not be produced'); };",
+      `import { Notice } from "${ROOT}/test/helpers/obsidian-stub";`,
+      "Notice.messages.length = 0;",
+      "let threw = '';",
+      "try { await view.runSweep('e', '0.4, 0.8'); } catch (e) { threw = String(e.message); }",
+      "await settle();",
+      "const said = Notice.messages.slice().join(' / ');",
+      "const after = {",
+      "  busy: view.busy,",
+      "  owners: view.busyOwners,",
+      "  marked: pane.classList.contains('is-loading'),",
+      "  threw,",
+      "  said,",
+      "};",
+      // And the studio still works: a real source, and the sweep runs.
+      "view.plugin.sourceForSave = () => 'model Bounce\\n  der(h) = -1;\\nend Bounce;\\n';",
+      "const sweep = view.runSweep('e', '0.4, 0.8');",
+      "await settle();",
+      "view.__resolve(); await settle();",
+      "view.__resolve(); await sweep;",
+      "await settle();",
+      "const recovered = { family: view.family.length, busy: view.busy, marked: pane.classList.contains('is-loading') };",
+      "window.test('a failure to prepare takes nothing', () => JSON.stringify(after));",
+      "window.test('and the next sweep runs normally', () => JSON.stringify(recovered));",
+      "window.finish();",
+    ].join("\n")
+  );
+
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const d = Object.fromEntries(out.results.map((r) => [r.name, JSON.parse(r.detail)]));
+
+  assert.equal(d["a failure to prepare takes nothing"].busy, false, "the studio is not left busy");
+  assert.equal(d["a failure to prepare takes nothing"].owners, 0, "and no share of the indicator is held");
+  assert.equal(d["a failure to prepare takes nothing"].marked, false, "so the pane is not marked");
+  // Reported, not thrown at the caller: the sweep is a button press, and the
+  // reason belongs on screen.
+  assert.equal(d["a failure to prepare takes nothing"].threw, "", "nothing was thrown at the caller");
+  assert.match(
+    d["a failure to prepare takes nothing"].said,
+    /could not start.*could not be produced/,
+    `and the reason was said: ${d["a failure to prepare takes nothing"].said}`
+  );
+  assert.equal(d["and the next sweep runs normally"].family, 1, "the next sweep ran");
+  assert.equal(d["and the next sweep runs normally"].busy, false, "and finished cleanly");
+  assert.equal(d["and the next sweep runs normally"].marked, false, "with the pane clear");
+});
