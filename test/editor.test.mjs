@@ -2723,3 +2723,68 @@ test("a long parameter list is laid out to fit, not cut off", () => {
   );
   editor.destroy();
 });
+
+test("what a drag moves is what a save writes into the file", async () => {
+  // The guarantee the whole editor rests on, and the one nothing tested: the file
+  // a save produces must carry the geometry the canvas showed. Each half was
+  // covered -- `editor.test.mjs` moves components, `text-edit.test.mjs` writes a
+  // placement into the source -- but not the join, which is where a sign error or a
+  // stale snapshot would hide. This drives a REAL pointer drag through the editor
+  // and then runs the REAL save path over the model it produced.
+  const { patchDiagramEdits } = await import(
+    path.join(buildLibs("editor-save-edit", ["src/modelica/text-edit.ts"]), "text-edit.js")
+  );
+  const { parseModelica, toDiagramModel } = await import(
+    path.join(buildLibs("editor-save-parse", ["src/modelica/parser.ts"]), "parser.js")
+  );
+
+  const SOURCE = [
+    "model M",
+    "  // A comment that a rebuild would drop, so the save path is the patcher.",
+    "  Modelica.Blocks.Math.Gain r1(k = 1)",
+    "    annotation(Placement(transformation(extent={{-20,-20},{20,20}})));",
+    "  Modelica.Blocks.Math.Gain r2(k = 1)",
+    "    annotation(Placement(transformation(extent={{180,-20},{220,20}})));",
+    "equation",
+    "end M;",
+    "",
+  ].join("\n");
+
+  const model = toDiagramModel(parseModelica(SOURCE)[0], () => undefined);
+  const { editor } = makeEditor(model.components);
+  const before = editor.getModel().components[0].placement.extent.slice();
+
+  // A real drag: the canvas point (0,0) is the first component's centre, and
+  // `press`/`move`/`release` speak canvas points.
+  press(editor, 0, 0);
+  move(editor, 60, 40);
+  release(editor, 60, 40);
+  const dragged = editor.getModel().components[0].placement.extent.slice();
+
+  assert.notDeepEqual(dragged, before, "the drag moved it");
+
+  const patched = patchDiagramEdits(SOURCE, editor.getModel());
+  assert.ok(patched, "the save path accepted the dragged model");
+
+  // What the file now says, read back through the parser rather than by eye.
+  const saved = toDiagramModel(parseModelica(patched.text)[0], () => undefined);
+  const savedR1 = saved.components.find((c) => c.id === "r1");
+  const movedR2 = saved.components.find((c) => c.id === "r2");
+
+  assert.deepEqual(
+    savedR1.placement.extent,
+    dragged,
+    "the written extent is the extent the drag produced"
+  );
+  assert.deepEqual(
+    movedR2.placement.extent,
+    editor.getModel().components[1].placement.extent,
+    "and the component nobody touched did not move"
+  );
+  assert.match(patched.text, /\/\/ A comment that a rebuild would drop/, "the comment survived");
+  // Modelica's +y is up, so dragging DOWN the screen must lower the diagram y.
+  assert.ok(
+    savedR1.placement.extent[1] < before[1],
+    `dragging down the screen lowers the diagram y (${before[1]} -> ${savedR1.placement.extent[1]})`
+  );
+});
