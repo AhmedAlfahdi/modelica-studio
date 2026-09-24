@@ -5,6 +5,51 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.18] — 2026-09-24
+
+### Fixed
+
+- **A diagram edit no longer deletes what the diagram cannot express.** Saving after any
+  drag rebuilt the class from the parsed diagram, and that projection has no field for a
+  nested `package Medium = ...`, an `extends`, an `import`, an `algorithm` section, a
+  `protected` marker, a model annotation, a description string or a comment. The plugin's
+  own history folder holds the result: a 4227-byte `TwoOutletTank` became 1888 bytes with
+  no declaration of `Medium` at all, and every later run of that file failed with
+  `Base class Medium not found in scope TwoOutletTank`.
+
+  A diagram edit now writes its changes into the file's own text, touching only the
+  declarations the diagram owns (components, variables, connect statements and the model's
+  Diagram annotation), and verifies the result by re-parsing it before returning it. A
+  declaration that did not change is never re-emitted, so a drag keeps its comment, its
+  formatting and its description string.
+
+- **Simulate and Sweep compile what Save and Check compile.** They used the same lossy
+  rebuild, so Check could report that a model compiled while Simulate failed on a
+  declaration the rebuild had dropped.
+
+- **Revert, and "Reload from disk", no longer write the studio's copy over the file on
+  the way in.** Both exist to put the file back; the flush they performed first destroyed
+  the newer external write they were meant to protect.
+
+- **A restart keeps a model that was never saved.** The layout-ready handler re-parsed the
+  snapshot's source over the restored diagram — for an un-saved model, the bare
+  `model X end X;` skeleton it was built over — which emptied it. `modelOutdated` is now
+  persisted, so a diagram that is newer than its source survives, and the next save writes
+  its edits into that text.
+
+- **Replacing the model saves the one being replaced.** The Examples picker, a note
+  block's "Open diagram" and restoring a revision replaced the model with no flush and no
+  prompt, while opening a file flushed and New asked.
+
+- **A finished run is not adopted by a model that replaced the one that ran.** A compile
+  takes seconds; the result, its log line and its chart are now dropped when the model
+  changed in the meantime.
+
+### Added
+
+- `docs/audit-2026-09-24.md`: the full audit behind these fixes — 28 findings with the
+  evidence for each, produced with four parallel audits of the largest untested modules.
+
 ## [0.3.17] — 2026-10-14
 
 ### Changed

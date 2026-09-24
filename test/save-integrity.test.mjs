@@ -197,7 +197,15 @@ test("there is a way back to the file on disk", () => {
 
   // It reloads from the FILE, not from anything cached: the point is to get back
   // to what is on disk, which may have changed outside the plugin.
-  assert.match(revert[0], /loadModelFromPath\(path\)/, "it reloads from the path");
+  assert.match(revert[0], /loadModelFromPath\(path/, "it reloads from the path");
+  // And it must NOT write the studio's copy first: that flush put the to-be-discarded
+  // text over the file the revert was about to read, so "Reload from disk" -- the
+  // action that protects a newer external write -- destroyed it.
+  assert.match(
+    revert[0],
+    /discardStudioEdits: true/,
+    "and asks the loader not to save over the file it is about to read"
+  );
   // It is confirmed, because it discards work with no undo.
   assert.match(revert[0], /confirmDiscard\(/, "it asks first");
   assert.match(revert[0], /discarded/, "and says what will be lost");
@@ -255,9 +263,26 @@ test("the file is what a restart loads, not the plugin's snapshot", () => {
   const ready = /onLayoutReady\(\(\) => \{[\s\S]*?\n    \}\);/.exec(main);
   assert.ok(ready, "the layout-ready handler is present");
   assert.match(ready[0], /adoptPendingSource\(\)/, "the file is consulted once the vault is readable");
-  assert.match(main, /adoptSourceFromFile\(\): void \{/, "and the adoption exists");
+  assert.match(main, /adoptSourceFromFile\(\): boolean \{/, "and the adoption exists");
+  // It reports whether it took the file's text, because the handler must not
+  // re-parse a source it did not adopt over the diagram the snapshot restored.
+  assert.match(
+    main,
+    /const adopted = this\.adoptPendingSource\(\)/,
+    "and the handler knows whether anything was adopted"
+  );
+  assert.match(
+    main,
+    /if \(!adopted\) \{/,
+    "so a model with no file keeps the diagram the snapshot restored"
+  );
+  assert.match(
+    main,
+    /modelOutdated: this\.modelOutdated/,
+    "and the flag that says the diagram is newer survives the restart"
+  );
 
-  const adopt = /private adoptSourceFromFile\(\): void \{[\s\S]*?\n  \}/.exec(main);
+  const adopt = /private adoptSourceFromFile\(\): boolean \{[\s\S]*?\n  \}/.exec(main);
   assert.ok(adopt, "the adoption exists");
   // It reads the FILE for the model's tracked path, and takes its text.
   assert.match(adopt[0], /this\.settings\.modelFiles\[this\.model\.name\]/, "it uses the tracked path");
@@ -316,7 +341,7 @@ test("the file is adopted only once the vault can be read", () => {
 
   // The failure modes are reported rather than silent, which is what made this
   // one hard to find.
-  const adopt = /private adoptSourceFromFile\(\): void \{[\s\S]*?\n  \}/.exec(main);
+  const adopt = /private adoptSourceFromFile\(\): boolean \{[\s\S]*?\n  \}/.exec(main);
   assert.match(adopt[0], /is not in the vault yet/, "an unindexed vault is reported");
   assert.match(adopt[0], /could not be read/, "and so is an unreadable file");
 });

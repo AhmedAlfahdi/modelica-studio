@@ -84,6 +84,17 @@ import {
 import { ModelicaStudioView, VIEW_TYPE_MODELICA } from "./view/studio-view";
 import { ModelicaStudioSettingTab, DEFAULT_SETTINGS, type ModelicaStudioSettings , mergeSettings, migrateSettings } from "./settings";
 
+/** How a model is loaded over the one that is open. */
+export interface LoadOptions {
+  /**
+   * Load the file WITHOUT writing the studio's current model first.
+   *
+   * Set by Revert and by "Reload from disk", which exist to put the file back:
+   * flushing first would overwrite the version being read.
+   */
+  discardStudioEdits?: boolean;
+}
+
 export default class ModelicaStudioPlugin extends Plugin {
   settings: ModelicaStudioSettings = { ...DEFAULT_SETTINGS };
   model: DiagramModel = emptyDiagram();
@@ -597,31 +608,33 @@ export default class ModelicaStudioPlugin extends Plugin {
    * did nothing: the vault is not indexed yet, so the model's file is not found
    * and the snapshot is kept.
    */
-  adoptPendingSource(): void {
-    if (!this.pendingSourceAdoption) return;
+  adoptPendingSource(): boolean {
+    if (!this.pendingSourceAdoption) return false;
     this.pendingSourceAdoption = false;
-    this.adoptSourceFromFile();
+    return this.adoptSourceFromFile();
   }
 
-  private adoptSourceFromFile(): void {
+  /** True when the file's text was taken. */
+  private adoptSourceFromFile(): boolean {
     const path = this.settings.modelFiles[this.model.name];
     if (!path) {
       this.diag(`load: ${this.model.name} has no tracked file`, "info");
-      return;
+      return false;
     }
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) {
       this.diag(`load: ${path} is not in the vault yet`, "warn");
-      return;
+      return false;
     }
     const text = this.cachedFileText(path);
     if (text === null || !text.trim()) {
       this.diag(`load: ${path} could not be read`, "warn");
-      return;
+      return false;
     }
     this.modelSource = text;
     this.modelOutdated = true; // the diagram came from the snapshot, not this text
     this.diag(`load: took the source from ${path} (${text.length} chars)`, "info");
+    return true;
   }
 
   /**
@@ -1234,12 +1247,33 @@ export default class ModelicaStudioPlugin extends Plugin {
     // is what makes a save survive a restart.
     this.app.workspace.onLayoutReady(() => {
       if (!this.pendingSourceAdoption) return;
-      this.adoptPendingSource();
+      // Whether the DIAGRAM in the snapshot is newer than the source beside it:
+      // true when the last session ended with a diagram edit that had not been
+      // written to the file. Read before adoption, which sets it.
+      const diagramIsNewer = this.modelOutdated;
+      const adopted = this.adoptPendingSource();
+      // No file to adopt from (a model the user built and never saved): the
+      // snapshot's diagram is the only copy there is. Re-parsing its source --
+      // which for an un-saved model is the bare `model X end X;` skeleton the
+      // diagram was built over -- is what emptied a hand-built model on the next
+      // launch, so there is nothing to re-parse and nothing to replace.
+      if (!adopted) {
+        this.getView()?.loadModelIntoEditor();
+        return;
+      }
+      if (diagramIsNewer) {
+        // The file's text is now the model's text, but the diagram holds edits the
+        // file has not got. Leaving `modelOutdated` set is what makes the next save
+        // write those edits INTO that text instead of discarding them.
+        this.modelOutdated = true;
+        this.getView()?.loadModelIntoEditor();
+        return;
+      }
       // Re-parse so the diagram matches the source that was just adopted, and
       // push it to the view: the view may already have rendered the snapshot,
       // because it opens before the layout is ready. `setModelFromSource` alone
       // updates the plugin and leaves the editor showing the old text.
-      void this.setModelFromSource(this.modelSource).then(() => {
+      void this.setModelFromSource(this.modelSource, { flushFirst: false }).then(() => {
         // The view may already have rendered the snapshot, so it is told again
         // after the source has been adopted.
         this.getView()?.loadModelIntoEditor();
@@ -1696,10 +1730,19 @@ export default class ModelicaStudioPlugin extends Plugin {
       modelStopTime?: number;
       /** The source the model was parsed from, when it came from a file. */
       modelSource?: string;
+      /** True when the diagram holds edits that source has not got. */
+      modelOutdated?: boolean;
     } | null;
     this.settings = migrateSettings(mergeSettings(DEFAULT_SETTINGS, data), data);
     if (data?.model && Array.isArray(data.model.components)) {
-      this.replaceModel(data.model, typeof data.modelSource === "string" ? data.modelSource : "");
+      // `modelOutdated` comes back too, because the snapshot's DIAGRAM is the only
+      // copy of a diagram-only edit: without the flag the layout-ready handler
+      // treated the source as the truth and re-parsed it over the restored model.
+      this.replaceModel(
+        data.model,
+        typeof data.modelSource === "string" ? data.modelSource : "",
+        data.modelOutdated === true
+      );
       // The FILE wins over the snapshot -- see `adoptSourceFromFile`. Deferred to
       // `onLayoutReady` rather than done here: `loadSettings` runs before Obsidian
       // has indexed the vault, so every lookup returned "not in the vault yet" and
@@ -1807,6 +1850,10 @@ export default class ModelicaStudioPlugin extends Plugin {
       model: this.model,
       modelSchema: MODEL_SCHEMA,
       modelSource: this.modelSource,
+      // Whether the diagram is newer than that source. Without it a restart
+      // re-parsed the stale source over the restored diagram, which threw away
+      // every diagram-only edit -- and, for a model with no file, the model.
+      modelOutdated: this.modelOutdated,
       // The time span belongs to the model, not to the plugin. Kept beside the
       // diagram so restoring the model restores the span it is meant to run
       // over, instead of inheriting whatever the previous model used.
@@ -1856,17 +1903,17 @@ export default class ModelicaStudioPlugin extends Plugin {
    * Open a model by vault path, for the places that have a path rather than a
    * file: a drop carries `Modelica/Tank.mo`, not the object.
    */
-  async loadModelFromPath(path: string): Promise<void> {
+  async loadModelFromPath(path: string, opts: LoadOptions = {}): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) {
       new Notice(`Modelica: ${path} was not found in the vault.`);
       return;
     }
     await this.activateView();
-    await this.loadModelFromFile(file);
+    await this.loadModelFromFile(file, opts);
   }
 
-  async loadModelFromFile(file: TFile): Promise<void> {
+  async loadModelFromFile(file: TFile, opts: LoadOptions = {}): Promise<void> {
     // Write out whatever is currently open, before it is replaced.
     //
     // This was a silent data-loss path: loading a model overwrote the current one
@@ -1874,7 +1921,13 @@ export default class ModelicaStudioPlugin extends Plugin {
     // repair made just before opening another model was never written -- and the
     // debounce that would have written it was cancelled by the very act of
     // switching. Nothing warned, because nothing had failed.
-    await this.flushCurrentModel();
+    //
+    // `discardStudioEdits` is the exception, and it is the whole point of Revert
+    // and of "Reload from disk": both mean "put the FILE back", so flushing first
+    // wrote the studio's copy over the very version that was about to be read --
+    // the one action whose purpose is to protect a newer external write destroyed
+    // it, and the pre-revert text survived only in the history folder.
+    if (!opts.discardStudioEdits) await this.flushCurrentModel();
     const text = await this.app.vault.read(file);
     // What this plugin saw, so that a later difference means someone else wrote it.
     this.rememberFileText(file.path, text);
@@ -2087,7 +2140,18 @@ export default class ModelicaStudioPlugin extends Plugin {
    * Replace the active diagram from Modelica source and refresh the view.
    * Returns the parsed model, or undefined when the source has no classes.
    */
-  async setModelFromSource(source: string): Promise<DiagramModel | undefined> {
+  async setModelFromSource(
+    source: string,
+    opts: { flushFirst?: boolean } = {}
+  ): Promise<DiagramModel | undefined> {
+    // Replacing what is open is a save point for it: every path that does this
+    // (a note block's "Open diagram", the Examples picker, restoring a revision)
+    // used to drop the outgoing model's unsaved work with no prompt, while
+    // `loadModelFromFile` flushed and `newModel` asked. The default is to flush,
+    // so a caller that forgets gets the safe behaviour rather than the lossy one;
+    // the startup path passes `false` because there is nothing of the user's to
+    // save yet and a write at every launch is not wanted.
+    if (opts.flushFirst !== false) await this.flushCurrentModel();
     await this.ensureLibrary();
     const classes = parseModelica(source);
     if (classes.length === 0) return undefined;

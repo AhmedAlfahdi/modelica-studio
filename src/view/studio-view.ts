@@ -3248,6 +3248,10 @@ export class ModelicaStudioView extends ItemView {
     // compiled, and Simulate failed on a declaration the rebuild had dropped.
     const source = this.plugin.sourceForSave();
     const base = collectParameters(this.plugin.model);
+    // As in `runSimulation`: a sweep can take a minute, and the model can be
+    // replaced while it runs. Everything below names the model it started on.
+    const ranModel = this.plugin.model;
+    const ranName = ranModel.name;
     const runs: FamilyRun[] = [];
     // Determinate, because the count is known: a bar that fills to 2 of 5 says
     // more than a bar that sweeps forever, and the sweep is the one run that can
@@ -3257,11 +3261,11 @@ export class ModelicaStudioView extends ItemView {
     try {
       for (const [i, value] of values.entries()) {
         this.setStatus(
-          `Sweeping ${this.plugin.model.name}: ${parameter}=${value} (${i + 1} of ${values.length})…`
+          `Sweeping ${ranName}: ${parameter}=${value} (${i + 1} of ${values.length})…`
         );
         setBusy(this.resultsEl, true, (i / values.length) * 100);
         const result = await this.plugin.backend.simulate({
-          modelName: this.plugin.model.name,
+          modelName: ranName,
           source,
           parameters: { ...base, [parameter]: String(value) },
           startTime: this.plugin.settings.startTime,
@@ -3278,7 +3282,7 @@ export class ModelicaStudioView extends ItemView {
       // Named, because a sweep of the wrong model is the failure that looks like
       // a physics problem: the error quotes components the user did not draw.
       new Notice(
-        `Modelica: the sweep of ${this.plugin.model.name} stopped — ` +
+        `Modelica: the sweep of ${ranName} stopped — ` +
           `${err instanceof Error ? err.message : err}`
       );
       this.busy = false;
@@ -3287,6 +3291,13 @@ export class ModelicaStudioView extends ItemView {
     }
     this.busy = false;
     this.clearBusy();
+    if (this.plugin.model !== ranModel) {
+      // The sweep belongs to a model that is no longer open: its runs would be
+      // drawn as a family over the new model's plot.
+      this.setStatus(`${ranName} was swept, but the studio moved on — the runs were discarded.`);
+      this.plugin.diag(`sweep ${ranName}: discarded, the model changed while it ran`, "warn");
+      return;
+    }
     this.sweepField = { parameter, values: valuesText };
     // The last run becomes the current one, so the cursor, the trace list and the
     // inspector all describe something real; the rest are drawn behind it.
@@ -3309,8 +3320,8 @@ export class ModelicaStudioView extends ItemView {
     }
     this.drawResults();
     this.renderPlotPane();
-    this.setStatus(`Swept ${parameter} over ${values.length} values of ${this.plugin.model.name}`);
-    this.plugin.diag(`sweep ${this.plugin.model.name}: ${parameter} = ${values.join(", ")}`);
+    this.setStatus(`Swept ${parameter} over ${values.length} values of ${ranName}`);
+    this.plugin.diag(`sweep ${ranName}: ${parameter} = ${values.join(", ")}`);
   }
 
   /** Repaint the results pane: the plots settings are read while drawing. */
@@ -3681,7 +3692,9 @@ export class ModelicaStudioView extends ItemView {
       `Everything since the last save is discarded, and the model is reloaded from ${path}.`
     );
     if (!confirmed) return;
-    await this.plugin.loadModelFromPath(path);
+    // `discardStudioEdits`: the point is to put the FILE back, so the studio's
+    // copy must not be written over it on the way in.
+    await this.plugin.loadModelFromPath(path, { discardStudioEdits: true });
     this.setStatus(`Reverted ${name} to ${path}.`);
   }
 
@@ -4165,6 +4178,13 @@ export class ModelicaStudioView extends ItemView {
 
   async runSimulation(opts: { silent?: boolean } = {}): Promise<void> {
     if (this.busy) return;
+    // Which model this run belongs to. A compile takes seconds, and the model can
+    // be replaced while it runs; everything after the `await` used to re-read
+    // `this.plugin.model`, so a finished run was adopted as the NEW model's result
+    // and published under its name. Identity is the test, because every model
+    // change replaces the object.
+    const ranModel = this.plugin.model;
+    const ranName = ranModel.name;
     // What is on screen is what runs: the code editor holds edits that have not
     // been parsed into the model yet, and simulating the previous version of the
     // source would be a lie about what was tested.
@@ -4208,7 +4228,7 @@ export class ModelicaStudioView extends ItemView {
       parameters = collectParameters(this.plugin.model);
 
       const result = await this.plugin.backend.simulate({
-        modelName: this.plugin.model.name,
+        modelName: ranName,
         source,
         parameters,
         startTime: this.plugin.settings.startTime,
@@ -4218,6 +4238,14 @@ export class ModelicaStudioView extends ItemView {
         solver: this.plugin.settings.solver || undefined,
       });
 
+      if (this.plugin.model !== ranModel) {
+        // The model was replaced while this was compiling. Its result belongs to a
+        // model that is no longer on screen: adopting it would draw one model's
+        // curves under another's name. Say so and drop it.
+        this.setStatus(`${ranName} finished, but the studio moved on — the result was discarded.`);
+        this.plugin.diag(`sim ${ranName}: discarded, the model changed while it ran`, "warn");
+        return;
+      }
       this.adoptResult(result);
       // A plain run replaces the run on screen, so the sweep's label no longer
       // describes it.
@@ -4229,7 +4257,7 @@ export class ModelicaStudioView extends ItemView {
       this.clearLogBadge();
       this.resetZoom();
       this.plugin.diag(
-        `sim ${this.plugin.model.name}: t=${result.time[0]}..${result.time[result.time.length - 1]}` +
+        `sim ${ranName}: t=${result.time[0]}..${result.time[result.time.length - 1]}` +
           ` in ${result.time.length} samples`
       );
       // Prefer what the model itself names, when it came from a built-in

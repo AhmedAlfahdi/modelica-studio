@@ -647,3 +647,186 @@ test("a diagram edit keeps what the diagram cannot say", { skip: !HAS_BUNDLE }, 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+/* ------------------------------------------------------------------ */
+/* Replacing a model must not be a way to lose one                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A plugin instance whose vault records every write.
+ *
+ * The vault is the evidence in all three tests below: the defect was never an
+ * exception, it was a write that should not have happened (Revert) or one that
+ * never did (opening another model).
+ */
+function makeInstance(over = {}) {
+  const mod = loadBundle();
+  const instance = new mod.default();
+  const files = new Map(Object.entries(over.files ?? {}));
+  const writes = [];
+  const TFileClass = obsidianStub.TFile;
+  const fileAt = (p) => {
+    const f = new TFileClass();
+    f.path = p;
+    f.name = p.split("/").pop();
+    f.extension = "mo";
+    return f;
+  };
+  let layoutReady = null;
+  instance.app = {
+    vault: {
+      configDir: ".obsidian",
+      adapter: { getBasePath: () => fs.mkdtempSync(path.join(os.tmpdir(), "switch-")) },
+      getAbstractFileByPath: (p) => (files.has(p) ? fileAt(p) : null),
+      read: async (f) => files.get(f.path) ?? "",
+      modify: async (f, text) => {
+        writes.push({ path: f.path, text, created: false });
+        files.set(f.path, text);
+      },
+      create: async (p, text) => {
+        writes.push({ path: p, text, created: true });
+        files.set(p, text);
+        return fileAt(p);
+      },
+      createFolder: async () => {},
+      getFiles: () => [],
+    },
+    workspace: {
+      getLeavesOfType: () => [],
+      getActiveFile: () => null,
+      on: () => {},
+      onLayoutReady: (cb) => {
+        layoutReady = cb;
+      },
+    },
+  };
+  instance.manifest = { id: "modelica-studio", version: "0.0.0-test" };
+  instance.settings = {
+    modelFiles: {},
+    modelFolder: "Modelica",
+    modelStopTimes: {},
+    stopTime: 20,
+    ...(over.settings ?? {}),
+  };
+  const payloads = [];
+  instance.saveData = async (d) => {
+    payloads.push(d);
+  };
+  // No view in this harness, and no library: the index build would read the whole
+  // Modelica Standard Library off disk for a test about where bytes are written.
+  instance.getView = () => null;
+  instance.ensureLibrary = async () => {};
+  // Opening a view is not what these tests are about; without this the load path
+  // stops at the workspace before it reaches the vault.
+  instance.activateView = async () => {};
+  return { instance, files, writes, payloads, fireLayoutReady: () => layoutReady?.() };
+}
+
+async function parserLib() {
+  return import(path.join(buildLibs("switch-parser", ["src/modelica/parser.ts"]), "parser.js"));
+}
+
+test("Revert reads the file instead of writing the studio's copy over it", { skip: !HAS_BUNDLE }, async () => {
+  // The disk copy is "v1"; the studio holds an unsaved "v2". Reloading to get v1
+  // back flushed the studio's v2 onto the file FIRST, so the newer external write
+  // the action exists to protect was destroyed -- and the pre-revert text survived
+  // only in the history folder.
+  const onDisk = "model Tank\n  Real x;\nend Tank;\n";
+  const inStudio = "model Tank\n  Real x(start = 1);\nend Tank;\n";
+  const { parseModelica, toDiagramModel } = await parserLib();
+
+  const { instance, files, writes } = makeInstance({
+    files: { "Modelica/Tank.mo": onDisk },
+    settings: { modelFiles: { Tank: "Modelica/Tank.mo" } },
+  });
+  instance.adoptModel(toDiagramModel(parseModelica(inStudio)[0], () => undefined), inStudio);
+  instance.markSourceStale();
+
+  await instance.loadModelFromPath("Modelica/Tank.mo", { discardStudioEdits: true });
+
+  assert.equal(files.get("Modelica/Tank.mo"), onDisk, "the file was not overwritten on the way in");
+  assert.deepEqual(writes, [], "and nothing was written at all");
+  assert.equal(instance.modelSourceText(), onDisk, "the studio now holds what the file holds");
+  assert.equal(instance.modelOutdated, false, "and the two agree");
+});
+
+test("opening another model still saves the one being replaced", { skip: !HAS_BUNDLE }, async () => {
+  // The other half of the rule: an ordinary open is a save point. Its flush must
+  // not have been traded away for the Revert fix above.
+  const onDisk = "model A\n  Modelica.Blocks.Math.Gain g(k = 1) annotation(Placement(transformation(extent={{-10,-10},{10,10}})));\nend A;\n";
+  const { parseModelica, toDiagramModel } = await parserLib();
+
+  const { instance, writes } = makeInstance({
+    files: { "Modelica/A.mo": onDisk },
+    settings: { modelFiles: { A: "Modelica/A.mo" } },
+  });
+  instance.adoptModel(toDiagramModel(parseModelica(onDisk)[0], () => undefined), onDisk);
+  instance.model.components[0].placement.extent = [0, 0, 20, 20];
+  instance.markSourceStale();
+
+  await instance.loadModelFromPath("Modelica/A.mo");
+  assert.ok(
+    writes.some((w) => w.path === "Modelica/A.mo" && w.text.includes("extent={{0,0},{20,20}}")),
+    `the outgoing model was written first, got: ${JSON.stringify(writes)}`
+  );
+});
+
+test("a restart keeps a model that was never saved", { skip: !HAS_BUNDLE }, async () => {
+  // Built in the studio, never saved to a file: the snapshot in data.json is the
+  // only copy. On the next launch the layout-ready handler re-parsed the snapshot's
+  // SOURCE -- for an un-saved model the bare `model X end X;` skeleton the diagram
+  // was built over -- and the model came back empty.
+  const src = "model MyModel\nend MyModel;\n";
+  const { parseModelica, toDiagramModel } = await parserLib();
+
+  const first = makeInstance();
+  first.instance.adoptModel(toDiagramModel(parseModelica(src)[0], () => undefined), src);
+  first.instance.model.components.push({
+    id: "gain",
+    className: "Modelica.Blocks.Math.Gain",
+    placement: { extent: [-10, -10, 10, 10], rotation: 0, visible: true },
+    params: { k: "1" },
+  });
+  first.instance.markSourceStale();
+  await first.instance.persist();
+  const payload = first.payloads.at(-1);
+  assert.equal(payload.model.components.length, 1, "the diagram is in the payload");
+  assert.equal(payload.modelOutdated, true, "and the flag saying it is newer than that source");
+
+  // The next launch.
+  const second = makeInstance();
+  second.instance.loadData = async () => payload;
+  await second.instance.loadSettings();
+  assert.equal(second.instance.model.components.length, 1, "the snapshot's diagram is restored");
+  second.fireLayoutReady();
+  assert.equal(
+    second.instance.model.components.length,
+    1,
+    "and the restart does not throw it away in favour of the skeleton it was built over"
+  );
+});
+
+test("replacing the model saves the one being replaced", { skip: !HAS_BUNDLE }, async () => {
+  // The Examples picker, a note block's "Open diagram" and restoring a revision all
+  // went through `setModelFromSource`, which replaced the model with no flush and
+  // no prompt -- while opening a file flushed. One of the three rules had to go,
+  // and it is the lossy one.
+  const onDisk = "model A\n  Modelica.Blocks.Math.Gain g(k = 1) annotation(Placement(transformation(extent={{-10,-10},{10,10}})));\nend A;\n";
+  const { parseModelica, toDiagramModel } = await parserLib();
+
+  const { instance, writes } = makeInstance({
+    files: { "Modelica/A.mo": onDisk },
+    settings: { modelFiles: { A: "Modelica/A.mo" } },
+  });
+  instance.adoptModel(toDiagramModel(parseModelica(onDisk)[0], () => undefined), onDisk);
+  instance.model.components[0].placement.extent = [0, 0, 20, 20];
+  instance.markSourceStale();
+
+  await instance.setModelFromSource("model B\nend B;\n");
+
+  assert.equal(instance.model.name, "B", "the new model is open");
+  assert.ok(
+    writes.some((w) => w.path === "Modelica/A.mo" && w.text.includes("extent={{0,0},{20,20}}")),
+    `A was saved before being replaced, got: ${JSON.stringify(writes)}`
+  );
+});

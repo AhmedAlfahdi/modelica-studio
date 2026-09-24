@@ -358,3 +358,45 @@ test("the stylesheet keeps the reduced-motion promise", () => {
     "the plugin uses the app's .is-loading rather than restating it"
   );
 });
+
+test("a run that finishes after the model was replaced is not adopted", async () => {
+  // A compile takes seconds. Nothing used to stop the model being replaced while
+  // it ran -- the toolbar stays live -- and every step after the `await` re-read
+  // `this.plugin.model`, so a finished run was adopted as the NEW model's result,
+  // published under its name, and logged with its stop time.
+  const out = await runInDom(
+    [
+      HEAD,
+      "const messages = [];",
+      "const { view, pane } = makeView({ setStatus: (t) => messages.push(String(t)) });",
+      "const ranName = view.plugin.model.name;",
+      "const running = view.runSimulation();",
+      "await settle();",
+      // Exactly what a model change does: the plugin replaces the model OBJECT.
+      "const other = { name: 'Other', components: [], connections: [], equations: [], graphics: [] };",
+      "view.plugin.model = other;",
+      "view.result = null;",
+      "view.__resolve();",
+      "await running;",
+      "await settle();",
+      "const state = {",
+      "  adopted: view.result === null ? 'nothing' : 'a result',",
+      "  status: messages.join(' | '),",
+      "  busy: view.busy,",
+      "};",
+      "window.test('the result of the replaced model is dropped', () => JSON.stringify(state));",
+      "window.finish();",
+    ].join("\n")
+  );
+
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const d = Object.fromEntries(out.results.map((r) => [r.name, r.detail]));
+  const state = JSON.parse(d["the result of the replaced model is dropped"]);
+
+  assert.equal(state.adopted, "nothing", "a finished run is not the new model's result");
+  assert.equal(state.busy, false, "and the studio is not left busy");
+  assert.match(state.status, /discarded/, "and it says what it did with the result");
+});
