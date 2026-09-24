@@ -15,14 +15,14 @@
 model BatteryDischarge "A battery powering a resistive load"
   parameter Modelica.Electrical.Batteries.ParameterRecords.CellData cellData(
     Qnom=3600, OCVmax=4.2, OCVmin=3.0, Ri=0.05)
-    annotation(Placement(transformation(extent={{-90,60},{-70,80}})));
+    annotation(Placement(transformation(extent={{-90,30},{-70,50}})));
   Modelica.Electrical.Batteries.BatteryStacks.CellStack battery(
     Ns=3, Np=1, cellData=cellData, useHeatPort=false, SOC(fixed=true, start=1))
-    annotation(Placement(transformation(extent={{-20,10},{0,30}})));
+    annotation(Placement(transformation(extent={{-10,20},{10,40}}, rotation=90)));
   Modelica.Electrical.Analog.Basic.Resistor load(R=15)
-    annotation(Placement(transformation(extent={{40,10},{60,30}})));
+    annotation(Placement(transformation(extent={{-50,60},{-30,80}})));
   Modelica.Electrical.Analog.Basic.Ground ground
-    annotation(Placement(transformation(extent={{40,-20},{60,0}})));
+    annotation(Placement(transformation(extent={{-60,0},{-40,20}})));
 equation
   connect(battery.p, load.p);
   connect(load.n, battery.n);

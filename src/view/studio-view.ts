@@ -4042,6 +4042,13 @@ export class ModelicaStudioView extends ItemView {
     const desc = this.plugin.saveState();
     this.statusEl.setText(desc.state === "saved" ? this.statusMessage : `${this.statusMessage} — ${desc.label}`);
     this.statusEl.toggleClass("is-unsaved", desc.state !== "saved");
+    // The header shows the same state, and every action that changes it also writes a
+    // status message. Refreshing it here rather than at forty call sites is what stops the
+    // three-way mismatch a reader hit: the tab said DCMotor, the header named
+    // HeatExchanger.mo, and the canvas held RLC, because loading an example wrote a status
+    // line without touching either of them. `refreshTitle` does not write the status, so
+    // this cannot recurse.
+    this.refreshTitle();
   }
 
   // `setBusy` and `setButtonBusy` are imported from `./busy`, so the studio and an

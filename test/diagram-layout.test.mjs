@@ -131,6 +131,16 @@ test("no part is stranded from what it connects to", () => {
   assert.deepEqual(bad, [], `${bad.length} connections stretch across the diagram`);
 });
 
+/**
+ * Symbols allowed outside the ±100 box, and why.
+ *
+ * A named exception rather than a wider box: widening the rule to fit one part would stop
+ * it catching the next one, and this way the reader of a failure is told which allowance
+ * exists and who asked for it. This one is the example's author's own arrangement — the
+ * ramp moved left so its signal reaches the heater without crossing the thermal path.
+ */
+const OUTSIDE_THE_BOX = new Map([["HeatExchanger: ramp", { minX: -120 }]]);
+
 test("the drawing stays in the box a Modelica diagram is drawn in", () => {
   // ±100 is the extent of a default icon and the frame OMEdit shows. Content outside it
   // is legal and looks like a mistake.
@@ -141,7 +151,9 @@ test("the drawing stays in the box a Modelica diagram is drawn in", () => {
     // and Phugoid are written that way on purpose, and there is no diagram to lay out.
     if (placed.length === 0) continue;
     for (const p of placed) {
-      if (p.left < -100 || p.right > 100 || p.bottom < -100 || p.top > 100) {
+      const allowed = OUTSIDE_THE_BOX.get(`${example.name}: ${p.name}`);
+      const minX = allowed?.minX ?? -100;
+      if (p.left < minX || p.right > 100 || p.bottom < -100 || p.top > 100) {
         bad.push(`${example.name}: ${p.name} spans x ${p.left}..${p.right}, y ${p.bottom}..${p.top}`);
       }
     }

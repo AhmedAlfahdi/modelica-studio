@@ -16,13 +16,13 @@ model HeatExchanger "A heated mass losing heat to ambient by convection"
   Modelica.Thermal.HeatTransfer.Sources.PrescribedHeatFlow heater
     annotation(Placement(transformation(extent={{-60,-10},{-40,10}})));
   Modelica.Thermal.HeatTransfer.Components.HeatCapacitor mass(C=2000, T(start=293.15, fixed=true))
-    annotation(Placement(transformation(extent={{-10,10},{10,30}})));
+    annotation(Placement(transformation(extent={{-30,10},{-10,30}})));
   Modelica.Thermal.HeatTransfer.Components.ThermalConductor loss(G=0.5)
-    annotation(Placement(transformation(extent={{-10,-30},{10,-10}})));
+    annotation(Placement(transformation(extent={{0,-30},{20,-10}})));
   Modelica.Thermal.HeatTransfer.Sources.FixedTemperature ambient(T=293.15)
-    annotation(Placement(transformation(extent={{40,-30},{60,-10}})));
+    annotation(Placement(transformation(extent={{50,-30},{70,-10}})));
   Modelica.Blocks.Sources.Ramp ramp(height=500, duration=100, startTime=10)
-    annotation(Placement(transformation(extent={{-90,20},{-70,40}})));
+    annotation(Placement(transformation(extent={{-110,-10},{-90,10}})));
 equation
   connect(ramp.y, heater.Q_flow);
   connect(heater.port, mass.port);

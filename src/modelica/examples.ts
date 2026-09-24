@@ -274,13 +274,13 @@ const HEATEXCHANGER = `model HeatExchanger "A heated mass losing heat to ambient
   Modelica.Thermal.HeatTransfer.Sources.PrescribedHeatFlow heater
     annotation(Placement(transformation(extent={{-60,-10},{-40,10}})));
   Modelica.Thermal.HeatTransfer.Components.HeatCapacitor mass(C=2000, T(start=293.15, fixed=true))
-    annotation(Placement(transformation(extent={{-10,10},{10,30}})));
+    annotation(Placement(transformation(extent={{-30,10},{-10,30}})));
   Modelica.Thermal.HeatTransfer.Components.ThermalConductor loss(G=0.5)
-    annotation(Placement(transformation(extent={{-10,-30},{10,-10}})));
+    annotation(Placement(transformation(extent={{0,-30},{20,-10}})));
   Modelica.Thermal.HeatTransfer.Sources.FixedTemperature ambient(T=293.15)
-    annotation(Placement(transformation(extent={{40,-30},{60,-10}})));
+    annotation(Placement(transformation(extent={{50,-30},{70,-10}})));
   Modelica.Blocks.Sources.Ramp ramp(height=500, duration=100, startTime=10)
-    annotation(Placement(transformation(extent={{-90,20},{-70,40}})));
+    annotation(Placement(transformation(extent={{-110,-10},{-90,10}})));
 equation
   connect(ramp.y, heater.Q_flow);
   connect(heater.port, mass.port);
@@ -339,19 +339,19 @@ const BUCKCONVERTER = `model BuckConverter "A step-down chopper feeding an RC lo
   Modelica.Electrical.PowerConverters.DCDC.ChopperStepDown chopper
     annotation(Placement(transformation(extent={{-20,20},{0,40}})));
   Modelica.Electrical.Analog.Sources.ConstantVoltage supply(V=24)
-    annotation(Placement(transformation(extent={{-70,20},{-50,40}})));
+    annotation(Placement(transformation(extent={{-100,20},{-80,40}}, rotation=90)));
   Modelica.Electrical.Analog.Basic.Ground ground
-    annotation(Placement(transformation(extent={{-70,-30},{-50,-10}})));
+    annotation(Placement(transformation(extent={{-80,-30},{-60,-10}})));
   Modelica.Electrical.Analog.Basic.Inductor inductor(L=0.002)
-    annotation(Placement(transformation(extent={{15,20},{35,40}})));
+    annotation(Placement(transformation(extent={{60,40},{80,60}})));
   Modelica.Electrical.Analog.Basic.Capacitor capacitor(C=0.0005)
-    annotation(Placement(transformation(extent={{50,0},{70,20}})));
+    annotation(Placement(transformation(extent={{70,10},{90,30}}, rotation=-90)));
   Modelica.Electrical.Analog.Basic.Resistor load(R=5)
-    annotation(Placement(transformation(extent={{50,-30},{70,-10}})));
+    annotation(Placement(transformation(extent={{40,-20},{60,0}})));
   Modelica.Blocks.Sources.Ramp duty(height=0.6, duration=0.001, startTime=0.0005)
-    annotation(Placement(transformation(extent={{-70,60},{-50,80}})));
+    annotation(Placement(transformation(extent={{-70,-70},{-50,-50}})));
   Modelica.Electrical.PowerConverters.DCDC.Control.SignalPWM pwm(f=20000, useConstantDutyCycle=false)
-    annotation(Placement(transformation(extent={{-30,60},{-10,80}})));
+    annotation(Placement(transformation(extent={{-30,-70},{-10,-50}})));
 equation
   connect(supply.p, chopper.dc_p1);
   connect(supply.n, chopper.dc_n1);
@@ -369,14 +369,14 @@ end BuckConverter;
 const BATTERYDISCHARGE = `model BatteryDischarge "A battery powering a resistive load"
   parameter Modelica.Electrical.Batteries.ParameterRecords.CellData cellData(
     Qnom=3600, OCVmax=4.2, OCVmin=3.0, Ri=0.05)
-    annotation(Placement(transformation(extent={{-90,60},{-70,80}})));
+    annotation(Placement(transformation(extent={{-90,30},{-70,50}})));
   Modelica.Electrical.Batteries.BatteryStacks.CellStack battery(
     Ns=3, Np=1, cellData=cellData, useHeatPort=false, SOC(fixed=true, start=1))
-    annotation(Placement(transformation(extent={{-20,10},{0,30}})));
+    annotation(Placement(transformation(extent={{-10,20},{10,40}}, rotation=90)));
   Modelica.Electrical.Analog.Basic.Resistor load(R=15)
-    annotation(Placement(transformation(extent={{40,10},{60,30}})));
+    annotation(Placement(transformation(extent={{-50,60},{-30,80}})));
   Modelica.Electrical.Analog.Basic.Ground ground
-    annotation(Placement(transformation(extent={{40,-20},{60,0}})));
+    annotation(Placement(transformation(extent={{-60,0},{-40,20}})));
 equation
   connect(battery.p, load.p);
   connect(load.n, battery.n);
@@ -394,11 +394,11 @@ const DCMOTOR = `model DCMotor "A permanent-magnet DC machine driving a load"
     tau_nominal=0.05, w_nominal=300)
     annotation(Placement(transformation(extent={{60,0},{80,20}})));
   Modelica.Mechanics.Rotational.Components.Fixed housing
-    annotation(Placement(transformation(extent={{-30,-40},{-10,-20}})));
+    annotation(Placement(transformation(extent={{-20,-20},{0,0}})));
   Modelica.Electrical.Analog.Sources.RampVoltage supply(V=24, duration=0.5, startTime=0.1)
-    annotation(Placement(transformation(extent={{-70,0},{-50,20}})));
+    annotation(Placement(transformation(extent={{-20,30},{0,50}})));
   Modelica.Electrical.Analog.Basic.Ground ground
-    annotation(Placement(transformation(extent={{-70,-40},{-50,-20}})));
+    annotation(Placement(transformation(extent={{-50,20},{-30,40}})));
 equation
   connect(supply.p, motor.pin_ap);
   connect(supply.n, motor.pin_an);

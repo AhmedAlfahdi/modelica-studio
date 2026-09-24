@@ -171,6 +171,15 @@ test("the header follows the model that is open, and the tab names it", async ()
       "window.test('mount', () => mountError || firstHeader);",
       "window.test('after loading another model', () => loadError || secondHeader);",
       "window.test('and the tab label names the model', () => view.getDisplayText());",
+      "window.test('a status line refreshes it too', () => {",
+      // Loading an example writes a status line and nothing else. The header used to keep
+      // the previous model through that, which is how a reader ended up looking at RLC on a
+      // canvas under a tab that said DCMotor.
+      "  plugin.model = { name: 'RLC', components: [], connections: [], equations: [] };",
+      "  plugin.settings.modelFiles.RLC = 'Modelica/RLC.mo';",
+      "  view.setStatus('Loaded example: RLC');",
+      "  return header();",
+      "});",
       "window.finish();",
     ].join("\n")
   );
@@ -191,4 +200,9 @@ test("the header follows the model that is open, and the tab names it", async ()
     "and it follows the model when another one is loaded -- the bug was that it did not"
   );
   assert.equal(by["and the tab label names the model"], "Modelica Studio — TankOrifice");
+  assert.equal(
+    by["a status line refreshes it too"],
+    "RLC | Modelica/RLC.mo | modified",
+    "a status line is enough to bring the header up to date -- no separate call to remember"
+  );
 });

@@ -147,16 +147,27 @@ export async function planArrangement(shipped, theirs, name) {
  * it — so the first attempt edited the RLC circuit while reporting that it had moved the
  * Step in MassSpringDamper.
  */
-function applyOne(exampleSource, name, placement) {
-  const re = new RegExp(`\\b${name}\\b[\\s\\S]*?annotation\\s*\\(\\s*Placement\\s*\\(\\s*transformation\\s*\\(`);
-  const m = re.exec(exampleSource);
-  if (!m) throw new Error(`cannot find the placement of ${name} in the shipped source`);
+export function applyOne(exampleSource, name, placement) {
+  // Find the DECLARATION of that component, not the first mention of its name.
+  //
+  // `\bmass\b` matched the class comment -- `model HeatExchanger "A heated mass losing
+  // heat to ambient"` -- and the search then walked forward to the next annotation, which
+  // belonged to `heater`. The result was that mass's placement was written onto heater,
+  // and the same for two more components. Requiring `type name annotation` at the start of
+  // a line is what tells a declaration from prose: the comment is inside a quoted string,
+  // on the model line, so it cannot match.
+  const decl = new RegExp(
+    "(?:^|\\n)[ \\t]*(?:[A-Za-z_][\\w.]*[ \\t]+)+" +
+      name +
+      "\\b[\\s\\S]*?annotation\\s*\\(\\s*Placement\\s*\\(\\s*transformation\\s*\\(",
+    "g"
+  );
+  const m = decl.exec(exampleSource);
+  if (!m) throw new Error(`cannot find the declaration and placement of ${name}`);
   const open = m.index + m[0].length;
-  // Scan to the MATCHING close paren rather than to the next one: a component's parameter
-  // list may contain parentheses of its own -- `mass(T(start = 293.15))` -- and a regex
-  // that stops at the first `)` then fails to find the annotation at all. That is what
-  // "cannot find the placement of mass" meant, and the verification below is what caught
-  // it instead of writing a broken model.
+  // Scan to the MATCHING close paren: a parameter list may contain parentheses of its own
+  // (`HeatCapacitor mass(C=2000, T(start=293.15))`), and stopping at the first one never
+  // reaches the annotation.
   let depth = 1;
   let i = open;
   for (; i < exampleSource.length && depth > 0; i++) {
@@ -167,6 +178,7 @@ function applyOne(exampleSource, name, placement) {
   if (depth !== 0) throw new Error(`unbalanced parentheses in the placement of ${name}`);
   return exampleSource.slice(0, open) + placement + exampleSource.slice(i - 1);
 }
+
 
 
 /** The span of an example's source inside examples.ts, as `const NAME = \`…\`;`. */
@@ -245,11 +257,17 @@ async function main() {
   const next = text.slice(0, span.bodyStart) + body + text.slice(span.bodyEnd);
   if (next === text) throw new Error("nothing changed");
   fs.writeFileSync(EXAMPLES_TS, next);
-  // Verified by re-reading it through the same planner that planned the change.
-  const after = await planArrangement(shippedSource(name), body, name);
+  // Verified against THEIR source, not against the file just written. Re-reading
+  // `shippedSource(name)` compares the result with itself and passes whatever it is --
+  // which is how a write that put three placements on the wrong components was reported
+  // as successful.
+  const after = await planArrangement(body, theirs, name);
   if (after.changes.length !== 0 || after.refusals.length !== 0) {
     fs.writeFileSync(EXAMPLES_TS, text);
-    throw new Error(`the write did not take: ${JSON.stringify(after)}`);
+    throw new Error(
+      `the write did not take -- nothing was changed. ${after.changes.length} placement(s) still ` +
+        `differ from your file: ${after.changes.map((c) => c.component).join(", ") || "(none)"}`
+    );
   }
   console.log("\nwrote src/modelica/examples.ts");
 

@@ -96,3 +96,26 @@ test("a note's block is read without its directive", async () => {
   assert.match(source, /^model Demo /m);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("a component named in the class comment is not the component that moves", async () => {
+  // The bug that put three placements on the wrong components in a real example:
+  // `model HeatExchanger "A heated mass losing heat to ambient"` — the word "mass" appears
+  // in the comment, the search for the component by name found that first, and the next
+  // annotation after it belonged to `heater`. Mass's placement was written onto heater,
+  // which is exactly what a reader saw when they opened the example.
+  const { applyOne } = await import("../scripts/apply-arrangement.mjs");
+  const source = `model Demo "A heated mass losing heat to ambient"
+  Modelica.Thermal.HeatTransfer.Sources.PrescribedHeatFlow heater
+    annotation(Placement(transformation(extent={{50,-30},{70,-10}})));
+  Modelica.Thermal.HeatTransfer.Components.HeatCapacitor mass(C=2000, T(start=293.15))
+    annotation(Placement(transformation(extent={{-10,10},{10,30}})));
+end Demo;`;
+
+  const moved = applyOne(source, "mass", "extent={{-30,10},{-10,30}}");
+  assert.match(moved, /heater\n\s+annotation\(Placement\(transformation\(extent=\{\{50,-30\},\{70,-10\}\}\)\)\)/, "heater is unmoved");
+  assert.match(moved, /mass\(C=2000[\s\S]*?extent=\{\{-30,10\},\{-10,30\}\}/, "mass moved, through its own nested parameter list");
+
+  // And the same call must not throw for a component whose type has no parameter list.
+  const simple = applyOne(source, "heater", "extent={{0,0},{20,20}}");
+  assert.match(simple, /heater\n\s+annotation\(Placement\(transformation\(extent=\{\{0,0\},\{20,20\}\}/, "heater can be moved too");
+});
