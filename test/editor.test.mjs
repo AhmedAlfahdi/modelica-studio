@@ -2916,6 +2916,15 @@ test("every gesture produces a model the save path can write", async () => {
       editor.getModel().components.map((c) => c.id).sort(),
       "the file declares exactly the components on the canvas"
     );
+    // And with the same parameter values, which is the whole point of editing one.
+    for (const fromCanvas of editor.getModel().components) {
+      const fromFile = back.components.find((c) => c.id === fromCanvas.id);
+      assert.deepEqual(
+        fromFile.params,
+        fromCanvas.params,
+        `the file's ${fromCanvas.id} carries the parameters the canvas shows`
+      );
+    }
     assert.match(patched.text, /\/\/ Kept by the patcher/, "and kept a comment a rebuild would drop");
     return { text: patched.text, back };
   };
@@ -2967,6 +2976,21 @@ test("every gesture produces a model the save path can write", async () => {
     assert.match(text, /\bgain1\b/, "the new name is declared");
     assert.doesNotMatch(text, /\br1\b/, "the old one is not");
     assert.equal(back.connections[0].from.component, "gain1", "and the wire points at it");
+  }
+
+  // ---- a parameter, which is what an inspector edit is ----
+  {
+    const { editor } = fresh();
+    editor.setParam("r1", "k", "2.5");
+    const { text, back } = written(editor);
+    const line = text.split("\n").find((l) => /Gain r1\b/.test(l)) ?? "";
+    assert.match(line, /k\s*=\s*2\.5/, `the new value is on r1's own declaration: ${line}`);
+    assert.equal(back.components.find((c) => c.id === "r1").params.k, "2.5", "and reads back");
+    assert.equal(
+      back.components.find((c) => c.id === "r2").params.k,
+      "1",
+      "while r2's value is left alone"
+    );
   }
 
   // ---- duplicate ----
