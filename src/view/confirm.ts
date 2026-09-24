@@ -42,3 +42,47 @@ export function confirm(
     window.setTimeout(() => no.focus(), 0);
   });
 }
+
+/**
+ * A question with more than two answers.
+ *
+ * When the file changed on disk, "yes or no" is the wrong shape: reloading the file and
+ * overwriting it are BOTH destructive in one direction, and cancelling is the safe
+ * answer. A yes/no dialog forces one of the two to be the default, and the default is
+ * what a stray Enter gets.
+ *
+ * Resolves to the id of the button pressed, or `null` if the dialog was dismissed.
+ */
+export function choose(
+  app: App,
+  title: string,
+  body: string,
+  buttons: Array<{ id: string; label: string; warning?: boolean; focused?: boolean }>
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    const modal = new Modal(app);
+    modal.titleEl.setText(title);
+    modal.contentEl.createEl("p", { text: body });
+    let answered = false;
+    const done = (value: string | null) => {
+      if (answered) return;
+      answered = true;
+      modal.close();
+      resolve(value);
+    };
+    const row = modal.contentEl.createDiv({ cls: "modelica-studio-prompt-buttons" });
+    let focus: HTMLButtonElement | undefined;
+    for (const spec of buttons) {
+      const b = row.createEl("button", { text: spec.label });
+      if (spec.warning) b.addClass("mod-warning");
+      if (spec.focused) focus = b;
+      b.addEventListener("click", () => done(spec.id));
+    }
+    modal.onClose = () => done(null);
+    modal.open();
+    window.setTimeout(() => {
+      const first = focus ?? (row.firstElementChild as HTMLElement | null);
+      first?.focus?.();
+    }, 0);
+  });
+}

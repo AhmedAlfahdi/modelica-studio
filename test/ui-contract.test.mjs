@@ -507,7 +507,11 @@ test("Ctrl+S saves the model, and only with the modifier", () => {
     /root\.addEventListener\(\s*"keydown",[\s\S]{0,600}?true\s*\)/,
     "and it is bound in the capture phase, or CodeMirror sees the key first"
   );
-  assert.match(view, /ev\.preventDefault\(\);[\s\S]{0,80}?saveToNote\(\)/, "which saves the model");
+  assert.match(
+    view,
+    /ev\.preventDefault\(\);[\s\S]{0,80}?saveWithConflictCheck\(\)/,
+    "which saves the model -- through the conflict check, like the toolbar button"
+  );
   // The Help window must list it, in both modes: a shortcut nobody can find is not one.
   const help = fs.readFileSync(path.join(repoRoot, "src/view/help-modal.ts"), "utf8");
   const listed = (help.match(/\$\{mod\}\+S`, what: "Save the model/g) ?? []).length;
@@ -527,4 +531,30 @@ test("the save predicate accepts Ctrl+S and Cmd+S and nothing else", async () =>
   assert.equal(isSaveShortcut({ key: "s" }), false, "a bare s is a key, not a command");
   assert.equal(isSaveShortcut({ key: "s", ctrlKey: true, altKey: true }), false, "Ctrl+Alt+S belongs to someone else");
   assert.equal(isSaveShortcut({ key: "z", ctrlKey: true }), false);
+});
+
+test("both ways of saving ask before overwriting a file that changed on disk", () => {
+  // The trap: the studio holds its own copy from when it loaded the file, and Save wrote
+  // that copy back over anything that had changed since -- which is how a repair made
+  // outside Obsidian was silently reverted and the model stopped compiling again. The
+  // toolbar button and the keyboard shortcut must both go through the check.
+  const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  assert.match(view, /async saveWithConflictCheck\(\): Promise<boolean>/, "the check exists");
+  assert.match(view, /desc\.state !== "conflict"/, "and it looks at the conflict state");
+  assert.match(view, /choose\(/, "and asks, rather than deciding for the user");
+  assert.match(
+    view,
+    /label: "Reload from disk", focused: true/,
+    "the safe answer is focused, so a stray Enter does not overwrite anybody's work"
+  );
+  // Every save on the view goes through it.
+  const bare = (view.match(/void this\.saveToNote\(\)/g) ?? []).length;
+  const guarded = (view.match(/void this\.saveWithConflictCheck\(\)/g) ?? []).length;
+  assert.equal(bare, 0, `no save escapes the check (found ${bare})`);
+  assert.ok(guarded >= 2, `the button and the shortcut are both guarded (found ${guarded})`);
+  // And the plugin remembers what it last read or wrote, which is what makes the
+  // difference detectable at all.
+  const main = fs.readFileSync(path.join(repoRoot, "src/main.ts"), "utf8");
+  assert.match(main, /rememberFileText\(file\.path, text\)/, "recorded on load");
+  assert.match(main, /rememberFileText\(file\.path, source\)/, "and after a save");
 });

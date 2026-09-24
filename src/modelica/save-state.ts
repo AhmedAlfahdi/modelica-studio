@@ -17,6 +17,8 @@ export type SaveState =
   | "saved"
   /** There is a file, and the studio has moved on from it. */
   | "modified"
+  /** The file itself changed on disk, after this plugin last read or wrote it. */
+  | "conflict"
   /** There is no file for this model yet. */
   | "unsaved";
 
@@ -43,9 +45,24 @@ export function describeSaveState(opts: {
   source: string;
   /** The file's contents, or null when there is no file. */
   onDisk: string | null;
+  /**
+   * The file's contents the last time this plugin read or wrote it.
+   *
+   * Undefined when nothing is known — a model loaded before this was tracked, or one
+   * that has no file at all.
+   */
+  lastSeen?: string;
 }): SaveDescription {
   if (opts.onDisk === null) {
     return { state: "unsaved", label: "not saved", worthAsking: true };
+  }
+  // The file changed underneath the studio. This is its own state, and an important
+  // one: the status line used to read "unsaved changes", which sounds like the user's
+  // own edits and is why a Save could write a stale model over somebody else's work
+  // without anyone being told. It happened with a repair made outside the studio --
+  // the studio's copy was written back over it, and the model failed to compile again.
+  if (opts.lastSeen !== undefined && normalise(opts.onDisk) !== normalise(opts.lastSeen)) {
+    return { state: "conflict", label: "file changed on disk", worthAsking: true };
   }
   if (normalise(opts.source) === normalise(opts.onDisk)) {
     return { state: "saved", label: "saved", worthAsking: false };

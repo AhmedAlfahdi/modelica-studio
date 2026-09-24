@@ -596,7 +596,28 @@ export default class ModelicaStudioPlugin extends Plugin {
     const file = path ? this.app.vault.getAbstractFileByPath(path) : null;
     if (!(file instanceof TFile)) return describeSaveState({ source: "", onDisk: null });
     const onDisk = this.cachedFileText(file.path);
-    return describeSaveState({ source: this.sourceForSave(), onDisk });
+    return describeSaveState({
+      source: this.sourceForSave(),
+      onDisk,
+      // What this plugin last read or wrote for that path. Anything else on disk now is
+      // somebody else's write — another editor, a script, a repair — and saving over it
+      // would destroy it silently.
+      lastSeen: this.fileSeen.get(file.path),
+    });
+  }
+
+  /**
+   * The file contents this plugin last read or wrote, by path.
+   *
+   * Recorded on load and after every save. It is what separates "the user has unsaved
+   * edits" from "the file changed underneath the studio" — two states that used to look
+   * identical in the status line.
+   */
+  readonly fileSeen = new Map<string, string>();
+
+  /** Note what a path holds, so a later difference means someone else wrote it. */
+  rememberFileText(path: string, text: string): void {
+    this.fileSeen.set(path, text);
   }
 
   /**
@@ -1812,6 +1833,8 @@ export default class ModelicaStudioPlugin extends Plugin {
     // switching. Nothing warned, because nothing had failed.
     await this.flushCurrentModel();
     const text = await this.app.vault.read(file);
+    // What this plugin saw, so that a later difference means someone else wrote it.
+    this.rememberFileText(file.path, text);
     let classes;
     try {
       classes = parseModelica(text);
@@ -1910,6 +1933,7 @@ export default class ModelicaStudioPlugin extends Plugin {
         /* history is a bonus; a save must not fail because it could not be kept */
       }
       await this.app.vault.modify(file, source);
+      this.rememberFileText(file.path, source);
       this.settings.modelFiles[this.model.name] = here;
       await this.saveSettings();
       return { path: here, created: false };

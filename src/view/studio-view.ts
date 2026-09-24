@@ -22,6 +22,7 @@ import {
 } from "obsidian";
 import type ModelicaStudioPlugin from "../main";
 import { SchematicEditor } from "./editor";
+import { choose } from "./confirm";
 import { copyText } from "./clipboard";
 import { formatLint, lintModel, repairInstruction, summariseLint, type LintFinding } from "../modelica/lint";
 import { overlayResults, parseSweepValues, type FamilyRun } from "./family";
@@ -293,7 +294,7 @@ export class ModelicaStudioView extends ItemView {
         if (!isSaveShortcut(ev)) return;
         ev.preventDefault();
         ev.stopPropagation();
-        void this.saveToNote();
+        void this.saveWithConflictCheck();
       },
       true
     );
@@ -583,7 +584,7 @@ export class ModelicaStudioView extends ItemView {
       void this.plugin.promptNewModel()
     );
     addBtn(model, "save", "Save as .mo", "Write the model to a .mo file in the vault", () =>
-      void this.saveToNote()
+      void this.saveWithConflictCheck()
     );
     // The list of saved models belongs here rather than in settings: it is about
     // the model being worked on and where it lives, which is something you want
@@ -4007,6 +4008,45 @@ export class ModelicaStudioView extends ItemView {
    * appears when the model is already saved is noise, and one that appears twice
    * teaches the reader to dismiss it.
    */
+  /**
+   * Save, unless the file changed on disk — in which case ask which version wins.
+   *
+   * Without this, Save silently overwrote a file that had moved ahead of the studio.
+   * It happened for real: a model was repaired outside Obsidian, the studio was opened
+   * with its older copy in memory, and one Save put the broken model straight back. The
+   * status line had said "unsaved changes", which reads as "you have edits" rather than
+   * "the file is not what you think it is".
+   */
+  async saveWithConflictCheck(): Promise<boolean> {
+    const desc = this.plugin.saveState();
+    if (desc.state !== "conflict") {
+      await this.saveToNote();
+      return true;
+    }
+    const path = this.plugin.settings.modelFiles[this.plugin.model.name] ?? "the file";
+    const answer = await choose(
+      this.app,
+      `${path} changed on disk`,
+      `It is not what this studio loaded. Reloading reads the file and discards what is ` +
+        `on the canvas; overwriting writes the canvas over it.`,
+      [
+        { id: "reload", label: "Reload from disk", focused: true },
+        { id: "overwrite", label: "Overwrite the file", warning: true },
+        { id: "cancel", label: "Cancel" },
+      ]
+    );
+    if (answer === "cancel" || answer === null) {
+      this.setStatus("Not saved. The file on disk is newer than the studio.");
+      return false;
+    }
+    if (answer === "reload") {
+      await this.revertToSaved();
+      return false;
+    }
+    await this.saveToNote();
+    return true;
+  }
+
   async offerToSave(reason: string): Promise<void> {
     const desc = this.plugin.saveState();
     const prompt = savePrompt(desc, this.plugin.model.name, this.plugin.settings.modelFiles[this.plugin.model.name] ?? null);

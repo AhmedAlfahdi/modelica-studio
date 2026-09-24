@@ -60,3 +60,46 @@ test("the prompt says what will happen, and names the file", () => {
   const saved = describeSaveState({ source: "x", onDisk: "x" });
   assert.equal(savePrompt(saved, "Tank", "Modelica/Tank.mo"), null);
 });
+
+test("a file changed on disk is its own state, not the user's unsaved edits", async () => {
+  // The status line said "unsaved changes" for both, and they need different answers:
+  // one is "save when you are ready", the other is "somebody else wrote this file --
+  // look before you overwrite it". A repair made outside the studio was lost to that
+  // ambiguity: the studio's older copy was saved straight back over it.
+  const { describeSaveState } = await import(
+    path.join(buildLibs("save-state-lib", ["src/modelica/save-state.ts"]), "save-state.js")
+  );
+  const file = "model M\nend M;\n";
+
+  assert.equal(describeSaveState({ source: file, onDisk: file }).state, "saved");
+  assert.equal(
+    describeSaveState({ source: file, onDisk: file, lastSeen: file }).state,
+    "saved",
+    "unchanged since we saw it"
+  );
+  assert.equal(
+    describeSaveState({ source: file, onDisk: file, lastSeen: "model M\n  // older\nend M;\n" }).state,
+    "conflict",
+    "the file gained a line we never wrote"
+  );
+  assert.equal(
+    describeSaveState({ source: "model M\n  Real x;\nend M;\n", onDisk: file, lastSeen: file }).state,
+    "modified",
+    "our own edit, with the file as we left it, is not a conflict"
+  );
+  assert.equal(
+    describeSaveState({ source: "model M\n  Real x;\nend M;\n", onDisk: file, lastSeen: "other" }).state,
+    "conflict",
+    "both changed: the file still wins the question"
+  );
+  assert.equal(
+    describeSaveState({ source: file, onDisk: null }).state,
+    "unsaved",
+    "no file is not a conflict"
+  );
+  // Trailing whitespace and line endings are not somebody else's write.
+  assert.equal(
+    describeSaveState({ source: file, onDisk: file + "\n", lastSeen: file.replace(/\n/g, "\r\n") }).state,
+    "saved"
+  );
+});
