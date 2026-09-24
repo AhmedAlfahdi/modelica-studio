@@ -22,7 +22,7 @@ model MassSpringDamper "Two masses coupled by a spring and damper"
   Modelica.Mechanics.Translational.Components.Mass mass2(m=2)
     annotation(Placement(transformation(extent={{20,-10},{40,10}})));
   Modelica.Blocks.Sources.Step step(height=1, startTime=0.1)
-    annotation(Placement(transformation(extent={{-80,30},{-60,50}})));
+    annotation(Placement(transformation(extent={{-100,30},{-80,50}})));
 equation
   connect(step.y, force.f);
   connect(force.flange, mass1.flange_a);
