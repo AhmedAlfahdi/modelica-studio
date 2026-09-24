@@ -689,6 +689,10 @@ function makeInstance(over = {}) {
         return fileAt(p);
       },
       createFolder: async () => {},
+      trash: async (f) => {
+        writes.push({ path: f.path, text: "", trashed: true });
+        files.delete(f.path);
+      },
       getFiles: () => [],
     },
     workspace: {
@@ -863,4 +867,48 @@ test("a save is refused while the code pane does not parse", { skip: !HAS_BUNDLE
   const done = await instance.saveModelToNote();
   assert.equal(done.path, "Modelica/Tank.mo", "a save with a healthy pane still writes");
   assert.equal(writes.length, 1, "exactly one write");
+});
+
+test("a save recreates a deleted file, and returns to the one it came from", { skip: !HAS_BUNDLE }, async () => {
+  // The Saved-models row promises "it will be recreated on save" and that promise was
+  // not kept: the save took the remembered path WITHOUT CHECKING whether a file was
+  // there, so `vault.modify(null, …)` threw "Cannot read properties of null (reading
+  // 'path')" and nothing was recreated.
+  //
+  // The other half of that audit finding -- a model outside the configured folder is
+  // saved where it is, so the row's "moves to X on the next save" was false -- is
+  // fixed in the WORDING instead (see `describeRow`), because the save returning to
+  // the file it came from is a deliberate rule two tests defend: a model saved before
+  // a folder was configured must be found, not duplicated or silently relocated.
+  const { parseModelica, toDiagramModel } = await parserLib();
+  const src = "model A\n  Real x;\nend A;\n";
+
+  // ---- the file was deleted behind the record ----
+  {
+    const { instance, files } = makeInstance({
+      files: {},
+      settings: { modelFiles: { A: "Modelica/A.mo" }, modelFolder: "Modelica" },
+    });
+    instance.adoptModel(toDiagramModel(parseModelica(src)[0], () => undefined), src);
+    const done = await instance.saveModelToNote();
+    assert.equal(done.path, "Modelica/A.mo", "the save found somewhere to write");
+    assert.equal(files.get("Modelica/A.mo"), src, "and the file is there again");
+  }
+
+  // ---- the file sits outside the configured folder ----
+  {
+    const edited = "model A\n  Real x(start = 1);\nend A;\n";
+    const { instance, files } = makeInstance({
+      files: { "Other/A.mo": src },
+      settings: { modelFiles: { A: "Other/A.mo" }, modelFolder: "Modelica" },
+    });
+    instance.adoptModel(toDiagramModel(parseModelica(edited)[0], () => undefined), edited);
+    instance.markSourceStale();
+    instance.model.components.length = 0; // an edit the source does not have
+    const done = await instance.saveModelToNote();
+    assert.equal(done.path, "Other/A.mo", "it is saved back to the file it came from");
+    assert.match(files.get("Other/A.mo"), /start = 1/, "with the model's text in it");
+    assert.equal(files.has("Modelica/A.mo"), false, "and no second copy is invented");
+    assert.equal(instance.settings.modelFiles.A, "Other/A.mo", "the record still names it");
+  }
 });

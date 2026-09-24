@@ -270,7 +270,34 @@ export function patchDiagramEdits(
   const has = (fromSource.connections ?? []).map(connText).sort();
   if (!sameList(wants, has)) {
     const connects = stmts.filter((s) => s.kind === "connect");
-    const lines = (model.connections ?? []).map((c) => ind + connText(c));
+    /**
+     * A connection the file already had, kept as the file WROTE it.
+     *
+     * `serializeConnection` emits `points` and a colour, which is all a
+     * `Connection` models -- so rebuilding the block stripped every other `Line`
+     * argument from connections that had not changed: a hand-written
+     * `thickness=0.5, smooth=Smooth.Bezier` disappeared the moment any wire was
+     * added or deleted. The statement is reused verbatim when the connection it
+     * describes is the same one the model still holds.
+     */
+    const original = new Map<string, string>();
+    for (const st of connects) {
+      const text = source.slice(st.start, st.end);
+      const m = /connect\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)/.exec(text);
+      if (m) original.set(`${m[1]}|${m[2]}`, text.trim());
+    }
+    const unchanged = new Map(
+      (fromSource.connections ?? []).map((c) => [`${c.from.component}.${c.from.port}|${c.to.component}.${c.to.port}`, c])
+    );
+    const lines = (model.connections ?? []).map((c) => {
+      const key = `${c.from.component}.${c.from.port}|${c.to.component}.${c.to.port}`;
+      const was = unchanged.get(key);
+      const kept = original.get(key);
+      // Same endpoints AND the same route/colour: nothing about this statement is
+      // the model's business, so the file's own text stands.
+      if (kept && was && connText(was) === connText(c)) return ind + kept;
+      return ind + connText(c);
+    });
     if (connects.length) {
       for (const s of connects) edits.push({ start: s.start, end: lineEnd(source, s), text: "" });
       // Put the new set where the old one was, so the wires stay where the file

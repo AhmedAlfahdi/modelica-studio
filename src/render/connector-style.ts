@@ -19,9 +19,17 @@
  * or connections)" — so a `connect` clause cannot say how it looks, and the
  * connector's own icon is the only place a library can put it.
  *
- * Measured over MSL 4.1.0: of its 94 connectors, 80 declare no thickness (a
- * single line) and 14 declare 0.5 (double) — the signal and control buses, the
- * StateGraph inflow/outflow connectors, and the MultiBody frames.
+ * Measured over MSL 4.1.0+maint.om with the plugin's own LibraryIndex: 119
+ * connectors, 98 of which declare a line — 77 with no thickness (a single line) and
+ * 21 with 0.5 (double: the signal and control buses, the StateGraph inflow/outflow
+ * connectors, the MultiBody frames, the Clocked clocks and the Battery buses).
+ * Excluding `Icons`/`Examples` scaffolding, which the palette never offers, that is
+ * 84 connectors: 75 single and 9 double.
+ *
+ * This comment used to claim "94 connectors, 80 single, 14 double", and the Help
+ * window repeated it. No reading of any installed version produced those numbers --
+ * 3.2.3 gives 95/77/18, 4.0.0 the same as 4.1.0 -- so the Help text now states the
+ * RULE (which is what a reader needs) and this comment carries the measurement.
  */
 
 import type { Color, ComponentClass, Graphic } from "../modelica/types";

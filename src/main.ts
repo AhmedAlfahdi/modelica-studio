@@ -2045,18 +2045,25 @@ export default class ModelicaStudioPlugin extends Plugin {
      * saving the same file again. Anything else means the file should move.
      */
     const remembered = (this.settings.modelFiles[this.model.name] ?? "").trim();
-    const summary = { path: intended, created: false };
-    const here =
-      remembered && remembered === intended
-        ? remembered
-        : this.app.vault.getAbstractFileByPath(intended) instanceof TFile
-          ? intended
-          : remembered && this.app.vault.getAbstractFileByPath(remembered) instanceof TFile
-            ? remembered
-            : "";
+    /**
+     * Where it is now, if it is anywhere.
+     *
+     * The intended path is checked FIRST and the remembered one second, so a model
+     * saved before a folder was configured is found where it is rather than shadowed
+     * by a new file at the conventional path. A path only counts when a FILE is
+     * there: taking the remembered path on trust is what made a save whose .mo had
+     * been deleted call `vault.modify(null, …)` -- "Cannot read properties of null
+     * (reading 'path')" -- instead of recreating it, which is what the Saved-models
+     * row promises.
+     */
+    const at = (path: string): TFile | null => {
+      const f = path ? this.app.vault.getAbstractFileByPath(path) : null;
+      return f instanceof TFile ? f : null;
+    };
+    const existing = at(intended) ?? at(remembered);
 
-    if (here) {
-      const file = this.app.vault.getAbstractFileByPath(here) as TFile;
+    if (existing) {
+      const here = existing.path;
       this.trace.add("save", this.model.name, { bytes: source.length, to: here, existed: true });
       // The cached text is now stale, and the status bar is about to read it.
       this.forgetFileText(here);
@@ -2068,17 +2075,21 @@ export default class ModelicaStudioPlugin extends Plugin {
       // Snapshot what is being REPLACED, before it is replaced. On disk rather
       // than in memory, so it survives the plugin and can be read with `ls`.
       try {
-        this.snapshotRevision(this.model.name, await this.app.vault.read(file));
+        this.snapshotRevision(this.model.name, await this.app.vault.read(existing));
       } catch {
         /* history is a bonus; a save must not fail because it could not be kept */
       }
-      await this.app.vault.modify(file, source);
-      this.rememberFileText(file.path, source);
+      await this.app.vault.modify(existing, source);
+      this.rememberFileText(here, source);
       this.settings.modelFiles[this.model.name] = here;
       await this.saveSettings();
       return { path: here, created: false };
     }
 
+    // No file anywhere: a new model, or one whose .mo was deleted behind the record.
+    // It is written at the INTENDED path -- the configured folder, named after the
+    // class -- so recreating a deleted model never puts a file back in the vault root
+    // beside the notes. (An existing file is still saved where it is: see above.)
     await this.app.vault.create(intended, source);
     this.trace.add("save", this.model.name, { bytes: source.length, to: intended, created: true });
     this.forgetFileText(intended);

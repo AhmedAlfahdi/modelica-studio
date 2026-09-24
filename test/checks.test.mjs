@@ -627,3 +627,46 @@ test("every image the README shows exists, and every image is shown", () => {
     assert.ok(names.includes(`${stem}-light.png`) && names.includes(`${stem}-dark.png`), `${stem} is shown in both themes`);
   }
 });
+
+test("a declaration whose name could not be read does not sink the whole check", () => {
+  // The declaration scanner could not match `parameter Real g = 9.81;` (its
+  // terminator set had no `=`), so the line was absorbed into the pending block the
+  // class header opened and that block's name came out as "?". `checks.ts` then
+  // built a RegExp from the name -- `/\b?\s*\(…/` -- which throws "Nothing to
+  // repeat". The throw was reported as the model's diagnostic on line 1 and EVERY
+  // real finding was suppressed: the plugin's curated checks silently did nothing
+  // for a parameter-first model, which is the most common layout there is.
+  // `checkModel` is imported at the top of this file.
+  const base = {
+    declared: new Set(["g", "x"]),
+    equations: ["x = g;"],
+    hasComponents: false,
+    firstEquationLine: 4,
+  };
+
+  // The name the scanner used to produce must not throw, and must not hide the
+  // findings that come after it.
+  let problems;
+  assert.doesNotThrow(() => {
+    problems = checkModel({
+      ...base,
+      declarations: [{ name: "?", text: "model M   parameter Real g = 9.81;", line: 1 }],
+      equations: ["x = g + missing_one;"],
+    });
+  }, "a placeholder name must not build an invalid regular expression");
+
+  assert.ok(
+    problems.some((p) => /missing_one/.test(p.message)),
+    `and the real findings are still reported: ${JSON.stringify(problems.map((p) => p.message))}`
+  );
+
+  // The other half: a declaration with a binding is read as a declaration, so its
+  // name is never a placeholder in the first place.
+  const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  const scan = /const decl = (\/.*\/)\s*\.exec\(line\)/.exec(view);
+  assert.ok(scan, "the declaration scan is present");
+  assert.ok(
+    scan[1].includes("|=|$)"),
+    `and it accepts a binding (a declaration with a value is still a declaration): ${scan[1]}`
+  );
+});

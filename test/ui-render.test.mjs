@@ -598,10 +598,14 @@ test("Help explains how a connection is drawn, with the colours themselves", asy
     "  const headings = Array.from(diagrams.querySelectorAll('h4')).map((h) => h.textContent);",
     "  return headings.join(' | ');",
     "});",
-    "window.test('the rule is stated, with the numbers measured from the library', () => {",
+    "window.test('the rule is stated, without a census that no library matches', () => {",
     "  const text = diagrams.textContent.replace(/\\s+/g, ' ');",
-    "  return ['first line element', '94 connectors', '80 ask for a single line', '14 for double', 'thickness=0.5']",
-    "    .map((k) => k + '=' + text.includes(k)).join(' ');",
+    "  // The section used to claim \"94 connectors, 80 single, 14 double\". Measured with",
+    "  // the plugin's own index over MSL 4.1.0 it is 119 connectors, 98 with a line,",
+    "  // 77 single and 21 double (3.2.3 differs again), so a stated total is a claim",
+    "  // that goes stale with the library. The RULE is what a reader needs.",
+    "  return ['first line element', 'no thickness declared means a single line',",
+    "    'and 0.5 means double', 'thickness=0.5', '94 connectors'].map((k) => k + '=' + text.includes(k)).join(' ');",
     "});",
     "window.test('every example carries a swatch, coloured as the canvas draws it', () => {",
     "  const rows = Array.from(diagrams.querySelectorAll('.modelica-studio-help-wire-row'));",
@@ -632,10 +636,10 @@ test("Help explains how a connection is drawn, with the colours themselves", asy
     "it follows the domain colours, which is what it builds on"
   );
   assert.equal(
-    d["the rule is stated, with the numbers measured from the library"],
-    "first line element=true 94 connectors=true 80 ask for a single line=true " +
-      "14 for double=true thickness=0.5=true",
-    "the rule and the measurement are both there"
+    d["the rule is stated, without a census that no library matches"],
+    "first line element=true no thickness declared means a single line=true " +
+      "and 0.5 means double=true thickness=0.5=true 94 connectors=false",
+    "the rule is stated, and the stale census is gone"
   );
   assert.equal(
     d["every example carries a swatch, coloured as the canvas draws it"],

@@ -98,7 +98,12 @@ export function describeRow(row: SavedModelRow, modelFolder: string): string {
   if (row.status === "missing") return `${where} — no file there; it will be recreated on save`;
   if (row.status === "misplaced") {
     const to = modelFolder.trim() ? `${modelFolder.trim()}/${row.file}` : row.file;
-    return `${where} — outside the save folder; moves to ${to} on the next save`;
+    // NOT "moves to X on the next save": a save returns to the file it came from, so
+    // a model that sits outside the configured folder is saved where it IS, and this
+    // row would stay "misplaced" for ever. Saying so is better than a promise the
+    // save path does not make -- the Record button moves the record, and deleting
+    // and re-saving is what actually relocates the file.
+    return `${where} — outside the save folder (${to} is where a new save would go)`;
   }
   return where;
 }

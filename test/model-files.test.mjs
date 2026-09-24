@@ -40,8 +40,19 @@ test("the folder is created before anything is written into it", () => {
 
 test("saving an existing model goes back to the file it came from", () => {
   // Otherwise every save would write a second copy under the conventional name.
-  assert.match(main, /remembered && this\.app\.vault\.getAbstractFileByPath\(remembered\) instanceof TFile/);
-  assert.match(main, /await this\.app\.vault\.modify\(file, source\)/);
+  assert.match(
+    main,
+    /const existing = at\(intended\) \?\? at\(remembered\)/,
+    "the recorded path is consulted"
+  );
+  assert.match(main, /await this\.app\.vault\.modify\(existing, source\)/, "and written there");
+  // A remembered path is only a location when a FILE is there: taking it on trust is
+  // what made a save whose .mo had been deleted call `modify(null, …)` and throw.
+  assert.match(
+    main,
+    /at = \(path: string\): TFile \| null => \{[\s\S]*?instanceof TFile \? f : null/,
+    "and only when a file is there"
+  );
 });
 
 test("a model saved before the folder existed is found, not duplicated", () => {
@@ -49,10 +60,13 @@ test("a model saved before the folder existed is found, not duplicated", () => {
   // at the root is still found rather than shadowed by a new file.
   const save = /async saveModelToNote[\s\S]*?\n  \}/.exec(main);
   assert.ok(save, "the save function is present");
-  const intendedCheck = save[0].indexOf("getAbstractFileByPath(intended)");
-  const rememberedCheck = save[0].indexOf("getAbstractFileByPath(remembered)");
-  assert.ok(intendedCheck > 0 && rememberedCheck > intendedCheck, "intended first, remembered second");
-  assert.match(save[0], /await this\.app\.vault\.create\(intended, source\)/, "and one create path only");
+  const intendedCheck = save[0].indexOf("at(intended) ?? at(remembered)");
+  assert.ok(intendedCheck > 0, "intended first, remembered second");
+  assert.match(
+    save[0],
+    /await this\.app\.vault\.create\(intended, source\)/,
+    "and with no file anywhere the intended path is written"
+  );
 });
 
 test("a new model clears the code editor as well as the canvas", () => {

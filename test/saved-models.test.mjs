@@ -43,7 +43,10 @@ test("a model outside the folder is reported as misplaced, not as fine", () => {
   assert.equal(view.rows[0].folder, "", "at the vault root");
   assert.equal(view.misplaced, 1);
   assert.match(describeRow(view.rows[0], "Modelica"), /outside the save folder/);
-  assert.match(describeRow(view.rows[0], "Modelica"), /moves to Modelica\/ResistorDivider\.mo/);
+  // It does NOT promise a move: a save returns to the file it came from, so a model
+  // outside the folder is saved where it is. The row names where a new save would go.
+  assert.match(describeRow(view.rows[0], "Modelica"), /Modelica\/ResistorDivider\.mo is where a new save would go/);
+  assert.doesNotMatch(describeRow(view.rows[0], "Modelica"), /moves to/, "no promise the save path does not keep");
 });
 
 test("a tracked path with no file is reported as missing", () => {

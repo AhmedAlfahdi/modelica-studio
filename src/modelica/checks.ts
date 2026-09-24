@@ -271,6 +271,12 @@ export function checkModel(input: CheckInput): ModelProblem[] {
       // `name(name` specifically: a modifier whose NAME matches the declaration.
       // Testing only for `name(` also matched `parameter Real x(unit = "V")`,
       // which is ordinary and correct -- caught by the test, not by reading it.
+      // A declaration whose name could not be read is reported as "?", and building a
+      // RegExp from that throws -- "Nothing to repeat" -- which took down the whole
+      // check run: the throw surfaced as a bogus SyntaxError on line 1 and every
+      // other finding was lost. A name that is not an identifier has no self-modifier
+      // to look for, so it is skipped rather than trusted.
+      if (!/^[A-Za-z_]\w*$/.test(d.name)) continue;
       const selfModifier = new RegExp(`\\b${d.name}\\s*\\(\\s*${d.name}\\s*(=|,|\\))`);
       if (selfModifier.test(d.text)) {
         const type = /\b(?:parameter|constant)\s+([\w.]+)/.exec(d.text)?.[1] ?? "its type";

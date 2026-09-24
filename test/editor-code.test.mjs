@@ -612,3 +612,37 @@ test("a search says MATCHES, so its count is not read as a component count", () 
     "so the count exceeds the number of things named force"
   );
 });
+
+test("a block comment is a comment, not code", () => {
+  // The highlighter claimed Modelica has no block comments. MLS §2.2 says otherwise
+  // ("There are two kinds of comments in Modelica"), and the plugin's own parser
+  // lexer has always handled them. Colouring them as code painted the bodies of 87
+  // files of the installed standard library in keyword/type colours, and a `"` inside
+  // one opened a string token that ran to the next quote -- so real code was drawn as
+  // a string.
+  const source = 'model A\n  /* a "quoted" note */\n  Real x;\n  /* outer /* inner */ tail */\nend A;\n';
+  const tokens = tokenize(source);
+
+  const comments = tokens.filter((t) => t.kind === "comment").map((t) => source.slice(t.start, t.end));
+  assert.ok(
+    comments.includes('/* a "quoted" note */'),
+    `the block comment is one comment token: ${JSON.stringify(comments)}`
+  );
+  assert.ok(
+    comments.some((c) => c.startsWith("/* outer") && c.endsWith("tail */")),
+    `and nesting is followed to the matching close: ${JSON.stringify(comments)}`
+  );
+  assert.equal(
+    tokens.some((t) => t.kind === "string"),
+    false,
+    "no phantom string from the quote inside the comment"
+  );
+  // Nothing inside a comment is coloured as anything else.
+  for (const t of tokens) {
+    const text = source.slice(t.start, t.end);
+    if (t.kind === "comment") continue;
+    assert.ok(!/comment|note|inner|tail/.test(text), `no comment text leaks into a ${t.kind} token: ${text}`);
+  }
+  // And the round trip the editor depends on is unchanged.
+  assert.equal(highlight(source).replace(/<[^>]*>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"), source + "\n");
+});

@@ -381,9 +381,10 @@ export class HelpModal extends Modal {
     el.createEl("p", {
       cls: "modelica-studio-muted",
       text:
-        "Of the 94 connectors in the library, 80 ask for a single line and 14 for " +
-        "double — the signal and control buses, the StateGraph inflow and outflow " +
-        "connectors, and the multibody frames. A Line annotation written on the " +
+        "A library decides this on the connector itself: no thickness declared means " +
+        "a single line, and 0.5 means double. The doubles are the signal and control " +
+        "buses, the StateGraph inflow and outflow connectors, and the multibody " +
+        "frames. A Line annotation written on the " +
         "connect clause itself, which is what a tool records when a route is " +
         "dragged by hand, wins over the connector. Wire thickness and Component " +
         "line thickness in Settings → Modelica Studio → Diagram scale the wires and " +

@@ -1315,7 +1315,15 @@ export class ModelicaStudioView extends ItemView {
     const declarations: Array<{ name: string; text: string; line: number }> = [];
     let pending: { parts: string[]; line: number } | null = null;
     lines.forEach((line, i) => {
-      const decl = /^\s*(?:parameter|constant|discrete|input|output|final|inner|outer|flow|stream|replaceable|each|\s)*([A-Za-z_][\w.]*)\s+([A-Za-z_]\w*)\s*(\(|;|$)/.exec(line);
+      // The terminator set includes `=`, or a declaration with a BINDING was not
+      // recognised at all: `parameter Real g = 9.81;` fell through to the pending
+      // block that the class header opened, so the block's name came out as "?" and
+      // its text as `model M   parameter Real g = 9.81;`. `checks.ts` then built a
+      // RegExp from that name -- `/\b?\s*\(…/` -- which throws "Nothing to repeat",
+      // and the throw was reported as the model's diagnostic on line 1 while every
+      // real finding was suppressed. A parameter-first model is the most common
+      // layout there is, including the text this plugin's own serializer emits.
+      const decl = /^\s*(?:parameter|constant|discrete|input|output|final|inner|outer|flow|stream|replaceable|each|\s)*([A-Za-z_][\w.]*)\s+([A-Za-z_]\w*)\s*(\(|;|=|$)/.exec(line);
       if (decl) {
         if (pending) declarations.push(finishDecl(pending));
         pending = { parts: [line], line: i + 1 };

@@ -106,11 +106,39 @@ export function tokenize(source: string): Token[] {
   while (i < n) {
     const ch = source[i];
 
-    // Line comment. Modelica has no block comments, and `//` inside a string is
-    // handled by the string branch below because strings are matched first.
+    // Line comment. `//` inside a string is handled by the string branch below,
+    // because strings are matched first only when one starts here -- which is why a
+    // `//` inside a string is unreachable: the string branch consumes it.
     if (ch === "/" && source[i + 1] === "/") {
       const start = i;
       while (i < n && source[i] !== "\n") i++;
+      push(start, i, "comment");
+      continue;
+    }
+
+    // Block comment, NESTABLE (MLS 3.5 §2.2: "There are two kinds of comments in
+    // Modelica", and the specification's own lexer counts nesting). The claim here
+    // used to be that Modelica has none, so `/* ... */` was tokenized as operators
+    // and the comment's body was coloured as code -- keywords, types and numbers --
+    // in 87 of the 2,552 files of the installed standard library. Worse, a `"`
+    // inside such a comment opened a STRING token that ran to the next quote, so a
+    // stretch of real code was painted as a string. This is the same nesting rule
+    // `src/modelica/lexer.ts` implements for the parser.
+    if (ch === "/" && source[i + 1] === "*") {
+      const start = i;
+      i += 2;
+      let depth = 1;
+      while (i < n && depth > 0) {
+        if (source[i] === "/" && source[i + 1] === "*") {
+          depth++;
+          i += 2;
+        } else if (source[i] === "*" && source[i + 1] === "/") {
+          depth--;
+          i += 2;
+        } else {
+          i++;
+        }
+      }
       push(start, i, "comment");
       continue;
     }

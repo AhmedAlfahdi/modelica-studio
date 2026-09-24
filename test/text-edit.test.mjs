@@ -313,3 +313,35 @@ test("a conditional declaration does not make its condition a name", () => {
   assert.ok(res, `the edit was patched rather than refused: ${lastPatchRefusal()}`);
   assert.match(res.text, /if useR/, "and the condition is still written");
 });
+
+test("an untouched connection keeps the annotation arguments the writer does not model", () => {
+  // `Connection` carries `points` and a colour, and `serializeConnection` emits
+  // exactly those -- so rewriting the connect block stripped every other `Line`
+  // argument from connections that had not changed: a hand-written
+  // `thickness=0.5, smooth=Smooth.Bezier` vanished the moment any wire was added or
+  // deleted. The statement is now reused verbatim when its connection is unchanged.
+  const src = [
+    "model M",
+    "  Modelica.Blocks.Math.Gain r1(k = 1) annotation(Placement(transformation(extent={{-20,-20},{20,20}})));",
+    "  Modelica.Blocks.Math.Gain r2(k = 1) annotation(Placement(transformation(extent={{60,-20},{100,20}})));",
+    "  Modelica.Blocks.Math.Gain r3(k = 1) annotation(Placement(transformation(extent={{140,-20},{180,20}})));",
+    "equation",
+    "  connect(r1.y, r2.u) annotation(Line(points={{20,0},{40,0}}, thickness=0.5, smooth=Smooth.Bezier));",
+    "  connect(r2.y, r3.u);",
+    "end M;",
+    "",
+  ].join("\n");
+
+  // Delete the plain wire: the annotated one is not the model's business.
+  const res = patched(
+    src,
+    (m) => {
+      m.connections = m.connections.filter((c) => c.from.component !== "r2" || c.to.component !== "r3");
+    },
+    "M"
+  );
+  assert.ok(res, `refused: ${lastPatchRefusal()}`);
+  assert.match(res.text, /thickness=0\.5/, "the thickness survived another wire's removal");
+  assert.match(res.text, /smooth=Smooth\.Bezier/, "and so did the smoothing");
+  assert.doesNotMatch(res.text, /connect\(r2\.y, r3\.u\)/, "while the deleted wire is gone");
+});

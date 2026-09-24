@@ -563,7 +563,11 @@ test("both ways of saving ask before overwriting a file that changed on disk", (
   // difference detectable at all.
   const main = fs.readFileSync(path.join(repoRoot, "src/main.ts"), "utf8");
   assert.match(main, /rememberFileText\(file\.path, text\)/, "recorded on load");
-  assert.match(main, /rememberFileText\(file\.path, source\)/, "and after a save");
+  assert.match(
+    main,
+    /rememberFileText\((?:here|target), source\)/,
+    "and after a save, under the path it actually wrote"
+  );
 });
 
 test("the studio shows which model is open, in the view and in the tab", () => {
