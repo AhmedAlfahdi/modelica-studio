@@ -148,13 +148,26 @@ export async function planArrangement(shipped, theirs, name) {
  * Step in MassSpringDamper.
  */
 function applyOne(exampleSource, name, placement) {
-  const re = new RegExp(
-    `(\\b${name}\\b\\s*(?:\\([^)]*\\))?\\s*annotation\\s*\\(\\s*Placement\\s*\\(\\s*transformation\\s*\\()([^)]*?)(\\)\\s*\\)\\s*\\))`
-  );
+  const re = new RegExp(`\\b${name}\\b[\\s\\S]*?annotation\\s*\\(\\s*Placement\\s*\\(\\s*transformation\\s*\\(`);
   const m = re.exec(exampleSource);
   if (!m) throw new Error(`cannot find the placement of ${name} in the shipped source`);
-  return exampleSource.slice(0, m.index) + m[1] + placement + m[3] + exampleSource.slice(m.index + m[0].length);
+  const open = m.index + m[0].length;
+  // Scan to the MATCHING close paren rather than to the next one: a component's parameter
+  // list may contain parentheses of its own -- `mass(T(start = 293.15))` -- and a regex
+  // that stops at the first `)` then fails to find the annotation at all. That is what
+  // "cannot find the placement of mass" meant, and the verification below is what caught
+  // it instead of writing a broken model.
+  let depth = 1;
+  let i = open;
+  for (; i < exampleSource.length && depth > 0; i++) {
+    const ch = exampleSource[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+  }
+  if (depth !== 0) throw new Error(`unbalanced parentheses in the placement of ${name}`);
+  return exampleSource.slice(0, open) + placement + exampleSource.slice(i - 1);
 }
+
 
 /** The span of an example's source inside examples.ts, as `const NAME = \`…\`;`. */
 function spanOf(constName, text) {
