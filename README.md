@@ -326,18 +326,25 @@ equation
 end MassSpringDamper;
 ```
 
-A 1 N force is switched on at t = 0.1 s and pushes `mass1`; `mass2` is joined to it
-by nothing but a spring and damper. **Nothing is bolted down**, which is what makes
-it worth reading: the two masses bob relative to each other *and* drift away
-together, and the gap between them settles somewhere other than $F/c$ — the value it
-would settle at if one end were nailed to the ground.
+A 1 N force is switched on at 0.1 s and pushes `mass1`; `mass2` is joined to it by
+nothing but a spring and damper. **Nothing is bolted down**, which is what makes it
+worth reading: the two masses bob relative to each other *and* drift away together,
+and the gap between them settles somewhere other than the value a bolted-down end
+would give it.
 
-- **Reduced mass** $\mu = \dfrac{m_1 m_2}{m_1 + m_2} = \dfrac{2}{3}\ \text{kg}$ — the
-  effective inertia of the relative motion, always smaller than either mass alone.
-- **Centre of mass** $\ddot{x}_{\text{cm}} = \dfrac{F}{m_1 + m_2} = \dfrac{1}{3}\ \text{m/s}^2$ —
-  the drift, visible as the curve bending upward in the plot.
-- **Steady gap** $\Delta x = \dfrac{F\,m_2}{c\,(m_1 + m_2)} = \dfrac{1}{75}\ \text{m}$ —
-  the trap, if you expect $F/c$.
+**Reduced mass** — the effective inertia of the relative motion, always smaller than
+either mass alone.
+
+$$\mu = \frac{m_1 m_2}{m_1 + m_2} = \frac{2}{3}\ \text{kg}$$
+
+**Centre of mass** — nothing external holds the pair back, so the whole pair drifts
+while the gap between them settles.
+
+$$\ddot{x}_{\text{cm}} = \frac{F}{m_1 + m_2} = \frac{1}{3}\ \text{m/s}^2$$
+
+**Steady gap** — the trap, if you expect the spring to carry the whole force.
+
+$$\Delta x = \frac{F\,m_2}{c\,(m_1 + m_2)} = \frac{1}{75}\ \text{m}$$
 
 [`showcase/notes/02-Mechanical/11-mass-spring-damper.md`](showcase/notes/02-Mechanical/11-mass-spring-damper.md)
 works the whole thing through, including the equations and a table comparing them
@@ -376,28 +383,31 @@ equation
 end RLC;
 ```
 
-A 10 V step at $t = 1\ \text{ms}$ into a series loop of $10\ \Omega$, $0.1\ \text{H}$
-and $1\ \text{mF}$. The damping ratio decides everything, and it is one line of
-algebra:
+A 10 V step is switched on 1 ms into a series loop of a 10 Ω resistor, a 0.1 H
+inductor and a 1 mF capacitor. The damping ratio decides everything, and it is one
+line of algebra:
 
 $$\alpha = \frac{R}{2L} = 50\ \text{s}^{-1}, \qquad
 \omega_0 = \frac{1}{\sqrt{LC}} = 100\ \text{rad/s}, \qquad
 \zeta = \frac{\alpha}{\omega_0} = \frac{R}{2}\sqrt{\frac{C}{L}} = 0.5$$
 
-$\zeta < 1$, so the step overshoots by
-$\exp\left(-\pi\zeta/\sqrt{1-\zeta^2}\right) = 16.3\%$ — to $11.63\ \text{V}$ at
-$t = \pi/\omega_d = 37\ \text{ms}$ — and then rings at
-$\omega_d = \sqrt{\omega_0^2 - \alpha^2} = 86.6\ \text{rad/s}$, decaying with
-$\tau = 1/\alpha = 20\ \text{ms}$:
+The damping ratio is below 1, so the step overshoots — by 16.3%, to 11.63 V, one
+quarter of a ringing period after the step — and then rings down:
+
+$$\omega_d = \sqrt{\omega_0^2 - \alpha^2} = 86.6\ \text{rad/s}, \qquad
+\tau = \frac{1}{\alpha} = 20\ \text{ms}, \qquad
+t_{\text{peak}} = \frac{\pi}{\omega_d} = 37\ \text{ms}$$
+
+which is what the plot is checked against, point by point:
 
 $$v_C(t) = V\left[1 - e^{-\alpha t}\left(\cos\omega_d t + \frac{\alpha}{\omega_d}\sin\omega_d t\right)\right]$$
 
 | Quantity | Closed form | OpenModelica |
 |---|---|---|
-| $v_C$ at $t = 5\ \text{ms}$ | $0.6941\ \text{V}$ | $0.694128\ \text{V}$ |
-| $v_C$ at $t = 20\ \text{ms}$ | $8.0618\ \text{V}$ | $8.06181\ \text{V}$ |
-| $v_C$ at $t = 50\ \text{ms}$ | $10.8344\ \text{V}$ | $10.8344\ \text{V}$ |
-| $\zeta$ from $R$, $L$, $C$ | $0.5$ | $0.5$ |
+| `capacitor.v` at 5 ms | 0.6941 V | 0.694128 V |
+| `capacitor.v` at 20 ms | 8.0618 V | 8.06181 V |
+| `capacitor.v` at 50 ms | 10.8344 V | 10.8344 V |
+| ζ from R, L, C | 0.5 | 0.5 |
 
 ### A resistor heating itself
 
@@ -430,8 +440,9 @@ equation
 end ResistorSelfHeating;
 ```
 
-Ten volts across ten ohms is one amp and ten watts, and every watt goes into $5\ \text{J/K}$
-of thermal mass that can only lose heat to still air at $0.5\ \text{W/K}$:
+Ten volts across ten ohms is one amp and ten watts, and every watt of it goes into
+the body's thermal mass — 5 joules per kelvin — which can shed heat to still air only
+at half a watt per kelvin:
 
 $$P = \frac{V^2}{R} = 10\ \text{W}, \qquad
 \tau = \frac{C}{G} = 10\ \text{s}, \qquad
@@ -440,14 +451,15 @@ T(t) = T_\infty + \Delta T_\infty\left(1 - e^{-t/\tau}\right)$$
 
 | Quantity | Closed form | OpenModelica |
 |---|---|---|
-| $P = V^2/R$ at $t = \tau$ | $10\ \text{W}$ | $10.0000\ \text{W}$ |
-| $T$ at $t = \tau = 10\ \text{s}$ | $305.792\ \text{K}$ | $305.793\ \text{K}$ |
-| $T$ at $t = 2\tau$ | $310.443\ \text{K}$ | $310.444\ \text{K}$ |
-| $T$ at $t = 20\tau$ (steady) | $313.150\ \text{K}$ | $313.150\ \text{K}$ |
-| $P_{\text{in}} - Q_{\text{out}} = C\,\dot{T}$ at $t = 3\tau$ | $10\ \text{W}$ | $10.0000\ \text{W}$ |
+| `resistor.LossPower` at t = τ | 10 W | 10.0000 W |
+| `body.T` at t = τ = 10 s | 305.792 K | 305.793 K |
+| `body.T` at t = 2τ | 310.443 K | 310.444 K |
+| `body.T` at t = 20τ (steady) | 313.150 K | 313.150 K |
+| `resistor.LossPower` − `toAmbient.Q_flow` at t = 3τ | 10 W | 10.0000 W |
 
-The last row is the one worth having: it needs no closed form at all, and it fails
-if the heat port is wired to the wrong thing. The 30 notes under
+The last row is the one worth having: it needs no closed form at all — what the
+current makes, less what the body sheds, is what warms it — and it fails if the heat
+port is wired to the wrong thing. The 30 notes under
 [`showcase/notes/`](showcase/notes/) carry the same treatment for every example —
 the algebra, then the numbers the simulation returns.
 

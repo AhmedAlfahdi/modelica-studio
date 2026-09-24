@@ -671,49 +671,52 @@ test("a declaration whose name could not be read does not sink the whole check",
   );
 });
 
-test("every formula in the README is one GitHub will actually render", () => {
-  // The README's maths renders on github.com through the markdown math extension,
-  // and two things in the first draft of the RLC section did not survive it:
+test("every formula in the README is a display block on its own line", () => {
+  // The rule, as asked for: LaTeX never shares a line with prose. Inline maths was
+  // tried in the RLC and mechanical sections and read badly -- a fraction inside a
+  // bullet stretches the line box and pushes the words apart, and a one-character
+  // formula like F/c comes out as "F / c" with binary-operator spacing around the
+  // slash. Every formula is now a `$$` block, and the quantity it defines is named
+  // in words in the sentence beside it.
   //
-  //   `a $10\ \Omega$–$0.1\ \text{H}$–$1\ \text{mF}$ loop`
-  //
-  // Only the FIRST of those three spans appeared as maths. An opening `$` is
-  // recognised when it follows whitespace; after an en dash it is not a delimiter at
-  // all, so the rest of the line stayed literal. Checked against the rendered page
-  // (the `<math-renderer>` elements GitHub served) rather than guessed: 56 spans
-  // rendered, and the two that failed were exactly the two opened after a dash.
-  //
-  // And `\exp\!\left(` lost its backslash, so the page read "exp!(". Negative thin
-  // space is not in the macro set that survives there.
-  const files = ["README.md"];
+  // Two more shapes are checked, both of which the rendered page has already been
+  // wrong about: a `$$` that never closes (a whole paragraph turns literal), and a
+  // macro whose backslash the renderer drops, which prints the punctuation --
+  // "\exp\!\left(" reached github.com as "exp!(".
+  const rel = "README.md";
+  const text = fs.readFileSync(path.join(repoRoot, rel), "utf8");
+  // Fenced blocks are code, not prose: a `$` in a shell transcript is a prompt.
+  const prose = text.replace(/```[\s\S]*?```/g, (m) => m.replace(/[^\n]/g, " "));
   const bad = [];
-  for (const rel of files) {
-    const text = fs.readFileSync(path.join(repoRoot, rel), "utf8");
-    // Fenced blocks are code, not prose: a `$` in a shell transcript is a prompt.
-    const prose = text.replace(/```[\s\S]*?```/g, (m) => m.replace(/[^\n]/g, " "));
-    const lines = prose.split("\n");
-    lines.forEach((line, i) => {
-      // Inline maths only: `$$` blocks are delimited by the line, and a lone `$` in
-      // a table cell is not a formula.
-      const spans = [...line.matchAll(/(?<!\$)\$([^$\n]+)\$(?!\$)/g)];
-      for (const m of spans) {
-        const before = line[m.index - 1];
-        if (before !== undefined && !/\s/.test(before)) {
-          bad.push(`${rel}:${i + 1}: the opening $ follows ${JSON.stringify(before)}, so GitHub will not see maths: ${m[0].slice(0, 60)}`);
-        }
-        for (const macro of ["\\!", "\\;", "\\:", "\\hspace", "\\hfill"]) {
-          if (m[1].includes(macro)) {
-            bad.push(`${rel}:${i + 1}: ${macro} does not survive the renderer (it prints the punctuation): ${m[0].slice(0, 60)}`);
-          }
-        }
+
+  // Blocks first, so what is left over is everything that is NOT a formula. A block
+  // opens and closes on lines of its own, which is what makes it a block: a `$$`
+  // line inside a sentence would be the same mistake as inline maths.
+  const blocks = [];
+  for (const m of prose.matchAll(/^\$\$([\s\S]*?)\$\$[ \t]*$/gm)) blocks.push(m);
+  const outside = prose.replace(/^\$\$[\s\S]*?\$\$[ \t]*$/gm, " (a formula) ");
+  outside.split("\n").forEach((line, i) => {
+    if (!line.includes("$")) return;
+    bad.push(
+      `${rel}:${i + 1}: a $ outside a $$ block -- put the formula on its own line: ` +
+        line.trim().slice(0, 70)
+    );
+  });
+
+  // An odd number of `$$` means at least one block never closed.
+  const fences = (prose.match(/\$\$/g) ?? []).length;
+  if (fences % 2 !== 0) bad.push(`${rel}: ${fences} ` + "$$" + ` markers -- one block is left open`);
+
+  for (const m of blocks) {
+    const at = `${rel}: line ${prose.slice(0, m.index).split("\n").length + 1}`;
+    if (!m[1].trim()) bad.push(`${at}: an empty display block`);
+    if (m[1].includes("\n\n")) bad.push(`${at}: two paragraphs inside one block`);
+    for (const macro of ["\\!", "\\;", "\\:", "\\hspace", "\\hfill"]) {
+      if (m[1].includes(macro)) {
+        bad.push(`${at}: ${macro} does not survive the renderer -- it prints the punctuation`);
       }
-      // An odd number of delimiters on a line means one formula never closes, which
-      // is how a whole paragraph turns into literal TeX.
-      const dollars = (line.match(/(?<!\$)\$(?!\$)/g) ?? []).length;
-      if (dollars % 2 !== 0) {
-        bad.push(`${rel}:${i + 1}: ${dollars} single $ delimiters -- a formula is left open`);
-      }
-    });
+    }
   }
-  assert.deepEqual(bad, [], `${bad.length} formulas GitHub would not render`);
+  assert.ok(blocks.length >= 5, `the README shows its formulas as blocks (${blocks.length})`);
+  assert.deepEqual(bad, [], `${bad.length} formulas break the README's maths rules`);
 });
