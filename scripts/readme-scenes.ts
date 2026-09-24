@@ -56,12 +56,62 @@ const box = (el: HTMLElement) => {
 };
 const fail = (err: unknown) => ({ error: String(err instanceof Error ? err.message : err) });
 
-const canvasShot = (host: HTMLElement, canvas: HTMLCanvasElement) => ({
-  data: canvas.toDataURL("image/png"),
-  width: canvas.width,
-  height: canvas.height,
-  cssWidth: host.clientWidth,
-});
+/**
+ * Crop a canvas to the ink it holds, with a margin.
+ *
+ * A diagram is wider than it is tall and the pane it is drawn in is not, so fitting the
+ * view left a band of empty grid above and below the model — the picture was correct
+ * and looked unfinished. Cropping to what was actually drawn frames it, and the axe
+ * labels and legends come along because they are ink too.
+ */
+function cropToInk(canvas: HTMLCanvasElement, pad = 40) {
+  const ctx = canvas.getContext("2d")!;
+  const { width: w, height: h } = canvas;
+  const data = ctx.getImageData(0, 0, w, h).data;
+  const bg = [data[0], data[1], data[2]];
+  let minX = w;
+  let minY = h;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const o = (y * w + x) * 4;
+      // 60, not 10: the canvas is covered in a faint grid, and a threshold that low
+      // counted every gridline as content and cropped nothing at all.
+      if (Math.abs(data[o] - bg[0]) + Math.abs(data[o + 1] - bg[1]) + Math.abs(data[o + 2] - bg[2]) < 60) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < 0) return { canvas, cssWidth: canvas.clientWidth, cssHeight: canvas.clientHeight };
+  const box = {
+    x: Math.max(0, minX - pad),
+    y: Math.max(0, minY - pad),
+    width: Math.min(w - Math.max(0, minX - pad), maxX - minX + 1 + 2 * pad),
+    height: Math.min(h - Math.max(0, minY - pad), maxY - minY + 1 + 2 * pad),
+  };
+  const out = document.createElement("canvas");
+  out.width = box.width;
+  out.height = box.height;
+  const octx = out.getContext("2d")!;
+  octx.fillStyle = getComputedStyle(document.body).backgroundColor;
+  octx.fillRect(0, 0, out.width, out.height);
+  octx.drawImage(canvas, box.x, box.y, box.width, box.height, 0, 0, box.width, box.height);
+  return { canvas: out, cssWidth: out.width, cssHeight: out.height };
+}
+
+const canvasShot = (host: HTMLElement, canvas: HTMLCanvasElement) => {
+  const cropped = cropToInk(canvas);
+  void host;
+  return {
+    data: cropped.canvas.toDataURL("image/png"),
+    width: cropped.canvas.width,
+    height: cropped.canvas.height,
+    cssWidth: cropped.cssWidth,
+  };
+};
 
 /** The diagram, drawn by the editor with the library's own icons. */
 window.__sceneDiagram = (data) => {
@@ -79,6 +129,9 @@ window.__sceneDiagram = (data) => {
     } as never);
     editor.resize();
     editor.zoomToFit();
+    // Back off before cropping: a fit that fills the pane leaves the outer wire stubs
+    // exactly on the edge, and cropping then clips them.
+    editor.viewport.scale *= 0.9;
     editor.draw();
     return canvasShot(host, editor.canvasEl);
   } catch (err) {
@@ -113,7 +166,7 @@ window.__scenePlot = (data) => {
     // The two POSITIONS rather than the example's default position-and-velocity: the
     // point of this model is that the pair drifts while the gap between them settles,
     // and that is only visible with both masses on the plot.
-    const visible = ["mass1.s", "mass2.s"];
+    const visible = ["mass1.s", "coupling.s_rel"];
     data.result.series.forEach((s, i) => {
       styles[s.name] = { color: colours[i % colours.length], visible: visible.includes(s.name) };
     });
@@ -321,6 +374,7 @@ window.__sceneHover = (data) => {
     } as never);
     editor.resize();
     editor.zoomToFit();
+    editor.viewport.scale *= 0.9;
     editor.draw();
 
     // The component to rest on, at the middle of its own box, mapped through the

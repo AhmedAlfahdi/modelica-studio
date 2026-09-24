@@ -10,13 +10,6 @@
 
 ## The model
 
-The block below is live. It renders as a diagram, and pressing **Simulate**
-runs it through OpenModelica and plots the result — the same model this note
-derives an answer for. Its first line is a directive giving the time span that
-model is meant to run over, so the block does not depend on whatever span the
-Studio last used. (Obsidian does not pass a fence's info string to a code-block
-processor, so the option has to live inside the block.)
-
 ```modelica
 //@ time=25
 model TankOrifice "A tank draining through an orifice"
@@ -64,11 +57,11 @@ Because the flow goes as √h, the *square root* of the level falls in a straigh
 
 ## The physics
 
-$$dot m = C_d A sqrt{2ho,Delta p}, qquad Delta p = ho g h$$
+$$\dot m = C_d A \sqrt{2\rho\,\Delta p}, \qquad \Delta p = \rho g h$$
 
-$$A_{tank}rac{dh}{dt} = -rac{dot m}{ho} ;Rightarrow; rac{dh}{dt} = -ksqrt{h}$$
+$$A_{tank}\frac{dh}{dt} = -\frac{\dot m}{\rho} \;\Rightarrow\; \frac{dh}{dt} = -k\sqrt{h}$$
 
-$$sqrt{h(t)} = sqrt{h_0} - rac{k}{2}t qquadLongrightarrowqquad t_{empty} = rac{2sqrt{h_0}}{k}$$
+$$\sqrt{h(t)} = \sqrt{h_0} - \frac{k}{2}t \qquad\Longrightarrow\qquad t_{empty} = \frac{2\sqrt{h_0}}{k}$$
 
 A **square-root** discharge law is the whole point: because Torricelli flow goes as √h, the level does not decay exponentially — it reaches **zero in finite time**, with √h falling linearly. That is the signature distinguishing a gravity drain from an RC circuit, and it is measurable directly from the slope of √h.
 

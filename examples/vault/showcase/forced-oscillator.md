@@ -10,13 +10,6 @@
 
 ## The model
 
-The block below is live. It renders as a diagram, and pressing **Simulate**
-runs it through OpenModelica and plots the result — the same model this note
-derives an answer for. Its first line is a directive giving the time span that
-model is meant to run over, so the block does not depend on whatever span the
-Studio last used. (Obsidian does not pass a fence's info string to a code-block
-processor, so the option has to live inside the block.)
-
 ```modelica
 //@ time=20
 model ForcedOscillator "A driven mass on a spring, near resonance"
@@ -65,11 +58,11 @@ Resonance is not a magical amplification — it is what happens when you push in
 
 ## The physics
 
-$$mddot{s} + ddot{s} + cs = F_0sinomega t$$
+$$m\ddot{s} + d\dot{s} + c\,s = F_0\sin\omega t$$
 
-$$X = rac{F_0/c}{sqrt{(1-r^2)^2 + (2zeta r)^2}}, qquad r = rac{omega}{omega_n}$$
+$$X = \frac{F_0/c}{\sqrt{(1-r^2)^2 + (2\zeta r)^2}}, \qquad r = \frac{\omega}{\omega_n}$$
 
-$$	ext{phase lag} = arctanrac{2zeta r}{1-r^2}, qquad 	ext{dissipation per cycle} = pi F_0 X sinarphi$$
+$$\text{phase lag} = \arctan\frac{2\zeta r}{1-r^2}, \qquad \text{dissipation per cycle} = \pi F_0 X \sin\varphi$$
 
 Driving at 1.5 Hz against a 1.59 Hz natural frequency puts r = 0.94, right beside resonance: the response is **6.84 times** the static deflection. In steady state the damper must remove exactly the energy the force supplies each cycle, which closes the energy balance without needing the full transient.
 

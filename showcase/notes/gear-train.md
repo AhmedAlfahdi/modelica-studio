@@ -10,28 +10,23 @@
 
 ## The model
 
-The block below is live. It renders as a diagram, and pressing **Simulate**
-runs it through OpenModelica and plots the result — the same model this note
-derives an answer for. Its first line is a directive giving the time span that
-model is meant to run over, so the block does not depend on whatever span the
-Studio last used. (Obsidian does not pass a fence's info string to a code-block
-processor, so the option has to live inside the block.)
-
 ```modelica
 //@ time=10
 model GearTrain "A motor driving a load through a gearbox"
   Modelica.Mechanics.Rotational.Sources.TorqueStep motor(stepTorque=10, startTime=0.2)
-    annotation(Placement(transformation(extent={{-70,-10},{-50,10}})));
+    annotation(Placement(transformation(extent={{-80,-10},{-60,10}})));
   Modelica.Mechanics.Rotational.Components.Inertia motorInertia(J=0.1)
-    annotation(Placement(transformation(extent={{-40,-10},{-20,10}})));
+    annotation(Placement(transformation(extent={{-50,-10},{-30,10}})));
   Modelica.Mechanics.Rotational.Components.IdealGear gear(ratio=5)
-    annotation(Placement(transformation(extent={{-5,-10},{15,10}})));
+    annotation(Placement(transformation(extent={{-15,-10},{5,10}})));
   Modelica.Mechanics.Rotational.Components.Inertia loadInertia(J=2)
-    annotation(Placement(transformation(extent={{30,-10},{50,10}})));
+    annotation(Placement(transformation(extent={{20,-10},{40,10}})));
   Modelica.Mechanics.Rotational.Components.SpringDamper bearing(c=200, d=20)
-    annotation(Placement(transformation(extent={{60,-10},{80,10}})));
+    annotation(Placement(transformation(extent={{50,-10},{70,10}})));
+  // The whole chain sits 10 units left of where it started: the frame used to reach
+  // x = 110, outside the ±100 box a Modelica diagram is drawn in.
   Modelica.Mechanics.Rotational.Components.Fixed frame
-    annotation(Placement(transformation(extent={{90,-10},{110,10}})));
+    annotation(Placement(transformation(extent={{80,-10},{100,10}})));
 equation
   connect(motor.flange, motorInertia.flange_a);
   connect(motorInertia.flange_b, gear.flange_a);

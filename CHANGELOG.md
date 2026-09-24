@@ -5,6 +5,50 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.9] — 2026-10-14
+
+### Fixed
+
+- **Thirty worked-example notes had LaTeX that Obsidian rendered as literal text.**
+  `\frac{\rho v^2}{2}` had shipped as `rac{<newline>ho v^2}{2}`, `\sqrt` as `sqrt`,
+  `\qquad` as `qquad` — and in `TankOrifice`, where the damage was worst, the draining
+  law read `A_{tank}rac{dh}{dt} = -rac{dot m}{ho}`.
+
+  The cause was in the SOURCE, not the output: `showcase/math.mjs` writes the
+  mathematics as JavaScript strings, and `"m\ddot{s} + d\dot{s} + cs = 0"` has its
+  backslashes eaten by the language before it is ever a string — `\d` is a `d`, `\f` is
+  a form feed, `\r` a carriage return. A hundred and twelve backslashes were escaped for
+  the wrong language. The notes are all regenerated from `showcase/generate.mjs`, so the
+  fix is in one file rather than thirty.
+
+  Three tests now stand where none did: the notes' mathematics must not contain a
+  control character, a macro without its backslash, or a macro glued to the letter
+  before it; **`math.mjs` itself** is checked the same way, because an output-only check
+  would not have caught this until a regeneration; and the two copies of the notes
+  (`showcase/notes/` and `examples/vault/showcase/`) must be identical, since they had
+  drifted into one repaired tree and one broken one.
+
+### Changed
+
+- **`MassSpringDamper` opens on the quantities the model is about.** Its default traces
+  were `mass1.s` and `mass1.v` — real variables, and between them they said nothing about
+  a model whose subject is the *gap* between two free masses. They are now `mass1.s` (the
+  drift) and `coupling.s_rel` (the gap, which settles at `F·m₂/(c(m₁+m₂)) = 1/75 m`
+  rather than at `F/c`). The README's plot shows the same pair, so the picture, the note
+  and the plugin agree.
+
+- **The example diagrams are held to four layout rules**, checked over all thirty:
+  no two symbols overlap; every connection runs along one axis rather than diagonally;
+  no part is stranded more than 60 units from what it connects to; and nothing is drawn
+  outside the ±100 box a Modelica diagram is drawn in. A fifth rule resolves each
+  component's ports through the installed library and requires connected pins to share an
+  x or a y, so a wire is a straight run. Only one symbol in thirty examples broke a rule —
+  `GearTrain`'s frame reached x = 110 — and the chain moved ten units left.
+
+- **The paragraph explaining what a live block does is written once**, in the
+  introduction, instead of appearing verbatim at the top of all thirty notes. It is
+  generated from `showcase/intro-body.md` now, so a note is about its model.
+
 ## [0.3.8] — 2026-10-14
 
 ### Fixed

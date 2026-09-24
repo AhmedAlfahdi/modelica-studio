@@ -126,13 +126,6 @@ for (const ex of EXAMPLES) {
 
 ## The model
 
-The block below is live. It renders as a diagram, and pressing **Simulate**
-runs it through OpenModelica and plots the result — the same model this note
-derives an answer for. Its first line is a directive giving the time span that
-model is meant to run over, so the block does not depend on whatever span the
-Studio last used. (Obsidian does not pass a fence's info string to a code-block
-processor, so the option has to live inside the block.)
-
 \`\`\`modelica
 //@ time=${ex.stopTime}
 ${ex.source.trim()}

@@ -10,13 +10,6 @@
 
 ## The model
 
-The block below is live. It renders as a diagram, and pressing **Simulate**
-runs it through OpenModelica and plots the result — the same model this note
-derives an answer for. Its first line is a directive giving the time span that
-model is meant to run over, so the block does not depend on whatever span the
-Studio last used. (Obsidian does not pass a fence's info string to a code-block
-processor, so the option has to live inside the block.)
-
 ```modelica
 //@ time=12
 model NonlinearOrifice "Flow through an orifice under a ramped pressure"
@@ -65,9 +58,9 @@ Five times the pressure gives only √5 ≈ 2.24 times the flow. This is **the**
 
 ## The physics
 
-$$dot m = rac{A}{sqrt{zeta/2}}sqrt{ho,Delta p}$$
+$$\dot m = \frac{A}{\sqrt{\zeta/2}}\sqrt{\rho\,\Delta p}$$
 
-$$Delta p = rac{zeta}{2ho}left(rac{dot m}{A}ight)^2 qquad (	ext{quadratic in flow})$$
+$$\Delta p = \frac{\zeta}{2\rho}\left(\frac{\dot m}{A}\right)^2 \qquad (\text{quadratic in flow})$$
 
 The orifice law is genuinely **nonlinear**: flow goes as √Δp, not Δp. Raising the differential pressure five-fold multiplies the flow by only √5 ≈ 2.24. Equivalently Δp/ṁ² is a constant set by the geometry, which is the convenient form for checking a simulation because it needs no pressure signal at all.
 

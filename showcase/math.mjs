@@ -304,10 +304,10 @@ export const NOTES = {
     title: "Mechanical — damped harmonic oscillator",
     domain: "Mechanical",
     equations: [
-      "m\ddot{s} + d\dot{s} + cs = 0",
-      "\omega_n = \sqrt{c/m} = 10\ \text{rad/s}, \qquad \zeta = \frac{d}{2\sqrt{cm}} = 0.1",
-      "\omega_d = \omega_n\sqrt{1-\zeta^2} = 9.9499\ \text{rad/s}, \qquad s(t) = s_0 e^{-\zeta\omega_n t}\cos(\omega_d t + \varphi)",
-      "\text{decay per cycle} = e^{-2\pi\zeta/\sqrt{1-\zeta^2}}",
+      "m\\ddot{s} + d\\dot{s} + c\\,s = 0",
+      "\\omega_n = \\sqrt{c/m} = 10\\ \\text{rad/s}, \\qquad \\zeta = \\frac{d}{2\\sqrt{cm}} = 0.1",
+      "\\omega_d = \\omega_n\\sqrt{1-\\zeta^2} = 9.9499\\ \\text{rad/s}, \\qquad s(t) = s_0 e^{-\\zeta\\omega_n t}\\cos(\\omega_d t + \\varphi)",
+      "\\text{decay per cycle} = e^{-2\\pi\\zeta/\\sqrt{1-\\zeta^2}}",
     ],
     insight:
       "Released from rest at s = 0.1 m the mass starts with acceleration **−c·s₀/m = −10 m/s²** — the spring's force and nothing else, since the damper does no work at zero velocity. That single value pins the model's stiffness and mass together before any oscillation is examined.",
@@ -321,9 +321,9 @@ export const NOTES = {
     title: "Mechanical — driven oscillator near resonance",
     domain: "Mechanical",
     equations: [
-      "m\ddot{s} + d\dot{s} + cs = F_0\sin\omega t",
-      "X = \frac{F_0/c}{\sqrt{(1-r^2)^2 + (2\zeta r)^2}}, \qquad r = \frac{\omega}{\omega_n}",
-      "\text{phase lag} = \arctan\frac{2\zeta r}{1-r^2}, \qquad \text{dissipation per cycle} = \pi F_0 X \sin\varphi",
+      "m\\ddot{s} + d\\dot{s} + c\\,s = F_0\\sin\\omega t",
+      "X = \\frac{F_0/c}{\\sqrt{(1-r^2)^2 + (2\\zeta r)^2}}, \\qquad r = \\frac{\\omega}{\\omega_n}",
+      "\\text{phase lag} = \\arctan\\frac{2\\zeta r}{1-r^2}, \\qquad \\text{dissipation per cycle} = \\pi F_0 X \\sin\\varphi",
     ],
     insight:
       "Driving at 1.5 Hz against a 1.59 Hz natural frequency puts r = 0.94, right beside resonance: the response is **6.84 times** the static deflection. In steady state the damper must remove exactly the energy the force supplies each cycle, which closes the energy balance without needing the full transient.",
@@ -338,9 +338,9 @@ export const NOTES = {
     title: "Fluid — a tank draining through an orifice",
     domain: "Fluid",
     equations: [
-      "\dot m = C_d A \sqrt{2\rho\,\Delta p}, \qquad \Delta p = \rho g h",
-      "A_{tank}\frac{dh}{dt} = -\frac{\dot m}{\rho} \;\Rightarrow\; \frac{dh}{dt} = -k\sqrt{h}",
-      "\sqrt{h(t)} = \sqrt{h_0} - \frac{k}{2}t \qquad\Longrightarrow\qquad t_{empty} = \frac{2\sqrt{h_0}}{k}",
+      "\\dot m = C_d A \\sqrt{2\\rho\\,\\Delta p}, \\qquad \\Delta p = \\rho g h",
+      "A_{tank}\\frac{dh}{dt} = -\\frac{\\dot m}{\\rho} \\;\\Rightarrow\\; \\frac{dh}{dt} = -k\\sqrt{h}",
+      "\\sqrt{h(t)} = \\sqrt{h_0} - \\frac{k}{2}t \\qquad\\Longrightarrow\\qquad t_{empty} = \\frac{2\\sqrt{h_0}}{k}",
     ],
     insight:
       "A **square-root** discharge law is the whole point: because Torricelli flow goes as √h, the level does not decay exponentially — it reaches **zero in finite time**, with √h falling linearly. That is the signature distinguishing a gravity drain from an RC circuit, and it is measurable directly from the slope of √h.",
@@ -355,8 +355,8 @@ export const NOTES = {
     title: "Fluid — orifice flow under a ramped pressure",
     domain: "Fluid",
     equations: [
-      "\dot m = \frac{A}{\sqrt{\zeta/2}}\sqrt{\rho\,\Delta p}",
-      "\Delta p = \frac{\zeta}{2\rho}\left(\frac{\dot m}{A}\right)^2 \qquad (\text{quadratic in flow})",
+      "\\dot m = \\frac{A}{\\sqrt{\\zeta/2}}\\sqrt{\\rho\\,\\Delta p}",
+      "\\Delta p = \\frac{\\zeta}{2\\rho}\\left(\\frac{\\dot m}{A}\\right)^2 \\qquad (\\text{quadratic in flow})",
     ],
     insight:
       "The orifice law is genuinely **nonlinear**: flow goes as √Δp, not Δp. Raising the differential pressure five-fold multiplies the flow by only √5 ≈ 2.24. Equivalently Δp/ṁ² is a constant set by the geometry, which is the convenient form for checking a simulation because it needs no pressure signal at all.",
@@ -370,8 +370,8 @@ export const NOTES = {
     title: "Fluid — pipe friction as the flow rises",
     domain: "Fluid",
     equations: [
-      "\Delta p = f\frac{L}{D}\,\frac{\rho v^2}{2}, \qquad v = \frac{\dot m}{\rho A}, \qquad Re = \frac{\rho v D}{\mu}",
-      "\frac{1}{\sqrt{f}} = -2\log_{10}\left(\frac{\epsilon/D}{3.7} + \frac{2.51}{Re\sqrt{f}}\right)",
+      "\\Delta p = f\\frac{L}{D}\\,\\frac{\\rho v^2}{2}, \\qquad v = \\frac{\\dot m}{\\rho A}, \\qquad Re = \\frac{\\rho v D}{\\mu}",
+      "\\frac{1}{\\sqrt{f}} = -2\\log_{10}\\left(\\frac{\\epsilon/D}{3.7} + \\frac{2.51}{Re\\sqrt{f}}\\right)",
     ],
     insight:
       "Friction is nonlinear for two reasons at once: Δp grows with the **square** of velocity, and the friction factor f itself **falls** as the flow becomes more turbulent. Both are visible as the ramp raises the flow — f drifts down from 0.0297 to 0.0226 while the pressure drop climbs by a factor of 49 for an eight-fold rise in flow.",

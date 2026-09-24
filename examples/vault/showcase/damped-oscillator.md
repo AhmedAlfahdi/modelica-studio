@@ -10,13 +10,6 @@
 
 ## The model
 
-The block below is live. It renders as a diagram, and pressing **Simulate**
-runs it through OpenModelica and plots the result — the same model this note
-derives an answer for. Its first line is a directive giving the time span that
-model is meant to run over, so the block does not depend on whatever span the
-Studio last used. (Obsidian does not pass a fence's info string to a code-block
-processor, so the option has to live inside the block.)
-
 ```modelica
 //@ time=4
 model DampedOscillator "A mass on a spring with viscous damping"
@@ -58,13 +51,13 @@ The first instant tells you a lot: the mass is moving at zero speed, so the damp
 
 ## The physics
 
-$$mddot{s} + ddot{s} + cs = 0$$
+$$m\ddot{s} + d\dot{s} + c\,s = 0$$
 
-$$omega_n = sqrt{c/m} = 10 	ext{rad/s}, qquad zeta = rac{d}{2sqrt{cm}} = 0.1$$
+$$\omega_n = \sqrt{c/m} = 10\ \text{rad/s}, \qquad \zeta = \frac{d}{2\sqrt{cm}} = 0.1$$
 
-$$omega_d = omega_nsqrt{1-zeta^2} = 9.9499 	ext{rad/s}, qquad s(t) = s_0 e^{-zetaomega_n t}cos(omega_d t + arphi)$$
+$$\omega_d = \omega_n\sqrt{1-\zeta^2} = 9.9499\ \text{rad/s}, \qquad s(t) = s_0 e^{-\zeta\omega_n t}\cos(\omega_d t + \varphi)$$
 
-$$	ext{decay per cycle} = e^{-2pizeta/sqrt{1-zeta^2}}$$
+$$\text{decay per cycle} = e^{-2\pi\zeta/\sqrt{1-\zeta^2}}$$
 
 Released from rest at s = 0.1 m the mass starts with acceleration **−c·s₀/m = −10 m/s²** — the spring's force and nothing else, since the damper does no work at zero velocity. That single value pins the model's stiffness and mass together before any oscillation is examined.
 

@@ -107,7 +107,12 @@ Modelica types carry units. `Modelica.Units.SI.Voltage` and `Modelica.Units.SI.C
 
 Every example note follows the same shape:
 
-1. **The model** — a live block. It renders as a diagram and **Simulate** runs it.
+1. **The model** — a live block. It renders as a diagram, **Simulate** compiles and
+   plots it, and the diagram is editable in place: drag a component and the note's own
+   text is rewritten. Its first line is a directive giving the span that model is meant
+   to run over, so a block does not depend on whatever span the Studio last used.
+   (Obsidian does not pass a fence's info string to a code-block processor, so the
+   option has to live inside the block.)
 2. **The physics** — the equations worked out by hand.
 3. **Does the simulation agree?** — the number the hand calculation predicts, beside the number the simulation produced.
 

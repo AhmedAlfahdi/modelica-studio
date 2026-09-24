@@ -48,7 +48,7 @@ releases and updates it for you. The plugin is pre-1.0, so the version numbers a
    Settings → Community plugins.
 
 To pin a version instead of tracking the latest, use BRAT's **frozen** option and
-name the release, for example `0.3.8`.
+name the release, for example `0.3.9`.
 
 BRAT reports a mismatch if a release's tag, its name and the version inside the
 released `manifest.json` disagree. They are kept identical here on purpose, so an
@@ -73,7 +73,7 @@ To try it without your own vault, `examples/vault/` is a ready-made one — see
 npm install
 npm run build          # typecheck, then bundle to main.js
 npm run dev            # rebuild on change
-npm test               # 669 tests, including a numerical audit of every example
+npm test               # 680 tests, including a numerical audit of every example
 ```
 
 `npm test` runs the real OpenModelica compiler, so it needs `omc` on your PATH and
@@ -119,7 +119,12 @@ names the run, and the cursor reads every visible trace at the instant under it.
 </tr>
 </table>
 
-*The two masses' positions, with a step force on the first at t = 0.1 s. Nothing is anchored, so the pair drifts together — both curves bend upward — while the spring and damper between them ring and settle: that is the wiggle in the first second, and the gap between the curves is the spring's extension. Both curves are the numbers OpenModelica returned; nothing in this README is redrawn by hand.*
+*The first mass's position and the coupling's deflection — the two quantities this
+model is about, and the two its example opens with. Nothing is anchored, so
+`mass1.s` drifts upward; `coupling.s_rel` is the gap, which rings and settles at
+`F·m₂/(c(m₁+m₂)) = 1/75 m` rather than at `F/c`, because both ends are free. Both
+curves are the numbers OpenModelica returned; nothing in this README is redrawn by
+hand.*
 
 A **sweep** runs the model once per value of one parameter and overlays the results
 as a family, dotted per run; **Δ vs** measures a trace against the run on screen, so

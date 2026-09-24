@@ -633,17 +633,19 @@ end ControlLoop;
 `;
 const GEARTRAIN = `model GearTrain "A motor driving a load through a gearbox"
   Modelica.Mechanics.Rotational.Sources.TorqueStep motor(stepTorque=10, startTime=0.2)
-    annotation(Placement(transformation(extent={{-70,-10},{-50,10}})));
+    annotation(Placement(transformation(extent={{-80,-10},{-60,10}})));
   Modelica.Mechanics.Rotational.Components.Inertia motorInertia(J=0.1)
-    annotation(Placement(transformation(extent={{-40,-10},{-20,10}})));
+    annotation(Placement(transformation(extent={{-50,-10},{-30,10}})));
   Modelica.Mechanics.Rotational.Components.IdealGear gear(ratio=5)
-    annotation(Placement(transformation(extent={{-5,-10},{15,10}})));
+    annotation(Placement(transformation(extent={{-15,-10},{5,10}})));
   Modelica.Mechanics.Rotational.Components.Inertia loadInertia(J=2)
-    annotation(Placement(transformation(extent={{30,-10},{50,10}})));
+    annotation(Placement(transformation(extent={{20,-10},{40,10}})));
   Modelica.Mechanics.Rotational.Components.SpringDamper bearing(c=200, d=20)
-    annotation(Placement(transformation(extent={{60,-10},{80,10}})));
+    annotation(Placement(transformation(extent={{50,-10},{70,10}})));
+  // The whole chain sits 10 units left of where it started: the frame used to reach
+  // x = 110, outside the ±100 box a Modelica diagram is drawn in.
   Modelica.Mechanics.Rotational.Components.Fixed frame
-    annotation(Placement(transformation(extent={{90,-10},{110,10}})));
+    annotation(Placement(transformation(extent={{80,-10},{100,10}})));
 equation
   connect(motor.flange, motorInertia.flange_a);
   connect(motorInertia.flange_b, gear.flange_a);
@@ -728,7 +730,11 @@ export const EXAMPLES: ExampleModel[] = [
     name: "MassSpringDamper",
     description: "Mechanical: two free masses coupled by a spring and damper",
     stopTime: 5,
-    series: ["mass1.s", "mass1.v"],
+    // The two quantities this model is ABOUT: where the pair has drifted to, and how
+    // far the coupling is stretched — the second settles at F*m2/(c*(m1+m2)), not at
+    // F/c, which is the point of the example. mass1.v and mass2.s were here before and
+    // told a reader nothing they could not see better from these two.
+    series: ["mass1.s", "coupling.s_rel"],
     source: MASSSPRINGDAMPER,
   },
   {

@@ -10,13 +10,6 @@
 
 ## The model
 
-The block below is live. It renders as a diagram, and pressing **Simulate**
-runs it through OpenModelica and plots the result — the same model this note
-derives an answer for. Its first line is a directive giving the time span that
-model is meant to run over, so the block does not depend on whatever span the
-Studio last used. (Obsidian does not pass a fence's info string to a code-block
-processor, so the option has to live inside the block.)
-
 ```modelica
 //@ time=5
 model PipeFriction "Pressure drop along a pipe as the flow rises"
@@ -65,9 +58,9 @@ Two effects stack. Pressure rises with velocity squared, so eight times the flow
 
 ## The physics
 
-$$Delta p = frac{L}{D},rac{ho v^2}{2}, qquad v = rac{dot m}{ho A}, qquad Re = rac{ho v D}{mu}$$
+$$\Delta p = f\frac{L}{D}\,\frac{\rho v^2}{2}, \qquad v = \frac{\dot m}{\rho A}, \qquad Re = \frac{\rho v D}{\mu}$$
 
-$$rac{1}{sqrt{f}} = -2log_{10}left(rac{epsilon/D}{3.7} + rac{2.51}{Resqrt{f}}ight)$$
+$$\frac{1}{\sqrt{f}} = -2\log_{10}\left(\frac{\epsilon/D}{3.7} + \frac{2.51}{Re\sqrt{f}}\right)$$
 
 Friction is nonlinear for two reasons at once: Δp grows with the **square** of velocity, and the friction factor f itself **falls** as the flow becomes more turbulent. Both are visible as the ramp raises the flow — f drifts down from 0.0297 to 0.0226 while the pressure drop climbs by a factor of 49 for an eight-fold rise in flow.
 
