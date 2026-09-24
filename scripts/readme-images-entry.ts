@@ -38,6 +38,19 @@ export interface SceneData {
   model: DiagramModel;
   /** Every class the diagram draws with, by qualified name. */
   defs: Record<string, ComponentClass>;
+  /**
+   * What the palette shows.
+   *
+   * The two packages the example draws on, as the library's OWN package trees, plus
+   * the library's size and class names — so the studio screenshot lists real
+   * packages and real classes rather than a handful of invented rows.
+   */
+  palette: {
+    size: number;
+    roots: string[];
+    names: string[];
+    trees: Record<string, unknown>;
+  };
 }
 
 /**
@@ -91,5 +104,16 @@ export async function buildSceneData(opts: SceneOptions): Promise<SceneData> {
   };
   for (const component of model.components) add(component.className);
 
-  return { example: EXAMPLE, result, family, currentLabel: "c=50", model, defs };
+  // The palette: real package rows, with the example's own packages expanded. Loading
+  // every tree would serialize thousands of nodes into the page; these are the two the
+  // picture needs, and the count tells the reader how big the rest is.
+  const roots = ["Modelica.Mechanics.Translational", "Modelica.Blocks.Sources"];
+  const palette = {
+    size: index.size,
+    roots,
+    names: roots.flatMap((r) => index.packageTree(r).children.slice(0, 40).map((c) => c.full)),
+    trees: Object.fromEntries(roots.map((r) => [r, index.packageTree(r)])),
+  };
+
+  return { example: EXAMPLE, result, family, currentLabel: "c=50", model, defs, palette };
 }

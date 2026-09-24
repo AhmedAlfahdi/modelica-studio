@@ -5,6 +5,83 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [Unreleased]
+
+### Added
+
+- **Component names are placed instead of pinned below the symbol.** A name now tries
+  the four sides of its component in turn — below, above, right, left — and takes the
+  first that lands on nothing, so it clears the other symbols, the wires and the names
+  already placed. The failure this fixes is silent: a name under one symbol lands
+  inside the symbol beneath it, and a wire routed under a row of components crosses
+  every name in that row, so the reader reads the ink and not the name. The search is
+  per frame over screen-space rectangles with a cell grid, because a hundred-component
+  model has a couple of hundred wires and a quadratic test would stutter a drag.
+
+- **Settings → Diagram → "Move names out of the way"**, on by default. Off, every name
+  sits centred below its own symbol as it always did. Both surfaces follow it: the
+  Studio and the diagrams embedded in notes.
+
+- The README now opens with a **whole-studio screenshot** in both themes, and carries a
+  **Mermaid flowchart** of what actually happens between the plugin and OpenModelica —
+  serialize, translate, compile, run, read the result — with the error path drawn in.
+  Two more worked examples (**RLC** and **ResistorSelfHeating**) join the mechanical
+  one, each with its model, the algebra in LaTeX, and a table of closed-form versus
+  simulated values.
+
+### Fixed
+
+- **`scripts/readme-images.mjs` never finished.** The Help capture lost its `await`
+  when `cropToScene` became async, so every run ended with
+  `image.toPNG is not a function` and a non-zero exit — after the Help images had
+  stopped being regenerated at all. The README's images are a build artifact, so this
+  was a stale picture waiting to be noticed.
+
+- **Loading a built-in example can no longer write itself over a file of the same name.**
+  The name-to-path record is keyed by model name, so a vault holding `Modelica/RLC.mo`
+  kept the shipped `RLC` associated with it: the header named the user's file while the
+  canvas held the bundled model, and the next switch saved the bundled text into that
+  file. Two files in the test vault were overwritten exactly that way. The Examples picker
+  now loads with `fromExample`, which drops the record after the outgoing model has been
+  flushed — an example is not a document and holds no path until it is saved somewhere.
+
+- **The RLC note's damping ratio was wrong by a factor of ten, and the note explained the
+  discrepancy with an invented rule.** ζ = (R/2)·√(C/L) was 0.158 for the C the note then
+  had, not 1.58; the circuit was underdamped all along, so the overshoot the simulation
+  showed was simply correct. The note now derives ω₀ = 100 rad/s, ω_d = 86.6 rad/s and
+  ζ = 0.5 for C = 1e-3, gives the 16% overshoot as the expected result, and the "a series
+  RLC rings at any ζ" claim (with its non-existent complex zeros) is gone from the note,
+  the generator and the test header. The account in `docs/testing-findings.md` is corrected
+  rather than deleted, because a wrong note that teaches a false rule is worth remembering.
+
+- **The Rectifier note documented a load of 1000 Ω that the model does not have.** The
+  model's resistor is `R=100`, so the discharge time constant is RC = 10 ms — half the
+  20 ms cycle, not 0.1 s — and the capacitor loses 63% of its charge between peaks. The
+  prose, the τ line and the resistor's name now match the model.
+
+- **The Rectifier's capacitor is wired across the load again.** In the re-arranged model it
+  had been drawn between the ground rail and the source's live terminal, which put it
+  across the *source*: `capacitor.v` simply followed the sine and the load was left
+  unsmoothed. One endpoint changed (`capacitor.p` to `diode.n`); the verification numbers
+  the note has always carried — 9.54057 V peak, 0.367868 over 10 ms — are unchanged.
+
+- **Electrical's KVL row reads v_C − v_R = 10 V.** The arrangement now references the
+  circuit to the source's `p` terminal, so the resistor's voltage is negative and the two
+  add with a sign. The capacitor still charges to +10 V.
+
+### Changed
+
+- **Eleven examples are shipped in the arrangement their author drew**: Rectifier, RLC,
+  SineAC, BatteryDischarge, DCMotor, HalfWaveRectifier, NonlinearOrifice, PipeFriction,
+  Thermal, HeatConduction and ResistorSelfHeating. Several also moved their reference node
+  from the source's `n` terminal to its `p`; where that reversed a branch the audit
+  expectations were re-derived (a battery terminal voltage is now checked as a difference,
+  and `resistor.i` is negative because `resistor.p` is the grounded end).
+
+- `ResistorSelfHeating: ambient` is a named allowance in the diagram-box test: the
+  electrical-to-thermal chain runs to x 120, and pulling the still-air source back inside
+  ±100 would put it on top of the conductor it is wired to.
+
 ## [0.3.18] — 2026-09-24
 
 ### Fixed

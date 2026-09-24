@@ -18,7 +18,7 @@ import { DEFAULT_SETTINGS } from "../src/settings-merge";
 
 /** Everything the Node side resolved, handed over as data. */
 interface SceneData {
-  example: { name: string; description: string; stopTime: number; series: string[] };
+  example: { name: string; description: string; stopTime: number; series: string[]; source: string };
   family: Array<{ label: string; result: SceneData["result"] }>;
   currentLabel: string;
   result: {
@@ -31,6 +31,17 @@ interface SceneData {
   };
   model: Parameters<typeof SchematicEditor>[1];
   defs: Record<string, Parameters<ConstructorParameters<typeof SchematicEditor>[2]["lookup"]>[0]>;
+  /**
+   * What the palette lists, read out of the installed Modelica library by the Node
+   * side: real package names and real trees, so the sidebar in the picture is the
+   * sidebar a reader gets rather than a handful of invented rows.
+   */
+  palette: {
+    size: number;
+    roots: string[];
+    names: string[];
+    trees: Record<string, unknown>;
+  };
 }
 
 declare global {
@@ -43,6 +54,7 @@ declare global {
     __sceneSweep: (data: SceneData) => unknown;
     __sceneExample: (example: { name: string; source: string }, defs: Record<string, unknown>) => unknown;
     __sceneHelp: () => unknown;
+    __sceneStudio: (data: SceneData) => unknown;
     __SCENES__: SceneData;
   }
 }
@@ -438,6 +450,150 @@ window.__sceneSweep = (data) => {
       cursorX: width * 0.62,
     } as never);
     return canvasShot(host, canvas);
+  } catch (err) {
+    return fail(err);
+  }
+};
+
+/**
+ * The whole studio, mounted.
+ *
+ * Every other scene renders one component. This one mounts the real view — the
+ * toolbar, the palette, the canvas, the inspector and the result pane — because the
+ * README's first question is what the plugin looks like, and a picture of the canvas
+ * alone does not answer it.
+ *
+ * The plugin is a DOUBLE, as it is in the UI tests: there is no vault and no
+ * compiler in this page. What is real is the view and the library: the palette lists
+ * the packages the Node side read out of the installed Modelica library, and the
+ * diagram is drawn from the example's own source with the library's own icons.
+ */
+window.__sceneStudio = async (data) => {
+  try {
+    const host = document.getElementById("studio")!;
+    host.textContent = "";
+    const { ModelicaStudioView } = await import("../src/view/studio-view");
+    const lib = data.palette;
+    const app = {
+      vault: { configDir: ".obsidian", adapter: { getBasePath: () => "/" }, getAbstractFileByPath: () => null },
+      workspace: { getLeavesOfType: () => [], on: () => ({}), getActiveViewOfType: () => null, onLayoutReady: (f: () => void) => f() },
+    };
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      modelFolder: "Modelica",
+      modelFiles: { [data.example.name]: `Modelica/${data.example.name}.mo` },
+      paletteRoots: [],
+      // A shallower result pane than the default 300px: the picture has to show the
+      // DIAGRAM, and at the default height the pane takes most of the view.
+      plotHeight: 240,
+    };
+    const library = {
+      size: lib.size,
+      packages: () => lib.roots,
+      packageTree: (root: string) => lib.trees[root] ?? { name: root, children: [], placeable: false },
+      component: (n: string) => data.defs[n],
+      describe: (n: string) => data.defs[n],
+      allNames: () => lib.names,
+      isExcluded: () => false,
+      hasPlaceableClass: (n: string) => !!data.defs[n],
+    };
+    const plugin = {
+      app,
+      manifest: { id: "modelica-studio", version: "0.3.18", author: "Ahmed Alfahdi" },
+      settings,
+      model: data.model,
+      library,
+      libraryRootNames: () => ["Modelica 4.1.0"],
+      backend: null,
+      hasLibrary: () => true,
+      stopTime: () => data.example.stopTime,
+      sourceForSave: () => data.example.source,
+      modelSourceText: () => data.example.source,
+      saveState: () => ({ state: "saved", label: "saved", worthAsking: false }),
+      saveModelToNote: async () => ({ path: `Modelica/${data.example.name}.mo`, created: false }),
+      takeModelOutdated: () => false,
+      markModelOutdated: () => {},
+      noteModelEdited: () => {},
+      invalidateBuild: () => {},
+      getView: () => null,
+      refreshEmbeds: () => {},
+      setStopTime: () => {},
+      ensureFolder: async () => {},
+      saveSettings: async () => {},
+      diag: () => {},
+      isComponentClass: () => false,
+      traceStep: () => {},
+      runLog: { add: () => {}, clear: () => {}, entries: () => [], subscribe: () => () => {} },
+      aiContext: () => ({}),
+      aiKey: () => null,
+      appendAiExchange: () => {},
+      readAiExchanges: () => [],
+      publishChart: () => {},
+      parseSource: () => [],
+      loadModelFromPath: async () => {},
+      markSourceStale: () => {},
+      adoptEditorModel: () => {},
+      adoptModel: () => {},
+      setModelFromSource: async () => undefined,
+      persist: async () => {},
+      promptNewModel: async () => {},
+      showSetupHelp: () => {},
+      loadSettings: async () => {},
+    };
+    // The view is a leaf: it is handed elements rather than creating them.
+    const view = new ModelicaStudioView({} as never, plugin as never);
+    (view as unknown as { app: unknown }).app = app;
+    // The size is set on the HOST, before the view is mounted: the view clamps its
+    // panes against the width it is given when it lays itself out, and a container
+    // resized afterwards leaves the canvas at the width it measured while it was
+    // still empty -- a narrow canvas in a wide window, which is what the first
+    // version of this picture showed.
+    host.style.width = "1240px";
+    host.style.height = "660px";
+    const shell = host.createDiv({ cls: "modelica-studio-view" });
+    (view as unknown as { containerEl: HTMLElement }).containerEl = shell;
+    (view as unknown as { contentEl: HTMLElement }).contentEl = shell.createDiv({ cls: "view-content" });
+    await view.onOpen();
+    // A result, so the pane below the canvas shows a plot rather than its placeholder
+    // -- the state the studio is in straight after Simulate.
+    const priv = view as unknown as {
+      adoptResult: (r: unknown) => void;
+      seedVisible: (names: string[], signature: string) => void;
+      renderInspector: () => void;
+      drawResults: () => void;
+      inspectorTab: string;
+      lastSweep: string | null;
+    };
+    priv.adoptResult(data.result);
+    priv.seedVisible(
+      data.result.series.map((s) => s.name).slice(0, 2),
+      data.result.series.map((s) => s.name).join("|")
+    );
+    priv.inspectorTab = "results";
+    priv.renderInspector();
+    // A real window tells the view its size; this one has to be told, or the panes
+    // keep the widths they were clamped to while the container was still empty.
+    (view as unknown as { afterPaneResize?: () => void }).afterPaneResize?.();
+    view.refreshDiagram();
+    priv.drawResults();
+    // Cropped to the INK rather than to the container: the view lays its panes out
+    // inside whatever box it is given, and a container larger than the content would
+    // put a band of empty background down the side of the README's first picture.
+    // Every element with a box that intersects the container is folded in, so the
+    // crop is the studio's own furniture and nothing else.
+    const frame = shell.getBoundingClientRect();
+    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+    for (const el of [shell, ...Array.from(shell.querySelectorAll("*"))]) {
+      const b = el.getBoundingClientRect();
+      if (b.width < 1 || b.height < 1) continue;
+      if (b.right < frame.left || b.left > frame.right || b.bottom < frame.top || b.top > frame.bottom) continue;
+      x1 = Math.min(x1, b.left);
+      y1 = Math.min(y1, b.top);
+      x2 = Math.max(x2, b.right);
+      y2 = Math.max(y2, b.bottom);
+    }
+    if (!Number.isFinite(x1)) return { x: frame.x, y: frame.y, width: Math.ceil(frame.width), height: Math.ceil(frame.height) };
+    return { x: Math.floor(x1), y: Math.floor(y1), width: Math.ceil(x2 - x1) + 2, height: Math.ceil(y2 - y1) + 2 };
   } catch (err) {
     return fail(err);
   }

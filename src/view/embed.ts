@@ -471,6 +471,7 @@ export class EmbeddedDiagram {
         return {
           labelScale: this.host.settings.labelScale,
           instanceLabels: this.host.settings.showInstanceLabels,
+          dynamicLabels: this.host.settings.dynamicLabels,
           hoverParameters: this.host.settings.hoverParameters,
           readoutScale: this.host.settings.diagramReadoutScale,
           wireScale: this.host.settings.wireScale,

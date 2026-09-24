@@ -330,6 +330,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
     // once it is understood, so they can be switched off. The SIZE below then has
     // nothing to read, and says so by being greyed rather than looking live.
     let labelScaleRow: Setting | null = null;
+    let dynamicRow: Setting | null = null;
 
     new Setting(containerEl)
       .setName("Show component names")
@@ -346,6 +347,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           // Applied before the write, so the row greys as the switch moves rather
           // than one disk round-trip later.
           labelScaleRow?.setDisabled(!v);
+          dynamicRow?.setDisabled(!v);
           this.plugin.getView()?.refreshDiagram();
           this.plugin.refreshEmbeds();
           await this.plugin.saveSettings();
@@ -379,6 +381,28 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           })
       );
     labelScaleRow.setDisabled(!this.plugin.settings.showInstanceLabels);
+
+    // Placement is a separate question from size: a name can be the right size and
+    // still be unreadable because it is sitting on the symbol below it or on a wire.
+    dynamicRow = new Setting(containerEl)
+      .setName("Move names out of the way")
+      .setDesc(
+        "Places each name beside its symbol instead of always under it: the four " +
+          "sides are tried in turn and the first that lands on nothing wins, so a " +
+          "name clears the other symbols, the wires and the other names. With this " +
+          "off, every name sits centred below its own symbol, and one that would " +
+          "overlap stays where it is. Applies to the Studio and to diagrams " +
+          "embedded in notes, and reads nothing while the names are hidden."
+      )
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.dynamicLabels).onChange(async (v) => {
+          this.plugin.settings.dynamicLabels = v;
+          await this.plugin.saveSettings();
+          this.plugin.getView()?.refreshDiagram();
+          this.plugin.refreshEmbeds();
+        })
+      );
+    dynamicRow.setDisabled(!this.plugin.settings.showInstanceLabels);
 
     // The two thickness settings are two knobs on ONE curve. MSL's `thickness`
     // is a single scale — a connector asking for 0.5 draws a double line, and a

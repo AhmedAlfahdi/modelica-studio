@@ -497,6 +497,7 @@ export class ModelicaStudioView extends ItemView {
         return {
           labelScale: this.plugin.settings.labelScale,
           instanceLabels: this.plugin.settings.showInstanceLabels,
+          dynamicLabels: this.plugin.settings.dynamicLabels,
           hoverParameters: this.plugin.settings.hoverParameters,
           readoutScale: this.plugin.settings.diagramReadoutScale,
           wireScale: this.plugin.settings.wireScale,
@@ -4010,7 +4011,10 @@ export class ModelicaStudioView extends ItemView {
     const t0 = performance.now();
     this.setStatus(`Loading ${ex.name}…`);
     void this.plugin
-      .setModelFromSource(ex.source)
+      // `fromExample` is what stops a shipped model being written over a file of
+      // the same name: an example is not a document, and it holds no path until
+      // the user saves it somewhere on purpose.
+      .setModelFromSource(ex.source, { fromExample: true })
       .then((m) => {
         this.plugin.diag(`example ${name}: loaded in ${(performance.now() - t0).toFixed(0)} ms`);
         if (!m) {

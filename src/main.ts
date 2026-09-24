@@ -2187,10 +2187,20 @@ export default class ModelicaStudioPlugin extends Plugin {
   /**
    * Replace the active diagram from Modelica source and refresh the view.
    * Returns the parsed model, or undefined when the source has no classes.
+   *
+   * `fromExample` says the source is one of the SHIPPED models rather than
+   * something the user opened, and it is what keeps a built-in example from
+   * writing itself over a file. The name-to-path record is keyed by model name,
+   * so a user with `Modelica/RLC.mo` who then picked Examples -> RLC kept the
+   * record: the header named their file while the canvas held the shipped model,
+   * and the next switch saved the shipped text into their file. Two files in the
+   * test vault were overwritten exactly that way. Dropping the record cannot lose
+   * anything -- the outgoing model was flushed a line earlier -- and it makes the
+   * example a model with no file until the user saves it somewhere on purpose.
    */
   async setModelFromSource(
     source: string,
-    opts: { flushFirst?: boolean } = {}
+    opts: { flushFirst?: boolean; fromExample?: boolean } = {}
   ): Promise<DiagramModel | undefined> {
     // Replacing what is open is a save point for it: every path that does this
     // (a note block's "Open diagram", the Examples picker, restoring a revision)
@@ -2206,6 +2216,9 @@ export default class ModelicaStudioPlugin extends Plugin {
     // Prefer the first class that actually has components.
     const target = classes.find((c) => c.components.length > 0) ?? classes[0];
     this.replaceModel(toDiagramModel(target, (n) => this.library.component(n)), source);
+    // AFTER the replace, so the name is the new model's: deleting first would
+    // drop the record the flush above needs to save the outgoing model at all.
+    if (opts.fromExample) delete this.settings.modelFiles[this.model.name];
     await this.persist();
     const view = this.getView();
     if (view) {

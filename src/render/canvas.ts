@@ -21,6 +21,7 @@
  */
 
 import { currentTheme, themedColor, wireColorFor, type Theme } from "./theme";
+import { LABEL_MIN_SCREEN, labelFont, labelFontPx } from "./labels";
 
 import type {
   BitmapGraphic,
@@ -1375,6 +1376,15 @@ export interface DrawOptions {
    */
   instanceLabels?: boolean;
   /**
+   * Where this component's name goes, in DEVICE pixels, chosen by the caller.
+   *
+   * The name is placed by `placeLabels`, which can see the whole diagram — the
+   * other symbols, the wires, and the labels already put down — while the renderer
+   * sees one component at a time. Absent, the name sits centred below the drawn
+   * symbol, which is the fixed position this replaces.
+   */
+  labelAt?: { x: number; y: number };
+  /**
    * Multiplier on the weight of the lines the SYMBOLS are drawn with.
    *
    * The graphics' own widths are already screen-space and follow the zoom (see
@@ -1558,7 +1568,7 @@ export function drawComponent(
   // a diagram coordinate: the offset was multiplied by the zoom, pushing the
   // label further below the symbol the further in you zoomed. The transform is
   // therefore reset for the label, which is screen-space furniture.
-  if (onScreenSize > 14 && (opts.instanceLabels ?? true)) {
+  if (onScreenSize > LABEL_MIN_SCREEN && (opts.instanceLabels ?? true)) {
     ctx.save();
     // `vb` comes from `transformedBounds(viewportTransform(vp, dpr), ...)`, so it
     // is already in DEVICE pixels. The transform must therefore be IDENTITY:
@@ -1568,15 +1578,16 @@ export function drawComponent(
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     // Sized from the component's on-screen size so labels stay in proportion,
     // then scaled by the user's setting.
-    const labelPx = Math.max(9, Math.min(13, onScreenSize / 6)) * (opts.labelScale ?? 1);
-    ctx.font = `${labelPx}px sans-serif`;
+    const labelPx = labelFontPx(onScreenSize, opts.labelScale ?? 1);
+    ctx.font = labelFont(labelPx);
     ctx.fillStyle = theme.label;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    // Just below the drawn symbol, not below the canonical box: a Resistor
-    // draws only the middle band of its box, so anchoring to the box would
-    // float the name far below the thing it names.
-    ctx.fillText(inst.id, (vb[0] + vb[2]) / 2, vb[3] + 3);
+    // Below the drawn symbol, not below the canonical box: a Resistor draws only
+    // the middle band of its box, so anchoring to the box would float the name far
+    // below the thing it names. `opts.labelAt` is the placement pass saying that
+    // spot is taken and naming a free one instead.
+    ctx.fillText(inst.id, opts.labelAt?.x ?? (vb[0] + vb[2]) / 2, opts.labelAt?.y ?? vb[3] + 3);
     ctx.restore();
   }
 

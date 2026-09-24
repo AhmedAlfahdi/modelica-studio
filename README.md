@@ -22,6 +22,7 @@ numerically against independent calculations, and there are rough edges. See
 
 - [Install](#install) · [What it does](#what-it-does) ·
   [A worked example](#a-worked-example-two-masses-and-a-spring) ·
+  [Two more examples](#two-more-examples) ·
   [Using it in a note](#using-it-in-a-note) · [AI assistance](#ai-assistance) ·
   [Testing and verification](#testing) · [Licence](#license)
 
@@ -73,7 +74,7 @@ To try it without your own vault, `examples/vault/` is a ready-made one — see
 npm install
 npm run build          # typecheck, then bundle to main.js
 npm run dev            # rebuild on change
-npm test               # 700 tests, including a numerical audit of the examples
+npm test               # ~780 tests, including a numerical audit of the examples
 ```
 
 `npm test` runs the real OpenModelica compiler, so it needs `omc` on your PATH and
@@ -87,6 +88,51 @@ Each of these is a capability, with the picture that goes with it. The screensho
 are rendered from the plugin's own code by `scripts/readme-images.mjs`, so they
 cannot show something the plugin does not do — and regenerating them after a change
 is one command.
+
+The whole studio — palette, diagram, inspector, result — looks like this:
+
+<img src="docs/images/studio-light.png" alt="The whole Modelica Studio: palette, diagram canvas, inspector and result pane (light theme)">
+
+*Light theme. The palette on the left, the diagram in the middle, the inspector on the right — here on the **Traces** tab, listing the result's 37 variables with two of them plotted — and the result below, with the sweep controls beside it. The names under the components are placed by the plugin: a name that would land on another symbol or on a wire is moved aside, which is the **Move names out of the way** setting.*
+
+<img src="docs/images/studio-dark.png" alt="The whole Modelica Studio: palette, diagram canvas, inspector and result pane (dark theme)">
+
+*Dark theme.*
+
+### How it talks to OpenModelica
+
+The plugin never implements a simulator. It writes a model out as Modelica source,
+hands that text to the `omc` you already have installed, and reads the result file
+back:
+
+```mermaid
+flowchart TD
+  subgraph plugin["In Obsidian: the plugin"]
+    canvas["Diagram canvas<br/>drag, wire, rotate"]
+    src["Modelica source<br/>the .mo file in your vault"]
+    plot["Plot<br/>in the studio or in a note"]
+  end
+  subgraph omc["OpenModelica: omc"]
+    t["Translate<br/>flatten and type-check"]
+    cc["Compile to C, link"]
+    run["Run the executable<br/>writes a result file"]
+  end
+  lib[("Modelica Standard Library")]
+
+  canvas -->|serialize| src
+  src -->|"Simulate: one .mos script"| t
+  t -->|ok| cc
+  cc --> run
+  run -->|"the result file: a time series"| plot
+  t -.->|"errors, with line numbers"| src
+  lib -.->|"icons, colours, parameters"| canvas
+```
+
+Nothing is hidden in the middle: **Simulate** is those four steps in order, and
+everything `omc` reports comes back with its line number and is shown against the
+code. The library is read once to draw the palette and the symbols, and the model
+`import`s it by its ordinary name — so a file written here compiles in any other
+Modelica tool too.
 
 ### A schematic editor that draws what the library declares
 
@@ -283,17 +329,126 @@ end MassSpringDamper;
 A 1 N force is switched on at t = 0.1 s and pushes `mass1`; `mass2` is joined to it
 by nothing but a spring and damper. **Nothing is bolted down**, which is what makes
 it worth reading: the two masses bob relative to each other *and* drift away
-together, and the gap between them settles somewhere other than `F/c` — the value it
+together, and the gap between them settles somewhere other than $F/c$ — the value it
 would settle at if one end were nailed to the ground.
 
-- **Reduced mass** `μ = m₁m₂/(m₁+m₂) = 2/3 kg` — the effective inertia of the
-  relative motion, always smaller than either mass alone.
-- **Centre of mass** `ẍ_cm = F/(m₁+m₂) = 1/3 m/s²` — the drift, visible as the
-  curve bending upward in the plot.
-- **Steady gap** `F·m₂/(c(m₁+m₂)) = 1/75 m` — the trap, if you expect `F/c`.
+- **Reduced mass** $\mu = \dfrac{m_1 m_2}{m_1 + m_2} = \dfrac{2}{3}\ \text{kg}$ — the
+  effective inertia of the relative motion, always smaller than either mass alone.
+- **Centre of mass** $\ddot{x}_{\text{cm}} = \dfrac{F}{m_1 + m_2} = \dfrac{1}{3}\ \text{m/s}^2$ —
+  the drift, visible as the curve bending upward in the plot.
+- **Steady gap** $\Delta x = \dfrac{F\,m_2}{c\,(m_1 + m_2)} = \dfrac{1}{75}\ \text{m}$ —
+  the trap, if you expect $F/c$.
 
-`showcase/mass-spring-damper.md` works the whole thing through, including the
-equations and a table comparing them with what the simulation returns.
+[`showcase/notes/02-Mechanical/11-mass-spring-damper.md`](showcase/notes/02-Mechanical/11-mass-spring-damper.md)
+works the whole thing through, including the equations and a table comparing them
+with what the simulation returns.
+
+---
+
+## Two more examples
+
+Every example below is built in — open it from **Examples** in the toolbar and press
+**Simulate** — and every number is re-checked against a real OpenModelica run by
+`npm test`, so a stale figure in this README fails the build rather than misleading a
+reader. The closed forms are derived independently of the simulation.
+
+### A series RLC circuit that rings
+
+```modelica
+//@ time=0.05
+model RLC "Series RLC circuit: underdamped step response"
+  Modelica.Electrical.Analog.Sources.StepVoltage source(V=10, startTime=0.001)
+    annotation(Placement(transformation(extent={{-80,0},{-60,20}}, rotation=-90)));
+  Modelica.Electrical.Analog.Basic.Resistor resistor(R=10)
+    annotation(Placement(transformation(extent={{-40,20},{-20,40}})));
+  Modelica.Electrical.Analog.Basic.Inductor inductor(L=0.1)
+    annotation(Placement(transformation(extent={{0,20},{20,40}})));
+  Modelica.Electrical.Analog.Basic.Capacitor capacitor(C=0.001)
+    annotation(Placement(transformation(extent={{40,20},{60,40}})));
+  Modelica.Electrical.Analog.Basic.Ground ground
+    annotation(Placement(transformation(extent={{50,-40},{70,-20}})));
+equation
+  connect(inductor.n, capacitor.p);
+  connect(source.p, resistor.p);
+  connect(resistor.n, inductor.p);
+  connect(capacitor.n, ground.p);
+  connect(source.n, ground.p);
+end RLC;
+```
+
+A 10 V step at $t = 1\ \text{ms}$ into a $10\ \Omega$–$0.1\ \text{H}$–$1\ \text{mF}$
+series loop. The damping ratio decides everything, and it is one line of algebra:
+
+$$\alpha = \frac{R}{2L} = 50\ \text{s}^{-1}, \qquad
+\omega_0 = \frac{1}{\sqrt{LC}} = 100\ \text{rad/s}, \qquad
+\zeta = \frac{\alpha}{\omega_0} = \frac{R}{2}\sqrt{\frac{C}{L}} = 0.5$$
+
+$\zeta < 1$, so the step overshoots by
+$\exp\!\left(-\pi\zeta / \sqrt{1-\zeta^2}\right) = 16.3\%$ — to $11.63\ \text{V}$ at
+$t = \pi/\omega_d = 37\ \text{ms}$ — and then rings at
+$\omega_d = \sqrt{\omega_0^2 - \alpha^2} = 86.6\ \text{rad/s}$, decaying with
+$\tau = 1/\alpha = 20\ \text{ms}$:
+
+$$v_C(t) = V\left[1 - e^{-\alpha t}\left(\cos\omega_d t + \frac{\alpha}{\omega_d}\sin\omega_d t\right)\right]$$
+
+| Quantity | Closed form | OpenModelica |
+|---|---|---|
+| $v_C$ at $t = 5\ \text{ms}$ | $0.6941\ \text{V}$ | $0.694128\ \text{V}$ |
+| $v_C$ at $t = 20\ \text{ms}$ | $8.0618\ \text{V}$ | $8.06181\ \text{V}$ |
+| $v_C$ at $t = 50\ \text{ms}$ | $10.8344\ \text{V}$ | $10.8344\ \text{V}$ |
+| $\zeta$ from $R$, $L$, $C$ | $0.5$ | $0.5$ |
+
+### A resistor heating itself
+
+One model, two domains, joined at a single port — the electrical side is
+instantaneous, the thermal side integrates, and the port between them is what makes
+it a system rather than two circuits:
+
+```modelica
+//@ time=200
+model ResistorSelfHeating "A resistor self-heating: electrical loss into a thermal mass"
+  Modelica.Electrical.Analog.Sources.ConstantVoltage supply(V = 10)
+    annotation(Placement(transformation(extent={{-70,10},{-50,30}}, rotation=-90)));
+  Modelica.Electrical.Analog.Basic.Resistor resistor(R = 10, useHeatPort = true)
+    annotation(Placement(transformation(extent={{-30,10},{-10,30}}, rotation=90)));
+  Modelica.Electrical.Analog.Basic.Ground return_path
+    annotation(Placement(transformation(extent={{-50,-10},{-30,10}})));
+  Modelica.Thermal.HeatTransfer.Components.HeatCapacitor body(C = 5, T(start = 293.15, fixed = true))
+    annotation(Placement(transformation(extent={{20,20},{40,40}})));
+  Modelica.Thermal.HeatTransfer.Components.ThermalConductor toAmbient(G = 0.5)
+    annotation(Placement(transformation(extent={{50,10},{70,30}})));
+  Modelica.Thermal.HeatTransfer.Sources.FixedTemperature ambient(T = 293.15)
+    annotation(Placement(transformation(extent={{100,10},{120,30}})));
+equation
+  connect(resistor.heatPort, body.port);
+  connect(body.port, toAmbient.port_a);
+  connect(toAmbient.port_b, ambient.port);
+  connect(resistor.p, supply.n);
+  connect(resistor.n, supply.p);
+  connect(resistor.p, return_path.p);
+end ResistorSelfHeating;
+```
+
+Ten volts across ten ohms is one amp and ten watts, and every watt goes into $5\ \text{J/K}$
+of thermal mass that can only lose heat to still air at $0.5\ \text{W/K}$:
+
+$$P = \frac{V^2}{R} = 10\ \text{W}, \qquad
+\tau = \frac{C}{G} = 10\ \text{s}, \qquad
+\Delta T_\infty = \frac{P}{G} = 20\ \text{K}, \qquad
+T(t) = T_\infty + \Delta T_\infty\left(1 - e^{-t/\tau}\right)$$
+
+| Quantity | Closed form | OpenModelica |
+|---|---|---|
+| $P = V^2/R$ at $t = \tau$ | $10\ \text{W}$ | $10.0000\ \text{W}$ |
+| $T$ at $t = \tau = 10\ \text{s}$ | $305.792\ \text{K}$ | $305.793\ \text{K}$ |
+| $T$ at $t = 2\tau$ | $310.443\ \text{K}$ | $310.444\ \text{K}$ |
+| $T$ at $t = 20\tau$ (steady) | $313.150\ \text{K}$ | $313.150\ \text{K}$ |
+| $P_{\text{in}} - Q_{\text{out}} = C\,\dot{T}$ at $t = 3\tau$ | $10\ \text{W}$ | $10.0000\ \text{W}$ |
+
+The last row is the one worth having: it needs no closed form at all, and it fails
+if the heat port is wired to the wrong thing. The 30 notes under
+[`showcase/notes/`](showcase/notes/) carry the same treatment for every example —
+the algebra, then the numbers the simulation returns.
 
 ---
 

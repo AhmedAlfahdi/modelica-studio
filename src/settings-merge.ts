@@ -142,6 +142,16 @@ export interface ModelicaStudioSettings {
    * that is part of the drawing rather than a label beside it.
    */
   showInstanceLabels: boolean;
+  /**
+   * Whether a name is MOVED out of the way when its usual spot is taken.
+   *
+   * On by default, because the failure it fixes is silent: a name under one symbol
+   * lands inside the symbol below it, or a wire routed under a row of components
+   * crosses every name in that row, and the reader reads the ink and not the name.
+   * Off, every name sits centred below its own symbol, which is what the diagram
+   * did before and what a reader comparing a change wants to see.
+   */
+  dynamicLabels: boolean;
   labelScale: number;
 
   /**
@@ -309,6 +319,7 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   inspectorWidth: 380,
   paletteWidth: 210,
   showInstanceLabels: true,
+  dynamicLabels: true,
   labelScale: 1,
   hoverParameters: true,
   // The weights these sliders start at, as a multiple of what MSL declares. 100%

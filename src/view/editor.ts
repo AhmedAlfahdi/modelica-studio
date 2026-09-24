@@ -39,6 +39,15 @@ import type {
 } from "../modelica/types";
 import { emptyDiagram } from "../modelica/types";
 import { currentTheme, type Theme } from "../render/theme";
+import {
+  LABEL_MIN_SCREEN,
+  labelFont,
+  labelFontPx,
+  placeLabels,
+  type LabelRequest,
+  type LabelSpot,
+  type Rect,
+} from "../render/labels";
 import { effectiveStrokeScales } from "../settings-merge";
 import {
   connectorWireStyle,
@@ -50,6 +59,7 @@ import {
   defaultComponentSize,
   defaultExtent,
   diagramBounds,
+  instanceBounds,
   instanceHitBounds,
   instanceOutlineBounds,
   mul,
@@ -116,6 +126,13 @@ export interface EditorCallbacks {
     wireScale?: number;
     /** Whether the name under each component is drawn. */
     instanceLabels?: boolean;
+    /**
+     * Whether the name is MOVED when the fixed spot is taken.
+     *
+     * On by default. Off, every name sits centred below its symbol as it always
+     * did, which is the picture to compare against when a name looks lost.
+     */
+    dynamicLabels?: boolean;
     /** Multiplier on the weight of the lines the component symbols are drawn with. */
     symbolStrokeScale?: number;
     /**
@@ -2247,6 +2264,14 @@ export class SchematicEditor {
       if (picked) drawWireVertices(ctx, points, vp, dpr, theme);
     }
 
+    // Names are placed as a group, before anything is drawn: a name has to avoid the
+    // symbols, the wires and the other names, and that is a decision about the whole
+    // diagram. `placeLabels` returns an empty map when the setting is off, which
+    // leaves every name at the fixed spot below its symbol.
+    const labels = (display.dynamicLabels ?? true)
+      ? this.placeInstanceLabels(ctx, vp, dpr, display.labelScale ?? 1)
+      : new Map<string, { x: number; y: number }>();
+
     for (const inst of this.model.components) {
       drawComponent(ctx, inst, this.cb.lookup(inst.className), vp, dpr, {
         lookup: this.cb.lookup,
@@ -2256,6 +2281,7 @@ export class SchematicEditor {
         showCentre: this.showProbe,
         labelScale: display.labelScale,
         instanceLabels: display.instanceLabels ?? true,
+        labelAt: labels.get(inst.id),
         strokeScale: scales.symbols,
       });
     }
@@ -2686,6 +2712,69 @@ export class SchematicEditor {
       return pts;
     }
     return routeConnection(a, b, conn.points);
+  }
+
+  /**
+   * Decide where each component's name goes, once per frame.
+   *
+   * The obstacles are the other symbols' DRAWN boxes (not their extents: a Resistor
+   * draws a band in the middle of its box, and a name that cleared the extent could
+   * still sit on the artwork) and the wires, which are what a name most often lands
+   * on — a wire routed under a row of symbols crosses every name in that row.
+   *
+   * Everything here is in DEVICE pixels, matching the space the label is drawn in.
+   * The wire routes come from `connectionPoints`, which is the same polyline the
+   * renderer draws, so an obstacle cannot disagree with the ink on screen.
+   */
+  private placeInstanceLabels(
+    ctx: CanvasRenderingContext2D,
+    vp: Viewport,
+    dpr: number,
+    labelScale: number
+  ): Map<string, LabelSpot> {
+    const vt = viewportTransform(vp, dpr);
+    const requests: LabelRequest[] = [];
+    const occupied: Rect[] = [];
+    for (const inst of this.model.components) {
+      const def = this.cb.lookup(inst.className);
+      const drawn = transformedBounds(vt, ...instanceOutlineBounds(inst, def));
+      const box: Rect = { x1: drawn[0], y1: drawn[1], x2: drawn[2], y2: drawn[3] };
+      occupied.push(box);
+      if (!inst.id) continue;
+      // The same gate the renderer applies: a name that will not be drawn is not
+      // placed either, so it cannot push a neighbour's name out of the way.
+      // The EXTENT box, because that is what `drawComponent` sizes the font from:
+      // an outline box here would set a different font size from the one drawn.
+      const extent = transformedBounds(vt, ...instanceBounds(inst));
+      const onScreenSize = Math.max(extent[2] - extent[0], extent[3] - extent[1]);
+      if (onScreenSize <= LABEL_MIN_SCREEN) continue;
+      requests.push({ id: inst.id, box, fontPx: labelFontPx(onScreenSize, labelScale) });
+    }
+    if (requests.length === 0) return new Map();
+    // A wire is a line, and the label box is a rectangle: padding the segment's
+    // bounding box by a couple of pixels is what makes the test read as "on the
+    // wire" rather than "exactly inside its zero-height box".
+    const WIRE_PAD = 3;
+    for (const conn of this.model.connections) {
+      const pts = this.connectionPoints(conn);
+      for (let i = 0; i + 3 < pts.length; i += 2) {
+        const a = apply(vt, pts[i], pts[i + 1]);
+        const b = apply(vt, pts[i + 2], pts[i + 3]);
+        occupied.push({
+          x1: Math.min(a[0], b[0]) - WIRE_PAD,
+          y1: Math.min(a[1], b[1]) - WIRE_PAD,
+          x2: Math.max(a[0], b[0]) + WIRE_PAD,
+          y2: Math.max(a[1], b[1]) + WIRE_PAD,
+        });
+      }
+    }
+    const { spots } = placeLabels(requests, occupied, (text, fontPx) => {
+      // Measured in the font it will be drawn in: a box measured in another face
+      // is a collision the pass cannot see.
+      ctx.font = labelFont(fontPx);
+      return ctx.measureText(text).width;
+    });
+    return spots;
   }
 
   /**

@@ -91,12 +91,14 @@ fs.writeFileSync(
   body { margin: 0; background: var(--background-primary); }
   .shot { padding: 0; }
   #diagram, #plot, #embed, #embedPlot { width: 900px; background: var(--background-primary); }
+  #studio { width: 1040px; background: var(--background-primary); color: var(--text-normal); }
 </style>
 <body class="theme-light">
 <div id="diagram" class="shot"></div>
 <div id="plot" class="shot"></div>
 <div id="embed" class="shot"></div>
 <div id="embedPlot" class="shot"></div>
+<div id="studio" class="shot"></div>
 <div id="hover" class="shot" style="width: 900px;"></div>
 <div id="sweep" class="shot" style="width: 900px;"></div>
 <div id="help" class="shot" style="width: 640px; padding: 14px;"></div>
@@ -117,6 +119,7 @@ fs.writeFileSync(
     currentLabel: data.currentLabel,
     model: data.model,
     defs: data.defs,
+    palette: data.palette,
   })
 );
 
@@ -178,6 +181,10 @@ app.whenReady().then(async () => {
     ["sweep", "window.__sceneSweep(" + DATA + ")"],
   ];
   const DOM_SCENES = [
+    // The whole studio first: it is the largest scene, and the window is sized to
+    // each one before its capture, so the order only matters for what is left on
+    // screen if a later scene fails.
+    ["studio", "window.__sceneStudio(" + DATA + ")"],
     ["embed", "window.__sceneEmbed(" + DATA + ")"],
     ["embedPlot", "window.__sceneEmbedPlot(" + DATA + ")"],
   ];
@@ -302,7 +309,12 @@ app.whenReady().then(async () => {
     for (const theme of ["light", "dark"]) {
       await win.webContents.executeJavaScript("document.body.className = 'theme-" + theme + "'");
       await new Promise((r) => setTimeout(r, 300));
-      const image = cropToScene(win, await win.webContents.capturePage(), rect);
+      // Awaited: cropToScene became async when the ratio handling moved into it, and
+      // the call here was left without one -- so every run of this script ended with
+      // "image.toPNG is not a function" and a non-zero exit, after the Help images had
+      // stopped being written at all. (No backticks in this comment: this whole runner
+      // is a template literal, and one would end it here.)
+      const image = await cropToScene(win, await win.webContents.capturePage(), rect);
       const png = image.toPNG();
       if (png.length < 12000) {
         console.log("SCENE BLANK help-" + theme + ": only " + png.length + " bytes");

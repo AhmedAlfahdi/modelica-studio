@@ -775,6 +775,51 @@ test("opening another model still saves the one being replaced", { skip: !HAS_BU
   );
 });
 
+test("a built-in example cannot write itself over a file of the same name", { skip: !HAS_BUNDLE }, async () => {
+  // The save-point rule above has a second edge. The name-to-path record is keyed
+  // by model NAME, so a vault that already holds `Modelica/RLC.mo` (the user's own
+  // copy of the example, which is how several of these arrangements travelled) left
+  // the shipped RLC associated with it: the header named their file, the canvas held
+  // the bundled model, and the next switch saved the bundled text over their file.
+  // Two files in the test vault were overwritten exactly that way, which is why the
+  // picker now loads with `fromExample`.
+  const MINE = "model RLC\n  // the user's own notes, which the bundle must not replace\nend RLC;\n";
+  const { parseModelica, toDiagramModel } = await parserLib();
+  const { EXAMPLES } = await import(
+    path.join(buildLibs("example-assoc", ["src/modelica/examples.ts"]), "examples.js")
+  );
+  const shipped = EXAMPLES.find((e) => e.name === "RLC");
+  assert.ok(shipped, "the shipped RLC example exists");
+
+  const { instance, files, writes } = makeInstance({
+    files: { "Modelica/RLC.mo": MINE },
+    settings: { modelFiles: { RLC: "Modelica/RLC.mo" } },
+  });
+  // The real parse path resolves component classes through the library index, which
+  // is empty in this harness and falls back to `EMPTY_INDEX` -- enough here, since
+  // the question is where bytes go, not how the diagram is drawn.
+  instance.adoptModel(toDiagramModel(parseModelica(MINE)[0], () => undefined), MINE);
+
+  await instance.setModelFromSource(shipped.source, { fromExample: true });
+
+  assert.equal(instance.settings.modelFiles.RLC, undefined, "the example carries no file");
+  assert.equal(instance.model.name, "RLC", "and the shipped model is the one open");
+
+  // The outgoing model was still flushed on the way in -- that rule is untouched.
+  assert.ok(
+    writes.some((w) => w.path === "Modelica/RLC.mo" && w.text === MINE),
+    `the user's model was saved before being replaced: ${JSON.stringify(writes)}`
+  );
+  // And now the one that matters: switching away writes nothing more, so the
+  // shipped text cannot land in the user's file.
+  await instance.flushCurrentModel();
+  assert.equal(files.get("Modelica/RLC.mo"), MINE, "the user's file still holds their model");
+  assert.ok(
+    !writes.some((w) => w.text.includes("StepVoltage")),
+    `nothing of the shipped model was written to a file: ${JSON.stringify(writes)}`
+  );
+});
+
 test("a restart keeps a model that was never saved", { skip: !HAS_BUNDLE }, async () => {
   // Built in the studio, never saved to a file: the snapshot in data.json is the
   // only copy. On the next launch the layout-ready handler re-parsed the snapshot's

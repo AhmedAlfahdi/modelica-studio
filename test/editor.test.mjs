@@ -3283,3 +3283,92 @@ test("a newly drawn wire stores no route of its own", () => {
   assert.deepEqual(after.slice(-2), [300, 200], `and ends at the port's new position: ${after}`);
   assert.deepEqual(conn.points, [], "while the wire still stores nothing of its own");
 });
+
+test("a name moves off a wire, and stays put when the setting is off", () => {
+  // The names are placed as a group, once per frame, and the OBSTACLES include the
+  // wires: a wire routed just under a row of components crosses every name in that
+  // row, which is the case a reader hits constantly and the one a "keep it below the
+  // symbol" rule cannot solve.
+  //
+  // Driven through the real `draw`, with a recording context, so this is about the
+  // editor's own pass rather than about `placeLabels` in isolation: forgetting to
+  // hand the wires over is a silent way to lose the whole feature.
+  const filled = (id, cx, cy, half = 20) => ({
+    id,
+    className: "M.Fill",
+    placement: { extent: [cx - half, cy - half, cx + half, cy + half], rotation: 0, visible: true },
+    params: {},
+  });
+  // r1 sits at the origin; r2 and r3 hold a wire between them at y = -10, which is
+  // where r1's name would be drawn (a few pixels below the symbol).
+  const model = {
+    name: "M",
+    components: [filled("r1", 0, 0), filled("r2", -120, -10, 4), filled("r3", 120, -10, 4)],
+    connections: [{ id: "r2.n|r3.p", from: { component: "r2", port: "n" }, to: { component: "r3", port: "p" }, points: [] }],
+    graphics: [],
+  };
+  const { editor } = makeEditor(model.components);
+  editor.model = model;
+  editor.autoFit = false;
+  editor.viewport = { scale: 1, x: 300, y: 200 };
+
+  const W = 800;
+  const H = 600;
+  const texts = [];
+  const ctx = new Proxy(
+    { canvas: { width: W, height: H }, measureText: () => ({ width: 10 }) },
+    {
+      get(t, k) {
+        if (k in t) return t[k];
+        if (k === "fillText") return (text, x, y) => texts.push({ text: String(text), x, y });
+        return () => {};
+      },
+      set() {
+        return true;
+      },
+    }
+  );
+  editor.ctx = ctx;
+  SchematicEditor.prototype.draw.call(editor);
+  const byId = new Map(texts.filter((t) => model.components.some((c) => c.id === t.text)).map((t) => [t.text, t]));
+
+  // The wire's own geometry, from the same two exported functions the renderer uses.
+  const vt = C0.viewportTransform(editor.viewport, editor.dpr);
+  const wire = [C0.apply(vt, -110, -10), C0.apply(vt, 110, -10)];
+  const wireBox = {
+    x1: Math.min(wire[0][0], wire[1][0]) - 3,
+    y1: Math.min(wire[0][1], wire[1][1]) - 3,
+    x2: Math.max(wire[0][0], wire[1][0]) + 3,
+    y2: Math.max(wire[0][1], wire[1][1]) + 3,
+  };
+  // r1's drawn box: its artwork is the middle fifth of the extent.
+  const [dx, dy] = C0.apply(vt, 0, 0);
+  const r1Box = { x1: dx - 2, y1: dy - 2, x2: dx + 2, y2: dy + 2 };
+  const labelBox = (t) => ({ x1: t.x - 5, y1: t.y, x2: t.x + 5, y2: t.y + 10 * 1.2 });
+  const hits = (a, b) =>
+    Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1) > 0 && Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1) > 0;
+
+  const r1 = byId.get("r1");
+  assert.ok(r1, `r1 is named: ${JSON.stringify(texts)}`);
+  // The scenario is real: the default spot is under the wire.
+  const dflt = { x: r1Box.x1 + 2, y: r1Box.y2 + 3 };
+  assert.ok(
+    hits(labelBox(dflt), wireBox),
+    "the default position is on the wire, so this test has something to catch"
+  );
+  assert.equal(hits(labelBox(r1), wireBox), false, `r1's name is clear of the wire: ${JSON.stringify(r1)}`);
+  for (const t of byId.values()) {
+    if (t.text === "r1") continue;
+    assert.equal(hits(labelBox(r1), labelBox(t)), false, `names do not collide: ${JSON.stringify([r1, t])}`);
+  }
+
+  // And with the setting off, the same model puts the name back where it was: the
+  // switch has to be worth something.
+  texts.length = 0;
+  editor.cb.display = () => ({ labelScale: 1, hoverParameters: false, dynamicLabels: false });
+  SchematicEditor.prototype.draw.call(editor);
+  const fixed = texts.find((t) => t.text === "r1");
+  assert.ok(fixed, "r1 is still named with the setting off");
+  assert.deepEqual([fixed.x, fixed.y], [dflt.x, dflt.y], "at the fixed spot below its symbol");
+  assert.equal(hits(labelBox(fixed), wireBox), true, "even though that spot is on the wire");
+});
