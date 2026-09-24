@@ -5,6 +5,33 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.11] — 2026-10-14
+
+### Fixed
+
+- **Save could silently overwrite a file that had changed on disk.** The studio holds its
+  own copy of a model from the moment it loads it, so a repair made outside Obsidian — by
+  another editor, by a script, by anyone — was invisible to it, and Save wrote the older
+  copy straight back over it without a word. Found the hard way: a repaired model was
+  overwritten **three seconds** before the simulation that failed on the old text.
+
+  The status line did say "unsaved changes", and that is the trap: it reads as *"you have
+  edits you have not written"* rather than *"the file is not what you think it is"* — two
+  states that need opposite answers. They are now told apart:
+
+  | | |
+  |---|---|
+  | the file matches the studio | `saved` |
+  | the studio has edits, the file is as we left it | `unsaved changes` |
+  | **the file itself changed since we read it** | **`file changed on disk`** |
+
+  The plugin records what it last read or wrote for each path, on load and after every
+  save, so its own edits and somebody else's write are not confused. Save then **asks**,
+  with three answers rather than two: reloading and overwriting are each destructive in
+  one direction, so a yes/no dialog would have to make one of them the default — and the
+  default is what a stray Enter gets. The safe answer, **Reload from disk**, takes the
+  focus. Both save paths go through it: the toolbar button and `Ctrl`/`Cmd`+`S`.
+
 ## [0.3.10] — 2026-10-14
 
 ### Added
