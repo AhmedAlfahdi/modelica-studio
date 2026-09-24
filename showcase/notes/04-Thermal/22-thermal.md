@@ -14,7 +14,7 @@
 //@ time=2000
 model Thermal "A warm body cooling towards ambient through a conductor"
   Modelica.Thermal.HeatTransfer.Components.HeatCapacitor body(C=1000, T(start=350, fixed=true))
-    annotation(Placement(transformation(extent={{-10,20},{10,40}})));
+    annotation(Placement(transformation(extent={{30,0},{50,20}})));
   Modelica.Thermal.HeatTransfer.Components.ThermalConductor conductor(G=2)
     annotation(Placement(transformation(extent={{-10,-10},{10,10}})));
   Modelica.Thermal.HeatTransfer.Sources.FixedTemperature ambient(T=293.15)

@@ -21,7 +21,7 @@ export const NOTES = {
       ["capacitor.v at t = 0.1 s", "6.3212 V", "6.3212 V"],
       ["capacitor.i at t = 0.1 s", "36.788 mA", "36.788 mA"],
       ["capacitor.v at t = 1 s", "10 V", "9.99955 V"],
-      ["KVL: v_R + v_C", "10 V always", "10.000 V"],
+      ["KVL: v_C − v_R", "10 V always", "10.000 V"],
     ],
   },
   RLC: {
@@ -29,17 +29,17 @@ export const NOTES = {
     domain: "Electrical",
     equations: [
       "L\\frac{di}{dt} + Ri + \\frac{1}{C}\\int i\\,dt = V",
-      "\\alpha = \\frac{R}{2L} = 50\\ \\text{s}^{-1}, \\qquad \\omega_0 = \\frac{1}{\\sqrt{LC}} = 316.2\\ \\text{rad/s}",
-      "\\omega_d = \\sqrt{\\omega_0^2 - \\alpha^2} = 312.25\\ \\text{rad/s}, \\qquad \\zeta = \\frac{\\alpha}{\\omega_0} = 0.158",
+      "\\alpha = \\frac{R}{2L} = 50\\ \\text{s}^{-1}, \\qquad \\omega_0 = \\frac{1}{\\sqrt{LC}} = 100\\ \\text{rad/s}",
+      "\\omega_d = \\sqrt{\\omega_0^2 - \\alpha^2} = 86.60\\ \\text{rad/s}, \\qquad \\zeta = \\frac{\\alpha}{\\omega_0} = 0.5",
       "v_C(t) = V\\left[1 - e^{-\\alpha t}\\left(\\cos\\omega_d t + \\frac{\\alpha}{\\omega_d}\\sin\\omega_d t\\right)\\right]",
     ],
     insight:
-      "A **series** RLC rings even when ζ > 1. The condition ζ < 1 for oscillation applies to a parallel RLC or a second-order low-pass; here the capacitor and inductor in series give the transfer function complex zeros, so a step overshoots regardless. This is the single most common mixed-up rule in the subject.",
+      "ζ = (R/2)·√(C/L) = 0.5 — **below** 1, so this is an ordinary underdamped second-order system and it overshoots by 16%, to 11.63 V, one 36 ms quarter-period after the step. The ringing decays with τ = 1/α = 20 ms. An earlier version of this note said ζ = 1.58 and explained the overshoot with a rule about series RLCs; the arithmetic was wrong by a factor of ten and the rule was invented to defend it. The closed form below is what the check uses — never a remembered rule.",
     checks: [
-      ["capacitor.v at t = 5 ms", "6.1670 V", "6.1670 V"],
-      ["capacitor.v at t = 20 ms", "6.5804 V", "6.5804 V"],
-      ["capacitor.v at t = 50 ms", "10.7373 V", "10.7373 V"],
-      ["ζ from R, L, C", "0.158114", "0.158114"],
+      ["capacitor.v at t = 5 ms", "0.6941 V", "0.6941 V"],
+      ["capacitor.v at t = 20 ms", "8.0618 V", "8.0618 V"],
+      ["capacitor.v at t = 50 ms", "10.8344 V", "10.8344 V"],
+      ["ζ from R, L, C", "0.5", "0.5"],
     ],
   },
   Rectifier: {
@@ -47,10 +47,10 @@ export const NOTES = {
     domain: "Electrical",
     equations: [
       "i_D = I_s\\left(e^{v_D/V_T} - 1\\right) + \\frac{v_D}{R_{sh}}",
-      "\\tau_{discharge} = R_{load}C = 1000 \\times 10^{-4} = 0.1\\ \\text{s}",
+      "\\tau_{discharge} = R_{load}C = 100 \\times 10^{-4} = 0.01\\ \\text{s}",
     ],
     insight:
-      "MSL's `Diode` is a Shockley model: the forward drop is **logarithmic and current-dependent**, with no knee voltage. The capacitor charges to the peak less that small drop during conduction, then discharges through the load with τ = 0.1 s — so by 20 ms it has fallen to about 23% of its peak, which is the shape you see.",
+      "MSL's `Diode` is a Shockley model: the forward drop is **logarithmic and current-dependent**, with no knee voltage. The capacitor charges to the peak less that small drop during conduction, then discharges through the load with τ = RC = 10 ms — half the 20 ms cycle — so it loses 63% of its charge between peaks. This is a *poorly* smoothed supply; a bigger capacitor is exactly how a real one would be improved.",
 
     checks: [
       ["capacitor peak vs Vs - Vt ln(v/(R Ids) + 1)", "9.54136 V", "9.54057 V"],

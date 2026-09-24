@@ -14,7 +14,7 @@
 //@ time=5
 model PipeFriction "Pressure drop along a pipe as the flow rises"
   inner Modelica.Fluid.System system
-    annotation(Placement(transformation(extent={{-90,-80},{-70,-60}})));
+    annotation(Placement(transformation(extent={{-90,-30},{-70,-10}})));
   Modelica.Fluid.Sources.MassFlowSource_T pump(
     redeclare package Medium = Modelica.Media.Water.ConstantPropertyLiquidWater,
     nPorts=1, use_m_flow_in=true)

@@ -26,11 +26,11 @@ export const EXPLAIN = {
     reading: [
       ["`StepVoltage source(V=10, startTime=0.001)`", "the supply switches on 1 ms into the run."],
       ["`Inductor inductor(L=0.1)`", "resists *changes* in current, and stores energy in a magnetic field."],
-      ["`Capacitor capacitor(C=0.0001)`", "resists changes in voltage, and stores energy in an electric field."],
-      ["`ζ = (R/2)·√(C/L) = 1.58`", "the damping ratio. It is greater than 1 — which usually means 'no ringing'."],
+      ["`Capacitor capacitor(C=0.001)`", "resists changes in voltage, and stores energy in an electric field."],
+      ["`ζ = (R/2)·√(C/L) = 0.5`", "the damping ratio — **below** 1, so the circuit is underdamped: the step overshoots by 16% and then rings down."],
     ],
     takeaway:
-      "**This circuit rings anyway, and that is not a bug.** The rule 'ζ > 1 means no overshoot' belongs to a *parallel* RLC or a second-order low-pass filter. In a **series** RLC the capacitor and inductor are in the same loop, so the response has complex zeros and oscillates whatever ζ is. The plot is right and the folk rule is being applied to the wrong circuit.",
+      "**The overshoot is the physics — and the numbers have to be right for that to mean anything.** ζ = 0.5 is what (R/2)·√(C/L) gives. An earlier version of this note printed 1.58 (a factor of ten out), called the circuit overdamped, and then invented a rule about series RLCs to explain why it rang anyway. No special rule is needed: ζ < 1 is enough. When a check disagrees with a note, re-derive the note's arithmetic before believing either.",
   },
   SineAC: {
     idea:
@@ -268,10 +268,10 @@ export const EXPLAIN = {
       ["`SineVoltage source(V=10, f=50)`", "a 10 V amplitude sine at 50 Hz — one cycle every 20 ms."],
       ["`Diode diode`", "Modelica's diode is a **Shockley** device: the forward drop is logarithmic and depends on current. It is not the 0.7 V step most textbooks draw."],
       ["`Capacitor capacitor(C=0.0001)`", "holds charge through the gap between peaks."],
-      ["`Resistor load(R=1000)`", "the only discharge path, so the capacitor empties with τ = R·C = 0.1 s."],
+      ["`Resistor resistor(R=100)`", "the only discharge path, so the capacitor empties with τ = R·C = 100 × 10⁻⁴ = 10 ms."],
     ],
     takeaway:
-      "The capacitor charges to the peak, then discharges through the load while the diode is off. With a 0.1 s time constant against a 20 ms cycle, it loses about three quarters of its charge between peaks — this is a *poorly* smoothed supply. Fitting a larger capacitor is exactly how a real one would be improved, and that is the design lesson here.",
+      "The capacitor charges to the peak, then discharges through the load while the diode is off. The 10 ms time constant is half the 20 ms cycle, so it loses 63% of its charge between peaks: this is a *poorly* smoothed supply. Fitting a larger capacitor is exactly how a real one would be improved, and that is the design lesson here.",
   },
   FluidLoop: {
     idea:

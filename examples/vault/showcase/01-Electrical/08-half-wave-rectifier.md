@@ -14,7 +14,7 @@
 //@ time=0.06
 model HalfWaveRectifier "One diode, one load, referenced to the source"
   Modelica.Electrical.Analog.Sources.SineVoltage source(V=12, f=50)
-    annotation(Placement(transformation(extent={{-60,0},{-40,20}})));
+    annotation(Placement(transformation(extent={{-40,-10},{-20,10}}, rotation=-90)));
   Modelica.Electrical.Analog.Semiconductors.Diode d
     annotation(Placement(transformation(extent={{-10,0},{10,20}})));
   Modelica.Electrical.Analog.Basic.Resistor load(R=100)
@@ -22,10 +22,10 @@ model HalfWaveRectifier "One diode, one load, referenced to the source"
   Modelica.Electrical.Analog.Basic.Ground ground
     annotation(Placement(transformation(extent={{30,-40},{50,-20}})));
 equation
-  connect(source.p, d.p);
+  connect(source.p, d.p) annotation(Line(points={{-30,0},{-30,10},{-20,10},{-10,10}}));
   connect(d.n, load.p);
   connect(load.n, ground.p);
-  connect(source.n, ground.p);
+  connect(source.n, ground.p) annotation(Line(points={{-30,-10},{-30,-20},{5,-20},{40,-20}}));
 end HalfWaveRectifier;
 ```
 

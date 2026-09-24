@@ -20,7 +20,7 @@ simulation is broken — and that reflex was wrong twelve times out of twelve.
 
 | # | Example | Expected | Simulated | Which was wrong |
 |---|---|---|---|---|
-| 1 | RLC | no ringing (ζ = 1.58 > 1) | rings | my rule |
+| 1 | RLC | no ringing (ζ = 1.58 > 1) | rings | my arithmetic — ζ is 0.158, and the rule I invented to explain it |
 | 2 | HeatExchanger | τ = 250 s | τ = 4000 s | my reading of the model |
 | 3 | FluidReservoir | 4.3 kg/s | 3.16 kg/s | my idealisation |
 | 4 | FluidLoop | quadratic law at all flows | cubic below 0.157 kg/s | my reading of the MSL source |
@@ -40,18 +40,29 @@ and five models were abandoned. Both are recorded at the end.
 
 ## The twelve
 
-### 1. RLC — a rule applied to the wrong circuit
+### 1. RLC — an arithmetic slip, and a rule invented to defend it
 
-I asserted that ζ = 1.58 > 1 means no overshoot. The simulation overshot by
-about 40%.
+I asserted that ζ = 1.58 > 1 means no overshoot. The simulation overshot.
 
-**The simulation was right.** "ζ > 1 means no ringing" belongs to a *parallel*
-RLC. In a **series** RLC the capacitor and inductor sit in the same loop, which
-puts complex zeros in the response, and it rings at any ζ. The folk rule was
-being applied to a circuit it does not describe.
+**The simulation was right, and the 1.58 was simply wrong.** ζ = (R/2)·√(C/L) =
+5 × √10⁻³ = 0.158 for the C = 10⁻⁴ the model then had. A factor of ten, from
+reading √10⁻³ as 0.316 instead of 0.0316 — the answer was underdamped by an order
+of magnitude, and a lightly damped second-order system overshoots exactly as the
+plot showed.
 
-The check now compares against the closed-form series response instead of a
-handbook rule.
+**Then I made it worse.** Rather than redo the arithmetic, I wrote an explanation
+for the discrepancy into the note: that a *series* RLC rings "at any ζ", because
+"the capacitor and inductor in series give the response complex zeros". The
+second half is false — the series RLC's capacitor voltage is the textbook
+second-order low-pass, (1/LC)/(s² + (R/L)s + 1/LC), with no finite zeros — and
+the first half was a rule invented on the spot to protect a number I had not
+checked. A wrong note is one thing; a wrong note that teaches a false rule is
+worse, and this one survived a re-read precisely because it sounded like the
+kind of subtlety that catches people out.
+
+The check has compared against the closed-form series response for a while, and
+that is what eventually exposed it: the closed form never said 1.58. The note,
+the test's header comment and the summary row above are corrected here.
 
 ### 2. HeatExchanger — I misread my own model
 

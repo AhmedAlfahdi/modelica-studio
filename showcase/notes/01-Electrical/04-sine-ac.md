@@ -14,18 +14,18 @@
 //@ time=0.1
 model SineAC "AC circuit: a sine drive through an RL load"
   Modelica.Electrical.Analog.Sources.SineVoltage source(V=230, f=50)
-    annotation(Placement(transformation(extent={{-70,20},{-50,40}})));
+    annotation(Placement(transformation(extent={{20,-30},{40,-10}})));
   Modelica.Electrical.Analog.Basic.Resistor resistor(R=20)
-    annotation(Placement(transformation(extent={{-20,20},{0,40}})));
+    annotation(Placement(transformation(extent={{-10,20},{10,40}})));
   Modelica.Electrical.Analog.Basic.Inductor inductor(L=0.05)
-    annotation(Placement(transformation(extent={{20,20},{40,40}})));
+    annotation(Placement(transformation(extent={{30,20},{50,40}})));
   Modelica.Electrical.Analog.Basic.Ground ground
-    annotation(Placement(transformation(extent={{20,-40},{40,-20}})));
+    annotation(Placement(transformation(extent={{-20,-40},{0,-20}})));
 equation
-  connect(source.p, resistor.p);
+  connect(ground.p, source.p);
+  connect(ground.p, resistor.p);
   connect(resistor.n, inductor.p);
-  connect(inductor.n, source.n);
-  connect(source.n, ground.p);
+  connect(source.n, inductor.n) annotation(Line(points={{40,-20},{60,-20},{60,30},{50,30}}));
 end SineAC;
 ```
 

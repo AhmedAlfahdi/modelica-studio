@@ -16,20 +16,20 @@ model Rectifier "Half-wave rectifier: diode charging a capacitor"
   Modelica.Electrical.Analog.Sources.SineVoltage source(V=10, f=50)
     annotation(Placement(transformation(extent={{-80,20},{-60,40}})));
   Modelica.Electrical.Analog.Basic.Ground ground
-    annotation(Placement(transformation(extent={{-80,-40},{-60,-20}})));
+    annotation(Placement(transformation(extent={{-90,-40},{-70,-20}})));
   Modelica.Electrical.Analog.Semiconductors.Diode diode
     annotation(Placement(transformation(extent={{-30,20},{-10,40}})));
   Modelica.Electrical.Analog.Basic.Resistor resistor(R=100)
-    annotation(Placement(transformation(extent={{40,20},{60,40}})));
+    annotation(Placement(transformation(extent={{20,20},{40,40}})));
   Modelica.Electrical.Analog.Basic.Capacitor capacitor(C=0.0001)
-    annotation(Placement(transformation(extent={{10,-10},{30,10}})));
+    annotation(Placement(transformation(extent={{20,-30},{40,-10}})));
 equation
   connect(source.p, diode.p);
   connect(diode.n, resistor.p);
   connect(resistor.n, source.n);
-  connect(source.n, ground.p);
+  connect(resistor.n, capacitor.n);
   connect(diode.n, capacitor.p);
-  connect(capacitor.n, source.n);
+  connect(source.p, ground.p);
 end Rectifier;
 ```
 
@@ -44,11 +44,11 @@ A diode, a capacitor and a load. The diode lets current through in only one dire
 - `SineVoltage source(V=10, f=50)` — a 10 V amplitude sine at 50 Hz — one cycle every 20 ms.
 - `Diode diode` — Modelica's diode is a **Shockley** device: the forward drop is logarithmic and depends on current. It is not the 0.7 V step most textbooks draw.
 - `Capacitor capacitor(C=0.0001)` — holds charge through the gap between peaks.
-- `Resistor load(R=1000)` — the only discharge path, so the capacitor empties with τ = R·C = 0.1 s.
+- `Resistor resistor(R=100)` — the only discharge path, so the capacitor empties with τ = R·C = 100 × 10⁻⁴ = 10 ms.
 
 ### The point
 
-The capacitor charges to the peak, then discharges through the load while the diode is off. With a 0.1 s time constant against a 20 ms cycle, it loses about three quarters of its charge between peaks — this is a *poorly* smoothed supply. Fitting a larger capacitor is exactly how a real one would be improved, and that is the design lesson here.
+The capacitor charges to the peak, then discharges through the load while the diode is off. The 10 ms time constant is half the 20 ms cycle, so it loses 63% of its charge between peaks: this is a *poorly* smoothed supply. Fitting a larger capacitor is exactly how a real one would be improved, and that is the design lesson here.
 
 
 ---
@@ -57,9 +57,9 @@ The capacitor charges to the peak, then discharges through the load while the di
 
 $$i_D = I_s\left(e^{v_D/V_T} - 1\right) + \frac{v_D}{R_{sh}}$$
 
-$$\tau_{discharge} = R_{load}C = 1000 \times 10^{-4} = 0.1\ \text{s}$$
+$$\tau_{discharge} = R_{load}C = 100 \times 10^{-4} = 0.01\ \text{s}$$
 
-MSL's `Diode` is a Shockley model: the forward drop is **logarithmic and current-dependent**, with no knee voltage. The capacitor charges to the peak less that small drop during conduction, then discharges through the load with τ = 0.1 s — so by 20 ms it has fallen to about 23% of its peak, which is the shape you see.
+MSL's `Diode` is a Shockley model: the forward drop is **logarithmic and current-dependent**, with no knee voltage. The capacitor charges to the peak less that small drop during conduction, then discharges through the load with τ = RC = 10 ms — half the 20 ms cycle — so it loses 63% of its charge between peaks. This is a *poorly* smoothed supply; a bigger capacitor is exactly how a real one would be improved.
 
 ---
 

@@ -14,9 +14,9 @@
 //@ time=3000
 model HeatConduction "Two bodies equalising through a conducting wall"
   Modelica.Thermal.HeatTransfer.Components.HeatCapacitor hot(C=2500, T(start=373.15, fixed=true))
-    annotation(Placement(transformation(extent={{-40,20},{-20,40}})));
+    annotation(Placement(transformation(extent={{-50,20},{-30,40}})));
   Modelica.Thermal.HeatTransfer.Components.HeatCapacitor cold(C=2500, T(start=293.15, fixed=true))
-    annotation(Placement(transformation(extent={{40,20},{60,40}})));
+    annotation(Placement(transformation(extent={{30,20},{50,40}})));
   Modelica.Thermal.HeatTransfer.Components.ThermalConductor wall(G=2)
     annotation(Placement(transformation(extent={{-10,-10},{10,10}})));
 equation

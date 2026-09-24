@@ -75,7 +75,7 @@ a stale number here fails the suite rather than misleading a reader.
 | capacitor.v at t = 0.1 s | `6.3212 V` | `6.3212 V` |
 | capacitor.i at t = 0.1 s | `36.788 mA` | `36.788 mA` |
 | capacitor.v at t = 1 s | `10 V` | `9.99955 V` |
-| KVL: v_R + v_C | `10 V always` | `10.000 V` |
+| KVL: v_C − v_R | `10 V always` | `10.000 V` |
 
 ---
 

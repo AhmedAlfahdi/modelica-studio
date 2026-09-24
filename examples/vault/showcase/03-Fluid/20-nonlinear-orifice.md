@@ -14,7 +14,7 @@
 //@ time=12
 model NonlinearOrifice "Flow through an orifice under a ramped pressure"
   inner Modelica.Fluid.System system
-    annotation(Placement(transformation(extent={{-90,-80},{-70,-60}})));
+    annotation(Placement(transformation(extent={{-90,-40},{-70,-20}})));
   Modelica.Fluid.Sources.Boundary_pT supply(
     redeclare package Medium = Modelica.Media.Water.ConstantPropertyLiquidWater,
     nPorts=1, use_p_in=true, T=293.15)

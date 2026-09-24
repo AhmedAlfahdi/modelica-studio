@@ -24,9 +24,9 @@ model DCMotor "A permanent-magnet DC machine driving a load"
   Modelica.Mechanics.Rotational.Components.Fixed housing
     annotation(Placement(transformation(extent={{-20,-20},{0,0}})));
   Modelica.Electrical.Analog.Sources.RampVoltage supply(V=24, duration=0.5, startTime=0.1)
-    annotation(Placement(transformation(extent={{-20,30},{0,50}})));
+    annotation(Placement(transformation(extent={{-20,40},{0,60}}, rotation=180)));
   Modelica.Electrical.Analog.Basic.Ground ground
-    annotation(Placement(transformation(extent={{-50,20},{-30,40}})));
+    annotation(Placement(transformation(extent={{-40,30},{-20,50}})));
 equation
   connect(supply.p, motor.pin_ap);
   connect(supply.n, motor.pin_an);

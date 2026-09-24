@@ -136,15 +136,20 @@ test("no part is stranded from what it connects to", () => {
  *
  * A named exception rather than a wider box: widening the rule to fit one part would stop
  * it catching the next one, and this way the reader of a failure is told which allowance
- * exists and who asked for it. This one is the example's author's own arrangement — the
- * ramp moved left so its signal reaches the heater without crossing the thermal path.
+ * exists and who asked for it.
+ *
+ * `ResistorSelfHeating: ambient` is the electrical-to-thermal chain running left to
+ * right: the supply and the resistor stand vertically at x -70..-10, the heated body is
+ * at 20..40, the conductor at 50..70, and the still-air source lands at 100..120. Pulling
+ * that last one back inside the box would drop it on top of the conductor it is wired to,
+ * which is the untidiness the box rule exists to catch.
+ *
+ * The map was empty before this entry, and not always: `HeatExchanger: ramp` had a minX
+ * allowance of -120 while the author had the ramp at x -110..-90, reaching the heater
+ * without crossing the thermal path. Their later arrangement put it at -100..-80, so the
+ * allowance went and the rule was the rule again.
  */
-// Empty, and it was not always: `HeatExchanger: ramp` had a minX allowance of -120
-// while the example's author had the ramp at x -110..-90, reaching the heater without
-// crossing the thermal path. Their later arrangement puts it at -100..-80, so the
-// allowance is gone and the rule is the rule again. The mechanism stays, so the next
-// exception is a named entry with a reason rather than a wider box.
-const OUTSIDE_THE_BOX = new Map();
+const OUTSIDE_THE_BOX = new Map([["ResistorSelfHeating: ambient", { maxX: 120 }]]);
 
 test("the drawing stays in the box a Modelica diagram is drawn in", () => {
   // ±100 is the extent of a default icon and the frame OMEdit shows. Content outside it
@@ -158,7 +163,8 @@ test("the drawing stays in the box a Modelica diagram is drawn in", () => {
     for (const p of placed) {
       const allowed = OUTSIDE_THE_BOX.get(`${example.name}: ${p.name}`);
       const minX = allowed?.minX ?? -100;
-      if (p.left < minX || p.right > 100 || p.bottom < -100 || p.top > 100) {
+      const maxX = allowed?.maxX ?? 100;
+      if (p.left < minX || p.right > maxX || p.bottom < -100 || p.top > 100) {
         bad.push(`${example.name}: ${p.name} spans x ${p.left}..${p.right}, y ${p.bottom}..${p.top}`);
       }
     }

@@ -17,9 +17,13 @@
  * The full account, including the five models abandoned rather than fixed and
  * the one bridge whose topology I misread, is in docs/testing-findings.md.
  *
- *   - RLC is a SERIES RLC with a step input. zeta = 1.58 > 1 does NOT mean no
- *     overshoot here: the capacitor and inductor in series give complex zeros,
- *     so it rings. The closed form is used instead of the usual formula.
+ *   - RLC's damping ratio was written down as zeta = 1.58 and read as
+ *     "overdamped, so it cannot ring". The formula is (R/2)*sqrt(C/L), which is
+ *     0.158 for the C = 1e-4 the note then had -- a factor of ten. The circuit
+ *     was underdamped all along, the simulation was right, and the note had also
+ *     invented a rule ("a series RLC rings at any zeta") to explain the overshoot
+ *     it did not expect. Both mistakes are in docs/testing-findings.md; this
+ *     block checks the closed form, which needs no rule at all.
  *   - HeatExchanger's ramp is Ramp(startTime=10, duration=100) and C=2000,
  *     Gc=0.5 gives tau = 4000 s — not 250 s.
  *   - FluidReservoir: water density is 995.586, and tank port losses plus the
@@ -84,17 +88,23 @@ test("every example matches an independently derived result", { skip: !HAS_OMC }
     check("capacitor.v(0.1s) = 10(1-1/e)", 10 * (1 - Math.exp(-1)), at(r, "capacitor.v", 0.1005), 0.02, " V");
     check("capacitor.i(0.1s) = 0.1/e", 0.1 * Math.exp(-1), Math.abs(at(r, "capacitor.i", 0.1005)), 2e-3, " A");
     check("capacitor.v(1s) -> 10 V", 10, at(r, "capacitor.v", 1), 0.01, " V");
-    check("KVL: vR + vC = 10 V", 10, at(r, "resistor.v", 0.05) + at(r, "capacitor.v", 0.05), 1e-6, " V");
+    // The reference node is the source's own p terminal (ground sits on it), so
+    // the loop runs ground -> capacitor -> resistor -> source.n. The capacitor
+    // voltage is still +10 V at the end of the step, and the identity that holds
+    // at every instant is vC - vR = 10 V: the source's n terminal is the one
+    // driving the R-C pair, so vR is negative and the two add with a sign.
+    check("KVL: vC - vR = 10 V", 10, at(r, "capacitor.v", 0.05) - at(r, "resistor.v", 0.05), 1e-6, " V");
   }
-  console.log("\n== RLC: L=0.1, C=1e-4, R=10 -> zeta = (R/2)*sqrt(C/L) = 1.581 (OVERDAMPED) ==");
+  console.log("\n== RLC: L=0.1, C=1e-3, R=10 -> zeta = (R/2)*sqrt(C/L) = 0.5 (UNDERDAMPED) ==");
   {
     // The step starts at t=0.001 s, so the settling window is measured from there.
     const r = await sim("RLC");
-    // Series RLC with a step input RINGS even though zeta > 1: the series
-    // combination of a capacitor and an inductor has complex zeros, so the
-    // response is oscillatory. Verified against the closed form below rather
-    // than assumed, because "zeta > 1 means no overshoot" is false here.
-    const R = 10, L = 0.1, C = 1e-4, V = 10, t0 = 0.001;
+    // Series RLC, step input, zeta = 0.5: underdamped, so it overshoots by 16%
+    // (to 11.63 V) at t = pi/wd = 36 ms after the step and then rings down with
+    // tau = 1/alpha = 20 ms. The closed form below is the whole expectation --
+    // no handbook rule is consulted, because consulting one is what produced the
+    // zeta = 1.58 error this file used to carry.
+    const R = 10, L = 0.1, C = 1e-3, V = 10, t0 = 0.001;
     const a = R / (2 * L), w0 = 1 / Math.sqrt(L * C);
     const wd = Math.sqrt(w0 * w0 - a * a);
     const vC = (t) => {
@@ -103,7 +113,8 @@ test("every example matches an independently derived result", { skip: !HAS_OMC }
       return V * (1 - Math.exp(-a * tau) * (Math.cos(wd * tau) + (a / wd) * Math.sin(wd * tau)));
     };
     check("zeta = a/w0 = (R/2)sqrt(C/L)", a / w0, (R / 2) * Math.sqrt(C / L), 1e-9, "");
-    check("capacitor.v(5ms) closed form (rings)", vC(0.005), at(r, "capacitor.v", 0.005), 0.02, " V");
+    // 5 ms after the step is 0.2 of a time constant in: v_C is still small.
+    check("capacitor.v(5ms) closed form", vC(0.005), at(r, "capacitor.v", 0.005), 0.02, " V");
     check("capacitor.v(20ms) closed form", vC(0.02), at(r, "capacitor.v", 0.02), 0.05, " V");
     check("capacitor.v(50ms) closed form", vC(0.05), at(r, "capacitor.v", 0.05), 0.05, " V");
   }
@@ -222,7 +233,8 @@ test("every example matches an independently derived result", { skip: !HAS_OMC }
     const r = await sim("BatteryDischarge");
     // OCV(0) = 3 cells * 4.2 V = 12.6 V; R_stack = 3*0.05 = 0.15 ohm; load 15 ohm.
     const tau = (0.15 + 15) * 3600 / 12.6;
-    check("battery.p.v(0) = 12.6*15/15.15", 12.6 * 15 / 15.15, at(r, "battery.p.v", 0), 0.01, " V");
+    check("battery.p.v(0) - battery.n.v(0) = 12.6*15/15.15", 12.6 * 15 / 15.15,
+      at(r, "battery.p.v", 0) - at(r, "battery.n.v", 0), 0.01, " V");
     check("battery.i(0) = -12.6/15.15", -12.6 / 15.15, at(r, "battery.i", 0), 0.005, " A");
     check("battery.SOC(600s)", Math.exp(-600 / tau), at(r, "battery.SOC", 600), 0.03, "");
     check("battery.SOC(1800s) still usable", 1, at(r, "battery.SOC", 1800) > 0.2 ? 1 : 0, 0, "");
@@ -512,7 +524,10 @@ test("every example matches an independently derived result", { skip: !HAS_OMC }
     const r = await sim("ResistorSelfHeating", { stopTime: 20 * tau, numberOfIntervals: 20000 });
 
     check("loss power V^2/R", P, at(r, "resistor.LossPower", tau), 1e-6, " W");
-    check("current V/R", V / R, at(r, "resistor.i", tau), 1e-9, " A");
+    // The load is wired with its p terminal on the grounded source rail, so the
+    // resistor's p is the low side and the current it reports is negative. The
+    // loss power and the temperature rise are unaffected: v and i flip together.
+    check("current V/R (negative: resistor.p is the grounded end)", -(V / R), at(r, "resistor.i", tau), 1e-9, " A");
     check("body.T at t = C/G", Tamb + rise * (1 - Math.exp(-1)), at(r, "body.T", tau), 1e-3, " K");
     check("body.T at t = 2C/G", Tamb + rise * (1 - Math.exp(-2)), at(r, "body.T", 2 * tau), 1e-3, " K");
     check("steady rise = P/G", Tamb + rise, at(r, "body.T", 20 * tau), 1e-3, " K");

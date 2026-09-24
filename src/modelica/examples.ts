@@ -60,21 +60,21 @@ end Electrical;
 
 const RLC = `model RLC "Series RLC circuit: underdamped step response"
   Modelica.Electrical.Analog.Sources.StepVoltage source(V=10, startTime=0.001)
-    annotation(Placement(transformation(extent={{-80,20},{-60,40}})));
+    annotation(Placement(transformation(extent={{-80,0},{-60,20}}, rotation=-90)));
   Modelica.Electrical.Analog.Basic.Resistor resistor(R=10)
     annotation(Placement(transformation(extent={{-40,20},{-20,40}})));
   Modelica.Electrical.Analog.Basic.Inductor inductor(L=0.1)
     annotation(Placement(transformation(extent={{0,20},{20,40}})));
   Modelica.Electrical.Analog.Basic.Capacitor capacitor(C=0.001)
-    annotation(Placement(transformation(extent={{20,20},{40,40}})));
+    annotation(Placement(transformation(extent={{40,20},{60,40}})));
   Modelica.Electrical.Analog.Basic.Ground ground
-    annotation(Placement(transformation(extent={{40,-40},{60,-20}})));
+    annotation(Placement(transformation(extent={{50,-40},{70,-20}})));
 equation
-  connect(source.p, resistor.p);
-  connect(resistor.n, inductor.p);
   connect(inductor.n, capacitor.p);
-  connect(capacitor.n, source.n);
-  connect(source.n, ground.p);
+  connect(source.p, resistor.p) annotation(Line(points={{-70,10},{-70,30},{-55,30},{-40,30}}));
+  connect(resistor.n, inductor.p);
+  connect(capacitor.n, ground.p);
+  connect(source.n, ground.p) annotation(Line(points={{-70,-10},{-70,-20},{-5,-20},{60,-20}}));
 end RLC;
 `;
 
@@ -82,37 +82,37 @@ const RECTIFIER = `model Rectifier "Half-wave rectifier: diode charging a capaci
   Modelica.Electrical.Analog.Sources.SineVoltage source(V=10, f=50)
     annotation(Placement(transformation(extent={{-80,20},{-60,40}})));
   Modelica.Electrical.Analog.Basic.Ground ground
-    annotation(Placement(transformation(extent={{-80,-40},{-60,-20}})));
+    annotation(Placement(transformation(extent={{-90,-40},{-70,-20}})));
   Modelica.Electrical.Analog.Semiconductors.Diode diode
     annotation(Placement(transformation(extent={{-30,20},{-10,40}})));
   Modelica.Electrical.Analog.Basic.Resistor resistor(R=100)
-    annotation(Placement(transformation(extent={{40,20},{60,40}})));
+    annotation(Placement(transformation(extent={{20,20},{40,40}})));
   Modelica.Electrical.Analog.Basic.Capacitor capacitor(C=0.0001)
-    annotation(Placement(transformation(extent={{10,-10},{30,10}})));
+    annotation(Placement(transformation(extent={{20,-30},{40,-10}})));
 equation
   connect(source.p, diode.p);
   connect(diode.n, resistor.p);
   connect(resistor.n, source.n);
-  connect(source.n, ground.p);
+  connect(resistor.n, capacitor.n);
   connect(diode.n, capacitor.p);
-  connect(capacitor.n, source.n);
+  connect(source.p, ground.p);
 end Rectifier;
 `;
 
 const SINEAC = `model SineAC "AC circuit: a sine drive through an RL load"
   Modelica.Electrical.Analog.Sources.SineVoltage source(V=230, f=50)
-    annotation(Placement(transformation(extent={{-70,20},{-50,40}})));
+    annotation(Placement(transformation(extent={{20,-30},{40,-10}})));
   Modelica.Electrical.Analog.Basic.Resistor resistor(R=20)
-    annotation(Placement(transformation(extent={{-20,20},{0,40}})));
+    annotation(Placement(transformation(extent={{-10,20},{10,40}})));
   Modelica.Electrical.Analog.Basic.Inductor inductor(L=0.05)
-    annotation(Placement(transformation(extent={{20,20},{40,40}})));
+    annotation(Placement(transformation(extent={{30,20},{50,40}})));
   Modelica.Electrical.Analog.Basic.Ground ground
-    annotation(Placement(transformation(extent={{20,-40},{40,-20}})));
+    annotation(Placement(transformation(extent={{-20,-40},{0,-20}})));
 equation
-  connect(source.p, resistor.p);
+  connect(ground.p, source.p);
+  connect(ground.p, resistor.p);
   connect(resistor.n, inductor.p);
-  connect(inductor.n, source.n);
-  connect(source.n, ground.p);
+  connect(source.n, inductor.n) annotation(Line(points={{40,-20},{60,-20},{60,30},{50,30}}));
 end SineAC;
 `;
 
@@ -246,7 +246,7 @@ end FluidLoop;
 
 const THERMAL = `model Thermal "A warm body cooling towards ambient through a conductor"
   Modelica.Thermal.HeatTransfer.Components.HeatCapacitor body(C=1000, T(start=350, fixed=true))
-    annotation(Placement(transformation(extent={{-10,20},{10,40}})));
+    annotation(Placement(transformation(extent={{30,0},{50,20}})));
   Modelica.Thermal.HeatTransfer.Components.ThermalConductor conductor(G=2)
     annotation(Placement(transformation(extent={{-10,-10},{10,10}})));
   Modelica.Thermal.HeatTransfer.Sources.FixedTemperature ambient(T=293.15)
@@ -259,9 +259,9 @@ end Thermal;
 
 const HEATCONDUCTION = `model HeatConduction "Two bodies equalising through a conducting wall"
   Modelica.Thermal.HeatTransfer.Components.HeatCapacitor hot(C=2500, T(start=373.15, fixed=true))
-    annotation(Placement(transformation(extent={{-40,20},{-20,40}})));
+    annotation(Placement(transformation(extent={{-50,20},{-30,40}})));
   Modelica.Thermal.HeatTransfer.Components.HeatCapacitor cold(C=2500, T(start=293.15, fixed=true))
-    annotation(Placement(transformation(extent={{40,20},{60,40}})));
+    annotation(Placement(transformation(extent={{30,20},{50,40}})));
   Modelica.Thermal.HeatTransfer.Components.ThermalConductor wall(G=2)
     annotation(Placement(transformation(extent={{-10,-10},{10,10}})));
 equation
@@ -369,18 +369,18 @@ end BuckConverter;
 const BATTERYDISCHARGE = `model BatteryDischarge "A battery powering a resistive load"
   parameter Modelica.Electrical.Batteries.ParameterRecords.CellData cellData(
     Qnom=3600, OCVmax=4.2, OCVmin=3.0, Ri=0.05)
-    annotation(Placement(transformation(extent={{-90,30},{-70,50}})));
+    annotation(Placement(transformation(extent={{-80,30},{-60,50}})));
   Modelica.Electrical.Batteries.BatteryStacks.CellStack battery(
     Ns=3, Np=1, cellData=cellData, useHeatPort=false, SOC(fixed=true, start=1))
-    annotation(Placement(transformation(extent={{-10,20},{10,40}}, rotation=90)));
+    annotation(Placement(transformation(extent={{-30,30},{-10,50}}, rotation=90)));
   Modelica.Electrical.Analog.Basic.Resistor load(R=15)
     annotation(Placement(transformation(extent={{-50,60},{-30,80}})));
   Modelica.Electrical.Analog.Basic.Ground ground
     annotation(Placement(transformation(extent={{-60,0},{-40,20}})));
 equation
-  connect(battery.p, load.p);
+  connect(load.p, ground.p);
+  connect(ground.p, battery.p) annotation(Line(points={{-50,20},{-35,20},{-20,20},{-20,30}}));
   connect(load.n, battery.n);
-  connect(battery.n, ground.p);
 end BatteryDischarge;
 `;
 
@@ -396,9 +396,9 @@ const DCMOTOR = `model DCMotor "A permanent-magnet DC machine driving a load"
   Modelica.Mechanics.Rotational.Components.Fixed housing
     annotation(Placement(transformation(extent={{-20,-20},{0,0}})));
   Modelica.Electrical.Analog.Sources.RampVoltage supply(V=24, duration=0.5, startTime=0.1)
-    annotation(Placement(transformation(extent={{-20,30},{0,50}})));
+    annotation(Placement(transformation(extent={{-20,40},{0,60}}, rotation=180)));
   Modelica.Electrical.Analog.Basic.Ground ground
-    annotation(Placement(transformation(extent={{-50,20},{-30,40}})));
+    annotation(Placement(transformation(extent={{-40,30},{-20,50}})));
 equation
   connect(supply.p, motor.pin_ap);
   connect(supply.n, motor.pin_an);
@@ -471,7 +471,7 @@ end TankOrifice;
 `;
 const NONLINEARORIFICE = `model NonlinearOrifice "Flow through an orifice under a ramped pressure"
   inner Modelica.Fluid.System system
-    annotation(Placement(transformation(extent={{-90,-80},{-70,-60}})));
+    annotation(Placement(transformation(extent={{-90,-40},{-70,-20}})));
   Modelica.Fluid.Sources.Boundary_pT supply(
     redeclare package Medium = Modelica.Media.Water.ConstantPropertyLiquidWater,
     nPorts=1, use_p_in=true, T=293.15)
@@ -494,7 +494,7 @@ end NonlinearOrifice;
 `;
 const PIPEFRICTION = `model PipeFriction "Pressure drop along a pipe as the flow rises"
   inner Modelica.Fluid.System system
-    annotation(Placement(transformation(extent={{-90,-80},{-70,-60}})));
+    annotation(Placement(transformation(extent={{-90,-30},{-70,-10}})));
   Modelica.Fluid.Sources.MassFlowSource_T pump(
     redeclare package Medium = Modelica.Media.Water.ConstantPropertyLiquidWater,
     nPorts=1, use_m_flow_in=true)
@@ -596,7 +596,7 @@ end Phugoid;
 
 const HALFWAVE = `model HalfWaveRectifier "One diode, one load, referenced to the source"
   Modelica.Electrical.Analog.Sources.SineVoltage source(V=12, f=50)
-    annotation(Placement(transformation(extent={{-60,0},{-40,20}})));
+    annotation(Placement(transformation(extent={{-40,-10},{-20,10}}, rotation=-90)));
   Modelica.Electrical.Analog.Semiconductors.Diode d
     annotation(Placement(transformation(extent={{-10,0},{10,20}})));
   Modelica.Electrical.Analog.Basic.Resistor load(R=100)
@@ -604,10 +604,10 @@ const HALFWAVE = `model HalfWaveRectifier "One diode, one load, referenced to th
   Modelica.Electrical.Analog.Basic.Ground ground
     annotation(Placement(transformation(extent={{30,-40},{50,-20}})));
 equation
-  connect(source.p, d.p);
+  connect(source.p, d.p) annotation(Line(points={{-30,0},{-30,10},{-20,10},{-10,10}}));
   connect(d.n, load.p);
   connect(load.n, ground.p);
-  connect(source.n, ground.p);
+  connect(source.n, ground.p) annotation(Line(points={{-30,-10},{-30,-20},{5,-20},{40,-20}}));
 end HalfWaveRectifier;
 `;
 
@@ -658,29 +658,29 @@ end GearTrain;
 const RESISTORSELFHEATING = `model ResistorSelfHeating "A resistor self-heating: electrical loss into a thermal mass"
   Modelica.Electrical.Analog.Sources.ConstantVoltage supply(V = 10)
     "Constant 10 V across the resistor"
-    annotation(Placement(transformation(extent = {{-60, -10}, {-40, 10}})));
+    annotation(Placement(transformation(extent={{-70,10},{-50,30}}, rotation=-90)));
   Modelica.Electrical.Analog.Basic.Resistor resistor(R = 10, useHeatPort = true)
     "10 ohm resistor; its electrical loss leaves through heatPort"
-    annotation(Placement(transformation(extent = {{-10, 20}, {10, 40}})));
+    annotation(Placement(transformation(extent={{-30,10},{-10,30}}, rotation=90)));
   Modelica.Electrical.Analog.Basic.Ground return_path
     "The return conductor, held at zero potential"
-    annotation(Placement(transformation(extent = {{-60, -50}, {-40, -30}})));
+    annotation(Placement(transformation(extent={{-50,-10},{-30,10}})));
   Modelica.Thermal.HeatTransfer.Components.HeatCapacitor body(C = 5, T(start = 293.15, fixed = true))
     "The resistor body: 5 J/K of thermal mass"
     annotation(Placement(transformation(extent = {{20, 20}, {40, 40}})));
   Modelica.Thermal.HeatTransfer.Components.ThermalConductor toAmbient(G = 0.5)
     "0.5 W/K path from the body to the surrounding air"
-    annotation(Placement(transformation(extent = {{20, -40}, {40, -20}})));
+    annotation(Placement(transformation(extent={{50,10},{70,30}})));
   Modelica.Thermal.HeatTransfer.Sources.FixedTemperature ambient(T = 293.15)
     "Still air at 20 degrees C"
-    annotation(Placement(transformation(extent = {{60, -40}, {80, -20}})));
+    annotation(Placement(transformation(extent={{100,10},{120,30}})));
 equation
-  connect(supply.p, resistor.p);
-  connect(resistor.n, supply.n);
-  connect(supply.n, return_path.p);
   connect(resistor.heatPort, body.port);
   connect(body.port, toAmbient.port_a);
   connect(toAmbient.port_b, ambient.port);
+  connect(resistor.p, supply.n);
+  connect(resistor.n, supply.p);
+  connect(resistor.p, return_path.p);
 end ResistorSelfHeating;
 `;
 export const EXAMPLES: ExampleModel[] = [

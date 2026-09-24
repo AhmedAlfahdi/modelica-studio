@@ -15,29 +15,29 @@
 model ResistorSelfHeating "A resistor self-heating: electrical loss into a thermal mass"
   Modelica.Electrical.Analog.Sources.ConstantVoltage supply(V = 10)
     "Constant 10 V across the resistor"
-    annotation(Placement(transformation(extent = {{-60, -10}, {-40, 10}})));
+    annotation(Placement(transformation(extent={{-70,10},{-50,30}}, rotation=-90)));
   Modelica.Electrical.Analog.Basic.Resistor resistor(R = 10, useHeatPort = true)
     "10 ohm resistor; its electrical loss leaves through heatPort"
-    annotation(Placement(transformation(extent = {{-10, 20}, {10, 40}})));
+    annotation(Placement(transformation(extent={{-30,10},{-10,30}}, rotation=90)));
   Modelica.Electrical.Analog.Basic.Ground return_path
     "The return conductor, held at zero potential"
-    annotation(Placement(transformation(extent = {{-60, -50}, {-40, -30}})));
+    annotation(Placement(transformation(extent={{-50,-10},{-30,10}})));
   Modelica.Thermal.HeatTransfer.Components.HeatCapacitor body(C = 5, T(start = 293.15, fixed = true))
     "The resistor body: 5 J/K of thermal mass"
     annotation(Placement(transformation(extent = {{20, 20}, {40, 40}})));
   Modelica.Thermal.HeatTransfer.Components.ThermalConductor toAmbient(G = 0.5)
     "0.5 W/K path from the body to the surrounding air"
-    annotation(Placement(transformation(extent = {{20, -40}, {40, -20}})));
+    annotation(Placement(transformation(extent={{50,10},{70,30}})));
   Modelica.Thermal.HeatTransfer.Sources.FixedTemperature ambient(T = 293.15)
     "Still air at 20 degrees C"
-    annotation(Placement(transformation(extent = {{60, -40}, {80, -20}})));
+    annotation(Placement(transformation(extent={{100,10},{120,30}})));
 equation
-  connect(supply.p, resistor.p);
-  connect(resistor.n, supply.n);
-  connect(supply.n, return_path.p);
   connect(resistor.heatPort, body.port);
   connect(body.port, toAmbient.port_a);
   connect(toAmbient.port_b, ambient.port);
+  connect(resistor.p, supply.n);
+  connect(resistor.n, supply.p);
+  connect(resistor.p, return_path.p);
 end ResistorSelfHeating;
 ```
 
