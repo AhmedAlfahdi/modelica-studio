@@ -1458,7 +1458,9 @@ export function drawComponent(
 
   const icon = classDef?.icon ?? [];
   if (icon.length > 0 && classDef?.portPositions) {
-    const art = iconArtworkBounds(classDef);
+    // The artwork THIS instance draws: a port stub reaches from the pin to the nearest
+    // edge of the drawing, so the edge has to be the one that is really on screen.
+    const art = iconArtworkBounds(classDef, inst);
     // Only stub ports that are actually declared; an undeclared position would
     // draw a line to nowhere.
     const declared: Record<string, [number, number]> = {};
@@ -1644,7 +1646,7 @@ export function instanceInkBounds(
   inst: ComponentInstance,
   classDef: ComponentClass | undefined
 ): [number, number, number, number] {
-  const art = iconArtworkBounds(classDef);
+  const art = iconArtworkBounds(classDef, inst);
   let box: [number, number, number, number] | undefined = art ? [...art] : undefined;
   for (const pos of Object.values(classDef?.portPositions ?? {})) {
     if (!box) box = [pos[0], pos[1], pos[0], pos[1]];
@@ -1722,7 +1724,10 @@ export function instanceBounds(inst: ComponentInstance): [number, number, number
  * Text is excluded: MSL places parameter labels far outside the body (often
  * around -150..150), and including them would make the target enormous.
  */
-export function iconArtworkBounds(classDef: ComponentClass | undefined): [number, number, number, number] | undefined {
+export function iconArtworkBounds(
+  classDef: ComponentClass | undefined,
+  inst?: ComponentInstance
+): [number, number, number, number] | undefined {
   if (!classDef || classDef.icon.length === 0) return undefined;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const eat = (x: number, y: number) => {
@@ -1734,7 +1739,18 @@ export function iconArtworkBounds(classDef: ComponentClass | undefined): [number
   };
 
   for (const g of classDef.icon) {
-    if (!isGraphicVisible(g)) continue;
+    // Per INSTANCE when one is given, which is the difference between the box and the
+    // ink. `isGraphicVisible` reads a condition as a class-level literal, so every
+    // `visible="useSupport"` graphic was excluded even in the models that draw one --
+    // and a support hatch sits BELOW its symbol, so the box came out short and a name
+    // placed under it landed on the hatch. The renderer resolves the condition against
+    // the instance's own parameters; so must anything measuring what it draws.
+    const shown = inst
+      ? conditionHolds((g as { visible?: boolean | string }).visible, (n) =>
+          paramValue(inst, classDef, n)
+        )
+      : isGraphicVisible(g);
+    if (!shown) continue;
     if (g.kind === "Text") continue;
     if ("extent" in g && g.extent) {
       eat(g.extent[0], g.extent[1]);
@@ -1798,7 +1814,7 @@ export function instanceOutlineBounds(
   inst: ComponentInstance,
   classDef: ComponentClass | undefined
 ): [number, number, number, number] {
-  const art = iconArtworkBounds(classDef);
+  const art = iconArtworkBounds(classDef, inst);
   if (!art) return instanceBounds(inst);
   const [ex1, ey1, ex2, ey2] = inst.placement.extent;
   const sx = (ex2 - ex1) / (2 * ICON_EXTENT);

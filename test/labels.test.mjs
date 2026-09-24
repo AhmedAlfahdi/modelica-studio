@@ -229,3 +229,56 @@ test("the renderer draws the name where the pass put it", async () => {
   assert.ok(dflt, "and it is still drawn with no spot given");
   assert.notDeepEqual([dflt.x, dflt.y], [333, 222], "at its own default position instead");
 });
+
+test("the box a name clears follows the graphics the INSTANCE draws", async () => {
+  // Reported from a rendered page: "motor", "gear", "bearing" and "frame" all sat on their
+  // own support hatches. The hatch is a conditional graphic — `visible="useSupport"` in
+  // the library — and the artwork box was measured with the CLASS-level test, which reads
+  // a condition as a literal and so excluded every conditional graphic. The renderer
+  // resolves it against the instance's own parameters and drew the hatch, so the box came
+  // out short and the name went through it.
+  //
+  // The class here is the same shape in miniature: one unconditional rectangle, and one
+  // rectangle far below it that only appears when `useSupport` is on. The expected boxes
+  // are the graphics' own coordinates, so this cannot agree with a mistake in the
+  // measurement.
+  const LIB3 = buildLibs("labels-conditional", ["src/render/canvas.ts", "src/render/theme.ts"]);
+  const C = await import(path.join(LIB3, "canvas.js"));
+
+  const def = {
+    name: "M.Machine",
+    shortName: "Machine",
+    icon: [
+      { kind: "Rectangle", extent: [-50, 50, 50, -50], lineColor: [0, 0, 0] },
+      // The support hatch, 60..80 below the body, and only when `useSupport`.
+      { kind: "Rectangle", extent: [-60, -60, 60, -80], lineColor: [0, 0, 0], visible: "useSupport" },
+    ],
+    diagram: [],
+    ports: [{ name: "flange", type: "Flange_a", isFlow: true, causality: "acausal" }],
+    portPositions: { flange: [-100, 0] },
+    parameters: [{ name: "useSupport", type: "Boolean", defaultValue: "false" }],
+    hasIcon: true,
+  };
+  const at = (params) => ({
+    id: "m1",
+    className: def.name,
+    placement: { extent: [-50, -50, 50, 50], rotation: 0, visible: true },
+    params,
+  });
+
+  // Extent is 100 units for the canonical 200, so canonical y maps to half its value.
+  const withSupport = C.instanceInkBounds(at({ useSupport: "true" }), def);
+  const without = C.instanceInkBounds(at({ useSupport: "false" }), def);
+  assert.equal(withSupport[1], -40, `the hatch is included when it is drawn: ${JSON.stringify(withSupport)}`);
+  assert.equal(without[1], -25, `and left out when it is not: ${JSON.stringify(without)}`);
+  assert.ok(
+    withSupport[1] < without[1],
+    "a name under a machine that draws a support is placed below the support, not through it"
+  );
+
+  // The default comes from the class when the instance says nothing.
+  assert.deepEqual(C.instanceInkBounds(at({}), def), without, "the class default decides");
+  // And the outline box — the selection highlight — follows the same rule.
+  assert.equal(C.instanceOutlineBounds(at({ useSupport: "true" }), def)[1], -40);
+  assert.equal(C.instanceOutlineBounds(at({ useSupport: "false" }), def)[1], -25);
+});
