@@ -89,6 +89,19 @@ export class StubVault {
     return new TFile(path);
   }
 
+  /**
+   * Read-modify-write, as Obsidian's `Vault.process` does it.
+   *
+   * The plugin writes `.mo` files through this rather than `modify`, so the stub has
+   * to offer it: one that only knew `modify` would make every save throw "process is
+   * not a function" in the harness while the app itself worked.
+   */
+  async process(file: TFile, fn: (text: string) => string): Promise<string> {
+    const next = fn(this.files.get(file.path) ?? "");
+    this.files.set(file.path, next);
+    return next;
+  }
+
   async modify(file: TFile, content: string): Promise<void> {
     this.files.set(file.path, content);
   }

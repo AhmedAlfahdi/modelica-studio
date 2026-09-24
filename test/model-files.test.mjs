@@ -45,7 +45,11 @@ test("saving an existing model goes back to the file it came from", () => {
     /const existing = at\(intended\) \?\? at\(remembered\)/,
     "the recorded path is consulted"
   );
-  assert.match(main, /await this\.app\.vault\.modify\(existing, source\)/, "and written there");
+  assert.match(
+    main,
+    /await this\.app\.vault\.process\(existing, \(\) => source\)/,
+    "and written there -- through process, so a concurrent writer is not clobbered"
+  );
   // A remembered path is only a location when a FILE is there: taking it on trust is
   // what made a save whose .mo had been deleted call `modify(null, …)` and throw.
   assert.match(

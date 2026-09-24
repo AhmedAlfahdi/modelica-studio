@@ -7,6 +7,10 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.3.19] — 2026-09-25
+
 ### Added
 
 - **Component names are placed instead of pinned below the symbol.** A name now tries
@@ -28,6 +32,37 @@ version is 0, a minor bump may include changes that are not backward compatible.
   Two more worked examples (**RLC** and **ResistorSelfHeating**) join the mechanical
   one, each with its model, the algebra in LaTeX, and a table of closed-form versus
   simulated values.
+
+- **Disclosures in the README** for the two things the plugin directory requires to be
+  stated: the files it touches outside the vault (the Modelica libraries of your
+  OpenModelica installation, read to index classes; the system temporary folder, where
+  `omc` translates and compiles) and its network use (none unless AI assistance is
+  switched on, and then only the provider you configure). It also states plainly that
+  there is no telemetry, no analytics and no update check.
+
+- **`scripts/readme-icons.json`**: the Lucide shapes the toolbar and menus use,
+  vendored (ISC, credited in the third-party notices) so the README's screenshots can
+  draw the same icons the app does. A test fails if a new icon has no shape.
+
+### Changed
+
+- **Eleven examples are shipped in the arrangement their author drew**: Rectifier, RLC,
+  SineAC, BatteryDischarge, DCMotor, HalfWaveRectifier, NonlinearOrifice, PipeFriction,
+  Thermal, HeatConduction and ResistorSelfHeating. Several also moved their reference node
+  from the source's `n` terminal to its `p`; where that reversed a branch the audit
+  expectations were re-derived (a battery terminal voltage is now checked as a difference,
+  and `resistor.i` is negative because `resistor.p` is the grounded end).
+
+- `ResistorSelfHeating: ambient` is a named allowance in the diagram-box test: the
+  electrical-to-thermal chain runs to x 120, and pulling the still-air source back inside
+  ±100 would put it on top of the conductor it is wired to.
+
+- **The Edit and View buttons are icons alone** — Undo, Redo, Copy, Paste, Delete,
+  Rotate, Zoom in, Zoom out, Fit to view. They are the eight every editor's toolbar
+  has, and with the words gone the whole toolbar fits on one row at the width the
+  studio is usually given. The Model row keeps its labels, and every icon-only button
+  keeps its NAME in `aria-label` — which is also the tooltip Obsidian draws — with
+  each hint beginning with the action rather than the consequence.
 
 ### Fixed
 
@@ -69,18 +104,18 @@ version is 0, a minor bump may include changes that are not backward compatible.
   circuit to the source's `p` terminal, so the resistor's voltage is negative and the two
   add with a sign. The capacitor still charges to +10 V.
 
-### Changed
+- **A command id no longer repeats the plugin id.** `open-modelica-studio` reached the
+  command palette as "Modelica Studio: Open Modelica Studio", because Obsidian prefixes
+  every command id with the plugin's. Now `open-view`, and a test asserts that no
+  registered command id carries the plugin id.
 
-- **Eleven examples are shipped in the arrangement their author drew**: Rectifier, RLC,
-  SineAC, BatteryDischarge, DCMotor, HalfWaveRectifier, NonlinearOrifice, PipeFriction,
-  Thermal, HeatConduction and ResistorSelfHeating. Several also moved their reference node
-  from the source's `n` terminal to its `p`; where that reversed a branch the audit
-  expectations were re-derived (a battery terminal voltage is now checked as a difference,
-  and `resistor.i` is negative because `resistor.p` is the grounded end).
+- **Saving a model writes through `Vault.process`** rather than `Vault.modify`, so a
+  file another writer touched since it was read is not clobbered by a save.
 
-- `ResistorSelfHeating: ambient` is a named allowance in the diagram-box test: the
-  electrical-to-thermal chain runs to x 120, and pulling the still-air source back inside
-  ±100 would put it on top of the conductor it is wired to.
+- **The plugin no longer prints to the console on every load.** The one line that
+  advertised the `modelicaStudio` debug handle is now behind the debug-log setting; the
+  rest of the console output is a diagnostic level (`error`/`warn` always, `info` with
+  the setting, `debug` only with the console's own verbose flag).
 
 ## [0.3.18] — 2026-09-24
 

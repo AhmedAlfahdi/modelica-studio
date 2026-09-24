@@ -249,7 +249,7 @@ test("bundle instantiates and its lifecycle runs", { skip: !HAS_BUNDLE }, async 
   assert.ok(commands.length >= 2, `expected commands, got ${commands.length}`);
   const ids = commands.map((c) => c.id);
   for (const want of [
-    "open-modelica-studio",
+    "open-view",
     "simulate-current-model",
     // Embedding a simulation in a note. Asserted here as well as driven in the
     // DOM test, because a command that is not registered is not offered at all.
@@ -679,9 +679,18 @@ function makeInstance(over = {}) {
       adapter: { getBasePath: () => fs.mkdtempSync(path.join(os.tmpdir(), "switch-")) },
       getAbstractFileByPath: (p) => (files.has(p) ? fileAt(p) : null),
       read: async (f) => files.get(f.path) ?? "",
+      // The plugin saves through `Vault.process` (read-modify-write); `modify` stays
+      // here because other paths still use it, and both record the write so the
+      // assertions about what landed where keep working.
       modify: async (f, text) => {
         writes.push({ path: f.path, text, created: false });
         files.set(f.path, text);
+      },
+      process: async (f, fn) => {
+        const next = fn(files.get(f.path) ?? "");
+        writes.push({ path: f.path, text: next, created: false });
+        files.set(f.path, next);
+        return next;
       },
       create: async (p, text) => {
         writes.push({ path: p, text, created: true });
@@ -956,4 +965,32 @@ test("a save recreates a deleted file, and returns to the one it came from", { s
     assert.equal(files.has("Modelica/A.mo"), false, "and no second copy is invented");
     assert.equal(instance.settings.modelFiles.A, "Other/A.mo", "the record still names it");
   }
+});
+
+test("no command id repeats the plugin id", { skip: !HAS_BUNDLE }, async () => {
+  // Obsidian prefixes every command id with the plugin's id, so `open-modelica-studio`
+  // reached the command palette as "Modelica Studio: Open Modelica Studio". The
+  // submission requirements for plugins name this explicitly: don't include the plugin
+  // ID in the command ID. Checked over the registered list rather than by grepping the
+  // source, because the ids are the thing that is wrong when it is wrong.
+  const mod = loadBundle();
+  const instance = new mod.default();
+  const commands = [];
+  instance.addCommand = (c) => commands.push(c);
+  instance.app = {
+    vault: { configDir: ".obsidian", adapter: { getBasePath: () => "/" } },
+    workspace: { getLeavesOfType: () => [], on: () => {}, onLayoutReady: (f) => f() },
+  };
+  instance.manifest = { id: "modelica-studio", version: "0.0.0-test" };
+  instance.loadData = async () => null;
+  instance.saveData = async () => {};
+  await instance.onload();
+
+  assert.ok(commands.length >= 10, `the commands are registered (${commands.length})`);
+  const offending = commands.filter((c) => c.id.includes("modelica-studio"));
+  assert.deepEqual(offending.map((c) => c.id), [], "no command id carries the plugin id");
+  assert.ok(
+    commands.some((c) => c.id === "open-view"),
+    `the view command is named for what it does: ${commands.map((c) => c.id).join(", ")}`
+  );
 });

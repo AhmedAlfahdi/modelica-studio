@@ -1071,9 +1071,14 @@ export default class ModelicaStudioPlugin extends Plugin {
     // Exposed before anything can fail, so a plugin that fails to load is still
     // inspectable from the console rather than silent.
     (window as unknown as { modelicaStudio?: unknown }).modelicaStudio = this.debugHandle();
-    console.log(
-      "[Modelica Studio] loaded. Type modelicaStudio.help() in this console for what you can inspect."
-    );
+    // Only with the debug log on. The console is the user's, not ours: a line printed
+    // on every load is noise in everyone's DevTools to advertise a tool that the
+    // README documents and that a reader who wants it knows how to find.
+    if (this.settings.debugLog) {
+      console.log(
+        "[Modelica Studio] loaded. Type modelicaStudio.help() in this console for what you can inspect."
+      );
+    }
     this.diag(`onload start; omcPath="${this.settings.omcPath}" jobs=${this.settings.jobs}`, "info");
 
     this.register(() => {
@@ -1103,8 +1108,11 @@ export default class ModelicaStudioPlugin extends Plugin {
       void this.activateView();
     });
 
+    // The id must not contain the plugin's own id: Obsidian prefixes every command id
+    // with it, so the palette entry would read "Modelica Studio: Open Modelica
+    // Studio". The submission requirements call this out by name.
     this.addCommand({
-      id: "open-modelica-studio",
+      id: "open-view",
       name: "Open Modelica Studio",
       callback: () => void this.activateView(),
     });
@@ -2079,7 +2087,13 @@ export default class ModelicaStudioPlugin extends Plugin {
       } catch {
         /* history is a bonus; a save must not fail because it could not be kept */
       }
-      await this.app.vault.modify(existing, source);
+      // `Vault.process`, not `Vault.modify`: the guidelines ask for it, and it is
+      // the honest call here -- the replacement is a read-modify-write of a file that
+      // another writer (Obsidian's own editor, a sync client) may have touched since
+      // the read above, and `modify` would write our text over whatever arrived in
+      // between. The callback ignores the text it is handed because a save replaces
+      // the whole model by design.
+      await this.app.vault.process(existing, () => source);
       this.rememberFileText(here, source);
       this.settings.modelFiles[this.model.name] = here;
       await this.saveSettings();

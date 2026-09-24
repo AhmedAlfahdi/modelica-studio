@@ -298,6 +298,46 @@ the cursor, which turns "this valve opens a little later" into a number.
   [Testing findings](docs/testing-findings.md) lists every expectation that failed,
   which side was wrong, and the five models dropped for being unverifiable.
 
+### What it accesses, and what leaves your machine
+
+Stated plainly, because a plugin that runs a compiler should say so.
+
+**Files, and what for.** Everything inside your vault is reached through Obsidian's
+own API, and the plugin writes only where you ask it to: `.mo` files in the model
+folder (`Modelica/` by default), the diagrams you embed in notes, and its own state
+under your Obsidian configuration folder (`<config>/plugins/modelica-studio/` —
+history, the library index cache, and optionally a debug log and an AI request log).
+
+Outside the vault it touches two things, both because the compiler lives there:
+
+- the **Modelica library folders** of your OpenModelica installation — on Linux
+  `~/.openmodelica/libraries`, and the equivalent per-platform location elsewhere —
+  read once to index the classes for the palette and the symbols, cached as JSON
+  above, and re-read when a library changes;
+- the **system temporary folder**, where `omc` translates and compiles a model
+  (`<tmp>/modelica-studio/<pid>`). That is OpenModelica's own scratch space: a
+  compiled model is tens of megabytes of generated C. It is not in your vault, and
+  nothing there is read by anything but the compiler.
+
+Nothing else is read or written, and no file is uploaded anywhere.
+
+**Network.** The plugin makes **no network requests unless you turn on AI
+assistance**. With it off — the default, and it stays off until you enter a key — it
+works entirely offline. With it on, and only when you press **AI**, it sends the
+prompt you wrote, the current model source, and OpenModelica's compiler output for
+that model to the provider you configured:
+
+- OpenAI (`api.openai.com`), DeepSeek (`api.deepseek.com`), Groq (`api.groq.com`) or
+  OpenRouter (`openrouter.ai`), or
+- any OpenAI-compatible base URL you type in instead, including a local Ollama or
+  llama.cpp server — in which case nothing leaves the machine.
+
+The key is stored in Obsidian's keychain and sent only to that provider. The plugin
+has **no telemetry, no analytics and no update check**: it never contacts this
+repository or anyone else on its own, and updating is Obsidian's or BRAT's job.
+There is no account to create and nothing to pay for; the only cost of the AI
+feature is your own provider bill.
+
 ---
 
 ## A worked example: two masses and a spring
