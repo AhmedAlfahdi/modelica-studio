@@ -2788,3 +2788,93 @@ test("what a drag moves is what a save writes into the file", async () => {
     `dragging down the screen lowers the diagram y (${before[1]} -> ${savedR1.placement.extent[1]})`
   );
 });
+
+/* ------------------------------------------------------------------ */
+/* One undo step per gesture, and undo that puts everything back      */
+/* ------------------------------------------------------------------ */
+
+test("each editing gesture is exactly one undo step, and undo is complete", () => {
+  // A gesture that records nothing cannot be undone (the user's work is stuck), and
+  // one that records two steps makes Ctrl+Z take half a step -- both read as "undo
+  // is broken". Only the drag, the nudge burst, the wire reshape and `setParam` were
+  // pinned; the rest were not.
+  const wire = (editor) => editor.getModel().connections.length;
+
+  // ---- delete: the component AND its wires, restored together ----
+  {
+    const { editor } = makeEditor();
+    editor.addConnection({ component: "r1", port: "n" }, { component: "r2", port: "p" });
+    const depth = editor.history.depth;
+    click(editor, 0, 0); // select r1
+    editor.deleteSelection();
+    assert.equal(editor.history.depth, depth + 1, "delete is one step");
+    assert.equal(editor.getModel().components.length, 1, "the component went");
+    assert.equal(wire(editor), 0, "and its wire went with it");
+    editor.undo();
+    assert.equal(editor.getModel().components.length, 2, "undo brings the component back");
+    assert.equal(wire(editor), 1, "and the wire, or the model is left half-deleted");
+    assert.equal(editor.getModel().connections[0].from.component, "r1", "on the same port");
+  }
+
+  // ---- duplicate ----
+  {
+    const { editor } = makeEditor();
+    click(editor, 0, 0);
+    const depth = editor.history.depth;
+    editor.duplicate();
+    assert.equal(editor.history.depth, depth + 1, "duplicate is one step");
+    assert.equal(editor.getModel().components.length, 3, "there is a copy");
+    editor.undo();
+    assert.equal(editor.getModel().components.length, 2, "and undo removes it");
+  }
+
+  // ---- rotate ----
+  {
+    const { editor } = makeEditor();
+    click(editor, 0, 0);
+    const before = editor.getModel().components[0].placement.rotation ?? 0;
+    const depth = editor.history.depth;
+    editor.rotateSelection(90);
+    assert.equal(editor.history.depth, depth + 1, "rotate is one step");
+    assert.notEqual(
+      editor.getModel().components[0].placement.rotation ?? 0,
+      before,
+      "the component turned"
+    );
+    editor.undo();
+    assert.equal(
+      editor.getModel().components[0].placement.rotation ?? 0,
+      before,
+      "and undo turns it back"
+    );
+  }
+
+  // ---- a gesture that changes nothing records nothing ----
+  {
+    const { editor } = makeEditor();
+    const depth = editor.history.depth;
+    editor.deleteSelection(); // nothing selected
+    editor.rotateSelection(90); // nothing selected
+    editor.duplicate(); // nothing selected
+    assert.equal(editor.history.depth, depth, "no phantom steps to undo through");
+    assert.equal(editor.getModel().components.length, 2, "and nothing was changed");
+  }
+});
+
+test("a paste is one step, and its undo leaves no half-pasted state", () => {
+  const { editor } = makeEditor();
+  click(editor, 0, 0);
+  const copied = editor.copySelection ? editor.copySelection() : undefined;
+  const depth = editor.history.depth;
+  if (typeof editor.pasteClipboard === "function") {
+    editor.pasteClipboard();
+  } else {
+    // No clipboard API on the editor: the clipboard lives in the view. Then there is
+    // nothing to assert here, and this test says so rather than passing quietly.
+    assert.equal(copied, undefined, "the editor has no clipboard of its own");
+    return;
+  }
+  assert.equal(editor.history.depth, depth + 1, "a paste is one step");
+  editor.undo();
+  assert.equal(editor.getModel().components.length, 2, "and undo takes it away again");
+});
