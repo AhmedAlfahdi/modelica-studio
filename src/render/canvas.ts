@@ -489,25 +489,25 @@ export function defaultComponentSize(classDef: ComponentClass | undefined): numb
   return Math.max(MSL_COMPONENT_SIZE * 0.6, Math.min(MSL_COMPONENT_SIZE * 3, extent));
 }
 
-/** Extent for a component, preserving its artwork's aspect ratio. */
+/**
+ * Extent for a component placed at (cx, cy).
+ *
+ * SQUARE, which is not the same as "fitted to the artwork" -- that was the bug.
+ * The icon transform maps the canonical ±100 box onto the extent, so a
+ * non-square extent STRETCHES the artwork, and matching the extent's aspect to
+ * the artwork's applies that aspect twice: an MSL Resistor's canonical artwork is
+ * 3:1, and its box came out 3:1 as well, so it was drawn and saved at 9:1
+ * (`extent={{-15.555556,-5.185185},{15.555556,5.185185}}`). The size still comes
+ * from the artwork's span -- a wide symbol gets a bigger box -- but the box stays
+ * square, which is what this repo's own examples use (`{{-80,20},{-60,40}}`).
+ */
 export function defaultExtent(
   classDef: ComponentClass | undefined,
   cx: number,
   cy: number
 ): [number, number, number, number] {
-  const size = defaultComponentSize(classDef);
-  const art = iconArtworkBounds(classDef);
-  let halfW = size / 2;
-  let halfH = size / 2;
-  if (art) {
-    const w = Math.max(art[2] - art[0], 1);
-    const h = Math.max(art[3] - art[1], 1);
-    // The artwork's own aspect, so the box fits it rather than the reverse.
-    const aspect = w / h;
-    if (aspect > 1) halfH = halfW / aspect;
-    else if (aspect < 1) halfW = halfH * aspect;
-  }
-  return [cx - halfW, cy - halfH, cx + halfW, cy + halfH];
+  const half = defaultComponentSize(classDef) / 2;
+  return [cx - half, cy - half, cx + half, cy + half];
 }
 
 /** A 2D affine transform, applied as [a c e; b d f]. */
@@ -1751,12 +1751,71 @@ export function instanceOutlineBounds(
   const sy = (ey2 - ey1) / (2 * ICON_EXTENT);
   const cx = (ex1 + ex2) / 2;
   const cy = (ey1 + ey2) / 2;
-  return [
+  const box: [number, number, number, number] = [
     cx + sx * art[0],
     cy + sy * art[1],
     cx + sx * art[2],
     cy + sy * art[3],
   ];
+  // Follow the instance's own rotation. Without this the artwork is drawn rotated
+  // and the box around it is not: for a non-square symbol the clickable area and
+  // the highlight were a different SHAPE from the ink, so presses on the visible
+  // symbol missed it and presses on empty space selected it.
+  const rot = inst.placement.rotation ?? 0;
+  if (!rot) return box;
+  return rotateBoxAbout(box, cx, cy, rot);
+}
+
+/**
+ * The axis-aligned box around a rectangle turned about a point.
+ *
+ * Rotation here is about the instance's own centre and only the rotation is
+ * applied -- sending the corners through `placementTransform` would re-apply the
+ * extent scaling, which the box already carries.
+ */
+function rotateBoxAbout(
+  box: [number, number, number, number],
+  cx: number,
+  cy: number,
+  degrees: number
+): [number, number, number, number] {
+  const rad = (degrees * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const turn = (px: number, py: number): [number, number] => {
+    const dx = px - cx;
+    const dy = py - cy;
+    return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos];
+  };
+  const [x1, y1, x2, y2] = box;
+  const pts = [turn(x1, y1), turn(x2, y1), turn(x2, y2), turn(x1, y2)];
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+
+/**
+ * Whether a lone selection is big enough on screen for its resize handles.
+ *
+ * The grab zones are 9 CSS px, so once the drawn symbol is thinner than about
+ * twice that, the zones of opposite edges overlap and every press inside the
+ * symbol is nearer a handle than the body: dragging the component RESIZED it
+ * (collapsing its box to the 8-unit minimum) instead of moving it. Below this
+ * size the press moves the component, and resizing is available again by zooming
+ * in -- which is what the drawn handles follow, so the affordance and the
+ * behaviour cannot disagree.
+ */
+export const MIN_HANDLE_BOX_PX = 22;
+
+export function canResizeByHandles(
+  inst: ComponentInstance,
+  classDef: ComponentClass | undefined,
+  scale: number
+): boolean {
+  const [x1, y1, x2, y2] = instanceOutlineBounds(inst, classDef);
+  const w = Math.abs(x2 - x1) * Math.abs(scale);
+  const h = Math.abs(y2 - y1) * Math.abs(scale);
+  return w >= MIN_HANDLE_BOX_PX && h >= MIN_HANDLE_BOX_PX;
 }
 
 /**
@@ -1813,7 +1872,12 @@ export function handlePoints(
     e: [x2, my],
     se: [x2, y1],
     s: [mx, y1],
-    sw: [x1, y2],
+    // The bottom-left. This was `[x1, y2]` -- the same point as `nw` -- so two
+    // handles were drawn stacked at the top-left, nothing was drawn at the
+    // bottom-left, and `hitTestHandle` could never return "sw" (nw won the tie).
+    // The bottom-left corner fell through to a body press and the s+w branch of
+    // `resizeExtent` was dead code.
+    sw: [x1, y1],
     w: [x1, my],
   };
 }
@@ -1839,8 +1903,9 @@ export function handleCursor(h: ResizeHandle, rotation = 0): string {
  * Handles sit on the component's bounding box, and the visible symbol is
  * *inside* that box — so a generous radius made every click near the symbol's
  * edge start a resize, which is why selecting an already-selected component felt
- * broken. Grabbing a handle now requires being in that handle's own zone:
- * within `radius` of its edge or corner, and not deep inside the box.
+ * broken. Grabbing a handle requires being in that handle's own zone: within
+ * `radius` of its edge or corner, and not deep inside the box. The box is the
+ * instance's EXTENT — see `handleBox`.
  *
  * A press anywhere else belongs to the component body, and selects it.
  */
@@ -1851,6 +1916,10 @@ export function hitTestHandle(
   y: number,
   radius: number
 ): ResizeHandle | undefined {
+  // The same box `drawHandles` draws them on -- the artwork's outline -- so a handle
+  // is where it looks. The handle is INSET from the extent's edge for any artwork
+  // that does not fill its box, which is why the drag is applied 1:1 rather than by
+  // setting the edge to the pointer (see the resize branch in `editor.ts`).
   const bounds = instanceHitBounds(inst, classDef);
   const pts = handlePoints(bounds);
   const [x1, y1, x2, y2] = bounds;
@@ -1890,6 +1959,7 @@ export function hitTestHandle(
   return best;
 }
 
+/** Draw the resize handles for a selected instance. */
 /** Draw the resize handles for a selected instance. */
 export function drawHandles(
   ctx: CanvasRenderingContext2D,

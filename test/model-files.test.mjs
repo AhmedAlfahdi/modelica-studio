@@ -138,7 +138,19 @@ test("a drop tells a palette class from a file", () => {
     fs.readFileSync(path.join(repoRoot, "src/view/drop.ts"), "utf8")
   );
   assert.ok(fn, "the helper is present");
-  assert.match(fn[0], /vaultPathFrom\(raw\)/, "it resolves whatever the drag carried");
+  assert.match(
+    fn[0],
+    /vaultPathFrom\(raw, modelFolder\)/,
+    "it resolves whatever the drag carried, under the CONFIGURED folder"
+  );
+  // The folder is a setting, and the file-URL branch used to hard-code "Modelica":
+  // with any other save folder a dropped file resolved to null and the drop failed
+  // with "was not found in the vault".
+  assert.match(
+    view,
+    /droppedVaultFile\(\(t\) => ev\.dataTransfer\?\.getData\(t\) \?\? "", this\.plugin\.settings\.modelFolder\)/,
+    "and the view hands it the model folder"
+  );
   assert.match(fn[0], /text\/vnd\.obsidian\.file/, "the explorer's own drag type is checked first");
   // And the resolver is what rejects a class name, since the two arrive the same way.
   const resolve = /export function vaultPathFrom[\s\S]*?\n\}/.exec(

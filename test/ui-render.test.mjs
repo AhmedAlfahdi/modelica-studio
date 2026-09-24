@@ -1353,6 +1353,12 @@ test("the code editor's value is exactly what was put in", async () => {
     "  blankLines: 'a\\n\\nb\\n\\nc',",
     "  empty: '',",
     "  singleLine: 'model A',",
+    // The two shapes the HTML parser preprocesses: CRLF becomes LF, and a NUL byte
+    // is dropped. The editor's value is what the plugin adopts and SAVES, so a
+    // Windows-saved model was rewritten to LF just by opening code mode.
+    "  crlf: 'model A\\r\\n  Real x;\\r\\nend A;\\r\\n',",
+    "  loneCr: 'model A\\r  Real x;\\r',",
+    "  nul: 'model A\\u0000\\nend A;',",
     "};",
     "const results = {};",
     "for (const [name, source] of Object.entries(cases)) {",

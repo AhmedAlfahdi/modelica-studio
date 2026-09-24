@@ -798,7 +798,7 @@ export class ModelicaStudioView extends ItemView {
       if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
     });
     host.addEventListener("drop", (ev) => {
-      const path = droppedVaultFile((t) => ev.dataTransfer?.getData(t) ?? "");
+      const path = droppedVaultFile((t) => ev.dataTransfer?.getData(t) ?? "", this.plugin.settings.modelFolder);
       if (!path) return;
       ev.preventDefault();
       void this.plugin.loadModelFromPath(path);
@@ -2048,7 +2048,7 @@ export class ModelicaStudioView extends ItemView {
       // A file from the explorer opens; a class from the palette is placed. The
       // two are told apart by what the drag carries, because both arrive as a
       // drop on the same surface.
-      const dropped = droppedVaultFile((t) => ev.dataTransfer?.getData(t) ?? "");
+      const dropped = droppedVaultFile((t) => ev.dataTransfer?.getData(t) ?? "", this.plugin.settings.modelFolder);
       if (dropped) {
         void this.plugin.loadModelFromPath(dropped);
         return;

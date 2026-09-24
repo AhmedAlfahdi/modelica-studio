@@ -440,11 +440,66 @@ test("arrow keys nudge and coalesce into one undo step", () => {
   assert.equal(editor.history.depth, 1, "a burst of nudges collapses to one step");
 });
 
-test("shift+arrow nudges further", () => {
+test("arrow keys nudge in the direction they point", () => {
+  // Diagram +y is UP, so ArrowUp must increase y. This test used to assert only the
+  // MAGNITUDE of a shift+ArrowDown nudge -- `-20 + GRID * 5` -- which let the
+  // inverted sign pass: pressing Up moved the component down and saved it there.
   const { editor } = makeEditor();
   click(editor, 0, 0);
+  const at = () => editor.getModel().components[0].placement.extent;
+  const y0 = at()[1];
+
+  keydown(editor, key("ArrowUp"));
+  assert.equal(at()[1], y0 + GRID, "ArrowUp moves it up");
+  keydown(editor, key("ArrowDown"));
+  assert.equal(at()[1], y0, "ArrowDown brings it back");
   keydown(editor, key("ArrowDown", { shiftKey: true }));
-  assert.equal(editor.getModel().components[0].placement.extent[1], -20 + GRID * 5);
+  assert.equal(at()[1], y0 - GRID * 5, "shift nudges further, in the same direction");
+  keydown(editor, key("ArrowUp", { shiftKey: true }));
+  assert.equal(at()[1], y0, "and back again");
+  keydown(editor, key("ArrowRight", { shiftKey: true }));
+  assert.equal(at()[0], -20 + GRID * 5, "ArrowRight increases x");
+  keydown(editor, key("ArrowLeft", { shiftKey: true }));
+  assert.equal(at()[0], -20, "ArrowLeft decreases it");
+});
+
+test("a small symbol is moved, not resized, when its body is dragged", () => {
+  // The 9px handle zones are larger than a small symbol's box, so once the
+  // component was selected every press inside it was nearer a handle than its
+  // body: dragging it RESIZED it -- collapsing the box to the 8-unit minimum and
+  // writing that to the file. A press on an unselected component still moved it,
+  // which is why the older drag test passed.
+  const { editor } = makeEditor(); // 40x40 box, artwork 140x60: 17px tall at 100%
+  click(editor, 0, 0);
+  assert.deepEqual(editor.selectedIds, ["r1"], "selected first, which is the trigger");
+  press(editor, 0, 0);
+  move(editor, 60, 40);
+  release(editor, 60, 40);
+  assert.deepEqual(
+    editor.getModel().components[0].placement.extent,
+    [40, -60, 80, -20],
+    "the box moved by the drag, keeping its size"
+  );
+});
+
+test("handles come back when the symbol is big enough on screen", () => {
+  // The gate is on the DRAWN size, so zooming in restores resizing -- and the drawn
+  // handles follow the same predicate, so the user never sees a handle they cannot
+  // grab.
+  // The default fixture, zoomed in: the gate is on the DRAWN size.
+  const { editor } = makeEditor();
+  editor.viewport.scale = 3;
+  click(editor, 0, 0);
+  const before = [...editor.getModel().components[0].placement.extent];
+  const outline = C0.instanceOutlineBounds(editor.getModel().components[0], DEFS["M.R"]);
+  const at = (x, y) => C0.apply(C0.viewportTransform(editor.viewport, 1), x, y);
+  const se = at(...Object.values(C0.handlePoints(outline).se));
+  press(editor, se[0], se[1]);
+  move(editor, se[0] + 30, se[1] + 30);
+  release(editor, se[0] + 30, se[1] + 30);
+  const after = editor.getModel().components[0].placement.extent;
+  assert.equal(after[0], before[0], "the far corner stayed put: this was a resize");
+  assert.ok(after[2] > before[2], `the dragged corner grew (${before} -> ${after})`);
 });
 
 /* ------------------------------------------------------------------ */
@@ -850,7 +905,9 @@ test("clicking outside the drawn symbol does not select it", () => {
 });
 
 test("handles are grabbable on the symbol's own corners", () => {
-  const { editor } = makeEditor();
+  // A 200-unit box: big enough that the handles are not swallowed by the body (see
+  // the size gate), which is what this test is about.
+  const { editor } = makeEditor([inst("r1", 0, 0, 100), inst("r2", 400, 0, 100)]);
   click(editor, 0, 0);
   const before = [...editor.getModel().components[0].placement.extent];
 
@@ -880,7 +937,11 @@ test("handles are grabbable on the symbol's own corners", () => {
   // viewport was silently mirroring every drawing.
   assert.equal(after[0], before[0], "the west edge stays put");
   assert.equal(after[3], before[3], "the north edge stays put");
-  assert.ok(after[2] > before[2], "the east edge moved out");
+  assert.ok(
+    after[2] > before[2],
+    `the east edge moved out (before ${before} after ${after} outline ${outline} ` +
+      `press ${JSON.stringify([se[0], se[1]])} handle ${JSON.stringify(C0.handlePoints(outline).se)})`
+  );
   assert.ok(after[1] < before[1], "the south edge moved out, i.e. to a smaller y");
 });
 
@@ -3001,4 +3062,224 @@ test("every gesture produces a model the save path can write", async () => {
     const { back } = written(editor);
     assert.equal(back.components.length, 3, "the copy is declared too");
   }
+});
+
+/** The parser, built once, for the tests that start from a Modelica source. */
+const parseLib = await import(
+  path.join(buildLibs("editor-parse", ["src/modelica/parser.ts"]), "parser.js")
+);
+function parse_lib() {
+  return parseLib;
+}
+test("a duplicated component keeps what its declaration said about it", () => {
+  // `pasteFragment` rebuilt each copied instance from id/className/placement/params
+  // alone. A `ComponentInstance` also carries the declaration PREFIXES (`inner`,
+  // `outer`, `flow`, `stream`, `constant`), the dimensions written after the name
+  // (`RealInput X_in[Medium.nX]`) and the enabling condition of a conditional
+  // declaration (`if use_u`). Dropping them is not cosmetic: every fluid model has
+  // `inner Modelica.Fluid.System system`, and a copy without `inner` makes the model
+  // fail with "an inner declaration for outer element 'system' could not be found".
+  const SOURCE = [
+    "model M",
+    "  inner Modelica.Fluid.System system(p_ambient = 101325)",
+    "    annotation(Placement(transformation(extent={{-100,-100},{-60,-60}})));",
+    "  Modelica.Fluid.Vessels.OpenTank tank(nPorts = 2)",
+    "    annotation(Placement(transformation(extent={{20,-20},{60,20}})));",
+    "  Modelica.Blocks.Interfaces.RealInput u if use_u",
+    "    annotation(Placement(transformation(extent={{100,100},{140,140}})));",
+    "  Modelica.Blocks.Math.Gain gains[3](k = 1)",
+    "    annotation(Placement(transformation(extent={{-140,20},{-100,60}})));",
+    "  parameter Boolean use_u = false;",
+    "equation",
+    "end M;",
+    "",
+  ].join("\n");
+
+  const { parseModelica, toDiagramModel } = parse_lib();
+  const model = toDiagramModel(parseModelica(SOURCE)[0], () => undefined);
+  const { editor } = makeEditor(model.components);
+
+  const centre = (id) => {
+    const c = editor.getModel().components.find((x) => x.id === id);
+    const [x1, y1, x2, y2] = c.placement.extent;
+    return [(x1 + x2) / 2, (y1 + y2) / 2];
+  };
+
+  // Duplicate the `inner` system, and the conditional input.
+  for (const id of ["system", "u", "gains"]) {
+    const [cx, cy] = centre(id);
+    click(editor, cx, -cy); // canvas y is negated: diagram +y is up
+    editor.duplicate();
+  }
+
+  const systemCopies = editor.getModel().components.filter(
+    (c) => c.className === "Modelica.Fluid.System" && c.id !== "system"
+  );
+  const inputCopies = editor.getModel().components.filter(
+    (c) => c.className === "Modelica.Blocks.Interfaces.RealInput" && c.id !== "u"
+  );
+
+  assert.equal(systemCopies.length, 1, `the system was copied (${editor.getModel().components.map((c) => c.id)})`);
+  assert.deepEqual(systemCopies[0].prefixes, ["inner"], "the copy is still an inner declaration");
+  assert.equal(inputCopies.length, 1, "the conditional input was copied");
+  assert.equal(inputCopies[0].condition, "use_u", "and its condition came with it");
+
+  // A copy is named after its CLASS (`Gain`), not after the instance it came from.
+  const gainCopies = editor.getModel().components.filter(
+    (c) => c.className === "Modelica.Blocks.Math.Gain" && c.id !== "gains"
+  );
+  assert.equal(gainCopies.length, 1, "the array instance was copied");
+  assert.equal(gainCopies[0].suffixDims, "[3]", "and the dimensions written after its name came too");
+});
+
+/* ------------------------------------------------------------------ */
+/* The press path: what a press decides to be                          */
+/* ------------------------------------------------------------------ */
+
+test("a wire selection does not survive into another model", () => {
+  // A wire id is `a.p|b.q`, and two variants of one circuit share those names -- so
+  // a selection carried across a model swap matched a wire in the NEW model: it drew
+  // as selected, `hasSelection` was true, the inspector reported it, and Delete
+  // removed a connection from a model the user had selected nothing in.
+  const at = (editor, x, y) => C0.apply(C0.viewportTransform(editor.viewport, 1), x, y);
+  const { editor, events } = makeEditor([inst("r1", 0, 0, 20), inst("r2", 200, 0, 20)]);
+  editor.addConnection({ component: "r1", port: "n" }, { component: "r2", port: "p" });
+  const [cx, cy] = at(editor, 100, 0); // the straight route along y = 0
+  click(editor, cx, cy);
+  assert.deepEqual(editor.selectedWireIds, ["r1.n|r2.p"], "the wire is selected to begin with");
+
+  const modelB = {
+    name: "B",
+    components: [inst("r1", 0, 500, 20), inst("r2", 200, 500, 20)],
+    connections: [
+      { id: "r1.n|r2.p", from: { component: "r1", port: "n" }, to: { component: "r2", port: "p" }, points: [] },
+    ],
+    graphics: [],
+  };
+  editor.setModel(modelB);
+  assert.deepEqual(editor.selectedWireIds, [], "the selection did not come with it");
+  assert.equal(editor.hasSelection, false, "so nothing is selected");
+  editor.deleteSelection();
+  assert.equal(editor.model.connections.length, 1, "and Delete removed nothing from the new model");
+  assert.ok(events, "the model changed under the editor");
+
+  // Through `adoptModel` too, which is the code-mode path.
+  click(editor, ...at(editor, 100, 500));
+  assert.deepEqual(editor.selectedWireIds, ["r1.n|r2.p"], "selected again");
+  editor.adoptModel({ name: "B", components: modelB.components, connections: [], graphics: [] });
+  assert.deepEqual(editor.selectedWireIds, [], "and dropped when the wire is not in the adopted model");
+});
+
+test("a pin press on a selected component starts a wire, not a resize", () => {
+  // An MSL pin sits on the artwork's edge, and the 9px handle zones cover it. With
+  // the handles tested first, pulling a wire from a pin of a LONE-SELECTED component
+  // RESIZED it -- changing the extent, silently, and creating no connection. Measured
+  // on Blocks.Math.Gain, Add, Integrator, Constant, Fluid.Vessels.OpenTank and more.
+  const { editor } = makeEditor();
+  click(editor, 0, 0);
+  assert.deepEqual(editor.selectedIds, ["r1"], "the component is selected, which is the trigger");
+  const before = [...editor.getModel().components[0].placement.extent];
+
+  // The port of M.R is called `p`; it sits on the artwork's edge.
+  const def = DEFS["M.R"];
+  const port = C0.portPosition(editor.getModel().components[0], def, "p");
+  const at = (x, y) => C0.apply(C0.viewportTransform(editor.viewport, 1), x, y);
+  const [px, py] = at(port[0], port[1]);
+  press(editor, px, py);
+  move(editor, px + 40, py);
+  release(editor, px + 40, py);
+
+  assert.deepEqual(
+    editor.getModel().components[0].placement.extent,
+    before,
+    "the press did not resize the component"
+  );
+  assert.notEqual(editor.history.lastLabel?.(), "resize r1", "and it was not recorded as a resize");
+});
+
+test("middle and right drags pan, even when they start on a component", () => {
+  // Middle-drag and Shift-drag are the documented ways to pan (docs/design.md). The
+  // body branch came before the pan branch without checking the button, so a
+  // middle-drag that started on a component MOVED the component and recorded an undo
+  // step instead -- silently, with no status message.
+  const { editor } = makeEditor();
+  const before = [...editor.getModel().components[0].placement.extent];
+  const vp0 = { ...editor.viewport };
+
+  for (const button of [1, 2]) {
+    press(editor, 0, 0, { button });
+    move(editor, 60, 40);
+    release(editor, 60, 40, { button });
+    assert.deepEqual(
+      editor.getModel().components[0].placement.extent,
+      before,
+      `a ${button === 1 ? "middle" : "right"} drag did not move the component`
+    );
+  }
+  assert.notDeepEqual({ ...editor.viewport }, vp0, "and the view panned instead");
+  assert.equal(editor.history.depth, 0, "with nothing recorded as an edit");
+});
+
+test("a rotated component is hit-tested where it is drawn", () => {
+  // The artwork is drawn rotated and the hit box was not: for a non-square symbol
+  // the clickable area and the highlight were a different SHAPE from the ink, so
+  // presses on the visible symbol missed it and presses on empty space selected it.
+  const { editor } = makeEditor();
+  const inst0 = editor.getModel().components[0];
+  inst0.placement.rotation = 90;
+  editor.requestDraw();
+
+  // M.R's artwork is 140x60 in a 40x40 box, so after a quarter turn the symbol is
+  // TALL: a point 12 units above the centre is on it, and one 12 units to the side
+  // is not.
+  const at = (x, y) => C0.apply(C0.viewportTransform(editor.viewport, 1), x, y);
+  click(editor, ...at(0, 12));
+  assert.deepEqual(editor.selectedIds, ["r1"], "the press on the rotated symbol selected it");
+  click(editor, ...at(12, 0));
+  assert.deepEqual(editor.selectedIds, [], "and the press beside it did not");
+});
+
+test("a wire cannot be committed to a component deleted during the drag", () => {
+  // The canvas owns the keyboard during a drag, so Delete can remove the armed
+  // component before the pointer is released. The connection was pushed anyway, with
+  // no waypoints because the port could not be resolved: `connect(a.n, b.p)` naming a
+  // component the model no longer declares. Invisible (a wire with no points is not
+  // drawn), unreachable (nothing to click), and written to the file, where
+  // OpenModelica answers "Variable a.n not found in scope M".
+  const { editor } = makeEditor();
+  click(editor, 0, 0);
+  assert.deepEqual(editor.selectedIds, ["r1"], "r1 is selected");
+  const at = (x, y) => C0.apply(C0.viewportTransform(editor.viewport, 1), x, y);
+  const def = DEFS["M.R"];
+  const port = C0.portPosition(editor.getModel().components[0], def, "p");
+  press(editor, ...at(port[0], port[1]));
+  move(editor, ...at(300, 0));
+  keydown(editor, key("Delete")); // the component goes while the wire is in flight
+  release(editor, ...at(300, 0));
+
+  const ids = editor.getModel().components.map((c) => c.id);
+  assert.deepEqual(ids, ["r2"], "r1 is gone");
+  assert.deepEqual(
+    editor.getModel().connections.map((c) => c.id),
+    [],
+    "and no connect statement names it"
+  );
+});
+
+test("a newly drawn wire stores no route of its own", () => {
+  // Storing the derived L made a hand-drawn wire behave as if it had been reshaped:
+  // after a move its interior corners stayed where the ports used to be, the route
+  // doubled back, and those stale waypoints were saved.
+  const { editor } = makeEditor();
+  const conn = editor.addConnection({ component: "r1", port: "n" }, { component: "r2", port: "p" });
+  assert.ok(conn, "the wire was created");
+  assert.deepEqual(conn.points, [], "with no waypoints of its own");
+
+  // The route is derived, so it follows a component that moves afterwards.
+  const before = editor.connectionPoints(conn);
+  editor.getModel().components[1].placement.extent = [300, 180, 340, 220];
+  const after = editor.connectionPoints(conn);
+  assert.notDeepEqual(after, before, "the route re-derives after the move");
+  assert.deepEqual(after.slice(-2), [300, 200], `and ends at the port's new position: ${after}`);
+  assert.deepEqual(conn.points, [], "while the wire still stores nothing of its own");
 });

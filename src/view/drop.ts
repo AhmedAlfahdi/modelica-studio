@@ -23,7 +23,7 @@
  * Returns null when the text names something that is not a model file, so a
  * palette class name cannot be mistaken for a path.
  */
-export function vaultPathFrom(raw: string): string | null {
+export function vaultPathFrom(raw: string, modelFolder = "Modelica"): string | null {
   const text = raw.trim();
   if (!text) return null;
 
@@ -37,8 +37,13 @@ export function vaultPathFrom(raw: string): string | null {
   if (/^file:/i.test(text)) {
     const decoded = safeDecode(text.replace(/^file:\/\//i, ""));
     // The vault prefix is not knowable from here, so the path is taken from the
-    // first segment that could be a vault path. Anything else is outside it.
-    const at = decoded.indexOf("/Modelica/");
+    // configured model folder. It used to look for a folder literally named
+    // "Modelica": with the save folder set to anything else a dropped file resolved
+    // to null, and the caller fell through to `text/plain` -- which for an OS drag is
+    // the bare file name -- so the drop failed with "was not found in the vault".
+    const folder = modelFolder.trim().replace(/^\/+|\/+$/g, "");
+    if (!folder) return null;
+    const at = decoded.indexOf(`/${folder}/`);
     return at >= 0 ? decoded.slice(at + 1) : null;
   }
 
@@ -72,11 +77,14 @@ export function acceptsFileDrag(types: readonly string[], fileCount: number): bo
 }
 
 /** The vault path from a drop, reading the data that is available at that point. */
-export function droppedVaultFile(read: (type: string) => string): string | null {
+export function droppedVaultFile(
+  read: (type: string) => string,
+  modelFolder = "Modelica"
+): string | null {
   for (const type of ["text/vnd.obsidian.file", "text/uri-list", "text/plain"]) {
     const raw = read(type);
     if (!raw) continue;
-    const path = vaultPathFrom(raw);
+    const path = vaultPathFrom(raw, modelFolder);
     if (path) return path;
   }
   return null;

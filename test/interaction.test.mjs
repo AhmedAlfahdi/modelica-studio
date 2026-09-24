@@ -760,12 +760,22 @@ test("symbols are sized so they fill their box, and the box matches the drawing"
       Math.abs(drawn - 28) < 1.5,
       `${name}: symbol should render near 28 units, got ${drawn.toFixed(1)}`
     );
-    // ...the box keeps the artwork's aspect ratio, so nothing is stretched...
+    // ...and NOTHING IS STRETCHED: the aspect the artwork is DRAWN at must be its
+    // canonical aspect. This assertion used to compare the BOX's aspect with the
+    // artwork's, which is the opposite of the requirement -- the icon transform maps
+    // the canonical square box onto the extent, so a box shaped like the artwork
+    // applies the aspect twice. An MSL Resistor (3:1) was drawn and saved at 9:1.
     const artAspect = w / h;
-    const extAspect = (ext[2] - ext[0]) / (ext[3] - ext[1]);
+    const extW = ext[2] - ext[0];
+    const extH = ext[3] - ext[1];
+    const drawnAspect = ((outline[2] - outline[0]) / (outline[3] - outline[1]));
     assert.ok(
-      Math.abs(artAspect - extAspect) < 0.05,
-      `${name}: box aspect ${extAspect.toFixed(2)} should match artwork ${artAspect.toFixed(2)}`
+      Math.abs(drawnAspect - artAspect) < 0.05,
+      `${name}: drawn aspect ${drawnAspect.toFixed(2)} should be the canonical ${artAspect.toFixed(2)}`
+    );
+    assert.ok(
+      Math.abs(extW - extH) < 0.05,
+      `${name}: and the box is square (${extW.toFixed(2)}x${extH.toFixed(2)}), so the transform cannot stretch it`
     );
     // ...and the clickable region is the drawing plus only a small margin.
     for (const [i, axis] of [[0, "x"], [1, "y"]]) {
@@ -1506,4 +1516,38 @@ test("a hover readout is placed clear of the component it describes", () => {
     assert.ok(p.x >= 0 && p.x + tall.width <= canvas.width, `x in canvas for ${box}: ${p.x}`);
     assert.ok(p.y >= 0 && p.y + tall.height <= canvas.height, `y in canvas for ${box}: ${p.y}`);
   }
+});
+
+test("every resize handle is in its own place", () => {
+  // `sw` was `[x1, y2]` -- the same point as `nw` -- so two handles were drawn
+  // stacked at the top-left, nothing was drawn at the bottom-left, and
+  // `hitTestHandle` could never return "sw" (nw won the distance tie). The
+  // bottom-left corner fell through to a body press and the s+w branch of
+  // `resizeExtent` was dead code.
+  const pts = C.handlePoints([-20, -20, 20, 20]);
+  const positions = ["nw", "n", "ne", "e", "se", "s", "sw", "w"].map((h) => pts[h].join(","));
+  assert.equal(new Set(positions).size, 8, `all eight handles are distinct: ${positions.join(" | ")}`);
+  assert.deepEqual(pts.sw, [-20, -20], "sw is the drawn bottom-left (smaller x, smaller y)");
+  assert.deepEqual(pts.nw, [-20, 20], "and nw the top-left");
+
+  // And it can actually be grabbed: a press on that corner is a resize.
+  const def = classDef("M.R", { p: [0, 0] });
+  def.icon = [{ kind: "Rectangle", extent: [-90, -30, 90, 30], lineColor: [0, 0, 0] }];
+  const extent = [-100, -100, 100, 100];
+  const inst = { id: "r1", className: "M.R", placement: { extent, rotation: 0, visible: true }, params: {} };
+  // The handles are drawn on the ARTWORK's box (see `drawHandles`), which for a
+  // symbol that does not fill its extent is inset from the extent's corner -- so a
+  // press must aim where the handle is drawn, which is also where the user sees it.
+  const drawn = C.instanceOutlineBounds(inst, def);
+  const sw = C.handlePoints(drawn).sw;
+  assert.equal(
+    C.hitTestHandle(inst, def, sw[0], sw[1], 9),
+    "sw",
+    `a press on the bottom-left handle resizes from it (at ${sw})`
+  );
+  assert.equal(
+    C.hitTestHandle(inst, def, drawn[0] + (drawn[2] - drawn[0]) / 2, drawn[1] + (drawn[3] - drawn[1]) / 2, 9),
+    undefined,
+    "while a press in the middle of the symbol is a body press"
+  );
 });

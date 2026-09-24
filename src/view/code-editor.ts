@@ -24,7 +24,7 @@
  */
 
 import { LibraryIndex } from "../modelica/library";
-import { Completion, applyCompletion, completionsFor, highlight, indentForNewline, prefixAt } from "./modelica-lang";
+import { Completion, applyCompletion, completionsFor, highlight, highlightRuns, indentForNewline, prefixAt } from "./modelica-lang";
 
 export interface CodeEditorOptions {
   /** Called after every edit, debounced. */
@@ -228,10 +228,36 @@ export function createCodeEditor(
    * single layer, and it is why the caret is tracked as a text offset rather
    * than as a DOM node.
    */
+  /**
+   * Paint the source into the editor as DOM text nodes.
+   *
+   * NOT `editor.innerHTML = highlight(...)`: assigning HTML reads the string
+   * through the HTML parser, which turns CRLF and lone CR into LF and drops a NUL
+   * byte. The editor's text is what the plugin adopts as the model's source and
+   * saves, so opening code mode on a Windows-saved model rewrote its line endings.
+   */
+  function paint(source: string): void {
+    const frag = document.createDocumentFragment();
+    for (const run of highlightRuns(source)) {
+      if (run.kind === "plain") {
+        frag.appendChild(document.createTextNode(run.text));
+        continue;
+      }
+      const span = document.createElement("span");
+      span.className = `mst-${run.kind}`;
+      span.textContent = run.text;
+      frag.appendChild(span);
+    }
+    // The trailing newline `highlight` adds, so a final empty line still occupies a
+    // row and the gutter stays aligned. `text()` strips it again.
+    frag.appendChild(document.createTextNode("\n"));
+    editor.replaceChildren(frag);
+  }
+
   function repaint(restoreCaret = true): void {
     const offset = restoreCaret ? caretOffset() : null;
     internal = true;
-    editor.innerHTML = highlight(text());
+    paint(text());
     internal = false;
     syncScroll();
     if (offset !== null) {
@@ -253,7 +279,7 @@ export function createCodeEditor(
 
   function restore(state: { text: string; caret: number }): void {
     internal = true;
-    editor.innerHTML = highlight(state.text);
+    paint(state.text);
     internal = false;
     renderGutter();
     setCaret(state.caret);
@@ -363,7 +389,7 @@ export function createCodeEditor(
   /** Replace the whole document and place the caret. */
   function replaceAll(value: string, caret: number): void {
     internal = true;
-    editor.innerHTML = highlight(value);
+    paint(value);
     internal = false;
     renderGutter();
     syncScroll();
@@ -457,6 +483,28 @@ export function createCodeEditor(
   editor.addEventListener("keydown", (ev) => {
     const mod = ev.ctrlKey || ev.metaKey;
 
+    // Mod+Enter is Simulate, and it is checked FIRST: the plain-Enter branch below
+    // returns, so the submit branch under it was unreachable and Ctrl+Enter inserted
+    // a newline instead of running the model -- in both modes, while Help and the
+    // toolbar both document it as Simulate.
+    if (mod && ev.key === "Enter") {
+      ev.preventDefault();
+      opts.onSubmit?.();
+      return;
+    }
+
+    // The completion popup gets the arrows before the caret does. The caret branch
+    // returned unconditionally, so with the list open the arrows moved the caret
+    // (behind the popup) and the highlight never moved: Enter then accepted item 0
+    // whatever the user had done.
+    if (popupItems.length && (ev.key === "ArrowDown" || ev.key === "ArrowUp")) {
+      ev.preventDefault();
+      const max = Math.min(popupItems.length, 12);
+      popupIndex = (popupIndex + (ev.key === "ArrowDown" ? 1 : -1) + max) % max;
+      renderPopup();
+      return;
+    }
+
     // Keys that move the caret without editing: let the browser move it, then
     // bring the viewport along.
     if (ev.key.startsWith("Arrow") || ev.key === "PageUp" || ev.key === "PageDown" || ev.key === "Home" || ev.key === "End") {
@@ -477,19 +525,7 @@ export function createCodeEditor(
     }
 
     if (popupItems.length) {
-      const max = Math.min(popupItems.length, 12);
-      if (ev.key === "ArrowDown") {
-        ev.preventDefault();
-        popupIndex = (popupIndex + 1) % max;
-        renderPopup();
-        return;
-      }
-      if (ev.key === "ArrowUp") {
-        ev.preventDefault();
-        popupIndex = (popupIndex - 1 + max) % max;
-        renderPopup();
-        return;
-      }
+      // The arrows are handled ABOVE, before the caret branch can swallow them.
       if (ev.key === "Enter" || ev.key === "Tab") {
         ev.preventDefault();
         acceptPopup(popupIndex);
@@ -521,16 +557,11 @@ export function createCodeEditor(
       return;
     }
 
-    if (mod && ev.key === "Enter") {
-      ev.preventDefault();
-      opts.onSubmit?.();
-      return;
-    }
   });
 
   // Seed the content: the highlighted HTML IS the editable content.
   internal = true;
-  editor.innerHTML = highlight(initial);
+  paint(initial);
   internal = false;
   renderGutter();
 

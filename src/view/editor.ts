@@ -59,6 +59,8 @@ import {
   distanceToPolyline,
   drawComponent,
   drawConnection,
+  canResizeByHandles,
+  handlePoints,
   drawHandles,
   drawWireVertices,
   nearestVertexIndex,
@@ -170,6 +172,20 @@ type Interaction =
       id: string;
       handle: ResizeHandle;
       startExtent: [number, number, number, number];
+      /** Where the press landed, in diagram units, so the drag can be measured. */
+      startX: number;
+      startY: number;
+      /**
+       * The EXTENT's corner this handle resizes, in diagram units.
+       *
+       * The handle is drawn on the artwork's box, which is inset from the extent
+       * whenever the symbol does not fill it (an MSL Resistor's artwork is 3:1 in a
+       * square extent). `resizeExtent` sets the edge to the position it is given, so
+       * passing the pointer directly snapped the edge by that inset on the first
+       * move and the symbol jumped. The drag is therefore applied to THIS point.
+       */
+      edgeX: number;
+      edgeY: number;
       moved: boolean;
     }
   | {
@@ -769,10 +785,21 @@ export class SchematicEditor {
       } as never);
     }
 
-    // 1. Resize handles, for a lone selection.
-    if (ev.button === 0 && this.selection.size === 1) {
+    // Which pin, if any, is under the press. Computed BEFORE the handles, because
+    // an MSL pin sits on the artwork's edge and the 9px handle zones cover it: with
+    // the handles tested first, pulling a wire from a pin of a selected component
+    // RESIZED it instead (changing the extent, silently, and creating no
+    // connection) -- measured on Blocks.Math.Gain, Add, Integrator, Sources.
+    // Constant, Fluid.Vessels.OpenTank and more.
+    const pinUnderPress = findPortAt(this.model, this.cb.lookup, dx, dy, portHitRadius);
+
+    // 1. Resize handles, for a lone selection -- but only while the symbol is
+    // big enough on screen for the handles to be distinguishable from its body.
+    // Otherwise the 9px zones of opposite edges overlap and every press inside a
+    // small symbol starts a resize, so a selected component could not be moved.
+    if (ev.button === 0 && this.selection.size === 1 && !pinUnderPress) {
       const inst = this.instanceOf([...this.selection][0]);
-      if (inst) {
+      if (inst && canResizeByHandles(inst, this.cb.lookup(inst.className), this.viewport.scale)) {
         const h = hitTestHandle(
           inst,
           this.cb.lookup(inst.className),
@@ -783,12 +810,25 @@ export class SchematicEditor {
         diag.handleHit = h;
         if (h) {
           report("resize");
+          // The handle sits on the ARTWORK's box, which is inset from the extent's
+          // edge whenever the symbol does not fill its box (an MSL Resistor's
+          // artwork is 3:1 in a square extent). Setting the edge to the pointer
+          // therefore snapped it by the inset on the first move, so the symbol
+          // jumped. Recording where inside the handle the press landed and
+          // subtracting it makes the edge follow the pointer 1:1, from wherever it
+          // was.
+          const [ex1, ey1, ex2, ey2] = inst.placement.extent;
+          const edge = handlePoints([ex1, ey1, ex2, ey2])[h];
           this.beginInteraction(
             {
               kind: "resize",
               id: inst.id,
               handle: h,
-              startExtent: [...inst.placement.extent] as [number, number, number, number],
+              startExtent: [ex1, ey1, ex2, ey2],
+              startX: dx,
+              startY: dy,
+              edgeX: edge[0],
+              edgeY: edge[1],
               moved: false,
             },
             ev
@@ -841,7 +881,13 @@ export class SchematicEditor {
     }
 
     // 4. A component body: select (respecting modifiers) and prepare to drag.
-    if (bodyHit) {
+    //
+    // Left button only. Middle- and right-drags are the documented way to PAN
+    // (see docs/design.md), and this branch came before the pan branch without
+    // checking the button -- so a middle-drag that started on a component moved the
+    // component and recorded an undo step instead of panning, silently. A press
+    // that hits nothing still pans, because it falls through to the branch below.
+    if (bodyHit && ev.button === 0) {
       report("select+drag");
       const additive = ev.ctrlKey || ev.metaKey || ev.shiftKey;
       if (additive) {
@@ -985,7 +1031,14 @@ export class SchematicEditor {
             inter.origin.size > 1 ? `move ${inter.origin.size} components` : `move ${inter.id}`
           );
         }
-        const c = centreOf(inter.origin.get(inter.id)!);
+        // The press may have just REMOVED this component from the selection --
+        // a shift-click on an already-selected one is how a user deselects -- so
+        // there is no origin extent for it and nothing to drag. Reading it
+        // unguarded threw a TypeError out of the pointermove listener on every
+        // move, which killed the gesture and filled the console.
+        const grabbed = inter.origin.get(inter.id);
+        if (!grabbed) return;
+        const c = centreOf(grabbed);
         const sx = Math.round((dx - inter.grabDX) / GRID) * GRID;
         const sy = Math.round((dy - inter.grabDY) / GRID) * GRID;
 
@@ -1012,11 +1065,13 @@ export class SchematicEditor {
             inter.moved = true;
             this.beginEdit(this.pendingLabelResize);
           }
+          // 1:1 with the pointer, from where the edge already was: the handle may
+          // be drawn well inside it (see `edgeX`).
           inst.placement.extent = resizeExtent(
             inter.startExtent,
             inter.handle,
-            dx,
-            dy,
+            inter.edgeX + (dx - inter.startX),
+            inter.edgeY + (dy - inter.startY),
             MIN_SIZE,
             GRID
           );
@@ -1596,6 +1651,21 @@ export class SchematicEditor {
         className: c.className,
         placement: { ...c.placement, extent: offsetExtent(c.placement.extent, offset) },
         params: { ...c.params },
+        // What the declaration said about the INSTANCE, not only how it is
+        // configured. A `ComponentInstance` carries the declaration's prefixes
+        // (`inner`, `outer`, `flow`, `stream`, `constant`), the dimensions written
+        // after the name (`RealInput X_in[Medium.nX]`) and a conditional
+        // declaration's `if` clause -- and none of them survived a copy, because
+        // this object was built from id, class, placement and parameters alone.
+        //
+        // That is not a cosmetic loss. Every fluid model has
+        // `inner Modelica.Fluid.System system`, and the copy without `inner` makes
+        // the model fail with "an inner declaration for outer element 'system'
+        // could not be found"; a copied conditional connector declares parameters
+        // it is not meant to. The file said one thing and the canvas held another.
+        prefixes: c.prefixes ? [...c.prefixes] : undefined,
+        suffixDims: c.suffixDims,
+        condition: c.condition,
       };
       this.model.components.push(inst);
       created.push(inst);
@@ -1812,13 +1882,31 @@ export class SchematicEditor {
       return undefined;
     }
 
+    // Both ends must still exist. The canvas owns the keyboard during a drag, so
+    // Delete (or Ctrl+X, or Ctrl+Z) can remove an armed component before the pointer
+    // is released -- and the connection was pushed anyway, with no waypoints because
+    // the port could not be resolved. The result was a `connect(a.n, b.p)` naming a
+    // component the model no longer declares: invisible (a wire with no points is not
+    // drawn), unreachable (nothing to click), and written to the file, where
+    // OpenModelica answers "Variable a.n not found in scope M".
     const a = this.instancePos(from.component, from.port);
     const b = this.instancePos(to.component, to.port);
+    if (!a || !b) {
+      this.cb.onStatus?.("that component no longer exists");
+      return undefined;
+    }
     const conn: Connection = {
       id: `${from.component}.${from.port}|${to.component}.${to.port}`,
       from,
       to,
-      points: a && b ? routeConnection(a, b) : [],
+      // NO waypoints for a wire that has just been drawn: the route is DERIVED from
+      // the two port positions, so it follows a component that is moved afterwards.
+      // Storing the derived L made a hand-drawn wire behave as if it had been
+      // reshaped -- after a move its interior corners stayed where the ports used to
+      // be, the route doubled back, and those stale waypoints were written to the
+      // file. The parser leaves `points` empty for a plain `connect`, and the round
+      // trip is exact, so this is also the shape a hand-written model has.
+      points: [],
     };
     this.model.connections.push(conn);
     this.cb.onStatus?.(
@@ -1956,6 +2044,13 @@ export class SchematicEditor {
   setModel(model: DiagramModel): void {
     this.model = model;
     this.selection = new Set();
+    // Wires too. A wire id is `a.p|b.q`, and two variants of one circuit share
+    // those names -- so a selection carried across a model swap matched a wire in
+    // the NEW model: it drew as selected, `hasSelection` was true, the inspector
+    // reported it, and Delete removed a connection from a model the user had
+    // selected nothing in. `applyRestored` filters this set; these two paths did
+    // not.
+    this.wireSelection = new Set();
     this.cb.onSelectionChange?.([]);
     this.history.clear();
     this.scheduleFit();
@@ -1985,9 +2080,13 @@ export class SchematicEditor {
     if (this.model === model) return;
     this.model = model;
     // Ids that the new text no longer declares must leave the selection, or the
-    // inspector reports a component that is not there.
+    // inspector reports a component that is not there. Wires are filtered the same
+    // way: a wire whose endpoints are gone, or which belongs to the model that was
+    // replaced, must not stay selected (see `setModel`).
     const alive = new Set(model.components.map((c) => c.id));
+    const aliveWires = new Set(model.connections.map((c) => c.id));
     this.selection = new Set([...this.selection].filter((id) => alive.has(id)));
+    this.wireSelection = new Set([...this.wireSelection].filter((id) => aliveWires.has(id)));
     // The undo stack describes the text that was replaced; stepping back into it
     // would restore a model the plugin does not hold.
     this.history.clear();
@@ -2155,7 +2254,7 @@ export class SchematicEditor {
 
     if (this.selection.size === 1) {
       const inst = this.instanceOf([...this.selection][0]);
-      if (inst) {
+      if (inst && canResizeByHandles(inst, this.cb.lookup(inst.className), vp.scale)) {
         drawHandles(
           ctx,
           inst,
@@ -2780,12 +2879,21 @@ function isZeroSize(inter: { startX: number; startY: number; x: number; y: numbe
   return Math.abs(inter.x - inter.startX) < 1e-6 && Math.abs(inter.y - inter.startY) < 1e-6;
 }
 
+/**
+ * How far a nudge key moves a selection, in DIAGRAM units.
+ *
+ * A diagram's +y points up (see the transform's own note), so ArrowUp has to
+ * INCREASE y. It decreased it, which nudged the selection down the screen and
+ * saved it that way -- and the test that covered the nudge asserted only the
+ * magnitude of a shift+ArrowDown, so it encoded the inversion instead of
+ * catching it.
+ */
 function arrowDelta(key: string, step: number): [number, number] {
   switch (key) {
     case "ArrowUp":
-      return [0, -step];
-    case "ArrowDown":
       return [0, step];
+    case "ArrowDown":
+      return [0, -step];
     case "ArrowLeft":
       return [-step, 0];
     default:

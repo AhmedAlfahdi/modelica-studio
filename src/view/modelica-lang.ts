@@ -204,6 +204,29 @@ export function escapeHtml(text: string): string {
  * once tags are stripped, or the highlight layer drifts out of alignment with the
  * textarea on top of it.
  */
+/**
+ * The highlighted runs as TEXT, for callers that paint the DOM themselves.
+ *
+ * `highlight` returns an HTML string, and assigning that string to `innerHTML`
+ * reads it through the HTML parser — which preprocesses its input: CRLF and a lone
+ * CR become LF, and a NUL byte is dropped outright. The code editor's text is what
+ * the plugin adopts as the model's source and then saves, so merely OPENING code
+ * mode on a model saved with Windows line endings rewrote every line ending in the
+ * file. Text nodes have no such preprocessing.
+ */
+export function highlightRuns(source: string): Array<{ text: string; kind: string }> {
+  const tokens = tokenize(source);
+  const runs: Array<{ text: string; kind: string }> = [];
+  let cursor = 0;
+  for (const t of tokens) {
+    if (t.start > cursor) runs.push({ text: source.slice(cursor, t.start), kind: "plain" });
+    runs.push({ text: source.slice(t.start, t.end), kind: t.kind });
+    cursor = t.end;
+  }
+  if (cursor < source.length) runs.push({ text: source.slice(cursor), kind: "plain" });
+  return runs;
+}
+
 export function highlight(source: string): string {
   const tokens = tokenize(source);
   let html = "";
