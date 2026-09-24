@@ -231,3 +231,26 @@ test("the model checker is present and knows how to call omc", () => {
   assert.match(text, /completed successfully/, "and looks for the line omc prints on success");
   assert.match(text, /ONE AT A TIME|one at a time|mkdtempSync/, "one file per omc process");
 });
+
+test("the README's claim about verification matches the audit", () => {
+  // "Every example is verified" was written when it was nearly true and stayed after it
+  // stopped being true: four of the thirty are not in the numerical audit at all. A
+  // claim about verification is the one claim a reader cannot check for themselves
+  // without doing the work again, so it is held to the audit by a test.
+  const audit = fs.readFileSync(path.join(repoRoot, "test", "audit.test.mjs"), "utf8");
+  const verified = new Set([...audit.matchAll(/sim\("([A-Za-z0-9_]+)"/g)].map((m) => m[1]));
+  const unverified = EXAMPLES.filter((e) => !verified.has(e.name)).map((e) => e.name);
+
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+  const claimed = /\*\*(\d+) of them\s+also carry a table/.exec(readme.replace(/\n\s*/g, " "))?.[1];
+  assert.ok(claimed, "the README states how many examples are verified");
+  assert.equal(
+    Number(claimed),
+    EXAMPLES.length - unverified.length,
+    `the README claims ${claimed} verified; the audit covers ${EXAMPLES.length - unverified.length}`
+  );
+  // And the ones left out are named, so a reader knows which notes quote no number.
+  for (const name of unverified) {
+    assert.ok(readme.includes(`\`${name}\``), `${name} is not verified and must be named in the README`);
+  }
+});
