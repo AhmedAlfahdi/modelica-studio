@@ -3547,6 +3547,8 @@ export class ModelicaStudioView extends ItemView {
   /* ---------------- model plumbing ---------------- */
 
   private onModelChanged(m: DiagramModel): void {
+    // An edit changes the state (saved -> modified), and a rename changes the name.
+    this.refreshChrome();
     // The editor may hand over a NEW object — an undo or a redo restores a parsed
     // copy rather than mutating in place — and the plugin has to take it, or the
     // two drift apart and the inspector ends up looking the selection up in a
@@ -3686,6 +3688,8 @@ export class ModelicaStudioView extends ItemView {
   }
 
   loadModelIntoEditor(): void {
+    // A different model: its name, its file and its state are all new.
+    this.refreshChrome();
     // The user asked for this model, so the canvas is meant to be empty. Without
     // this the seeding below replaced a brand-new model with an example the
     // moment it was created, and New looked like it did nothing.
@@ -4118,17 +4122,21 @@ export class ModelicaStudioView extends ItemView {
     await this.saveToNote();
   }
 
-  /** Redraw the status line, so the save state is current after a write. */
-  private refreshSaveState(): void {
-    const desc = this.plugin.saveState();
-    if (this.statusEl) {
-      this.statusEl.toggleClass("is-unsaved", desc.state !== "saved");
-      // Re-render the last message with the current state. The message is kept in a field
-      // rather than recovered from the element: stripping the old suffix out of the text
-      // works until a message itself contains the separator.
-      this.renderStatus();
-    }
+  /**
+   * Redraw everything that shows the save state: the status line, the header, the tab.
+   *
+   * Called from the paths that CHANGE it -- the model being edited, saved or loaded. The
+   * first version of the header was wired to this method, which nothing called, so the
+   * model's name and file were drawn once at open and never again: reported as "the
+   * file's name didn't update".
+   */
+  private refreshChrome(): void {
+    this.renderStatus();
     this.refreshTitle();
+    // The tab's label comes from `getDisplayText`, and Obsidian renders a header when it
+    // chooses. This asks it to; the method is internal, so calling it is optional.
+    const leaf = this.leaf as unknown as { updateHeader?: () => void };
+    leaf?.updateHeader?.();
   }
 
   /** The model, its file, and the save state, in one line above the toolbar. */
@@ -4424,6 +4432,8 @@ export class ModelicaStudioView extends ItemView {
       // The message is set AFTER the write, so the save state it appends is the
       // one the write produced rather than the one before it.
       this.setStatus(created ? `Created ${path}.` : `Saved ${path}.`);
+      // The model has a path now, and the file has its edits. Both are in the header.
+      this.refreshChrome();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       new Notice(`Could not save: ${message}`, 8000);

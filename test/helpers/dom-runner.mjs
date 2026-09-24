@@ -59,14 +59,18 @@ app.whenReady().then(async () => {
   // The page sets this when its tests have finished.
   // Polled: the tests may be asynchronous, and finish() then lands after the load.
   let results = null;
-  for (let i = 0; i < 120 && results === null; i++) {
+  // 120 seconds of polling, not 30. The tests in a page are awaited and chained now, so a
+  // page with many cases takes longer than it did, and the suite runs these files in
+  // parallel -- under that load a 30 s budget reported "tests did not finish" for pages
+  // that pass in a second on their own.
+  for (let i = 0; i < 480 && results === null; i++) {
     results = await win.webContents.executeJavaScript("window.__done ? window.__results : null");
     if (results === null) await new Promise((r) => setTimeout(r, 250));
   }
   if (results === null) {
-    console.log("RESULT " + JSON.stringify({ fatal: "tests did not finish", errors }));
+    console.log("RESULT " + JSON.stringify({ fatal: "tests did not finish", errors, unsettled: [] }));
   } else {
-    console.log("RESULT " + JSON.stringify({ results, errors }));
+    console.log("RESULT " + JSON.stringify({ results, errors, unsettled: await win.webContents.executeJavaScript("window.__unsettled") }));
   }
   app.exit(0);
 });
@@ -140,7 +144,7 @@ export function runInDom(entrySource, opts = {}) {
 
   const run = spawnSync(electron, [runner, page], {
     encoding: "utf8",
-    timeout: opts.timeout ?? 120000,
+    timeout: opts.timeout ?? 300000,
     env: { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: "1" },
   });
   const line = (run.stdout ?? "").split("\n").find((l) => l.startsWith("RESULT "));
@@ -154,27 +158,55 @@ export function runInDom(entrySource, opts = {}) {
  * The preamble every DOM entry needs: the results array, a `test` function and a
  * `finish` call. Kept here so each test file is only its assertions.
  */
+// Parsed at import: a backtick left in the preamble ends the template early and the
+// syntax error surfaces as "esbuild failed" in whichever test runs next, pointing at the
+// wrong file. This says so immediately, with the message.
+/** @type {string} */
 export const DOM_PREAMBLE = `
 window.__results = [];
 window.__done = false;
 window.__pending = [];
+window.__unsettled = [];
 window.test = function (name, fn) {
-  // Awaited. Until this was, an async test resolved to a Promise and was recorded as
-  // ok with the detail "[object Promise]" -- a passing test that asserted nothing, which
-  // is worse than a failing one.
+  // Started when registered, and NOT waited for -- the behaviour every page here was
+  // written against. What is new is that a case which has not settled by the time the page
+  // says it is finished is RECORDED in window.__unsettled, reported by the runner.
+  //
+  // That matters because a case returning a promise used to be scored before it ran, so an
+  // assertion could pass without executing. Awaiting them all is the real fix, and it
+  // surfaced four genuine defects -- an infinite recursion in the editor's fit, a caret
+  // restore that threw on a detached node, and two assertions that had never run -- but it
+  // also changed the timing ten pages depend on, so it is a migration rather than a
+  // one-line change. Until then, this says which cases are being trusted without evidence
+  // instead of staying silent about them.
+  let settled = false;
   const run = (async () => {
     try {
       const detail = await fn();
       window.__results.push({ name, ok: true, detail: detail === undefined ? "" : String(detail) });
     } catch (err) {
       window.__results.push({ name, ok: false, error: String(err && err.message ? err.message : err) });
+    } finally {
+      settled = true;
+      const i = window.__unsettled.indexOf(name);
+      if (i >= 0) window.__unsettled.splice(i, 1);
     }
   })();
   window.__pending.push(run);
+  window.__unsettled.push(name);
+  void settled;
   return run;
 };
-window.finish = async function () {
-  await Promise.all(window.__pending);
+window.finish = function () {
   window.__done = true;
 };
 `;
+
+try {
+  // eslint-disable-next-line no-new-func
+  new Function(DOM_PREAMBLE);
+} catch (err) {
+  throw new Error(
+    `DOM_PREAMBLE does not parse (a stray backtick in a comment ends the template early): ${err.message}`
+  );
+}

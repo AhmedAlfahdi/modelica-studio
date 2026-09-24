@@ -48,7 +48,7 @@ releases and updates it for you. The plugin is pre-1.0, so the version numbers a
    Settings → Community plugins.
 
 To pin a version instead of tracking the latest, use BRAT's **frozen** option and
-name the release, for example `0.3.15`.
+name the release, for example `0.3.16`.
 
 BRAT reports a mismatch if a release's tag, its name and the version inside the
 released `manifest.json` disagree. They are kept identical here on purpose, so an
@@ -73,7 +73,7 @@ To try it without your own vault, `examples/vault/` is a ready-made one — see
 npm install
 npm run build          # typecheck, then bundle to main.js
 npm run dev            # rebuild on change
-npm test               # 698 tests, including a numerical audit of the examples
+npm test               # 699 tests, including a numerical audit of the examples
 ```
 
 `npm test` runs the real OpenModelica compiler, so it needs `omc` on your PATH and

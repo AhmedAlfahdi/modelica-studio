@@ -134,6 +134,13 @@ export function createCodeEditor(
 
   /** Put the caret at a plain-text offset, clamped to the content. */
   function setCaret(offset: number): void {
+    // A range whose node is not in the document throws when it is added to the selection
+    // ("addRange(): The given range isn't in document"). `innerHTML` rewrites replace the
+    // editor's nodes, and a caret restore that arrives after one -- which is what a large
+    // model does -- was throwing into the console on every re-render. Found once the DOM
+    // harness started awaiting its page tests: the assertion that the page had no errors
+    // had been scored before the code that produced them ran.
+    if (!editor.isConnected) return;
     const target = Math.max(0, Math.min(offset, text().length));
     const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
     let seen = 0;
@@ -383,6 +390,7 @@ export function createCodeEditor(
     range.deleteContents();
     const node = document.createTextNode(value);
     range.insertNode(node);
+    if (!editor.isConnected) return;
     const after = document.createRange();
     after.setStart(node, node.data.length);
     after.collapse(true);

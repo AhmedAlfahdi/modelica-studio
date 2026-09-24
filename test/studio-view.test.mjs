@@ -96,3 +96,99 @@ test("the DOM listener still works where the page does see the key", async () =>
   assert.equal(by["bare-s"], "saves=0");
   assert.equal(by["ctrl-z"], "saves=0");
 });
+
+/**
+ * A plugin double with everything the view calls, so the view can be MOUNTED.
+ *
+ * Built by listing what `studio-view.ts` reaches for on the plugin (`grep -o
+ * "this\.plugin\.[a-zA-Z]*"`), rather than by adding fields one exception at a time --
+ * which is how the first attempt went, three errors deep.
+ */
+const MOUNT_SETUP = [
+  `import { ModelicaStudioView } from "${ROOT}/src/view/studio-view";`,
+  `import { StubVault, Scope } from "${ROOT}/test/helpers/obsidian-stub";`,
+  "",
+  "const vault = new StubVault();",
+  "vault.add('Modelica/MassSpringDamper.mo', 'model MassSpringDamper\\nend MassSpringDamper;');",
+  "vault.add('Modelica/TankOrifice.mo', 'model TankOrifice\\nend TankOrifice;');",
+  "const app = { vault, scope: new Scope(),",
+  "  workspace: { getLeavesOfType: () => [], on: () => ({}), getActiveViewOfType: () => null, onLayoutReady: (f) => f() } };",
+  "const plugin = {",
+  "  app, manifest: { id: 'modelica-studio', version: '0.3.16', author: 'A' },",
+  "  settings: { modelFolder: 'Modelica', modelFiles: { MassSpringDamper: 'Modelica/MassSpringDamper.mo' },",
+  "    wireScale: 0.9, symbolStrokeScale: 1.9, syncStrokeScale: false, showInstanceLabels: true, labelScale: 1,",
+  "    hoverParameters: false, diagramReadoutScale: 1, plotReadoutScale: 1, paletteRoots: [], modelStopTimes: {}, charts: {} },",
+  "  model: { name: 'MassSpringDamper', components: [], connections: [], equations: [] },",
+  "  library: { size: 3, packages: () => [], component: () => undefined, allNames: () => [],",
+  "    hasPlaceableClass: () => false, isExcluded: () => false },",
+  "  libraryRootNames: () => [], backend: null,",
+  "  sourceForSave: () => 'model MassSpringDamper\\nend MassSpringDamper;',",
+  "  saveState: () => ({ state: 'modified', label: 'modified', worthAsking: true }),",
+  "  saveModelToNote: async () => ({ path: 'Modelica/MassSpringDamper.mo', created: false }),",
+  "  takeModelOutdated: () => false, markModelOutdated: () => {}, noteModelEdited: () => {},",
+  "  invalidateBuild: () => {}, getView: () => null, refreshEmbeds: () => {}, setStopTime: () => {},",
+  "  stopTime: () => 5, ensureFolder: async () => {}, saveSettings: async () => {},",
+  "  diag: () => {}, hasLibrary: () => true, isComponentClass: () => false, traceStep: () => {},",
+  "  runLog: { add: () => {}, clear: () => {}, entries: () => [], subscribe: () => () => {} },",
+  "  aiContext: () => ({}), aiKey: () => null, appendAiExchange: () => {}, readAiExchanges: () => [],",
+  "  publishChart: () => {}, modelSourceText: () => '', parseSource: () => [],",
+  "  loadModelFromPath: async () => {}, markSourceStale: () => {}, adoptEditorModel: () => {},",
+  "  adoptModel: () => {}, setModelFromSource: () => {}, persist: () => {}, promptNewModel: () => {},",
+  "  showSetupHelp: () => {},",
+  "};",
+  "const view = new ModelicaStudioView({}, plugin);",
+  "view.app = app;",
+  "view.containerEl = document.body.createDiv();",
+  "view.contentEl = view.containerEl.createDiv();",
+  "const header = () => {",
+  "  const q = (c) => { const el = view.contentEl.querySelector(c); return el ? el.textContent : 'MISSING'; };",
+  "  return q('.modelica-studio-title-name') + ' | ' + q('.modelica-studio-title-file') + ' | ' + q('.modelica-studio-title-state');",
+  "};",
+  "",
+].join("\n");
+
+test("the header follows the model that is open, and the tab names it", async () => {
+  // Reported: "the file's name didn't update". The header was drawn once at open and
+  // never again, because it was refreshed by a method nothing called -- so this test
+  // mounts the view, changes the model, and reads the header back.
+  const out = await runInDom(
+    [
+      DOM_PREAMBLE,
+      MOUNT_SETUP,
+      // The setup is awaited at the page's top level, so every case below is a synchronous
+      // read of a settled view. A case that awaited would be scored before it ran unless the
+      // harness awaits its page tests, and that change is a migration of ten pages, not a
+      // detail of this one.
+      "let mountError = '';",
+      "try { await view.onOpen(); } catch (e) { mountError = 'onOpen threw: ' + e.message; }",
+      "const firstHeader = header();",
+      "plugin.model = { name: 'TankOrifice', components: [], connections: [], equations: [] };",
+      "plugin.settings.modelFiles.TankOrifice = 'Modelica/TankOrifice.mo';",
+      "let loadError = '';",
+      "try { view.loadModelIntoEditor(); } catch (e) { loadError = 'load threw: ' + e.message; }",
+      "const secondHeader = header();",
+      "",
+      "window.test('mount', () => mountError || firstHeader);",
+      "window.test('after loading another model', () => loadError || secondHeader);",
+      "window.test('and the tab label names the model', () => view.getDisplayText());",
+      "window.finish();",
+    ].join("\n")
+  );
+  assert.ok(!out.skip, `skipped: ${out.skip}`);
+  assert.ok(!out.fatal, out.fatal);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, r.error);
+  const by = Object.fromEntries(out.results.map((r) => [r.name, r.detail]));
+
+  assert.equal(
+    by.mount,
+    "MassSpringDamper | Modelica/MassSpringDamper.mo | modified",
+    "the header names the model, its file and the state"
+  );
+  assert.equal(
+    by["after loading another model"],
+    "TankOrifice | Modelica/TankOrifice.mo | modified",
+    "and it follows the model when another one is loaded -- the bug was that it did not"
+  );
+  assert.equal(by["and the tab label names the model"], "Modelica Studio — TankOrifice");
+});

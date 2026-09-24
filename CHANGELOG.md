@@ -5,6 +5,44 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.16] — 2026-10-14
+
+### Fixed
+
+- **The header's file name did not update.** Reported: "the file's name didn't update".
+  It was drawn once when the view opened and never again — the refresh was wired to a
+  method that nothing called. It is now refreshed from the three places that change it:
+  an edit (which changes the state), loading another model (name, file and state all
+  change), and a save (which gives the model a path it may not have had). The tab is
+  refreshed with them, through `getDisplayText` and Obsidian's own header update.
+
+  Caught by a test that MOUNTS the studio: it opens the view, loads a second model, and
+  reads the header back. Removing the hook fails it with the first model's name — the
+  reported bug, reproduced.
+
+- **An infinite recursion in the editor's fit**, reachable whenever the canvas is
+  measured while degenerate: `zoomToFit -> resize -> resolveFit -> zoomToFit`, until the
+  stack overflowed. Found by mounting the view in the test harness, which is the only way
+  it was reachable — `Maximum call stack size exceeded`. A fit can no longer re-enter
+  itself; removing the guard makes the mount test fail with exactly that message.
+
+- **A caret restore that threw on a detached node** — `addRange(): The given range isn't
+  in document` — on every re-render of a large model, because `innerHTML` rewrites replace
+  the nodes a saved range points at. Both caret paths now check the editor is still in the
+  document.
+
+### Changed (test infrastructure)
+
+- The DOM harness records which page tests had **not settled** when the page said it was
+  finished. Making it await them is the correct semantics and it surfaced the two defects
+  above, but it also changes timing that ten pages depend on, so it is a migration rather
+  than a one-line change; until then the runner reports what it is trusting without
+  evidence instead of staying quiet about it.
+- `DOM_PREAMBLE` is parsed when the module loads, so a stray backtick in a comment — which
+  ends the template literal early and surfaces as "esbuild failed" in whichever test runs
+  next — fails immediately with a message that says so. It caught one within a minute of
+  being written.
+
 ## [0.3.15] — 2026-10-14
 
 ### Added

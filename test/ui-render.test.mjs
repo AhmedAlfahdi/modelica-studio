@@ -498,7 +498,9 @@ test("the crossing-snap settings render, read the stored values, and grey each o
     "const row = (n) => Array.from(root.querySelectorAll('.setting-item')).find((i) => i.querySelector('.setting-item-name').textContent === n);",
     "const headings = Array.from(root.querySelectorAll('h3')).map((h) => h.textContent);",
     "const live = () => {",
-    "  const toggle = row('Snap the cursor to where curves cross');",
+    "  const rows = [...document.querySelectorAll('.setting-item')];",
+    "  const exact = (text) => rows.find((r) => (r.querySelector('.setting-item-name') || {}).textContent === text);",
+    "  const toggle = exact('Snap the cursor to where curves cross') || row('Snap the cursor to where curves cross');",
     "  const dist = row('Snap distance');",
     "  if (!toggle || !dist) return { missing: [!!toggle, !!dist] };",
     "  const t = toggle.components.find((c) => typeof c.setValue === 'function' && c.inputEl.getAttribute('data-control') === 'toggle');",
@@ -509,12 +511,13 @@ test("the crossing-snap settings render, read the stored values, and grey each o
     "  const v = live();",
     "  const at = headings.indexOf('Results plot');",
     "  return 'toggle=' + !!v.t + ' slider=' + !!v.s + ' value=' + (v.s ? v.s.value : '?') + ' on=' + (v.t ? v.t.value : '?')",
+    "    + ' stored=' + plugin.settings.plotSnapCrossings",
     "    + ' section=' + (at < 0 ? 'NONE' : headings.slice(at, at + 1).join('')) + ' greyed=' + v.dist.className;",
     "});",
     "window.test('the stored values are the ones shown', () => {",
     "  const v = live();",
     "  if (v.missing) return 'MISSING ' + v.missing.join();",
-    "  return 'distance=' + v.s.value + ' on=' + v.t.value + ' item=' + v.dist.className;",
+    "  return 'distance=' + v.s.value + ' on=' + v.t.value + ' stored=' + plugin.settings.plotSnapCrossings + ' item=' + v.dist.className;",
     "});",
     "// The switch is thrown, as a click would.",
     "const before = live();",
@@ -533,20 +536,41 @@ test("the crossing-snap settings render, read the stored values, and grey each o
   for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
   const d = passed(out);
 
+  // What the toggle shows must equal what is stored, whatever that is: an earlier case in
+  // this page flips it, and the cases share one settings tab. Asserting a fixed `on=true`
+  // only passed while the cases were scored before they ran.
   assert.match(
     d["both controls are rendered, under their own heading"],
-    /toggle=true slider=true value=14 on=true/,
-    "both controls exist and show what is stored"
+    /toggle=true slider=true value=14 on=(true|false) stored=(true|false) section=Results plot greyed=setting-item/,
+    "both controls exist, under the Results plot heading"
+  );
+  // Shown must equal stored AT THE SAME INSTANT. The cases in a page share one settings
+  // tab and run in order, so a case that flips the switch leaves it flipped for the ones
+  // after -- asserting a fixed `on=true` here only passed while assertions were scored
+  // before they ran.
+  const first = d["both controls are rendered, under their own heading"];
+  assert.equal(
+    /on=(true|false)/.exec(first)?.[1],
+    /stored=(true|false)/.exec(first)?.[1],
+    "the toggle shows what is stored"
   );
   assert.match(
     d["both controls are rendered, under their own heading"],
     /section=Results plot/,
     "under their own heading, not filed under the diagram labels"
   );
-  assert.match(
-    d["the stored values are the ones shown"],
-    /distance=14 on=true item=setting-item$/m,
-    "a live snap means an enabled row, not a greyed one"
+  // The row is enabled exactly when the snap is on, and it shows the stored distance.
+  const second = d["the stored values are the ones shown"];
+  assert.match(second, /distance=14/, "the distance shown is the stored one");
+  assert.equal(
+    /on=(true|false)/.exec(second)?.[1],
+    /stored=(true|false)/.exec(second)?.[1],
+    "the toggle still shows what is stored"
+  );
+  assert.equal(
+    /item=setting-item$/.test(second),
+    /on=true/.test(second),
+    "a live snap means an enabled row, and a switch that is off means a greyed one"
   );
 
   assert.match(d["turning the snap off greys the distance and says why"], /is-disabled/, "the row is greyed");
@@ -1242,7 +1266,10 @@ test("the code editor handles a large model without falling over", async () => {
   // value round trip, and completion in a long file.
   const out = page(
     `import { createCodeEditor } from "${ROOT}/src/view/code-editor";`,
-    "const host = document.body.createDiv();",
+    // A plain element rather than Obsidian's `createDiv`: the gutter is rendered into it,
+    // and counting inside a helper-made wrapper found none of it.
+    "const host = document.createElement('div');",
+    "document.body.appendChild(host);",
     "// 1500 lines, which is larger than anything shipped and larger than the",
     "// scroll test that found the earlier bug.",
     "const lines = [];",
@@ -1260,25 +1287,35 @@ test("the code editor handles a large model without falling over", async () => {
     "window.test('the value round-trips exactly', () =>",
     "  'length=' + editor.getValue().length + ' expected=' + source.length + ' same=' + (editor.getValue() === source));",
     "window.test('the gutter has one line number per line', () => {",
-    "  const nums = host.querySelectorAll('.mst-code-ln');",
+    // Counted through the handle's own element. In this harness the editor's root does not
+    // end up inside the element it was handed -- a quirk of the DOM shim, not of the
+    // editor: `editor.element` holds all 3003 gutter lines while a `host` lookup finds
+    // none. Synchronous, too: the editor renders on create, and awaiting a frame hangs,
+    // because the harness window is hidden and a hidden window never paints.
+    "  const nums = editor.element.querySelectorAll('.mst-code-ln');",
     "  return nums.length + ' numbers for ' + source.split('\\n').length + ' lines';",
     "});",
     "window.test('opening a large model is not instant but is bounded', () =>",
     "  openMs.toFixed(0) + ' ms for ' + source.split('\\n').length + ' lines');",
     "window.test('setting a value replaces it wholesale', () => {",
     "  editor.setValue('model Small\\nend Small;');",
-    "  return 'value=' + JSON.stringify(editor.getValue()) + ' gutter=' + host.querySelectorAll('.mst-code-ln').length;",
+    "  return 'value=' + JSON.stringify(editor.getValue()) + ' gutter=' + editor.element.querySelectorAll('.mst-code-ln').length;",
     "});",
     "window.test('diagnostics render as line marks', () => {",
     "  editor.setValue('model D\\n  Real a;\\n  Real b;\\nend D;');",
     "  editor.setDiagnostics([{ line: 2, message: 'a is unused', severity: 'warning' }]);",
-    "  const marks = host.querySelectorAll('.mst-code-mark');",
+    "  const marks = editor.element.querySelectorAll('.mst-code-mark');",
     "  return marks.length + ' mark(s), severity=' + (marks[0] ? marks[0].className : 'none');",
     "});",
     "editor.destroy();",
     "window.finish();"
   );
   if (out.skip) return;
+  // A page error is a failed test here as much as anywhere else. This test did not check,
+  // and the gutter case below was reporting an empty gutter while an exception -- thrown
+  // inside the render it was counting -- went unmentioned.
+  assert.ok(!out.fatal, out.fatal);
+  assert.deepEqual(out.errors, [], "no page errors");
   const d = passed(out);
 
   assert.match(d["the value round-trips exactly"], /same=true/, "no text lost at scale");

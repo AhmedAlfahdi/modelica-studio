@@ -394,6 +394,8 @@ export class SchematicEditor {
 
   /** Last size at which a fit was performed, to detect a stale fit. */
   private fittedFor: { w: number; h: number } | null = null;
+  /** True while a fit is running, so a fit cannot re-enter itself. */
+  private fitting = false;
 
   /**
    * Request a fit, performed once the canvas size is known and stable.
@@ -2006,6 +2008,23 @@ export class SchematicEditor {
    * real estate is not filled".
    */
   zoomToFit(): void {
+    // Re-entrancy guard. `zoomToFit` calls `resize`, and `resize` ends by resolving a
+    // pending fit -- which calls `zoomToFit` again. That is harmless while a fit clears
+    // the pending flag before it starts, and an infinite recursion when it does not:
+    // mounting the studio in the test harness overflowed the stack with
+    // `zoomToFit -> resolveFit -> resize -> zoomToFit` repeating until it died. Found by
+    // trying to mount the view for a test, which is the only way this was reachable.
+    if (this.fitting) return;
+    this.fitting = true;
+    try {
+      this.fitOnce();
+    } finally {
+      this.fitting = false;
+    }
+  }
+
+  /** The body of a fit, called once per fit through the guard above. */
+  private fitOnce(): void {
     this.resize();
     if (this.cssWidth < 80 || this.cssHeight < 80) {
       // No usable size yet; try again once layout has settled.
