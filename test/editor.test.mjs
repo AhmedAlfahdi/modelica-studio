@@ -3372,3 +3372,84 @@ test("a name moves off a wire, and stays put when the setting is off", () => {
   assert.deepEqual([fixed.x, fixed.y], [dflt.x, dflt.y], "at the fixed spot below its symbol");
   assert.equal(hits(labelBox(fixed), wireBox), true, "even though that spot is on the wire");
 });
+
+test("a name keeps clear of the PINS, not just the artwork", () => {
+  // Reported from a rendered page: "source" sat on the arrow beside the sine source.
+  // The artwork box for that class stops at y = 69.8 while its `signalSource` port is
+  // declared at {80.5,79}, and the renderer draws a stub and a marker at the port — so
+  // a name placed against the artwork landed on the pin.
+  //
+  // The geometry here is computed in the test, from the class's own numbers, so it
+  // cannot agree with a mistake in `instanceInkBounds`: `M.R` draws a rectangle over
+  // ±70 but declares its pins at ±100, which is the same shape of gap as the real
+  // class. The label is forced to the side by filling the space below and above.
+  const def = DEFS["M.R"];
+  // `inst` is the M.R fixture: artwork over ±70, pins declared at ±100, so the pins
+  // stick out past the drawing. The two neighbours are close enough to block the space
+  // below and above r1's own artwork, which forces the name to a SIDE -- where the pin
+  // is.
+  const model = {
+    name: "M",
+    components: [inst("r1", 0, 0), inst("below", 0, -30), inst("above", 0, 30)],
+    connections: [],
+    graphics: [],
+  };
+  const { editor } = makeEditor(model.components);
+  editor.model = model;
+  editor.autoFit = false;
+  editor.viewport = { scale: 1, x: 400, y: 300 };
+
+  const texts = [];
+  editor.ctx = new Proxy(
+    { canvas: { width: 800, height: 600 }, measureText: () => ({ width: 10 }) },
+    {
+      get(t, k) {
+        if (k in t) return t[k];
+        if (k === "fillText") return (text, x, y) => texts.push({ text: String(text), x, y });
+        return () => {};
+      },
+      set() {
+        return true;
+      },
+    }
+  );
+  SchematicEditor.prototype.draw.call(editor);
+  const label = texts.find((t) => t.text === "r1");
+  assert.ok(label, `r1 is named: ${JSON.stringify(texts)}`);
+
+  // Where the pins are, in DEVICE pixels -- the space the label is drawn in. Computed
+  // here from the placement and the class's canonical port positions, with no call into
+  // the code under test: the canonical box is scaled onto the extent, and the viewport
+  // maps diagram units to canvas pixels with +y flipped.
+  const [ex1, ey1, ex2, ey2] = model.components[0].placement.extent;
+  const scale = editor.viewport.scale;
+  const portAt = ([px, py]) => [
+    editor.viewport.x + (ex1 + ((px + 100) / 200) * (ex2 - ex1)) * scale,
+    editor.viewport.y - (ey1 + ((py + 100) / 200) * (ey2 - ey1)) * scale,
+  ];
+  const pins = Object.values(def.portPositions).map((p) => portAt(p));
+  // The label box, as the renderer paints it: centred on x, top at y, 13px times the
+  // line box.
+  const box = { x1: label.x - 5, y1: label.y, x2: label.x + 5, y2: label.y + 13 * 1.2 };
+  // The default spot is centred under the artwork, 3px below it: if the name is still
+  // there, the neighbours did not block anything and this test proves nothing.
+  assert.notDeepEqual(
+    [label.x, label.y],
+    [400, 300 + 6 + 3],
+    `the name had to leave the default spot: ${JSON.stringify(label)}`
+  );
+  // The marker a pin is drawn with is a ring of up to 6 device pixels (`drawPorts`
+  // draws 3.5, or 6 for the pin under the pointer), so "on the pin" means within that
+  // radius of its centre, not merely inside the text box.
+  const MARKER = 6;
+  const covers = (p) =>
+    p[0] >= box.x1 - MARKER && p[0] <= box.x2 + MARKER && p[1] >= box.y1 - MARKER && p[1] <= box.y2 + MARKER;
+  for (const [i, p] of pins.entries()) {
+    assert.equal(
+      covers(p),
+      false,
+      `the name must not sit on pin ${i} at (${p[0].toFixed(1)},${p[1].toFixed(1)}); ` +
+        `label box is ${JSON.stringify(box)}`
+    );
+  }
+});

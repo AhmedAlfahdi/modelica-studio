@@ -27,6 +27,10 @@ const LIB = buildLibs("diagram-layout-lib", [
   "src/modelica/library.ts",
   "src/modelica/types.ts",
 ]);
+// The renderer's own geometry, for the label test: its own bundle, because one bundle
+// with entries under both `src/modelica` and `src/render` is emitted under a shared
+// `src/` root and the paths above would all move.
+const RLIB = buildLibs("diagram-layout-render", ["src/render/canvas.ts", "src/render/labels.ts"]);
 const { parseModelica } = await import(path.join(LIB, "parser.js"));
 const { EXAMPLES } = await import(path.join(LIB, "examples.js"));
 
@@ -221,4 +225,116 @@ test("connected ports line up on a common axis", { skip: !MSL && "no MSL install
     }
   }
   assert.deepEqual(bad, [], `${bad.length} wires need a jog between the pins`);
+});
+
+test("no component's name lands on a symbol or a wire", { skip: !MSL && "no MSL installed" }, async () => {
+  // Reported twice from a rendered page: a name sitting on the symbol beside it, then a
+  // name sitting on a WIRE. Both are one failure -- the name is placed against boxes
+  // that are not the ink:
+  //
+  //   - the artwork box misses the pins, and the renderer draws a stub and a marker at
+  //     every declared port. SineVoltage's `signalSource` sits at {80.5,79} against
+  //     artwork that stops at y = 69.8, so a name placed to the right of the artwork
+  //     landed on that pin's arrow.
+  //   - the wires were simply not obstacles in the first version.
+  //
+  // This checks the rule for EVERY component of EVERY example, in the geometry the
+  // editor actually uses: the ink box (`instanceInkBounds`, artwork plus pins, plus the
+  // marker clearance) and the same wire routes the renderer draws, from the same two
+  // functions (`portPosition` and `routeConnection`). A name must clear every box that
+  // is not its own, and every wire.
+  const { LibraryIndex } = await import(path.join(LIB, "library.js"));
+  const C = await import(path.join(RLIB, "canvas.js"));
+  const L = await import(path.join(RLIB, "labels.js"));
+  const { toDiagramModel } = await import(path.join(LIB, "parser.js"));
+  const index = new LibraryIndex();
+  index.addDirectory(MSL);
+
+  // One viewport for every example: the pass works in device pixels, and the numbers
+  // that matter are ratios there, so a single scale is enough. 6 px per unit is a
+  // comfortable zoom, and the text is measured at the widest size the setting allows.
+  const vp = { scale: 6, x: 400, y: 300 };
+  const vt = C.viewportTransform(vp, 1);
+  const inflate = (b) => ({
+    x1: b[0] - L.LABEL_CLEARANCE,
+    y1: b[1] - L.LABEL_CLEARANCE,
+    x2: b[2] + L.LABEL_CLEARANCE,
+    y2: b[3] + L.LABEL_CLEARANCE,
+  });
+  const overlap = (a, b) => ({
+    w: Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1),
+    h: Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1),
+  });
+  const hits = (a, b) => {
+    const o = overlap(a, b);
+    return o.w > 0 && o.h > 0;
+  };
+  // A stand-in for the text: 7 px a character at the 13 px cap, which is what a
+  // sans-serif face measures at. Wider than the real thing, so the check is strict.
+  const measure = (text) => text.length * 7;
+
+  const bad = [];
+  let labels = 0;
+  for (const example of EXAMPLES) {
+    const model = toDiagramModel(parseModelica(example.source)[0], (n) => index.describe(n));
+    if (model.components.length === 0) continue;
+    const ink = new Map();
+    const requests = [];
+    for (const inst of model.components) {
+      const box = inflate(C.transformedBounds(vt, ...C.instanceInkBounds(inst, index.describe(inst.className))));
+      ink.set(inst.id, box);
+      requests.push({ id: inst.id, box, fontPx: 13 });
+    }
+    const occupied = [...ink.values()];
+    const wireOf = [];
+    for (const conn of model.connections) {
+      const a = model.components.find((c) => c.id === conn.from.component);
+      const b = model.components.find((c) => c.id === conn.to.component);
+      if (!a || !b) continue;
+      const pa = C.portPosition(a, index.describe(a.className), conn.from.port);
+      const pb = C.portPosition(b, index.describe(b.className), conn.to.port);
+      if (!pa || !pb) continue;
+      const pts = C.routeConnection(pa, pb, conn.points ?? []);
+      for (let i = 0; i + 3 < pts.length; i += 2) {
+        const p = C.apply(vt, pts[i], pts[i + 1]);
+        const q = C.apply(vt, pts[i + 2], pts[i + 3]);
+        occupied.push({
+          x1: Math.min(p[0], q[0]) - L.WIRE_CLEARANCE,
+          y1: Math.min(p[1], q[1]) - L.WIRE_CLEARANCE,
+          x2: Math.max(p[0], q[0]) + L.WIRE_CLEARANCE,
+          y2: Math.max(p[1], q[1]) + L.WIRE_CLEARANCE,
+        });
+        wireOf.push(`${example.name}: ${conn.from.component}.${conn.from.port} -> ${conn.to.component}.${conn.to.port}`);
+      }
+    }
+
+    const { spots } = L.placeLabels(requests, occupied, measure);
+    labels += spots.size;
+    for (const [id, spot] of spots) {
+      const mine = ink.get(id);
+      for (const [otherId, box] of ink) {
+        if (otherId === id) continue;
+        if (hits(spot.box, box)) bad.push(`${example.name}: "${id}" lands on ${otherId}`);
+      }
+      // Its own box: the candidate sides are outside it by construction, so this is a
+      // check on the arithmetic rather than on the choice.
+      if (hits(spot.box, mine)) bad.push(`${example.name}: "${id}" lands on its own symbol`);
+      const flat = { x1: spot.box.x1, y1: spot.box.y1, x2: spot.box.x2, y2: spot.box.y2 };
+      for (const w of occupied.slice(ink.size)) {
+        if (hits(flat, w)) {
+          bad.push(`${example.name}: "${id}" lands on a wire`);
+          break;
+        }
+      }
+      for (const [otherId, other] of spots) {
+        if (otherId === id) continue;
+        if (hits(spot.box, other.box)) bad.push(`${example.name}: "${id}" lands on "${otherId}"'s name`);
+      }
+    }
+    const missing = model.components.filter((c) => c.id && !spots.has(c.id));
+    if (missing.length) bad.push(`${example.name}: no place for ${missing.map((c) => c.id).join(", ")}`);
+  }
+
+  assert.ok(labels > 100, `every example was laid out (${labels} names placed)`);
+  assert.deepEqual(bad.slice(0, 12), [], `${bad.length} names overlap something`);
 });

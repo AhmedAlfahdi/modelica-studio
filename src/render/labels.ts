@@ -28,6 +28,18 @@ export interface Rect {
 /** The side of its symbol a label ended up on. */
 export type LabelSide = "below" | "above" | "right" | "left";
 
+/**
+ * How far a label keeps clear of a symbol's ink, in device pixels.
+ *
+ * The ink box already includes the pins; this is the half-width of a pin MARKER -- a
+ * ring, or the triangle an input or output connector is drawn with -- plus the stroke
+ * it is drawn with. A name placed exactly on the box edge sat on the marker.
+ */
+export const LABEL_CLEARANCE = 4;
+
+/** How much room a wire is given when it is treated as an obstacle. */
+export const WIRE_CLEARANCE = 3;
+
 /** The order the sides are tried in: below first, so the common case is unchanged. */
 export const LABEL_SIDES: LabelSide[] = ["below", "above", "right", "left"];
 
@@ -40,8 +52,14 @@ export const LABEL_SIDES: LabelSide[] = ["below", "above", "right", "left"];
  */
 export const LABEL_MIN_SCREEN = 14;
 
-/** Gap between the symbol's drawn edge and its name, in device pixels. */
-export const LABEL_GAP = 3;
+/**
+ * Gap between the symbol's edge and its name, in device pixels.
+ *
+ * Six rather than three: the box the label clears already includes the pins, and a pin
+ * marker is a ring or a triangle a few pixels across, so the gap is what keeps the
+ * name off the marker rather than level with it.
+ */
+export const LABEL_GAP = 6;
 
 /**
  * Height of the label's box as a multiple of its font size.

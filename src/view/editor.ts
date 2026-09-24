@@ -40,7 +40,9 @@ import type {
 import { emptyDiagram } from "../modelica/types";
 import { currentTheme, type Theme } from "../render/theme";
 import {
+  LABEL_CLEARANCE,
   LABEL_MIN_SCREEN,
+  WIRE_CLEARANCE,
   labelFont,
   labelFontPx,
   placeLabels,
@@ -61,6 +63,7 @@ import {
   diagramBounds,
   instanceBounds,
   instanceHitBounds,
+  instanceInkBounds,
   instanceOutlineBounds,
   mul,
   placementTransform,
@@ -2735,10 +2738,19 @@ export class SchematicEditor {
     const vt = viewportTransform(vp, dpr);
     const requests: LabelRequest[] = [];
     const occupied: Rect[] = [];
+    // Ink, not the outline: the renderer draws a stub and a pin marker at every
+    // declared port, and those sit outside the artwork for any class whose port is
+    // not on the drawing. The clearance covers the marker itself, so a name placed
+    // against this box clears the pin as well as the drawing.
+    const inflate = (b: [number, number, number, number]): Rect => ({
+      x1: b[0] - LABEL_CLEARANCE,
+      y1: b[1] - LABEL_CLEARANCE,
+      x2: b[2] + LABEL_CLEARANCE,
+      y2: b[3] + LABEL_CLEARANCE,
+    });
     for (const inst of this.model.components) {
       const def = this.cb.lookup(inst.className);
-      const drawn = transformedBounds(vt, ...instanceOutlineBounds(inst, def));
-      const box: Rect = { x1: drawn[0], y1: drawn[1], x2: drawn[2], y2: drawn[3] };
+      const box = inflate(transformedBounds(vt, ...instanceInkBounds(inst, def)));
       occupied.push(box);
       if (!inst.id) continue;
       // The same gate the renderer applies: a name that will not be drawn is not
@@ -2752,19 +2764,18 @@ export class SchematicEditor {
     }
     if (requests.length === 0) return new Map();
     // A wire is a line, and the label box is a rectangle: padding the segment's
-    // bounding box by a couple of pixels is what makes the test read as "on the
-    // wire" rather than "exactly inside its zero-height box".
-    const WIRE_PAD = 3;
+    // bounding box is what makes the test read as "on the wire" rather than
+    // "exactly inside its zero-height box".
     for (const conn of this.model.connections) {
       const pts = this.connectionPoints(conn);
       for (let i = 0; i + 3 < pts.length; i += 2) {
         const a = apply(vt, pts[i], pts[i + 1]);
         const b = apply(vt, pts[i + 2], pts[i + 3]);
         occupied.push({
-          x1: Math.min(a[0], b[0]) - WIRE_PAD,
-          y1: Math.min(a[1], b[1]) - WIRE_PAD,
-          x2: Math.max(a[0], b[0]) + WIRE_PAD,
-          y2: Math.max(a[1], b[1]) + WIRE_PAD,
+          x1: Math.min(a[0], b[0]) - WIRE_CLEARANCE,
+          y1: Math.min(a[1], b[1]) - WIRE_CLEARANCE,
+          x2: Math.max(a[0], b[0]) + WIRE_CLEARANCE,
+          y2: Math.max(a[1], b[1]) + WIRE_CLEARANCE,
         });
       }
     }

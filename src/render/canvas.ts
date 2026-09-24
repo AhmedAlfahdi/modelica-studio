@@ -1629,6 +1629,49 @@ function drawPlaceholder(
 
 
 /**
+ * The box a component's name must clear: its artwork AND its pins.
+ *
+ * `instanceOutlineBounds` covers the icon's own graphics, which is right for the
+ * selection highlight and the debug overlay. It is not enough for a label: the
+ * renderer also draws a connector stub and a pin marker at every declared port, and
+ * those sit OUTSIDE the artwork for the many classes whose port is not on the
+ * drawing — SineVoltage's `signalSource` at {80.5,79} against artwork that stops at
+ * y = 69.8, a Fluid source's port below its symbol, a machine's support flange.
+ * A name placed against the artwork box then lands on the pin, which is what "the
+ * label overlaps the symbol" turned out to be.
+ */
+export function instanceInkBounds(
+  inst: ComponentInstance,
+  classDef: ComponentClass | undefined
+): [number, number, number, number] {
+  const art = iconArtworkBounds(classDef);
+  let box: [number, number, number, number] | undefined = art ? [...art] : undefined;
+  for (const pos of Object.values(classDef?.portPositions ?? {})) {
+    if (!box) box = [pos[0], pos[1], pos[0], pos[1]];
+    else {
+      box[0] = Math.min(box[0], pos[0]);
+      box[1] = Math.min(box[1], pos[1]);
+      box[2] = Math.max(box[2], pos[0]);
+      box[3] = Math.max(box[3], pos[1]);
+    }
+  }
+  if (!box) return instanceBounds(inst);
+  const [ex1, ey1, ex2, ey2] = inst.placement.extent;
+  const sx = (ex2 - ex1) / (2 * ICON_EXTENT);
+  const sy = (ey2 - ey1) / (2 * ICON_EXTENT);
+  const cx = (ex1 + ex2) / 2;
+  const cy = (ey1 + ey2) / 2;
+  const out: [number, number, number, number] = [
+    cx + sx * box[0],
+    cy + sy * box[1],
+    cx + sx * box[2],
+    cy + sy * box[3],
+  ];
+  const rot = inst.placement.rotation ?? 0;
+  return rot ? rotateBoxAbout(out, cx, cy, rot) : out;
+}
+
+/**
  * Bounding box of an instance in DIAGRAM coordinates.
  *
  * A `Placement`'s extent already states where the component occupies space in
