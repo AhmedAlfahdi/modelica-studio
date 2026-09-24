@@ -239,3 +239,92 @@ test("the palette's arrow keys walk the rows in the order they are drawn", async
   assert.equal(state.afterDown, "B2", "ArrowDown stays in the package being walked");
   assert.equal(state.afterTwo, "A1", "and then moves to the next row on screen, not into the middle of the list");
 });
+
+test("a mode switch keeps the diagram's undo, and Ctrl+Enter runs it", async () => {
+  // Two reports about the mode switch:
+  //   - entering code mode ran the debounced validation, which ADOPTED a freshly
+  //     parsed model and cleared the diagram's undo history. Add a component, press
+  //     Code and Diagram with no keystrokes, and Undo was dead;
+  //   - Ctrl+Enter is documented as Simulate in Help and the toolbar, and the code
+  //     pane had it while the diagram had no Enter case at all.
+  const out = await runInDom(
+    [
+      DOM_PREAMBLE,
+      SETUP,
+      "await view.onOpen();",
+      "window.test('the undo history survives the round trip', () => {",
+      "  const added = view.editor.addComponent('A.A1', 0, 0);",
+      "  const depth = view.editor.history.depth;",
+      "  view.setMode('code');",
+      "  view.setMode('diagram');",
+      "  const after = view.editor.history.depth;",
+      "  // And it still WORKS: undoing takes the component away.",
+      "  view.editor.undo();",
+      "  return JSON.stringify({ added: !!added, depth, after,",
+      "    componentsAfterUndo: view.editor.getModel().components.length });",
+      "});",
+      "window.test('visiting code mode does not adopt a source that is behind the diagram', () => {",
+      "  // The stub plugin hands out a FIXED source, which is exactly the situation a",
+      "  // refused patch creates: the text does not describe the diagram. Opening code",
+      "  // mode used to validate that text and adopt it, discarding the diagram edit.",
+      "  const before = view.editor.getModel().components.length;",
+      "  const added = view.editor.addComponent('A.A1', 40, 40);",
+      "  const withEdit = view.editor.getModel().components.length;",
+      "  view.setMode('code');",
+      "  view.setMode('diagram');",
+      "  const after = view.editor.getModel().components.length;",
+      "  return JSON.stringify({ before, withEdit, after, added: !!added,",
+      "    paneText: view.codeEditor.getValue().slice(0, 12) });",
+      "});",
+      "window.test('Ctrl+Enter in diagram mode runs the model', async () => {",
+      "  let runs = 0;",
+      "  view.plugin.backend = {",
+      "    simulate: async () => {",
+      "      runs++;",
+      "      return { time: [0, 1], series: [{ name: 'x', values: [0, 1] }],",
+      "        warnings: [], compileMs: 0, simulateMs: 0, reusedBinary: true };",
+      "    },",
+      "  };",
+      "  const canvas = view.editor.canvasEl;",
+      // Both flags the shortcut needs are set by a press: `pointerInside` on enter,
+      // `hasFocus` on pointerdown. A press on empty canvas is a marquee that a zero
+      // drag leaves as a plain click.
+      "  canvas.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }));",
+      "  const at = { clientX: 5, clientY: 5, button: 0, bubbles: true, cancelable: true };",
+      "  canvas.dispatchEvent(new PointerEvent('pointerdown', at));",
+      "  canvas.dispatchEvent(new PointerEvent('pointerup', at));",
+      "  const seen = [];",
+      "  canvas.addEventListener('keydown', (e) => seen.push(e.defaultPrevented), { once: true });",
+      "  canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true }));",
+      "  await tick();",
+      "  await tick();",
+      "  return JSON.stringify({ runs, prevented: seen });",
+      "});",
+      "window.finish();",
+    ].join("\n")
+  );
+
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const d = Object.fromEntries(out.results.map((r) => [r.name, JSON.parse(r.detail)]));
+
+  const undo = d["the undo history survives the round trip"];
+  assert.equal(undo.added, true, "a component was added");
+  assert.equal(undo.depth, 1, "which is one undo step");
+  assert.equal(undo.after, 1, `the history survived Code and back: ${JSON.stringify(undo)}`);
+  assert.equal(undo.componentsAfterUndo, 0, "and Undo still takes the component away");
+
+  const stale = d["visiting code mode does not adopt a source that is behind the diagram"];
+  assert.equal(stale.withEdit, stale.before + 1, "the diagram edit was made");
+  assert.equal(
+    stale.after,
+    stale.withEdit,
+    `and visiting code mode did not discard it: ${JSON.stringify(stale)}`
+  );
+
+  const run = d["Ctrl+Enter in diagram mode runs the model"];
+  assert.equal(run.runs, 1, `the model ran: ${JSON.stringify(run)}`);
+  assert.deepEqual(run.prevented, [true], "and the key was handled, not left to the browser");
+});

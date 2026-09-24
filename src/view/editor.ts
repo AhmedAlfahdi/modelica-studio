@@ -95,6 +95,13 @@ export interface EditorCallbacks {
   /** Report transient status text (e.g. "moved 3 components"). */
   onStatus?: (text: string) => void;
   /**
+   * Run the model: Ctrl/Cmd+Enter, as the Help window and the toolbar say.
+   *
+   * The code pane has always had it. The diagram had no Enter case at all, so the
+   * documented shortcut did nothing in the mode the studio opens in.
+   */
+  onRun?: () => void;
+  /**
    * Text scales, wire weight and the hover readout, from the settings.
    *
    * Read on every frame rather than captured at construction, so changing the
@@ -1357,6 +1364,14 @@ export class SchematicEditor {
     if (isTextEntry(ev.target)) return;
 
     const mod = ev.ctrlKey || ev.metaKey;
+
+    // Simulate. Checked before the letter shortcuts, and on the modifier so a plain
+    // Enter stays available to whatever else wants it.
+    if (mod && ev.key === "Enter") {
+      ev.preventDefault();
+      this.cb.onRun?.();
+      return;
+    }
 
     if (mod && ev.key.toLowerCase() === "z") {
       ev.preventDefault();

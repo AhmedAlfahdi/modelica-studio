@@ -488,6 +488,8 @@ export class ModelicaStudioView extends ItemView {
       onChange: (m) => this.onModelChanged(m),
       onSelectionChange: (ids) => this.onSelectionChanged(ids),
       onStatus: (text) => this.setStatus(text),
+      // Ctrl+Enter in diagram mode, as Help and the toolbar document it.
+      onRun: () => void this.runSimulation(),
       resolveParam: (inst, name) => this.resolveInstanceParam(inst, name),
       // Read per frame rather than captured, so a settings change shows on the
       // next redraw instead of after the editor is rebuilt.
@@ -1189,10 +1191,14 @@ export class ModelicaStudioView extends ItemView {
         // first version of this log unparseable exactly where it mattered.
         probe: (info) => this.plugin.diag("code layers " + JSON.stringify(info)),
       });
-    } else if (this.codeEditor.getValue() !== text) {
+      this.codeBaseline = text;
+      return;
+    }
+    if (this.codeEditor.getValue() !== text) {
       // A NEW document: the pane's undo history belongs to the one being replaced.
       this.codeEditor.setValue(text, { resetHistory: true });
     }
+    this.codeBaseline = text;
   }
 
   /**
@@ -1212,6 +1218,12 @@ export class ModelicaStudioView extends ItemView {
   private applyCodeToDiagram(announce: boolean): boolean {
     if (!this.codeEditor) return true;
     const text = this.codeEditor.getValue();
+    // The pane has not been touched since it was filled. Adopting it would replace
+    // the diagram with the text we put there -- which on a MODE SWITCH cleared the
+    // diagram's undo history for no reason (add a component, press Code and Diagram,
+    // and Undo was dead), and, when a diagram edit could not be written into the
+    // source, discarded that edit on the way into code mode.
+    if (text === this.codeBaseline) return true;
     try {
       const model = this.plugin.parseSource(text);
       if (!model) {
@@ -3957,6 +3969,17 @@ export class ModelicaStudioView extends ItemView {
 
   /** A check and a run share the results pane, so only one check at a time. */
   private checking = false;
+
+  /**
+   * The text the pane was last FILLED with, as opposed to what is in it now.
+   *
+   * Two things need to tell "the user typed something" from "this is the document
+   * we put there": a mode switch must not adopt an unchanged pane over the diagram
+   * (that cleared the diagram's undo history and discarded unwritten edits), and a
+   * pane holding a source that no longer describes the diagram must not overwrite
+   * the diagram merely because code mode was opened.
+   */
+  private codeBaseline = "";
 
   /** Re-read the plugin's model, e.g. after it was replaced elsewhere. */
   reloadFromPlugin(): void {
