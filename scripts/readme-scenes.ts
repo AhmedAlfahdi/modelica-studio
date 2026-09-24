@@ -7,6 +7,7 @@
  * and the result OpenModelica returned. Nothing here is a mock-up of the UI.
  */
 
+import { parseModelica, toDiagramModel } from "../src/modelica/parser";
 import { SchematicEditor } from "../src/view/editor";
 import { drawPlot, plotThemeFrom, seriesColor } from "../src/view/plot";
 import { currentTheme } from "../src/render/theme";
@@ -40,6 +41,7 @@ declare global {
     __sceneEmbedPlot: (data: SceneData) => unknown;
     __sceneHover: (data: SceneData) => unknown;
     __sceneSweep: (data: SceneData) => unknown;
+    __sceneExample: (example: { name: string; source: string }, defs: Record<string, unknown>) => unknown;
     __sceneHelp: () => unknown;
     __SCENES__: SceneData;
   }

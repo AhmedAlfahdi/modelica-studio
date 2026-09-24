@@ -5,6 +5,36 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.17] — 2026-10-14
+
+### Changed
+
+- **Four examples are laid out the way their author arranged them**, in the plugin itself
+  so every reader sees the same diagrams: `DCMotor`, `BuckConverter`, `BatteryDischarge`
+  and `HeatExchanger`. The changes are moves and rotations only — no component was added,
+  removed, renamed or reparameterised — so the notes' verified numbers still describe them.
+
+  The path from an arrangement to a release was the problem, not the arrangements:
+
+  - the porter matched a component by the first mention of its NAME, and `HeatExchanger`'s
+    class comment — *"A heated mass losing heat to ambient"* — contains "mass". Three
+    placements were written onto the wrong components. It now anchors on the declaration.
+  - the porter's verification re-read the file it had just written and compared the result
+    with itself, so it passed whatever it had done. It compares against the source the
+    arrangement came from now.
+  - and the rebuilt bundle was never deployed, so the arrangements existed in the source and
+    nowhere the app could see them. Proven by grep before rebuilding: one occurrence in
+    `src/modelica/examples.ts`, zero in the running `main.js`.
+
+- **The header could disagree with the canvas.** Loading an example writes a status line and
+  nothing else, so the tab could read `DCMotor`, the header `Modelica/HeatExchanger.mo` and
+  the canvas an RLC circuit. The header is refreshed by the status line itself now, which
+  every action already writes.
+
+- Two layout rules gained a bounded, named exception rather than a wider threshold:
+  `HeatExchanger`'s `ramp` may reach x = −120 (it sits at −110), and nothing else may. A
+  wider box would have stopped catching the next part that drifts.
+
 ## [0.3.16] — 2026-10-14
 
 ### Fixed
