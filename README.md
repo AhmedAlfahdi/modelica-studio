@@ -376,15 +376,16 @@ equation
 end RLC;
 ```
 
-A 10 V step at $t = 1\ \text{ms}$ into a $10\ \Omega$–$0.1\ \text{H}$–$1\ \text{mF}$
-series loop. The damping ratio decides everything, and it is one line of algebra:
+A 10 V step at $t = 1\ \text{ms}$ into a series loop of $10\ \Omega$, $0.1\ \text{H}$
+and $1\ \text{mF}$. The damping ratio decides everything, and it is one line of
+algebra:
 
 $$\alpha = \frac{R}{2L} = 50\ \text{s}^{-1}, \qquad
 \omega_0 = \frac{1}{\sqrt{LC}} = 100\ \text{rad/s}, \qquad
 \zeta = \frac{\alpha}{\omega_0} = \frac{R}{2}\sqrt{\frac{C}{L}} = 0.5$$
 
 $\zeta < 1$, so the step overshoots by
-$\exp\!\left(-\pi\zeta / \sqrt{1-\zeta^2}\right) = 16.3\%$ — to $11.63\ \text{V}$ at
+$\exp\left(-\pi\zeta/\sqrt{1-\zeta^2}\right) = 16.3\%$ — to $11.63\ \text{V}$ at
 $t = \pi/\omega_d = 37\ \text{ms}$ — and then rings at
 $\omega_d = \sqrt{\omega_0^2 - \alpha^2} = 86.6\ \text{rad/s}$, decaying with
 $\tau = 1/\alpha = 20\ \text{ms}$:
