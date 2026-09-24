@@ -5,6 +5,41 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.10] — 2026-10-14
+
+### Added
+
+- **`Ctrl`/`Cmd`+`S` saves the model.** It saved nothing before: the keystroke reached
+  Obsidian, which saved the active **note** — so a reader who had just arranged a diagram
+  and pressed the reflex got a silent write to the wrong thing while the model stayed
+  unsaved, and the only way to save was the toolbar button or a command-palette search.
+  Reported while working through a vault of twenty-one models.
+
+  Bound in the **capture** phase on the view's root, because the code pane is a
+  CodeMirror instance whose handlers would otherwise see the key first, and listed in the
+  Help window in both diagram and code mode — a shortcut nobody can find is not one. The
+  decision is a plain exported function, `isSaveShortcut`, so it is tested without
+  building a view: Ctrl+S and Cmd+S save, a bare `s` is a key rather than a command, and
+  Ctrl+Alt+S is somebody else's shortcut on Windows.
+
+### Fixed
+
+- **A page error in a DOM test now says which file and line it came from.** One test in
+  this suite — "a reshape is one undoable step" — fails about once in ten full runs under
+  parallel load, with an error message nobody can place; it did not reproduce in eleven
+  further runs while being chased, so the next occurrence will at least say where to look.
+  The harness collects the console message's source and line alongside its text.
+
+### Added (scripts)
+
+- **`scripts/check-models.mjs`** compiles every `.mo` in a folder, one file per `omc`
+  process — loading them together lets two models that share a class name shadow each
+  other and the error lands on the wrong file — and prints the error line for each
+  failure, because fixing one error in a file usually reveals the next. Written while
+  working through a vault of twenty-one models, of which two did not compile: one
+  referenced six parameters it never declared, and one assigned to a sub-component's
+  variable, which Modelica does not allow.
+
 ## [0.3.9] — 2026-10-14
 
 ### Fixed
