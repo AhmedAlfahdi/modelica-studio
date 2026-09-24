@@ -44,6 +44,7 @@ import { detectOmc, installHint, type OmcInstallation } from "./omc/locate";
 import { emptyDiagram, type DiagramModel } from "./modelica/types";
 import { findClass, parseModelica, toDiagramModel } from "./modelica/parser";
 import { serializeDiagram } from "./modelica/serializer";
+import { lastPatchRefusal, patchDiagramEdits, structureLostBy } from "./modelica/text-edit";
 import { EXAMPLES, findExample } from "./modelica/examples";
 import { AiError, chat, listModels } from "./ai/client";
 import { RunLog } from "./ai/run-log";
@@ -102,6 +103,8 @@ export default class ModelicaStudioPlugin extends Plugin {
    */
   private modelSource = "";
   private modelOutdated = false;
+  /** Set when a save could not write a diagram change into the file's own text. */
+  private patchNote = "";
   /**
    * The span to run a model over.
    *
@@ -379,7 +382,45 @@ export default class ModelicaStudioPlugin extends Plugin {
    */
   sourceForSave(): string {
     if (this.modelSource.trim() && !this.modelOutdated) return this.modelSource;
+    if (this.modelSource.trim()) {
+      // The diagram is the truth from here, but the file's TEXT is still the
+      // model's text. Rebuilding it from the parsed model is what deleted a
+      // nested `package Medium = ...` from a user's tank model and left every
+      // later run with "Base class Medium not found in scope TwoOutletTank"
+      // (see modelica/text-edit). So the diagram's changes are written INTO the
+      // text, and only the declarations it owns are touched.
+      const patched = patchDiagramEdits(this.modelSource, this.model);
+      if (patched) {
+        this.patchNote = "";
+        return patched.text;
+      }
+      const reason = lastPatchRefusal() ?? "unknown reason";
+      const rebuilt = serializeDiagram(this.model);
+      const lost = structureLostBy(this.modelSource, rebuilt);
+      if (!lost.length) {
+        this.patchNote = "";
+        this.trace.add("save", this.model.name, { patched: "no", reused: rebuilt.length, because: reason });
+        return rebuilt;
+      }
+      // The file says something the rebuild cannot, and the patch could not be
+      // applied. Writing the rebuild would destroy it, so the file is left as it
+      // is and the caller says so rather than losing it quietly.
+      this.patchNote = `${reason}; a rebuild would lose ${lost.slice(0, 3).join(", ")}`;
+      this.trace.add("save", this.model.name, { patched: "refused", because: this.patchNote });
+      return this.modelSource;
+    }
     return serializeDiagram(this.model);
+  }
+
+  /**
+   * What the last save could not write into the source, if anything.
+   *
+   * Read once, by whoever is about to tell the user the save happened.
+   */
+  takePatchNote(): string {
+    const note = this.patchNote;
+    this.patchNote = "";
+    return note;
   }
 
   takeModelOutdated(): boolean {
@@ -833,7 +874,9 @@ export default class ModelicaStudioPlugin extends Plugin {
       get runLog() {
         return (this as unknown as { plugin: ModelicaStudioPlugin }).plugin.runLog;
       },
-      source: () => serializeDiagram(this.model),
+      // What would be saved, not what a rebuild of the diagram looks like:
+      // the two differ, and the difference is the bug this surface is for.
+      source: () => this.sourceForSave(),
       state: () => this.describeState(),
       setVerbose: (on: boolean) => {
         this.verbose = on;
@@ -1885,6 +1928,13 @@ export default class ModelicaStudioPlugin extends Plugin {
     // Recorded BEFORE the write, so a trace shows the length that was saved and
     // the length afterwards can be compared against it.
     this.trace.add("save", this.model.name, { bytes: source.length, to: "" });
+    const note = this.takePatchNote();
+    if (note) {
+      new Notice(
+        `Modelica: the file was left as it is — this change could not be written into its text (${note}).`,
+        10000
+      );
+    }
     const folder = this.settings.modelFolder.trim().replace(/^\/+|\/+$/g, "");
     if (folder) await this.ensureFolder(folder);
 

@@ -16,6 +16,7 @@ import type {
   Graphic,
   LineGraphic,
   Placement,
+  VariableInstance,
 } from "./types";
 
 /* ------------------------------------------------------------------ */
@@ -213,28 +214,7 @@ export function serializeDiagram(
   // Variable declarations. Emitted without a Placement: a variable has no
   // position, and giving it one is what put three stacked boxes on the canvas.
   for (const v of model.variables ?? []) {
-    const entries = Object.entries(v.params).filter(
-      ([, value]) => value !== undefined && value !== null && value !== ""
-    );
-    // A declaration binds its value with `=` — `parameter Real e=0.9`. Everything
-    // else is a modifier list — `Real h(start=1, fixed=true)`.
-    //
-    // The parser records a declaration's binding under the declared name itself
-    // (`modifiers["e"] = "0.9"`), which `toParameterDef` relies on for defaults.
-    // Rather than change that key and ripple through the library reader, the
-    // binding is recognised here: a parameter whose name matches its own
-    // declaration. Writing it as a modifier produced `Real e(e=0.9)`, which is
-    // not what the model said.
-    const binding = entries.find(([k]) => k === "=" || k === v.id);
-    const mods = entries.filter(([k]) => k !== "=" && k !== v.id);
-    // BOTH, when a declaration has both: `parameter Real x(unit = "V") = 5` is a
-    // modifier list AND a binding. Emitting only the binding silently dropped the
-    // unit, which is a quiet loss rather than a loud one -- the model still
-    // compiled, with the wrong declaration.
-    const modList = mods.length ? `(${mods.map(([k, value]) => `${k}=${value}`).join(", ")})` : "";
-    const tail = binding ? `${modList}=${binding[1]}` : modList;
-    const pre = v.prefixes?.length ? `${v.prefixes.join(" ")} ` : "";
-    lines.push(`${ind}${pre}${v.type} ${v.id}${v.suffixDims ?? ""}${tail};`);
+    lines.push(serializeVariable(v, ind));
   }
   if ((model.variables ?? []).length) lines.push("");
 
@@ -285,6 +265,38 @@ export function serializeDiagram(
 
   lines.push(`end ${model.name};`);
   return lines.join("\n") + "\n";
+}
+
+/**
+ * Emit one variable declaration.
+ *
+ * A variable is a declaration with no position, so it is written without a
+ * Placement annotation: `parameter Real m = 1 "kg";`.
+ *
+ * A declaration binds its value with `=` — `parameter Real e=0.9`. Everything
+ * else is a modifier list — `Real h(start=1, fixed=true)`.
+ *
+ * The parser records a declaration's binding under the declared name itself
+ * (`modifiers["e"] = "0.9"`), which `toParameterDef` relies on for defaults.
+ * Rather than change that key and ripple through the library reader, the
+ * binding is recognised here: a parameter whose name matches its own
+ * declaration. Writing it as a modifier produced `Real e(e=0.9)`, which is
+ * not what the model said.
+ */
+export function serializeVariable(v: VariableInstance, indent = ""): string {
+  const entries = Object.entries(v.params).filter(
+    ([, value]) => value !== undefined && value !== null && value !== ""
+  );
+  const binding = entries.find(([k]) => k === "=" || k === v.id);
+  const mods = entries.filter(([k]) => k !== "=" && k !== v.id);
+  // BOTH, when a declaration has both: `parameter Real x(unit = "V") = 5` is a
+  // modifier list AND a binding. Emitting only the binding silently dropped the
+  // unit, which is a quiet loss rather than a loud one -- the model still
+  // compiled, with the wrong declaration.
+  const modList = mods.length ? `(${mods.map(([k, value]) => `${k}=${value}`).join(", ")})` : "";
+  const tail = binding ? `${modList}=${binding[1]}` : modList;
+  const pre = v.prefixes?.length ? `${v.prefixes.join(" ")} ` : "";
+  return `${indent}${pre}${v.type} ${v.id}${v.suffixDims ?? ""}${tail};`;
 }
 
 /** Emit one component declaration. */

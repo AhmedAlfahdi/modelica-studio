@@ -3243,7 +3243,10 @@ export class ModelicaStudioView extends ItemView {
     if (this.busy || !this.plugin.backend || !parameter) return;
     this.flushEditorIntoModel();
     this.busy = true;
-    const source = serializeDiagram(this.plugin.model);
+    // The same text Check, Save and a note block compile. Simulating the
+    // serializer's rebuild instead made one model behave two ways: Check said it
+    // compiled, and Simulate failed on a declaration the rebuild had dropped.
+    const source = this.plugin.sourceForSave();
     const base = collectParameters(this.plugin.model);
     const runs: FamilyRun[] = [];
     // Determinate, because the count is known: a bar that fills to 2 of 5 says
@@ -4200,7 +4203,8 @@ export class ModelicaStudioView extends ItemView {
     let source = "";
     let parameters: Record<string, string> = {};
     try {
-      source = serializeDiagram(this.plugin.model);
+      // As above, and for the same reason: what runs is what would be saved.
+      source = this.plugin.sourceForSave();
       parameters = collectParameters(this.plugin.model);
 
       const result = await this.plugin.backend.simulate({

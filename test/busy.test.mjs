@@ -71,6 +71,7 @@ const HEAD = [
   "    model: { name: 'Bounce', components: [], connections: [], equations: ['der(h) = -1'], graphics: [] },",
   "    settings: { startTime: 0, numberOfIntervals: 500, tolerance: 1e-6, solver: '', charts: {} },",
   "    stopTime: () => 1,",
+  "    sourceForSave: () => 'model Bounce\\n  der(h) = -1;\\nend Bounce;\\n',",
   "    diag: () => {},",
   "    saveState: () => ({ state: 'saved', label: 'saved' }),",
   "    runLog: { add: () => {}, toText: () => '', clear: () => {}, lastFailure: () => null },",

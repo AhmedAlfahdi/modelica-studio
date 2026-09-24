@@ -596,3 +596,54 @@ test("the AI log is written, bounded and free of the key", { skip: !HAS_BUNDLE }
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("a diagram edit keeps what the diagram cannot say", { skip: !HAS_BUNDLE }, async () => {
+  // THE REPORTED DATA LOSS, against the artifact Obsidian actually loads.
+  //
+  // Saving a dragged diagram rebuilt the class from the parsed model, and that
+  // projection has no field for a nested `package Medium = ...`, an `extends`, an
+  // `import`, an `algorithm` section or a comment. The plugin's own history
+  // folder holds the result: a 4227-byte tank model became 1888 bytes with no
+  // declaration of Medium at all, and every run after that failed with "Base
+  // class Medium not found in scope TwoOutletTank".
+  const mod = loadBundle();
+  const instance = new mod.default();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "save-keeps-"));
+  fs.mkdirSync(path.join(dir, ".obsidian", "plugins", "modelica-studio"), { recursive: true });
+  instance.app = {
+    vault: { configDir: ".obsidian", adapter: { getBasePath: () => dir } },
+    workspace: { getLeavesOfType: () => [] },
+  };
+  instance.manifest = { id: "modelica-studio", version: "0.0.0-test" };
+  instance.settings = { modelFiles: {}, modelFolder: "Modelica", modelStopTimes: {}, stopTime: 20 };
+  instance.saveData = async () => {};
+
+  const { parseModelica, toDiagramModel } = await import(
+    path.join(buildLibs("keeps-parser", ["src/modelica/parser.ts"]), "parser.js")
+  );
+  const SRC = [
+    "model Tank",
+    "  // The medium is declared once here and propagated to every fluid component.",
+    "  package Medium = Modelica.Media.Water.StandardWater;",
+    "  Modelica.Fluid.Vessels.OpenTank tank(redeclare package Medium = Medium)",
+    "    annotation(Placement(transformation(extent={{-30,-10},{10,30}})));",
+    "equation",
+    "end Tank;",
+    "",
+  ].join("\n");
+
+  try {
+    instance.adoptModel(toDiagramModel(parseModelica(SRC)[0], () => undefined), SRC);
+    // The drag: the description of the diagram changes, the text does not.
+    instance.model.components[0].placement.extent = [0, 0, 40, 60];
+    instance.markSourceStale();
+
+    const text = instance.sourceForSave();
+    assert.match(text, /package Medium = Modelica\.Media\.Water\.StandardWater;/, "the declaration survives the save");
+    assert.match(text, /\/\/ The medium is declared once/, "and so does the comment");
+    assert.match(text, /extent=\{\{0,0\},\{40,60\}\}/, "while the move is written");
+    assert.doesNotMatch(text, /redeclare package Medium=Medium,/, "the rebuilt form is not what was saved");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
