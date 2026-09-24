@@ -499,6 +499,21 @@ export const Platform = { isMacOS: false, isMobile: false, isDesktop: true };
  * `data-icon` is still recorded, on the element AND on the svg, because that is
  * what the tests read.
  */
+/**
+ * The shapes for the icons, when a surface can supply them.
+ *
+ * Obsidian draws its icons from a table inside the application, which a test cannot
+ * read. Without it every icon is an empty `<svg>` -- fine for a test that asserts
+ * `data-icon`, and useless for the README's screenshots, which are pictures of the
+ * toolbar. `scripts/readme-images.mjs` sets this before the page loads, from the
+ * Lucide shapes vendored in `scripts/readme-icons.json`, so the images show the same
+ * drawings the app does.
+ */
+declare global {
+  // eslint-disable-next-line no-var
+  var __ICON_SVGS__: Record<string, string> | undefined;
+}
+
 export function setIcon(el: HTMLElement, icon: string): void {
   const first = el.firstElementChild;
   if (first && first.tagName.toLowerCase() === "svg" && first.getAttribute("data-icon") === icon) {
@@ -508,6 +523,16 @@ export function setIcon(el: HTMLElement, icon: string): void {
   const svg = el.ownerDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("class", `svg-icon lucide-${icon}`);
   svg.setAttribute("data-icon", icon);
+  const shapes = globalThis.__ICON_SVGS__?.[icon];
+  if (shapes) {
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.innerHTML = shapes;
+  }
   el.appendChild(svg);
   el.setAttribute("data-icon", icon);
 }

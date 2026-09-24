@@ -81,6 +81,17 @@ const THEME_VARS = `
   --text-accent: var(--color-accent); --text-accent-hover: var(--color-accent-2);
   --color-base-40: hsl(0, 0%, 40%); --background-modifier-border-focus: var(--color-base-40); }`;
 
+/**
+ * The icon shapes, handed to the page before it loads.
+ *
+ * The page renders the real view, and the view calls `setIcon` for every button; the
+ * stub standing in for Obsidian has no icon table of its own, so without this the
+ * toolbar came out as a row of empty squares -- which is exactly what the first
+ * icon-only screenshot showed. The table is vendored (Lucide, ISC) so regenerating
+ * the images does not depend on another checkout being present.
+ */
+const ICONS = fs.readFileSync(path.join(ROOT, "scripts/readme-icons.json"), "utf8");
+
 const page = path.join(TMP, "index.html");
 fs.writeFileSync(
   page,
@@ -94,6 +105,7 @@ fs.writeFileSync(
   #studio { width: 1040px; background: var(--background-primary); color: var(--text-normal); }
 </style>
 <body class="theme-light">
+<script>window.__ICON_SVGS__ = ${ICONS};</script>
 <div id="diagram" class="shot"></div>
 <div id="plot" class="shot"></div>
 <div id="embed" class="shot"></div>
@@ -290,7 +302,10 @@ app.whenReady().then(async () => {
         "<style>" + read("app.css") + "</style>" +
         "<style>" + read("plugin.css") + "</style>" +
         "<style>" + read("theme.css") + " body { margin: 0; padding: 16px; width: 620px; background: var(--background-primary); color: var(--text-normal); }</style>" +
-        '<body class="theme-light">' + helpScene.html + "</body></html>"
+        '<body class="theme-light">' +
+        "<script>window.__ICON_SVGS__ = " + ${JSON.stringify(ICONS)} + ";</script>" +
+        helpScene.html +
+        "</body></html>"
     );
     await win.loadFile(helpPage);
     await new Promise((r) => setTimeout(r, 400));

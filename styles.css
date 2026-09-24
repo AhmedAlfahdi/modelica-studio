@@ -55,6 +55,21 @@
   height: 14px;
 }
 
+/*
+ * An icon-only button: square, and the icon centred in it.
+ *
+ * The gap above is for a label beside the icon; with no label it would push the
+ * icon off centre, and the horizontal padding would make the row ragged, so both
+ * are replaced by a box the same height as the labelled buttons. The name is not
+ * lost -- it is in `aria-label`, which is also the tooltip Obsidian draws.
+ */
+.modelica-studio-btn.is-icon-only {
+  gap: 0;
+  padding: 4px 7px;
+  min-width: 28px;
+  justify-content: center;
+}
+
 .modelica-studio-btn.mod-cta {
   background: var(--interactive-accent);
   color: var(--text-on-accent);

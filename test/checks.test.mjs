@@ -720,3 +720,40 @@ test("every formula in the README is a display block on its own line", () => {
   assert.ok(blocks.length >= 5, `the README shows its formulas as blocks (${blocks.length})`);
   assert.deepEqual(bad, [], `${bad.length} formulas break the README's maths rules`);
 });
+
+test("every icon the plugin asks for is in the vendored picture set", () => {
+  // The README's screenshots are drawn by `scripts/readme-images.mjs`, which hands the
+  // page the Lucide shapes vendored in `scripts/readme-icons.json` because the Obsidian
+  // stub has no icon table. A NEW toolbar icon missing from that file would render as an
+  // empty square in every picture, and nothing else would say so -- which is exactly how
+  // the icon-only toolbar first arrived: a row of blank buttons.
+  const sources = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(p);
+      else if (entry.name.endsWith(".ts")) sources.push(fs.readFileSync(p, "utf8"));
+    }
+  };
+  walk(path.join(repoRoot, "src"));
+
+  const names = new Set();
+  const collect = (text, re) => {
+    for (const m of text.matchAll(re)) names.add(m[1]);
+  };
+  for (const text of sources) {
+    collect(text, /setIcon\([^,]+,\s*"([a-z0-9-]+)"/g);
+    collect(text, /addBtn\(\s*\w+,\s*"([a-z0-9-]+)"/g);
+    collect(text, /addMode\("[a-z]+",\s*"([a-z0-9-]+)"/g);
+    collect(text, /mk\("[^"]+",\s*"[^"]+",\s*"([a-z0-9-]+)"/g);
+    collect(text, /\bicon:\s*"([a-z0-9-]+)"/g);
+  }
+  assert.ok(names.size >= 20, `the plugin names its icons (${names.size})`);
+
+  const table = JSON.parse(fs.readFileSync(path.join(repoRoot, "scripts/readme-icons.json"), "utf8"));
+  const missing = [...names].filter((n) => !table[n]);
+  assert.deepEqual(missing, [], `${missing.length} icons have no shape for the screenshots`);
+  // And every entry is real markup rather than an empty string.
+  const empty = Object.entries(table).filter(([, shapes]) => !shapes || shapes.length < 10);
+  assert.deepEqual(empty.map(([n]) => n), [], "no empty shapes in the table");
+});

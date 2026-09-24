@@ -206,3 +206,57 @@ test("the header follows the model that is open, and the tab names it", async ()
     "a status line is enough to bring the header up to date -- no separate call to remember"
   );
 });
+
+test("the toolbar's icon-only buttons keep their names where they matter", async () => {
+  // The Edit and View rows are icons alone -- six of the eight are on every editor's
+  // toolbar, and the words cost more width than they earn. What must not go with the
+  // words is the button's NAME: the tooltip and the accessible label both come from
+  // `aria-label`, so a button that loses its span and nothing else becomes an
+  // unlabelled square that a screen reader reads as "button".
+  //
+  // The Model row keeps its words on purpose: "Save as .mo" and "Model list…" are not
+  // guessable from a glyph, and this pins that the change stayed where it was meant to.
+  const out = await runInDom(
+    [
+      DOM_PREAMBLE,
+      MOUNT_SETUP,
+      "await view.onOpen();",
+      "const read = (group) => {",
+      "  const els = [...view.contentEl.querySelectorAll('.modelica-studio-btn-group')];",
+      "  const g = els.find((el) => el.getAttribute('role') === 'group' && el.querySelector('.modelica-studio-btn') && el.textContent !== null && el.dataset.scope === group);",
+      "  return g;",
+      "};",
+      "const buttonsIn = (sel) => [...view.contentEl.querySelectorAll(sel + ' .modelica-studio-btn')]",
+      "  .map((b) => ({ label: b.getAttribute('aria-label'), text: (b.textContent || '').trim(), icon: !!b.querySelector('.svg-icon') }));",
+      "window.test('edit row', () => JSON.stringify(buttonsIn('.modelica-studio-btn-group[data-scope=\"diagram\"]')));",
+      "window.test('all', () => JSON.stringify(buttonsIn('.modelica-studio-toolbar')));",
+      "window.finish();",
+    ].join("\n")
+  );
+  assert.ok(!out.skip, `skipped: ${out.skip}`);
+  assert.ok(!out.fatal, out.fatal);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, r.error);
+  const by = Object.fromEntries(out.results.map((r) => [r.name, r.detail]));
+  const all = JSON.parse(by.all);
+  assert.ok(all.length >= 12, `the toolbar was built (${all.length} buttons)`);
+
+  const iconOnly = all.filter((b) => b.text === "");
+  assert.ok(iconOnly.length >= 8, `the edit and view rows are icon-only (${iconOnly.length})`);
+  for (const b of iconOnly) {
+    assert.ok(b.icon, `an icon-only button has an icon: ${JSON.stringify(b)}`);
+    assert.ok(b.label && b.label.trim().length > 3, `and a name for the tooltip: ${JSON.stringify(b)}`);
+    // The name starts with the action, so a screen reader announces what it does
+    // rather than what happens next or which key it is.
+    assert.match(
+      b.label,
+      /^(Undo|Redo|Copy|Paste|Delete|Rotate|Zoom in|Zoom out|Fit to view)\b/,
+      `"${b.label}" begins with the action`
+    );
+  }
+  // The words that are not guessable from a glyph are still there.
+  const named = all.filter((b) => b.text !== "").map((b) => b.text);
+  for (const word of ["Save as .mo", "Model list…", "Examples…", "Simulate"]) {
+    assert.ok(named.includes(word), `"${word}" keeps its label: ${JSON.stringify(named)}`);
+  }
+});

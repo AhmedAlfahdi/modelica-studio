@@ -914,4 +914,11 @@ plugin:
   which is compatible with this one. Two sentences of its documentation are quoted
   in the Help window, with their source named where they appear.
 - **Obsidian's API** is imported at run time from the application, not distributed
-  with the plugin.
+  with the plugin. Icons are drawn by Obsidian's own `setIcon`, so the plugin ships no
+  artwork.
+- **[Lucide](https://lucide.dev)** is the icon set Obsidian draws those icons from.
+  `scripts/readme-icons.json` holds the 29 shapes the toolbar and menus use, vendored
+  under Lucide's [ISC licence](https://github.com/lucide-icons/lucide/blob/main/LICENSE)
+  for one reason: the README's screenshots are rendered by a script, and without the
+  shapes the toolbar came out as a row of empty squares. Nothing in the plugin reads
+  that file.

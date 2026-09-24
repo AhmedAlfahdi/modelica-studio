@@ -596,17 +596,27 @@ export class ModelicaStudioView extends ItemView {
       label: string,
       hint: string,
       onClick: () => void,
-      cls = ""
+      cls = "",
+      iconOnly = false
     ) => {
-      const b = parent.createEl("button", { cls: `modelica-studio-btn ${cls}`.trim() });
+      const b = parent.createEl("button", {
+        cls: `modelica-studio-btn ${cls} ${iconOnly ? "is-icon-only" : ""}`.trim(),
+      });
       setIcon(b, icon);
-      // The visible label IS the accessible name, so no aria-label: Obsidian
-      // renders one from it, and having both attributes showed two tooltips in
-      // two different styles.
-      b.createSpan({ text: label });
+      if (!iconOnly) {
+        // The visible label IS the accessible name, so no aria-label: Obsidian
+        // renders one from it, and having both attributes showed two tooltips in
+        // two different styles.
+        b.createSpan({ text: label });
+      }
       // `aria-label` is the ONLY attribute Obsidian renders a tooltip from -- its
       // handler reads `aria-label` and never `title`. Setting `title` as well drew
       // the browser's native tooltip on top of Obsidian's, which is the overlap.
+      //
+      // Without a visible label it is also the ACCESSIBLE NAME, which is why every
+      // hint on an icon-only button begins with the action rather than with the
+      // consequence: a reader who cannot see the icon should hear "Zoom in", not
+      // "Enlarge the diagram".
       b.setAttribute("aria-label", hint);
       b.addEventListener("click", onClick);
       return b;
@@ -708,44 +718,72 @@ export class ModelicaStudioView extends ItemView {
 
     // ---- Edit: diagram only. The code editor has its own toolbar, and hiding
     // these is more honest than showing buttons that would do nothing.
+    // Icon only: these are the six every editor has, and the words cost more width
+    // than they earn once the icons are learned. The name survives in the tooltip
+    // and in the accessible label.
     const edit = addGroup(bar, "Edit", "diagram");
-    this.btnUndo = addBtn(edit, "undo-2", "Undo", `Undo (${mod}+Z)`, () => this.editor?.undo());
-    this.btnRedo = addBtn(edit, "redo-2", "Redo", `Redo (${mod}+Shift+Z)`, () => this.editor?.redo());
-    this.btnCopy = addBtn(edit, "copy", "Copy", `Copy the selection (${mod}+C)`, () => this.editor?.copy());
+    const ICON_ONLY = true;
+    this.btnUndo = addBtn(edit, "undo-2", "Undo", `Undo (${mod}+Z)`, () => this.editor?.undo(), "", ICON_ONLY);
+    this.btnRedo = addBtn(edit, "redo-2", "Redo", `Redo (${mod}+Shift+Z)`, () => this.editor?.redo(), "", ICON_ONLY);
+    this.btnCopy = addBtn(edit, "copy", "Copy", `Copy the selection (${mod}+C)`, () => this.editor?.copy(), "", ICON_ONLY);
     this.btnPaste = addBtn(
       edit,
       "clipboard-paste",
       "Paste",
       `Paste (${mod}+V)`,
-      () => void this.editor?.paste()
+      () => void this.editor?.paste(),
+      "",
+      ICON_ONLY
     );
     this.btnDelete = addBtn(
       edit,
       "trash",
       "Delete",
       "Delete the selected components (Del or Backspace)",
-      () => this.editor?.deleteSelection()
+      () => this.editor?.deleteSelection(),
+      "",
+      ICON_ONLY
     );
     this.btnRotate = addBtn(
       edit,
       "rotate-cw",
       "Rotate",
-      "Turn the selection a quarter turn clockwise (R, or Shift+R anticlockwise)",
-      () => this.editor?.rotateSelection(90)
+      "Rotate the selection a quarter turn clockwise (R, or Shift+R anticlockwise)",
+      () => this.editor?.rotateSelection(90),
+      "",
+      ICON_ONLY
     );
 
     // ---- View: diagram only ----
     const view = addGroup(bar, "View", "diagram");
     // The wheel zooms about the pointer with no modifier, so the tooltip says
     // scroll rather than inventing a chord for it.
-    addBtn(view, "zoom-in", "Zoom in", "Enlarge the diagram, or scroll up over the canvas", () =>
-      this.editor?.zoomBy(1.25)
+    addBtn(
+      view,
+      "zoom-in",
+      "Zoom in",
+      "Zoom in: enlarge the diagram, or scroll up over the canvas",
+      () => this.editor?.zoomBy(1.25),
+      "",
+      ICON_ONLY
     );
-    addBtn(view, "zoom-out", "Zoom out", "Shrink the diagram, or scroll down over the canvas", () =>
-      this.editor?.zoomBy(0.8)
+    addBtn(
+      view,
+      "zoom-out",
+      "Zoom out",
+      "Zoom out: shrink the diagram, or scroll down over the canvas",
+      () => this.editor?.zoomBy(0.8),
+      "",
+      ICON_ONLY
     );
-    addBtn(view, "maximize", "Fit to view", `Fit the whole diagram in the canvas (${mod}+0)`, () =>
-      this.editor?.scheduleFit()
+    addBtn(
+      view,
+      "maximize",
+      "Fit to view",
+      `Fit to view: the whole diagram in the canvas (${mod}+0)`,
+      () => this.editor?.scheduleFit(),
+      "",
+      ICON_ONLY
     );
 
     // Diagnostic: report the geometry the editor is using. Shown only when the
