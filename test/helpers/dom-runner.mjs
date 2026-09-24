@@ -205,7 +205,27 @@ window.test = function (name, fn) {
   return run;
 };
 window.finish = function () {
-  window.__done = true;
+  // Wait for every case that has been registered -- and for any a case registers in
+  // turn -- before saying the page is done. The runner reads \`__results\` the moment
+  // this flag is true, so setting it while a case was still awaiting its assertions
+  // scored the page by whichever cases happened to have finished first. That is the
+  // whole of the flake this harness has been living with: a full-suite run reported
+  // \`results: [], unsettled: ["..."]\` for a file that passes alone, because the
+  // case had not settled when the page declared itself finished.
+  //
+  // The cases still START on registration, in the order they are written, so nothing
+  // about their timing relative to each other changes -- only the moment the runner
+  // is allowed to read them.
+  const settle = function () {
+    Promise.allSettled(window.__pending).then(function () {
+      if (window.__unsettled.length > 0) {
+        settle();
+        return;
+      }
+      window.__done = true;
+    });
+  };
+  settle();
 };
 `;
 

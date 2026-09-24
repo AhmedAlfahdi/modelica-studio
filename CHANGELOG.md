@@ -5,7 +5,7 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
-## [0.3.18] — 2026-10-15
+## [0.3.18] — 2026-09-24
 
 ### Fixed
 
@@ -87,7 +87,7 @@ version is 0, a minor bump may include changes that are not backward compatible.
 - `docs/audit-2026-09-24.md`: the full audit behind these fixes — 28 findings with the
   evidence for each, produced with four parallel audits of the largest untested modules.
 
-## [0.3.17] — 2026-10-14
+## [0.3.17] — 2026-09-24
 
 ### Changed
 
@@ -117,7 +117,7 @@ version is 0, a minor bump may include changes that are not backward compatible.
   `HeatExchanger`'s `ramp` may reach x = −120 (it sits at −110), and nothing else may. A
   wider box would have stopped catching the next part that drifts.
 
-## [0.3.16] — 2026-10-14
+## [0.3.16] — 2026-09-24
 
 ### Fixed
 
@@ -155,7 +155,7 @@ version is 0, a minor bump may include changes that are not backward compatible.
   next — fails immediately with a message that says so. It caught one within a minute of
   being written.
 
-## [0.3.15] — 2026-10-14
+## [0.3.15] — 2026-09-24
 
 ### Added
 
@@ -178,7 +178,7 @@ version is 0, a minor bump may include changes that are not backward compatible.
   The status line also re-reads the state each time it draws, instead of keeping whatever
   label was current when the last message arrived.
 
-## [0.3.14] — 2026-10-14
+## [0.3.14] — 2026-09-24
 
 ### Changed
 
@@ -220,7 +220,7 @@ version is 0, a minor bump may include changes that are not backward compatible.
   Falsified by numbering the flat array instead: *"the numbers run 01..30 in the picker's
   order"* fails.
 
-## [0.3.13] — 2026-10-14
+## [0.3.13] — 2026-09-24
 
 ### Added
 
@@ -256,7 +256,7 @@ version is 0, a minor bump may include changes that are not backward compatible.
   it because it is true, and the test that holds the claim to the audit accepts either
   form — a count, or "every" — failing if a single example loses its coverage.
 
-## [0.3.12] — 2026-10-14
+## [0.3.12] — 2026-09-24
 
 ### Fixed
 
@@ -288,7 +288,7 @@ version is 0, a minor bump may include changes that are not backward compatible.
     recorded as **passing**, with the detail `[object Promise]` — an assertion that ran
     after being scored. It now awaits each test, and the runner polls for `finish()`.
 
-## [0.3.11] — 2026-10-14
+## [0.3.11] — 2026-09-24
 
 ### Fixed
 
@@ -315,7 +315,7 @@ version is 0, a minor bump may include changes that are not backward compatible.
   default is what a stray Enter gets. The safe answer, **Reload from disk**, takes the
   focus. Both save paths go through it: the toolbar button and `Ctrl`/`Cmd`+`S`.
 
-## [0.3.10] — 2026-10-14
+## [0.3.10] — 2026-09-24
 
 ### Added
 
@@ -350,7 +350,7 @@ version is 0, a minor bump may include changes that are not backward compatible.
   referenced six parameters it never declared, and one assigned to a sub-component's
   variable, which Modelica does not allow.
 
-## [0.3.9] — 2026-10-14
+## [0.3.9] — 2026-09-24
 
 ### Fixed
 
@@ -394,7 +394,7 @@ version is 0, a minor bump may include changes that are not backward compatible.
   introduction, instead of appearing verbatim at the top of all thirty notes. It is
   generated from `showcase/intro-body.md` now, so a note is about its model.
 
-## [0.3.8] — 2026-10-14
+## [0.3.8] — 2026-09-22
 
 ### Fixed
 
@@ -419,7 +419,7 @@ version is 0, a minor bump may include changes that are not backward compatible.
   with a finished run's statistics in the toolbar, and the plot a note opens on with
   `//@ result`.
 
-## [0.3.7] — 2026-10-14
+## [0.3.7] — 2026-09-22
 
 ### Added
 
@@ -453,7 +453,7 @@ version is 0, a minor bump may include changes that are not backward compatible.
   cropped out of the result by the ratio the image actually came back at. Two
   blank-image guards stay in place: a capture under 12 KB is reported, not written.
 
-## [0.3.6] — 2026-10-14
+## [0.3.6] — 2026-09-22
 
 ### Changed
 
@@ -472,7 +472,7 @@ version is 0, a minor bump may include changes that are not backward compatible.
   text is byte-for-byte the file the studio opens from **Examples**, so the note and
   the studio cannot disagree.
 
-## [0.3.5] — 2026-10-14
+## [0.3.5] — 2026-09-22
 
 ### Fixed
 
@@ -494,7 +494,7 @@ version is 0, a minor bump may include changes that are not backward compatible.
   drifts while the *gap* between them settles — which is only visible with `mass1.s`
   and `mass2.s` both on the plot. The caption says which traces are shown.
 
-## [0.3.4] — 2026-10-14
+## [0.3.4] — 2026-09-22
 
 ### Changed
 
@@ -531,7 +531,7 @@ version is 0, a minor bump may include changes that are not backward compatible.
   must exist, and every rendered image must be referenced somewhere. Falsified three
   ways — a missing file, an orphan image, and an image dropped from the text.
 
-## [0.3.3] — 2026-10-14
+## [0.3.3] — 2026-09-22
 
 ### Fixed
 
@@ -565,7 +565,7 @@ version is 0, a minor bump may include changes that are not backward compatible.
   all, so it measured the browser's default button and passed; it is now falsified by
   restyling the link as a box.
 
-## [0.3.2] — 2026-10-14
+## [0.3.2] — 2026-09-22
 
 ### Fixed
 
@@ -596,7 +596,7 @@ version is 0, a minor bump may include changes that are not backward compatible.
   keeps a fourth copy from appearing: the studio must call `toDiagram`/`viewCentre`
   and must contain no `- vp.y) / vp.scale` arithmetic.
 
-## [0.3.1] — 2026-10-14
+## [0.3.1] — 2026-09-22
 
 ### Changed
 
@@ -621,7 +621,7 @@ version is 0, a minor bump may include changes that are not backward compatible.
   The panel's three claims are each falsified: claiming MIT, typing an author into
   the panel instead of reading the manifest, and writing "you must cite".
 
-## [0.3.0] — 2026-10-14
+## [0.3.0] — 2026-09-22
 
 The first release that is not tagged beta. **The code is beta.58's** — no drawing,
 parsing or simulation behaviour changed — so this entry is what 0.3.0 contains
@@ -660,7 +660,7 @@ beyond section 7(b), and Debian [patched exactly such a notice out of GNU
 Releases up to `0.2.0-beta.57` were MIT and stay MIT: a licence grant cannot be
 withdrawn from a copy already distributed.
 
-## [0.2.0-beta.58] — 2026-10-14
+## [0.2.0-beta.58] — 2026-09-22
 
 ### Changed
 
@@ -701,7 +701,7 @@ withdrawn from a copy already distributed.
   Also added: an SPDX header in `src/main.ts`, and the repository/author fields npm
   and GitHub read.
 
-## [0.2.0-beta.57] — 2026-10-14
+## [0.2.0-beta.57] — 2026-09-22
 
 ### Added
 
@@ -740,7 +740,7 @@ withdrawn from a copy already distributed.
   the TYPE — a wire between two types that do not match is a model that will not
   compile, which is exactly what those colours are for.
 
-## [0.2.0-beta.56] — 2026-10-14
+## [0.2.0-beta.56] — 2026-09-22
 
 ### Fixed
 
@@ -775,7 +775,7 @@ withdrawn from a copy already distributed.
 
   The app's own startup log was checked too, and is clean.
 
-## [0.2.0-beta.55] — 2026-10-14
+## [0.2.0-beta.55] — 2026-09-22
 
 ### Added
 
@@ -811,7 +811,7 @@ withdrawn from a copy already distributed.
   carry stroke widths or the colour of text, so a text-only icon (`Electrical.Digital.Basic.And`
   is an ampersand) looked invisible and a weight could not be judged at all.
 
-## [0.2.0-beta.54] — 2026-10-14
+## [0.2.0-beta.54] — 2026-09-22
 
 ### Fixed
 
@@ -831,7 +831,7 @@ withdrawn from a copy already distributed.
   on the way out (`describe`, a pin's position from its placement's origin) does
   not. This one changed the parsed shape and should have come with the bump.
 
-## [0.2.0-beta.53] — 2026-10-14
+## [0.2.0-beta.53] — 2026-09-22
 
 ### Fixed
 
@@ -869,7 +869,7 @@ withdrawn from a copy already distributed.
   for the class alone, whose default is the expression `0.5*height` rather than a
   literal. An instance that sets it, as the example does, shows the number.
 
-## [0.2.0-beta.52] — 2026-10-14
+## [0.2.0-beta.52] — 2026-09-22
 
 ### Fixed
 
@@ -893,7 +893,7 @@ withdrawn from a copy already distributed.
   rotations in one frame coalesce to a single repaint. Removing the request fails
   it with four of the eight edits unrepainted.
 
-## [0.2.0-beta.51] — 2026-10-14
+## [0.2.0-beta.51] — 2026-09-22
 
 ### Fixed
 
@@ -913,7 +913,7 @@ withdrawn from a copy already distributed.
   have to rebuild the tab (the AI provider preset, the model list, the AI model
   choice and the key migration).
 
-## [0.2.0-beta.50] — 2026-10-14
+## [0.2.0-beta.50] — 2026-09-22
 
 ### Fixed
 
@@ -939,7 +939,7 @@ withdrawn from a copy already distributed.
   and asserts the offset really did drop to zero. Removing the fix then fails with
   `after=0`, which is the reported symptom.
 
-## [0.2.0-beta.49] — 2026-10-14
+## [0.2.0-beta.49] — 2026-09-22
 
 ### Added
 
@@ -959,7 +959,7 @@ withdrawn from a copy already distributed.
   happens on the first render too, not only when the switch moves — a stored "off"
   must not come up looking live.
 
-## [0.2.0-beta.48] — 2026-10-14
+## [0.2.0-beta.48] — 2026-09-22
 
 ### Added
 
@@ -988,7 +988,7 @@ withdrawn from a copy already distributed.
   guard cannot be present in one and missing in the other. It marks the button
   that goes ahead and focuses Cancel, so a stray Enter cancels.
 
-## [0.2.0-beta.47] — 2026-10-14
+## [0.2.0-beta.47] — 2026-09-22
 
 ### Changed
 
@@ -1009,7 +1009,7 @@ withdrawn from a copy already distributed.
   simply where they start. A stored value always wins, so no existing diagram
   moves: this changes what a fresh install (or a reset) begins with.
 
-## [0.2.0-beta.46] — 2026-10-14
+## [0.2.0-beta.46] — 2026-09-22
 
 ### Fixed
 
@@ -1036,7 +1036,7 @@ Each claim is falsified in the tests: reverting the legend's placement reproduce
 the overlap numerically, reverting the margin reservation reproduces the clipping,
 and moving the legend's surface back over the labels fails the surface assertion.
 
-## [0.2.0-beta.45] — 2026-10-14
+## [0.2.0-beta.45] — 2026-09-22
 
 ### Changed
 
@@ -1052,7 +1052,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   loaded, so the slider and the drawing cannot disagree: a saved 1000% becomes
   400% rather than drawing ten times the weight behind a slider that says 400%.
 
-## [0.2.0-beta.44] — 2026-10-14
+## [0.2.0-beta.44] — 2026-09-22
 
 ### Fixed
 
@@ -1093,7 +1093,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   library's rather than arbitrary: the shared one spans 50–400% (as heavy as a
   symbol takes before it turns into a blob), the wire slider keeps its 50–1000%.
 
-## [0.2.0-beta.43] — 2026-10-14
+## [0.2.0-beta.43] — 2026-09-22
 
 ### Fixed
 
@@ -1123,7 +1123,7 @@ and moving the legend's surface back over the labels fails the surface assertion
 - The Help legend's swatches use the same function as the canvas, so the two
   cannot drift apart in either theme.
 
-## [0.2.0-beta.42] — 2026-10-14
+## [0.2.0-beta.42] — 2026-09-22
 
 ### Added
 
@@ -1146,7 +1146,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   the section's name before it was renamed to "Diagram" in beta.37. A test now
   fails if the old name comes back.
 
-## [0.2.0-beta.41] — 2026-10-14
+## [0.2.0-beta.41] — 2026-09-22
 
 ### Changed
 
@@ -1182,7 +1182,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   so a relative declaration (`Pin`, `Flange_a`) can be looked up by something that
   does not know which package it sat in.
 
-## [0.2.0-beta.40] — 2026-10-14
+## [0.2.0-beta.40] — 2026-09-22
 
 ### Added
 
@@ -1210,7 +1210,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   wires keep their own separate setting. Figures and embedded blocks follow
   automatically, since they draw through the same code.
 
-## [0.2.0-beta.39] — 2026-10-14
+## [0.2.0-beta.39] — 2026-09-21
 
 ### Fixed
 
@@ -1237,7 +1237,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   documented, and never move the other way. At 100% zoom nothing changes, so the
   wire-thickness setting keeps the weight it was given.
 
-## [0.2.0-beta.38] — 2026-10-14
+## [0.2.0-beta.38] — 2026-09-21
 
 ### Changed
 
@@ -1248,7 +1248,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   heavy wire is grabbable across its face; components and pins still take a click
   before a wire does.
 
-## [0.2.0-beta.37] — 2026-10-14
+## [0.2.0-beta.37] — 2026-09-21
 
 ### Added
 
@@ -1279,7 +1279,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   size, the wire thickness, the hover toggle and the popup size, and only the
   first of those is about labels.
 
-## [0.2.0-beta.36] — 2026-10-14
+## [0.2.0-beta.36] — 2026-09-21
 
 ### Fixed
 
@@ -1301,7 +1301,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   the app does: removes the first child and appends an SVG. With that, the existing
   busy test reports `label: ""`, `icons: 2` when the fix is reverted.
 
-## [0.2.0-beta.35] — 2026-10-14
+## [0.2.0-beta.35] — 2026-09-21
 
 ### Fixed
 
@@ -1328,7 +1328,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   where the canvas is mirrored in y, so they only ever checked one edge. They
   check both now, and the fit test asserts the label room as a measured gap.
 
-## [0.2.0-beta.34] — 2026-10-14
+## [0.2.0-beta.34] — 2026-09-21
 
 ### Added
 
@@ -1358,7 +1358,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   enough samples — and the number of intervals is a setting. Both it and the new
   preset now go through `summarizeSeries`, which walks the samples in a loop.
 
-## [0.2.0-beta.33] — 2026-10-14
+## [0.2.0-beta.33] — 2026-09-21
 
 ### Added
 
@@ -1389,7 +1389,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   becomes one that is simply THERE, and the determinate one keeps its width —
   that is information rather than movement. The turning icons stop turning.
 
-## [0.2.0-beta.32] — 2026-10-14
+## [0.2.0-beta.32] — 2026-09-21
 
 ### Fixed
 
@@ -1416,7 +1416,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   Without it every box in a test was measured content-box, which hid the overflow
   above: the harness was wrong, not the plugin.
 
-## [0.2.0-beta.31] — 2026-10-14
+## [0.2.0-beta.31] — 2026-09-21
 
 ### Fixed
 
@@ -1443,7 +1443,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   spells it out: one value is a single run with a parameter set, which is what the
   inspector is for.
 
-## [0.2.0-beta.30] — 2026-10-14
+## [0.2.0-beta.30] — 2026-09-21
 
 ### Fixed
 
@@ -1469,7 +1469,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   offset is kept across a rebuild, and dropped when the filter or the result
   changes, because then the list is of something else.
 
-## [0.2.0-beta.29] — 2026-10-14
+## [0.2.0-beta.29] — 2026-09-21
 
 ### Fixed
 
@@ -1504,7 +1504,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   and assert what the browser computes — the two cascade bugs above look perfectly
   correct in the source and are only visible in a computed style.
 
-## [0.2.0-beta.28] — 2026-10-14
+## [0.2.0-beta.28] — 2026-09-21
 
 ### Added
 
@@ -1526,7 +1526,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   a hand-edited `data.json` cannot switch the snap off by accident or widen it
   until the cursor jumps across the plot.
 
-## [0.2.0-beta.27] — 2026-10-14
+## [0.2.0-beta.27] — 2026-09-21
 
 ### Fixed
 
@@ -1538,7 +1538,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   by Obsidian's class, every group refuses to shrink, and the row wraps when it runs
   out of width instead of crushing what is in it.
 
-## [0.2.0-beta.26] — 2026-10-13
+## [0.2.0-beta.26] — 2026-09-21
 
 ### Fixed
 
@@ -1553,7 +1553,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   Reported as "the cursor snaps to crossings is not working", on the RLC plot the
   feature was written for.
 
-## [0.2.0-beta.25] — 2026-10-12
+## [0.2.0-beta.25] — 2026-09-21
 
 ### Added
 
@@ -1574,7 +1574,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   and drew a stray bar. Reported as "the resizing handle is now not centred, it is
   on the far left for some reason". The rules have their own class now.
 
-## [0.2.0-beta.24] — 2026-10-11
+## [0.2.0-beta.24] — 2026-09-21
 
 ### Fixed
 
@@ -1590,7 +1590,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   group fill is softer than the row around it — a heavy fill beside a heavy rule
   reads as two competing edges.
 
-## [0.2.0-beta.23] — 2026-10-10
+## [0.2.0-beta.23] — 2026-09-21
 
 ### Changed
 
@@ -1605,7 +1605,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   full-height buttons, which made it read as a different kind of control rather than
   the toggle it is.
 
-## [0.2.0-beta.22] — 2026-10-09
+## [0.2.0-beta.22] — 2026-09-21
 
 ### Fixed
 
@@ -1619,7 +1619,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   panel is hidden while the log is showing, hidden when it has been closed, and
   closed again when a new result arrives with a new range.
 
-## [0.2.0-beta.21] — 2026-10-08
+## [0.2.0-beta.21] — 2026-09-21
 
 ### Fixed
 
@@ -1641,7 +1641,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   it looked otherwise — and the Δ button in the results bar still toggles it while
   you are looking at the plot.
 
-## [0.2.0-beta.20] — 2026-10-07
+## [0.2.0-beta.20] — 2026-09-21
 
 ### Fixed
 
@@ -1658,7 +1658,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   plot" — or says plainly that there is nothing to compare yet and what to do
   about it.
 
-## [0.2.0-beta.19] — 2026-10-06
+## [0.2.0-beta.19] — 2026-09-21
 
 ### Added
 
@@ -1680,7 +1680,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   makes an initial height sweepable), what Keep as before is for, what Clear family
   does, and what the Δ toggle and the figure buttons do.
 
-## [0.2.0-beta.18] — 2026-10-05
+## [0.2.0-beta.18] — 2026-09-21
 
 ### Fixed
 
@@ -1696,7 +1696,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   screen. The parameter and the values are now remembered and restored when the
   results row is rebuilt after a run.
 
-## [0.2.0-beta.17] — 2026-10-04
+## [0.2.0-beta.17] — 2026-09-21
 
 ### Fixed
 
@@ -1706,7 +1706,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   legend naming ten traces distinguished none of them. Each swatch now carries the
   series' own line style. Reported from a screenshot of a swept plot.
 
-## [0.2.0-beta.16] — 2026-10-03
+## [0.2.0-beta.16] — 2026-09-21
 
 ### Fixed
 
@@ -1725,7 +1725,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   the user did not draw; naming the model is what makes that visible in one line
   rather than three exchanges.
 
-## [0.2.0-beta.15] — 2026-10-02
+## [0.2.0-beta.15] — 2026-09-21
 
 ### Added
 
@@ -1754,7 +1754,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   nothing, and the second explains the first ("variable p does not have any
   remaining equation to be solved in").
 
-## [0.2.0-beta.14] — 2026-10-01
+## [0.2.0-beta.14] — 2026-09-21
 
 ### Added
 
@@ -1795,7 +1795,7 @@ and moving the legend's surface back over the labels fails the surface assertion
   R=100`), resampled onto the current time grid if the two differ, and drawn
   dashed so it reads as the past rather than as another measurement.
 
-## [0.2.0-beta.13] — 2026-09-30
+## [0.2.0-beta.13] — 2026-09-21
 
 ### Fixed
 
@@ -1841,7 +1841,7 @@ when), the plot's axis planning — which decides whether two traces share an ax
 caps the split at two, groups the remainder and drops unusable series, none of
 which was tested before — and the library-wide macro sweep above.
 
-## [0.2.0-beta.12] — 2026-09-29
+## [0.2.0-beta.12] — 2026-09-20
 
 ### Fixed
 
@@ -1872,7 +1872,7 @@ which was tested before — and the library-wide macro sweep above.
   The count the palette reports — 434 — is the one in the table now, checked
   against the running app as well as offline.
 
-## [0.2.0-beta.11] — 2026-09-28
+## [0.2.0-beta.11] — 2026-09-20
 
 ### Added
 
@@ -1890,7 +1890,7 @@ which was tested before — and the library-wide macro sweep above.
   because the paste lands somewhere else, or nowhere. A refusal now says why, and
   an empty log says there is nothing to copy instead of copying an empty string.
 
-## [0.2.0-beta.10] — 2026-09-27
+## [0.2.0-beta.10] — 2026-09-20
 
 ### Fixed
 
@@ -1909,7 +1909,7 @@ which was tested before — and the library-wide macro sweep above.
   the list's own scroll offset rather than calling `scrollIntoView`, which also
   scrolls the dialog the list sits in.
 
-## [0.2.0-beta.9] — 2026-09-26
+## [0.2.0-beta.9] — 2026-09-20
 
 ### Added
 
@@ -1947,7 +1947,7 @@ which was tested before — and the library-wide macro sweep above.
   between that reasoning and the pointer events would invalidate it; the test is
   about the undo history, not the framing.
 
-## [0.2.0-beta.8] — 2026-09-25
+## [0.2.0-beta.8] — 2026-09-20
 
 ### Fixed
 
@@ -1965,7 +1965,7 @@ which was tested before — and the library-wide macro sweep above.
   `main.js` is byte-for-byte the same as the previous one — only `manifest.json`
   carries the new version.
 
-## [0.2.0-beta.7] — 2026-09-24
+## [0.2.0-beta.7] — 2026-09-20
 
 ### Fixed
 
@@ -1999,7 +1999,7 @@ browser pass (522 tests); the three that do — `ui-render`, `wires`, `domains` 
 have to be run on a machine where Electron starts. The tests for these fixes are
 in place and were falsified against the previous build.
 
-## [0.2.0-beta.6] — 2026-09-23
+## [0.2.0-beta.6] — 2026-09-20
 
 ### Fixed
 
@@ -2037,7 +2037,7 @@ in place and were falsified against the previous build.
   component does. A value that is not a span is refused and the field goes back to
   what the block is running.
 
-## [0.2.0-beta.5] — 2026-09-22
+## [0.2.0-beta.5] — 2026-09-20
 
 ### Added
 
@@ -2067,7 +2067,7 @@ in place and were falsified against the previous build.
   function, and the readout lists as many traces as its box has room for instead
   of a fixed six.
 
-## [0.2.0-beta.4] — 2026-09-21
+## [0.2.0-beta.4] — 2026-09-20
 
 ### Fixed
 
