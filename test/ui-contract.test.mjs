@@ -565,3 +565,24 @@ test("both ways of saving ask before overwriting a file that changed on disk", (
   assert.match(main, /rememberFileText\(file\.path, text\)/, "recorded on load");
   assert.match(main, /rememberFileText\(file\.path, source\)/, "and after a save");
 });
+
+test("the studio shows which model is open, in the view and in the tab", () => {
+  // The header is the part a reader looks at; the tab name is what Obsidian labels the
+  // view with everywhere else. Both must name the model, not the plugin.
+  const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  assert.match(view, /getDisplayText\(\): string \{[\s\S]{0,200}?this\.plugin\.model\?\.name/, "the tab shows the model");
+  assert.match(view, /createDiv\(\{ cls: "modelica-studio-title" \}\)/, "and the view has a header line");
+  assert.match(view, /this\.titleNameEl = /, "with the model's name in it");
+  assert.match(view, /this\.titleFileEl = /, "its file");
+  assert.match(view, /this\.titleStateEl = /, "and the save state");
+  assert.match(view, /private refreshTitle\(\): void/, "which is redrawn");
+  assert.match(view, /this\.refreshTitle\(\);\s*\n\s*const header/, "at open, before the toolbar it sits above");
+  // The state words come from one place, so the header and the status line cannot differ.
+  const state = fs.readFileSync(path.join(repoRoot, "src/modelica/save-state.ts"), "utf8");
+  for (const word of ["modified", "file changed on disk", "not saved to a file"]) {
+    assert.ok(state.includes(`"${word}"`), `the state words include "${word}"`);
+  }
+  // The words may still appear in a COMMENT that explains the change; what must not
+  // appear is a label that a reader sees.
+  assert.ok(!/label: "unsaved changes"/.test(state), "and no label still reads 'unsaved changes'");
+});

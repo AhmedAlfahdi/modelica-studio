@@ -5,6 +5,29 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.15] — 2026-10-14
+
+### Added
+
+- **The studio says which model is open, and which file it is in.** It said neither: the
+  tab read "Modelica Studio" and the toolbar is all buttons, so with several models open
+  there was nothing on screen naming the one being edited — nor whether the edits had
+  reached the file. A line above the toolbar now shows the model's name, its vault-relative
+  path, and the save state as a chip: quiet when saved, amber when modified, red when the
+  file is not there or has moved on. The tab (and anything else Obsidian labels) shows the
+  model's name too.
+
+### Changed
+
+- **"unsaved changes" is now "modified".** Reported twice. The old wording described the
+  FILE when the state is about the MODEL, and it read as a warning that work was about to
+  be lost rather than as "there are edits the file does not have yet". The four states now
+  read: `saved` · `modified` · `file changed on disk` · `not saved to a file`, and they are
+  defined once (`SAVE_STATE_WORDS`) so the status line and the header cannot disagree.
+
+  The status line also re-reads the state each time it draws, instead of keeping whatever
+  label was current when the last message arrived.
+
 ## [0.3.14] — 2026-10-14
 
 ### Changed

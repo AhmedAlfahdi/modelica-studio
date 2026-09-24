@@ -2447,3 +2447,62 @@ body.modelica-studio-resizing * {
   vertical-align: -1px;
   opacity: 0.75;
 }
+
+/* ------------------------------------------------------------------ *
+ * Which model is open
+ *
+ * The tab said "Modelica Studio" and the toolbar is all buttons, so a reader with several
+ * models open had nothing on screen naming the one they were editing, and nothing saying
+ * whether their edits had reached the file. This is that line: the model, its path in the
+ * vault, and the save state, coloured by that state.
+ * ------------------------------------------------------------------ */
+.modelica-studio-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 8px 6px;
+  min-width: 0;
+}
+
+.modelica-studio-title-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-normal);
+  white-space: nowrap;
+}
+
+.modelica-studio-title-file {
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.modelica-studio-title-state {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 9px;
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Saved is the quiet case; anything else is worth noticing. */
+.modelica-studio-title-state.is-saved {
+  color: var(--text-faint);
+}
+
+.modelica-studio-title-state.is-modified {
+  color: var(--text-warning, var(--text-normal));
+  border-color: var(--text-warning, var(--background-modifier-border));
+}
+
+.modelica-studio-title-state.is-conflict,
+.modelica-studio-title-state.is-unsaved {
+  color: var(--text-error, var(--text-normal));
+  border-color: var(--text-error, var(--background-modifier-border));
+}

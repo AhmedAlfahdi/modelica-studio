@@ -20,7 +20,7 @@ test("a model with no file is unsaved, not modified", () => {
   // The action differs: one creates a file and the dialog should say so.
   const d = describeSaveState({ source: "model A\nend A;", onDisk: null });
   assert.equal(d.state, "unsaved");
-  assert.equal(d.label, "not saved");
+  assert.equal(d.label, "not saved to a file");
   assert.equal(d.worthAsking, true);
 });
 
@@ -39,7 +39,7 @@ test("identical text is saved, whatever the line endings", () => {
 test("a real difference is modified and worth asking about", () => {
   const d = describeSaveState({ source: "a\nc", onDisk: "a\nb" });
   assert.equal(d.state, "modified");
-  assert.equal(d.label, "unsaved changes");
+  assert.equal(d.label, "modified");
   assert.equal(d.worthAsking, true);
   // Whitespace in the MIDDLE is a real difference.
   assert.equal(describeSaveState({ source: "a  b", onDisk: "a b" }).state, "modified");
@@ -62,7 +62,7 @@ test("the prompt says what will happen, and names the file", () => {
 });
 
 test("a file changed on disk is its own state, not the user's unsaved edits", async () => {
-  // The status line said "unsaved changes" for both, and they need different answers:
+  // The status line said "modified" for both, and they need different answers:
   // one is "save when you are ready", the other is "somebody else wrote this file --
   // look before you overwrite it". A repair made outside the studio was lost to that
   // ambiguity: the studio's older copy was saved straight back over it.
@@ -102,4 +102,47 @@ test("a file changed on disk is its own state, not the user's unsaved edits", as
     describeSaveState({ source: file, onDisk: file + "\n", lastSeen: file.replace(/\n/g, "\r\n") }).state,
     "saved"
   );
+});
+
+test("the header line names the model, its file, and the state in plain words", async () => {
+  // Asked for because the studio showed none of it: the tab read "Modelica Studio", the
+  // toolbar is all buttons, and a reader with several models open had nothing on screen
+  // naming the one they were editing -- nor whether their edits had reached the file.
+  const { describeTitle } = await import(
+    path.join(buildLibs("title-lib", ["src/modelica/save-state.ts"]), "save-state.js")
+  );
+
+  const saved = describeTitle(
+    { state: "saved", label: "saved", worthAsking: false },
+    "MassSpringDamper",
+    "Modelica/MassSpringDamper.mo"
+  );
+  assert.deepEqual(saved, {
+    name: "MassSpringDamper",
+    file: "Modelica/MassSpringDamper.mo",
+    state: "saved",
+    stateClass: "is-saved",
+  });
+
+  const edited = describeTitle(
+    { state: "modified", label: "modified", worthAsking: true },
+    "TankOrifice",
+    "Modelica/TankOrifice.mo"
+  );
+  assert.equal(edited.state, "modified", "the word is about the model, not the file");
+  assert.equal(edited.file, "Modelica/TankOrifice.mo", "and the path is the vault-relative one");
+
+  const never = describeTitle(
+    { state: "unsaved", label: "not saved to a file", worthAsking: true },
+    "Scratch",
+    null
+  );
+  assert.equal(never.file, "not saved to a file yet", "a model with no file says so where the path goes");
+  assert.equal(never.stateClass, "is-unsaved", "and carries a class for its colour");
+
+  // Every state has its own word and its own class, so the header can never be ambiguous.
+  const words = ["saved", "modified", "conflict", "unsaved"].map((state) =>
+    describeTitle({ state, label: state, worthAsking: true }, "M", null)
+  );
+  assert.equal(new Set(words.map((w) => w.stateClass)).size, 4, "four states, four classes");
 });

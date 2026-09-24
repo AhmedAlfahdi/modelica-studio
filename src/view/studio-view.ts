@@ -58,7 +58,7 @@ import { RESULTS_TABS, resultsTabState, tabLabel, type ResultsTab } from "./bott
 import { buildPlotActions } from "./plot-actions";
 import { noLabelTooltip } from "./a11y";
 import { setBusy, setButtonBusy } from "./busy";
-import { savePrompt } from "../modelica/save-state";
+import { describeTitle, savePrompt } from "../modelica/save-state";
 import { keptSourceNote, reasonDetail, stopMessage } from "../ai/stop-message";
 import { formatExchanges, formatSummary, summarise } from "../ai/interaction-log";
 import { TextModal } from "./saved-models-modal";
@@ -193,6 +193,9 @@ export class ModelicaStudioView extends ItemView {
   private checkBtns: HTMLElement[] = [];
   private modeButtons: Record<string, HTMLElement> = {};
   private statusEl!: HTMLElement;
+  private titleNameEl?: HTMLElement;
+  private titleFileEl?: HTMLElement;
+  private titleStateEl?: HTMLElement;
   private plotCanvas: HTMLCanvasElement | null = null;
   private plotHost: HTMLElement | null = null;
   /** Tab strip above the inspector body. */
@@ -317,7 +320,9 @@ export class ModelicaStudioView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "Modelica Studio";
+    // The model's name, so the tab, the view switcher and anything else Obsidian labels
+    // says which model this is rather than which plugin it belongs to.
+    return this.plugin.model?.name ? `Modelica Studio — ${this.plugin.model.name}` : "Modelica Studio";
   }
 
   getIcon(): string {
@@ -331,6 +336,14 @@ export class ModelicaStudioView extends ItemView {
     root.addClass("modelica-studio-root");
 
     wireSaveShortcut(this, root, () => void this.saveWithConflictCheck());
+
+    // Which model, in which file, and whether the file has the edits. Nothing said any of
+    // this before: the tab read "Modelica Studio" and the toolbar is all buttons.
+    const title = root.createDiv({ cls: "modelica-studio-title" });
+    this.titleNameEl = title.createSpan({ cls: "modelica-studio-title-name" });
+    this.titleFileEl = title.createSpan({ cls: "modelica-studio-title-file" });
+    this.titleStateEl = title.createSpan({ cls: "modelica-studio-title-state" });
+    this.refreshTitle();
 
     const header = root.createDiv({ cls: "modelica-studio-toolbar" });
     this.buildToolbar(header);
@@ -4005,14 +4018,26 @@ export class ModelicaStudioView extends ItemView {
     return def?.parameters.find((p) => p.name === name)?.defaultValue;
   }
 
+  /** What the status line says, without the save state appended. */
+  private statusMessage = "Ready.";
+
   setStatus(text: string): void {
-    if (this.statusEl) {
-      // The save state is appended rather than replacing the message: the message
-      // says what just happened, the state says whether it is safe.
-      const desc = this.plugin.saveState();
-      this.statusEl.setText(desc.state === "saved" ? text : `${text} — ${desc.label}`);
-      this.statusEl.toggleClass("is-unsaved", desc.state !== "saved");
-    }
+    this.statusMessage = text;
+    this.renderStatus();
+  }
+
+  /**
+   * The status line: what just happened, and whether the file has it.
+   *
+   * The save state is appended rather than replacing the message -- the message says what
+   * just happened, the state says whether it is safe -- and the state is read fresh each
+   * time, so a message that outlives an edit does not keep an old label.
+   */
+  private renderStatus(): void {
+    if (!this.statusEl) return;
+    const desc = this.plugin.saveState();
+    this.statusEl.setText(desc.state === "saved" ? this.statusMessage : `${this.statusMessage} — ${desc.label}`);
+    this.statusEl.toggleClass("is-unsaved", desc.state !== "saved");
   }
 
   // `setBusy` and `setButtonBusy` are imported from `./busy`, so the studio and an
@@ -4096,7 +4121,26 @@ export class ModelicaStudioView extends ItemView {
   /** Redraw the status line, so the save state is current after a write. */
   private refreshSaveState(): void {
     const desc = this.plugin.saveState();
-    if (this.statusEl) this.statusEl.toggleClass("is-unsaved", desc.state !== "saved");
+    if (this.statusEl) {
+      this.statusEl.toggleClass("is-unsaved", desc.state !== "saved");
+      // Re-render the last message with the current state. The message is kept in a field
+      // rather than recovered from the element: stripping the old suffix out of the text
+      // works until a message itself contains the separator.
+      this.renderStatus();
+    }
+    this.refreshTitle();
+  }
+
+  /** The model, its file, and the save state, in one line above the toolbar. */
+  private refreshTitle(): void {
+    if (!this.titleNameEl || !this.titleFileEl || !this.titleStateEl) return;
+    const name = this.plugin.model?.name ?? "";
+    const path = name ? this.plugin.settings.modelFiles[name] ?? null : null;
+    const title = describeTitle(this.plugin.saveState(), name, path);
+    this.titleNameEl.setText(title.name);
+    this.titleFileEl.setText(title.file);
+    this.titleStateEl.setText(title.state);
+    this.titleStateEl.className = `modelica-studio-title-state ${title.stateClass}`;
   }
 
   /* ---------------- simulation ---------------- */

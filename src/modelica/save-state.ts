@@ -22,6 +22,21 @@ export type SaveState =
   /** There is no file for this model yet. */
   | "unsaved";
 
+/**
+ * What each state is CALLED where a reader sees it.
+ *
+ * `modified` rather than "unsaved changes": the old wording described the file ("unsaved")
+ * when the state is about the model, and it read as a warning about work that might be
+ * lost rather than as "there are edits the file does not have yet". Reported twice by a
+ * user who kept reading it as something being wrong.
+ */
+export const SAVE_STATE_WORDS: Record<SaveState, string> = {
+  saved: "saved",
+  modified: "modified",
+  conflict: "file changed on disk",
+  unsaved: "not saved to a file",
+};
+
 export interface SaveDescription {
   state: SaveState;
   /** What to show in the status bar. Short: it shares the line with the status. */
@@ -54,7 +69,7 @@ export function describeSaveState(opts: {
   lastSeen?: string;
 }): SaveDescription {
   if (opts.onDisk === null) {
-    return { state: "unsaved", label: "not saved", worthAsking: true };
+    return { state: "unsaved", label: "not saved to a file", worthAsking: true };
   }
   // The file changed underneath the studio. This is its own state, and an important
   // one: the status line used to read "unsaved changes", which sounds like the user's
@@ -67,7 +82,7 @@ export function describeSaveState(opts: {
   if (normalise(opts.source) === normalise(opts.onDisk)) {
     return { state: "saved", label: "saved", worthAsking: false };
   }
-  return { state: "modified", label: "unsaved changes", worthAsking: true };
+  return { state: "modified", label: "modified", worthAsking: true };
 }
 
 function normalise(text: string): string {
@@ -88,4 +103,26 @@ export function savePrompt(desc: SaveDescription, modelName: string, path: strin
   return desc.state === "unsaved"
     ? `Save "${modelName}" to a .mo file so it is kept?`
     : `Save the changes to "${modelName}"?\n\nThe file at ${path} is older than what is in the studio.`;
+}
+
+/**
+ * The line above the toolbar: which model is open, and which file it is in.
+ *
+ * Asked for because the studio showed neither. The tab says "Modelica Studio" and the
+ * toolbar holds buttons, so a reader with several models open had nothing on screen
+ * naming the one they were editing -- and nothing saying whether their edits were in the
+ * file yet.
+ */
+export function describeTitle(
+  desc: SaveDescription,
+  modelName: string,
+  path: string | null
+): { name: string; file: string; state: string; stateClass: string } {
+  return {
+    name: modelName || "Untitled",
+    // The vault-relative path, because that is what a reader would type or look for.
+    file: path ?? "not saved to a file yet",
+    state: desc.label,
+    stateClass: `is-${desc.state}`,
+  };
 }
