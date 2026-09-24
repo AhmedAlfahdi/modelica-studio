@@ -49,7 +49,16 @@ export interface Diagnostic {
 
 export interface CodeEditorHandle {
   getValue(): string;
-  setValue(text: string, opts?: { keepCursor?: boolean }): void;
+  /**
+   * Replace the editor's whole text.
+   *
+   * `resetHistory` is for a NEW DOCUMENT: the pane keeps one undo stack, and every
+   * `setValue` used to push the outgoing text onto it, so after opening another
+   * model one Ctrl+Z restored the previous model -- and the debounced change handler
+   * fed it straight back to the plugin as the current source, which the next save
+   * wrote over the open file.
+   */
+  setValue(text: string, opts?: { keepCursor?: boolean; resetHistory?: boolean }): void;
   focus(): void;
   element: HTMLElement;
   setDiagnostics(list: Diagnostic[]): void;
@@ -407,7 +416,19 @@ export function createCodeEditor(
   }
 
   /** Replace the current selection with plain text. */
-  function insertText(value: string): void {
+  /**
+   * Insert text at the caret, replacing the selection.
+   *
+   * `record` defaults to TRUE and every caller wants it: this is the funnel for
+   * Enter, Tab and paste, and all three `preventDefault` their event, so the
+   * `beforeinput` handler that snapshots ordinary typing never fires for them. They
+   * were therefore invisible to the pane's undo stack -- a paste over a selection
+   * destroyed that text with no way back, and Ctrl+Z instead undid an earlier
+   * keystroke. It also left the redo branch standing, so Ctrl+Shift+Z could replay a
+   * step from before the paste.
+   */
+  function insertText(value: string, record = true): void {
+    if (record) snapshot();
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0 || !editor.contains(sel.getRangeAt(0).startContainer)) {
       setCaret(text().length);
@@ -568,8 +589,13 @@ export function createCodeEditor(
   return {
     element: root,
     getValue: () => text(),
-    setValue(value) {
-      snapshot();
+    setValue(value, opts) {
+      if (opts?.resetHistory) {
+        past.length = 0;
+        future.length = 0;
+      } else {
+        snapshot();
+      }
       replaceAll(value, 0);
     },
     focus: () => editor.focus(),

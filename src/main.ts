@@ -2003,7 +2003,17 @@ export default class ModelicaStudioPlugin extends Plugin {
   async saveModelToNote(): Promise<{ path: string; created: boolean }> {
     // Whatever the editor holds is realised first, so a repair made in code mode
     // is saved even if Simulate was never pressed.
-    this.getView()?.flushEditorIntoModel();
+    //
+    // And if it does not parse, the save is REFUSED. Writing anyway meant
+    // `sourceForSave()` returned the previous text while the status line and the
+    // notice said "Saved", so the edit the user could see on screen was not in the
+    // file and was gone the next time the model was opened.
+    const view = this.getView();
+    if (view && !view.flushEditorIntoModel()) {
+      const why = view.codeProblemText() || "the code pane has an error";
+      new Notice(`Modelica: not saved — ${why}`);
+      throw new Error(`the code pane does not parse: ${why}`);
+    }
     const source = this.sourceForSave();
     // Recorded BEFORE the write, so a trace shows the length that was saved and
     // the length afterwards can be compared against it.

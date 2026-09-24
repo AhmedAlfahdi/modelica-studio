@@ -770,7 +770,15 @@ function declaredNames(tokens: Token[], first: number, last: number): string[] {
     const t = tokens[i];
     if (t.value === "(" || t.value === "[" || t.value === "{") depth++;
     else if (t.value === ")" || t.value === "]" || t.value === "}") depth--;
-    if (depth !== 0 || t.type !== "ident") continue;
+    if (depth !== 0) continue;
+    // A conditional declaration is `Type name if CONDITION`: the condition is an
+    // EXPRESSION, and its identifiers are not declarations. Reading them as ones made
+    // `A.R r1 if useR;` declare both `r1` and `useR`, so `useR` looked declared twice
+    // (the `parameter Boolean useR = false;` line declares it for real) and EVERY
+    // patch of that model was refused as ambiguous -- which is how a diagram edit
+    // silently stopped being saved at all.
+    if (t.type === "keyword" && t.value === "if") break;
+    if (t.type !== "ident") continue;
     const next = tokens[i + 1];
     if (!next) continue;
     if (

@@ -830,3 +830,37 @@ test("replacing the model saves the one being replaced", { skip: !HAS_BUNDLE }, 
     `A was saved before being replaced, got: ${JSON.stringify(writes)}`
   );
 });
+
+test("a save is refused while the code pane does not parse", { skip: !HAS_BUNDLE }, async () => {
+  // The pane's text never reached the plugin when it did not parse, so
+  // `sourceForSave()` still returned the PREVIOUS text -- and the save wrote it and
+  // reported "Saved". The user's edit was on screen, absent from the file, and gone
+  // the next time the model was opened.
+  const src = "model Tank\n  Real x;\nend Tank;\n";
+  const { parseModelica, toDiagramModel } = await parserLib();
+
+  const { instance, writes } = makeInstance({
+    files: { "Modelica/Tank.mo": src },
+    settings: { modelFiles: { Tank: "Modelica/Tank.mo" } },
+  });
+  instance.adoptModel(toDiagramModel(parseModelica(src)[0], () => undefined), src);
+
+  // A pane holding something that does not parse a class.
+  instance.getView = () => ({
+    flushEditorIntoModel: () => false,
+    codeProblemText: () => "The source declares no model class.",
+  });
+
+  await assert.rejects(
+    () => instance.saveModelToNote(),
+    /does not parse/,
+    "the save fails rather than writing the old text"
+  );
+  assert.deepEqual(writes, [], `and nothing was written: ${JSON.stringify(writes)}`);
+
+  // The control: with the pane in order, the same save writes.
+  instance.getView = () => ({ flushEditorIntoModel: () => true, codeProblemText: () => "" });
+  const done = await instance.saveModelToNote();
+  assert.equal(done.path, "Modelica/Tank.mo", "a save with a healthy pane still writes");
+  assert.equal(writes.length, 1, "exactly one write");
+});

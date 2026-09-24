@@ -293,3 +293,23 @@ test("text that does not parse is refused", () => {
   assert.equal(patchDiagramEdits("model M\n  Real x(\n", modelOf(FLUID)), undefined);
   assert.ok(lastPatchRefusal());
 });
+
+test("a conditional declaration does not make its condition a name", () => {
+  // `A.R r1 if useR;` declares `r1`. Reading the condition's identifier as a
+  // declaration too made `useR` look declared twice (`parameter Boolean useR = false;`
+  // declares it for real), so EVERY patch of that model was refused as ambiguous --
+  // and a refused patch means a diagram edit silently stops being saved.
+  const src = [
+    "model M",
+    "  parameter Boolean useR = false;",
+    "  Modelica.Blocks.Math.Gain r1(k = 1) if useR annotation(Placement(transformation(extent={{-20,-20},{20,20}})));",
+    "  Modelica.Blocks.Math.Gain r2(k = 1) annotation(Placement(transformation(extent={{60,-20},{100,20}})));",
+    "equation",
+    "end M;",
+    "",
+  ].join("\n");
+
+  const res = patched(src, (m) => moveComponent(m, "r1"), "M");
+  assert.ok(res, `the edit was patched rather than refused: ${lastPatchRefusal()}`);
+  assert.match(res.text, /if useR/, "and the condition is still written");
+});

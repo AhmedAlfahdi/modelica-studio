@@ -2683,3 +2683,99 @@ test("the embed picker's keyboard, span and scroll hold together", async () => {
     `a row that says role=button can be activated from the keyboard: ${d["Enter on a focused row places it"]}`
   );
 });
+
+test("the code pane's undo cannot cross documents, and a paste is a step", async () => {
+  // The pane keeps ONE undo stack while the document it shows is replaced under it
+  // (`setValue` is the only route a newly loaded model takes). Every `setValue` used
+  // to push the OUTGOING document onto that stack, so after opening another model a
+  // single Ctrl+Z restored the previous one -- and the debounced change handler fed
+  // it to the plugin as the current source, which the next save wrote over the file.
+  // Separately, Enter, Tab and paste `preventDefault`, so the `beforeinput` snapshot
+  // never fired for them: a paste over a selection destroyed that text with no way
+  // back, and Ctrl+Z undid an earlier keystroke instead.
+  const out = page(
+    `import { createCodeEditor } from "${ROOT}/src/view/code-editor";`,
+    "const mount = (t) => createCodeEditor(document.body.createDiv(), t, { completions: () => [] });",
+    // The keydown listener is on the CONTENTEDITABLE inside the handle's element,
+    // not on the element itself: dispatching on the wrapper reaches no handler at
+    // all, which makes every assertion about a key silently vacuous.
+    "const inner = (ed) => {",
+    "  const el = ed.element.querySelector('.mst-code-editor');",
+    "  if (!el) throw new Error('no editable element in the handle');",
+    "  return el;",
+    "};",
+    "const key = (ed, k, extra) => inner(ed).dispatchEvent(new KeyboardEvent('keydown',",
+    "  Object.assign({ key: k, bubbles: true, cancelable: true }, extra || {})));",
+    "const undo = (ed) => key(ed, 'z', { ctrlKey: true });",
+    "const redo = (ed) => key(ed, 'z', { ctrlKey: true, shiftKey: true });",
+    "",
+    "// A paste, as the editor sees it: a ClipboardEvent carrying text/plain.",
+    "const paste = (ed, text) => {",
+    "  const dt = new DataTransfer();",
+    "  dt.setData('text/plain', text);",
+    "  inner(ed).dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));",
+    "};",
+    "// Select the whole document, so a paste REPLACES text rather than adding to it.",
+    "const selectAll = (ed) => {",
+    "  const range = document.createRange();",
+    "  range.selectNodeContents(inner(ed));",
+    "  const sel = window.getSelection();",
+    "  sel.removeAllRanges();",
+    "  sel.addRange(range);",
+    "};",
+    "",
+    "const swapped = mount('model First\\n  Real a;\\nend First;');",
+    "swapped.setValue('model Second\\n  Real b;\\nend Second;', { resetHistory: true });",
+    "undo(swapped);",
+    "window.test('a replaced document is not undoable', () =>",
+    "  JSON.stringify({ text: swapped.getValue().split('\\n')[0] }));",
+    "",
+    "const edited = mount('model A\\n  Real x;\\nend A;');",
+    "edited.element.focus();",
+    "selectAll(edited);",
+    "const before = edited.getValue();",
+    "paste(edited, 'model B\\n  Real y;\\nend B;');",
+    "const afterPaste = edited.getValue();",
+    "undo(edited);",
+    "window.test('a paste is one undo step', () =>",
+    "  JSON.stringify({ before, afterPaste, afterUndo: edited.getValue() }));",
+    "",
+    "// An insertion must also clear the redo branch it did not come from. Tab goes",
+    "// through the same funnel as paste and needs no clipboard, so it tests the rule",
+    "// rather than the test harness.",
+    "const branched = mount('one\\ntwo');",
+    "branched.element.focus();",
+    "branched.setValue('changed', { resetHistory: false });",
+    "undo(branched);",
+    "key(branched, 'Tab');",
+    "const afterTab = branched.getValue();",
+    "redo(branched);",
+    "window.test('and an insertion clears the redo branch', () =>",
+    "  JSON.stringify({ afterTab, afterRedo: branched.getValue() }));",
+    "",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  const d = passed(out);
+
+  assert.match(
+    d["a replaced document is not undoable"],
+    /"text":"model Second"/,
+    `the new document survived the undo: ${d["a replaced document is not undoable"]}`
+  );
+  const pasted = JSON.parse(d["a paste is one undo step"]);
+  assert.notEqual(pasted.afterPaste, pasted.before, `the paste actually changed the text: ${JSON.stringify(pasted)}`);
+  assert.match(pasted.afterPaste, /model B/, `with what the clipboard carried: ${JSON.stringify(pasted)}`);
+  assert.equal(
+    pasted.afterUndo,
+    pasted.before,
+    `and ONE Ctrl+Z restored the whole pre-paste document: ${JSON.stringify(pasted)}`
+  );
+  const branch = JSON.parse(d["and an insertion clears the redo branch"]);
+  assert.notEqual(branch.afterTab, "changed", `the Tab was recorded: ${JSON.stringify(branch)}`);
+  assert.equal(
+    branch.afterRedo,
+    branch.afterTab,
+    `and the redo branch was cleared by it: ${JSON.stringify(branch)}`
+  );
+});

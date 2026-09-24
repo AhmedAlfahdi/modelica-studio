@@ -25,7 +25,16 @@ test("saving writes the source, not a re-serialisation of the diagram", () => {
   // line -- was silently dropped from the file.
   const save = /async saveModelToNote[\s\S]*?\n  \}/.exec(main);
   assert.ok(save, "the save function is present");
-  assert.match(save[0], /this\.getView\(\)\?\.flushEditorIntoModel\(\)/, "the editor is realised first");
+  assert.match(save[0], /const view = this\.getView\(\)/, "the editor is realised first");
+  assert.match(save[0], /view\.flushEditorIntoModel\(\)/, "and asked whether it could be");
+  // ...and a pane that does not parse stops the save. Writing anyway returned the
+  // PREVIOUS source, so the file kept the old text while the notice said "Saved".
+  assert.match(
+    save[0],
+    /if \(view && !view\.flushEditorIntoModel\(\)\)/,
+    "a pane that does not parse refuses the save rather than writing the old text"
+  );
+  assert.match(save[0], /throw new Error\(`the code pane does not parse/, "and fails loudly");
   assert.match(save[0], /const source = this\.sourceForSave\(\)/, "and the source is taken from the model's text");
   assert.ok(
     !/const source = serializeDiagram\(this\.model\)/.test(save[0]),
@@ -66,10 +75,17 @@ test("editing the diagram invalidates the source it came from", () => {
 test("a save in code mode realises the editor even if nothing was pressed", () => {
   // Apply and Simulate both parse the editor, so a user who pressed either before
   // saving got their fix written. A user who only pressed Save did not.
-  const flush = /flushEditorIntoModel\(\): void \{[\s\S]*?\n  \}/.exec(view);
+  const flush = /flushEditorIntoModel\(\): boolean \{[\s\S]*?\n  \}/.exec(view);
   assert.ok(flush, "the flush is present");
   assert.match(flush[0], /if \(this\.mode !== "code"/, "only in code mode");
-  assert.match(flush[0], /this\.applyCodeToDiagram\(false\)/, "and it parses the editor");
+  assert.match(flush[0], /return this\.applyCodeToDiagram\(false\)/, "it parses the editor");
+  // And it REPORTS whether the text could be adopted, which is what the save path
+  // needs to refuse instead of writing the previous version.
+  assert.match(
+    view,
+    /private applyCodeToDiagram\(announce: boolean\): boolean \{/,
+    "the parse reports its verdict"
+  );
 });
 
 test("reopening a model shows the source, not a lossy rebuild", () => {

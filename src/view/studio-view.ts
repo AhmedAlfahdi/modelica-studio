@@ -1190,7 +1190,8 @@ export class ModelicaStudioView extends ItemView {
         probe: (info) => this.plugin.diag("code layers " + JSON.stringify(info)),
       });
     } else if (this.codeEditor.getValue() !== text) {
-      this.codeEditor.setValue(text);
+      // A NEW document: the pane's undo history belongs to the one being replaced.
+      this.codeEditor.setValue(text, { resetHistory: true });
     }
   }
 
@@ -1200,28 +1201,43 @@ export class ModelicaStudioView extends ItemView {
    * `announce` separates the two callers: switching modes should say so, while
    * a background change should stay quiet unless it failed.
    */
-  private applyCodeToDiagram(announce: boolean): void {
-    if (!this.codeEditor) return;
+  /**
+   * Adopt the pane's text as the model.
+   *
+   * Returns FALSE when the text could not be parsed, which is the answer the SAVE
+   * path needs: without it, `saveModelToNote` wrote `sourceForSave()` -- still the
+   * previous text -- and reported "Saved", so an edit that did not parse was
+   * silently dropped and gone on the next open.
+   */
+  private applyCodeToDiagram(announce: boolean): boolean {
+    if (!this.codeEditor) return true;
     const text = this.codeEditor.getValue();
     try {
       const model = this.plugin.parseSource(text);
       if (!model) {
         this.reportCodeProblem("The source declares no model class.", []);
-        return;
+        return false;
       }
       this.plugin.adoptModel(model, text);
       this.clearCodeProblem();
       this.editor?.setModel(model);
       this.editor?.scheduleFit();
-        if (announce) this.setStatus(`Diagram rebuilt from source (${model.components.length} components).`);
+      if (announce) this.setStatus(`Diagram rebuilt from source (${model.components.length} components).`);
+      return true;
     } catch (err) {
       this.reportCodeProblem(String(err), []);
+      return false;
     }
   }
 
   /** Parse and report, without touching the diagram. */
   private validateCode(): void {
     if (!this.codeEditor) return;
+    // Only while the pane is on screen. The editor debounces this by 250 ms, and the
+    // debounce is not cancelled by a mode switch -- so typing in code mode and then
+    // pressing an arrow key in diagram mode let the pending validation re-parse the
+    // OLD text and adopt it over the diagram edit that had just been made.
+    if (this.mode !== "code") return;
     const text = this.codeEditor.getValue();
     try {
       const model = this.plugin.parseSource(text);
@@ -1566,7 +1582,7 @@ export class ModelicaStudioView extends ItemView {
     const name = outcome.modelName;
 
     if (outcome.ok) {
-      this.codeEditor?.setValue(outcome.source);
+      this.codeEditor?.setValue(outcome.source, { resetHistory: true });
       this.applyCodeToDiagram(false);
       this.lastSimulationError = null;
       if (!repair && this.aiInput) this.aiInput.value = "";
@@ -1591,7 +1607,7 @@ export class ModelicaStudioView extends ItemView {
     // Nothing usable. The last attempt is kept in the editor so the failure can
     // be read, but only when it is different from what was there.
     if (outcome.source && outcome.source !== original) {
-      this.codeEditor?.setValue(outcome.source);
+      this.codeEditor?.setValue(outcome.source, { resetHistory: true });
       this.applyCodeToDiagram(false);
     }
     this.lastSimulationError = outcome.attempts[outcome.attempts.length - 1]?.failure ?? null;
@@ -3836,9 +3852,19 @@ export class ModelicaStudioView extends ItemView {
     this.setStatus(`Reverted ${name} to ${path}.`);
   }
 
-  flushEditorIntoModel(): void {
-    if (this.mode !== "code" || !this.codeEditor) return;
-    this.applyCodeToDiagram(false);
+  /**
+   * Realise whatever the pane holds. True when the model now reflects it.
+   *
+   * In diagram mode there is nothing to flush, so that is a success.
+   */
+  flushEditorIntoModel(): boolean {
+    if (this.mode !== "code" || !this.codeEditor) return true;
+    return this.applyCodeToDiagram(false);
+  }
+
+  /** The pane's own diagnostic, for a caller that has to explain a refusal. */
+  codeProblemText(): string {
+    return this.codeDiagEl?.textContent?.trim() ?? "";
   }
 
   loadModelIntoEditor(): void {
@@ -3863,7 +3889,9 @@ export class ModelicaStudioView extends ItemView {
     // find the fix apparently gone.
     if (this.codeEditor) {
       const source = this.plugin.modelSourceText();
-      this.codeEditor.setValue(source.trim() ? source : serializeDiagram(this.plugin.model));
+      this.codeEditor.setValue(source.trim() ? source : serializeDiagram(this.plugin.model), {
+        resetHistory: true,
+      });
     }
     this.installDropTarget();
     this.renderInspector();
