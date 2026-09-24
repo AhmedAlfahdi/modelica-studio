@@ -469,3 +469,47 @@ test("the reader's place in the list survives checking a trace", async () => {
   assert.match(d["and typing in the filter starts again at the top"], /^after=0/, "a new filter, a new list");
   assert.match(d["and typing in the filter starts again at the top"], /first=motor\.friction\.heatPort\.T$/);
 });
+
+test("clearing the traces reaches the note's copy of the chart", async () => {
+  // The per-model chart state is what every embedded block of this model draws
+  // from, and it was written from some of the paths that change it and not others.
+  // "Clear traces" hid them on screen and left the block beside it drawing them.
+  const out = await runInDom(
+    [
+      HEAD,
+      "const { view, body } = mount(6);",
+      // The REAL publishChart, with the plugin's own publish recorded: the point is
+      // what reaches the shared state, not that a call happened.
+      "const published = [];",
+      "view.publishChart = ModelicaStudioView.prototype.publishChart.bind(view);",
+      "view.plugin.publishChart = () => published.push('published');",
+      // Two traces on, as they are after a run: `mount` seeds no visibility, and a
+      // chart with nothing in it cannot show that clearing reached the blocks.
+      "for (const s of view.result.series.slice(0, 2)) view.seriesStyles[s.name] = { visible: true, color: '#3b6ea5' };",
+      "view.renderInspector();",
+      "view.publishChart();",
+      "const before = (view.plugin.settings.charts['Motor'] || {}).traces;",
+      "published.length = 0;",
+      "const button = Array.from(body.querySelectorAll('button')).find((b) => b.textContent === 'Clear traces');",
+      "button.click();",
+      "await new Promise((r) => setTimeout(r, 0));",
+      "const chart = view.plugin.settings.charts['Motor'] || {};",
+      "window.test('the shared chart is written', () =>",
+      "  JSON.stringify({ before: before === undefined ? 'absent' : before.length,",
+      "    after: (chart.traces || []).length, published: published.length,",
+      "    drawn: view.result.series.filter((s) => view.seriesStyles[s.name] && view.seriesStyles[s.name].visible).length }));",
+      "window.finish();",
+    ].join("\n")
+  );
+
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const state = JSON.parse(out.results[0].detail);
+
+  assert.equal(state.drawn, 0, "nothing is drawn any more");
+  assert.equal(state.after, 0, "and the shared chart says so");
+  assert.equal(state.published, 1, "which was published to the blocks");
+  assert.ok(state.before > 0, "with traces there to clear in the first place");
+});

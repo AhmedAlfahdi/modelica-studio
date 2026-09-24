@@ -448,6 +448,8 @@ test("a sweep of fewer than two values is refused, and says why", async () => {
       "  stopTime: () => 1,",
       "  sourceForSave: () => 'model M\\nend M;\\n',",
       "  diag: () => {},",
+      // A sweep records a run now, so the stub needs the log it writes to.
+      "  runLog: { add: () => {}, clear: () => {}, entries: () => [], subscribe: () => () => {} },",
       "  backend: {",
       "    simulate: async (req) => {",
       "      simulated.push(req.parameters.e);",
@@ -457,6 +459,8 @@ test("a sweep of fewer than two values is refused, and says why", async () => {
       "  },",
       "};",
       "view.busy = false;",
+      "view.busyOwners = 0;",
+      "view.checking = false;",
       // Fields are initialised in the class body, which `Object.create` skips.
       "view.runBtns = [];",
       "view.checkBtns = [];",

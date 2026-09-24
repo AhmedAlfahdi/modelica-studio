@@ -271,3 +271,59 @@ test("every built-in example simulates to a result that actually varies", { skip
     );
   }
 });
+
+test("two runs of one model do not share a result file", async () => {
+  // Everything a run writes is keyed by the model's name: the work directory, the
+  // compiled binary and the result CSV (`-r=`). Two surfaces running the same model
+  // at once -- a note block beside the studio, two blocks with different parameter
+  // overrides, or a Sweep while a Simulate is still going -- compiled into the same
+  // directory and ran with the same `-r`, and whichever finished last left its CSV
+  // for both readers. So each run now waits its turn and writes its own file.
+  const cacheDir = simCacheDir("mo-run-lock-");
+  const backend = new OmcBackend({ omcPath: "/bin/true", cacheDir });
+
+  const csvFor = (row) =>
+    ["time,value", ...row.map(([t, v], i) => `${t},${v + i}`)].join("\n") + "\n";
+
+  // A fake compiler and process: what matters here is the file each run is told to
+  // write and the order the runs are allowed to start in.
+  const seen = [];
+  let concurrent = 0;
+  let overlapped = false;
+  let call = 0;
+  backend.run = async (_cmd, args) => {
+    concurrent++;
+    if (concurrent > 1) overlapped = true;
+    const csvPath = (/^-r=(.*)$/.exec(args.find((a) => a.startsWith("-r=")) ?? "") ?? [])[1];
+    const index = call++;
+    seen.push({ index, csvPath, startedAt: Date.now() });
+    // The first run is slow: a second run starting before it finishes is the bug.
+    await new Promise((r) => setTimeout(r, index === 0 ? 60 : 5));
+    // `compile` is stubbed above, so every call here IS a run, and a run writes its
+    // result file.
+    fs.writeFileSync(csvPath, csvFor([[0, index], [1, index]]));
+    concurrent--;
+    return { stdout: "", stderr: "", code: 0 };
+  };
+  backend.compile = async (opts) => ({
+    ok: true,
+    diagnostics: [],
+    workDir: path.join(cacheDir, opts.modelName),
+    executable: "/bin/true",
+    stem: opts.modelName,
+    compileMs: 0,
+  });
+  fs.mkdirSync(path.join(cacheDir, "Tank"), { recursive: true });
+
+  const opts = { modelName: "Tank", source: "model Tank\nend Tank;\n", parameters: {} };
+  const [a, b] = await Promise.all([backend.simulate(opts), backend.simulate(opts)]);
+
+  assert.ok(seen.length === 2, `both runs ran: ${JSON.stringify(seen)}`);
+  assert.notEqual(seen[0].csvPath, seen[1].csvPath, "each run was given its own result file");
+  assert.equal(overlapped, false, "and the second did not start while the first was running");
+  assert.notEqual(
+    JSON.stringify(a.series.map((s) => s.values)),
+    JSON.stringify(b.series.map((s) => s.values)),
+    "so neither read the other's result"
+  );
+});

@@ -117,6 +117,10 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           .onChange(async (v) => {
             this.plugin.settings.omcPath = v.trim();
             await this.plugin.saveSettings();
+            // Re-probe, or the row above keeps reporting whatever was found before
+            // the path was typed.
+            await this.plugin.reprobeToolchain();
+            this.rebuildKeepingPlace();
           })
       );
 
@@ -130,6 +134,9 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         t.setValue(this.plugin.settings.libraryPaths).onChange(async (v) => {
           this.plugin.settings.libraryPaths = v;
           await this.plugin.saveSettings();
+          // The index is built from these roots and memoised, so it has to be
+          // rebuilt or the new library never appears in the palette.
+          this.plugin.reloadLibrary();
         });
         t.inputEl.rows = 3;
       });
@@ -148,6 +155,8 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           .onChange(async (v) => {
             this.plugin.settings.jobs = v;
             await this.plugin.saveSettings();
+            // `-n` is read when the backend is created.
+            this.plugin.applySettingsToBackend();
           })
       );
 
@@ -161,19 +170,40 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           .onChange(async (v) => {
             this.plugin.settings.extraOmcOptions = v;
             await this.plugin.saveSettings();
+            this.plugin.applySettingsToBackend();
           })
       );
 
     containerEl.createEl("h3", { text: "Simulation defaults" });
 
+    // Two different things, which were one row: the span the OPEN model runs over
+    // (kept per model) and the span a model starts with. The row was labelled
+    // "Default end time" and wrote the per-model value, so the plugin-wide default
+    // could not be set from anywhere -- a new model always ran over 1 s.
     new Setting(containerEl)
-      .setName("Stop time")
-      .setDesc("Default end time in seconds.")
+      .setName("Stop time for this model")
+      .setDesc(
+        `End time in seconds for "${this.plugin.model.name}". Each model keeps its own ` +
+          "span."
+      )
       .addText((t) =>
         t.setValue(String(this.plugin.stopTime())).onChange(async (v) => {
           const n = Number(v);
           if (Number.isFinite(n) && n > 0) {
             this.plugin.setStopTime(n);
+            await this.plugin.saveSettings();
+          }
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Default stop time")
+      .setDesc("End time in seconds for a model that has no span of its own yet.")
+      .addText((t) =>
+        t.setValue(String(this.plugin.settings.stopTime)).onChange(async (v) => {
+          const n = Number(v);
+          if (Number.isFinite(n) && n > 0) {
+            this.plugin.settings.stopTime = n;
             await this.plugin.saveSettings();
           }
         })

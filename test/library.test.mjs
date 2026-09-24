@@ -541,3 +541,44 @@ end Tank;`;
     "and the record of what could not be built survives too, or the sweep that reads it sees nothing"
   );
 });
+
+test("an excluded library leaves the palette tree, not just search", () => {
+  // The exclusion policy was applied on the search path and skipped on the tree
+  // path, so an excluded library's group still appeared under its package heading
+  // with every class in it draggable onto the canvas -- while typing the same name
+  // into the search box found nothing. This module's own comment says the tree,
+  // search, browser and completion "all agree about what is available".
+  const root = testTmpDir("mo-lib-");
+  makeLibrary(root);
+  const index = new LibraryIndex();
+  index.addDirectory(root);
+
+  const placeable = (node) => [
+    ...(node.placeable ? [node.full] : []),
+    ...node.children.flatMap((c) => placeable(c)),
+  ];
+  const everything = (node) => [node.full, ...node.children.flatMap((c) => everything(c))];
+
+  assert.deepEqual(placeable(buildPackageTree(index, "P")).sort(), ["P.A", "P.B"], "both offered at first");
+
+  index.setExcluded(["P.A"]);
+
+  assert.equal(index.isExcluded("P.A"), true, "the class is excluded");
+  const tree = buildPackageTree(index, "P");
+  assert.deepEqual(placeable(tree), ["P.B"], `only the kept class is placeable: ${placeable(tree)}`);
+  assert.ok(!everything(tree).includes("P.A"), "and the excluded class is not in the tree at all");
+  assert.equal(index.hasPlaceableClass("P."), true, "the package stays while something in it is offered");
+
+  // The package itself disappears once NOTHING in it is placeable: this is the
+  // test that failed before the fix, because `hasPlaceableClass` never asked.
+  index.setExcluded(["P.A", "P.B"]);
+  assert.equal(index.hasPlaceableClass("P."), false, "an all-excluded package is not placeable");
+  assert.equal(
+    index.packages().some((p) => p === "P" || p.startsWith("P.")),
+    false,
+    "so the palette does not list it"
+  );
+  // And the caches do not outlive the change, or the palette would redraw the old
+  // tree after the setting was edited.
+  assert.deepEqual(placeable(index.packageTree("P")), [], "the cached tree was invalidated");
+});

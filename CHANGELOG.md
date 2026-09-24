@@ -45,6 +45,43 @@ version is 0, a minor bump may include changes that are not backward compatible.
   takes seconds; the result, its log line and its chart are now dropped when the model
   changed in the meantime.
 
+- **Twenty-four more defects from the same audit**, each with a test that fails without
+  the fix. The ones a user meets:
+
+  - **A sweep no longer leaks into the next model.** A `FamilyRun` holds another model's
+    result and every run was drawn unconditionally, so opening B after sweeping A showed
+    A's curves inside B's plot, in one shared colour. A model change now clears the
+    family — and a sweep is recorded in the Run log, with its failure output, like any
+    other run.
+  - **Two runs of one model no longer share a work directory and a result file.** A note
+    block and the studio running the same model at once compiled into one directory and
+    ran with one `-r=`, so each read whichever CSV finished last. Runs of one model are
+    serialised, and each writes its own file (removed after it is read).
+  - **Reset no longer deletes a legacy plaintext API key** — the only copy there is when
+    Obsidian has no keychain — and a first session can no longer edit the defaults
+    through the settings object it was handed.
+  - **The toolchain and library rows apply what they save**: the OpenModelica path
+    re-probes, a library path rebuilds the index, and jobs or extra options recreate the
+    backend, instead of waiting for a restart.
+  - **An excluded library leaves the palette tree**, not only search.
+  - **The Examples menu closes through one path**, so it cannot leave a keydown handler
+    on `document` that turns a later Enter into "load a different example".
+  - **`start >= stop` says the window is empty** instead of drawing a blank canvas and
+    reporting success, and a zero-length result still draws a finite axis.
+  - **The cursor readout matches the drawn axis** after a zoom; **"Clear traces" and the
+    zoom reset reach the note's copy** of the chart; **two figures in one minute get
+    distinct names**.
+  - **The toolbar's tooltips appear again** (`--no-tooltip` inherits, so silencing a
+    group silenced its buttons); **the mode buttons are marked active on open**; the
+    palette's arrow keys follow the order the rows are drawn in.
+  - **Stop aborts the first AI request**, not only the second; the DeepSeek thinking
+    switch is no longer sent to other providers; the model list has a deadline.
+  - **A check and a run share the busy pane** without clearing each other's indicator.
+  - The embed picker scrolls its highlight into view, keeps a typed run span, writes a
+    height the block honours, and activates a row from the keyboard. "Stop time" in
+    Settings is split into the model's span and the default for new models, the second of
+    which could not be set from anywhere.
+
 ### Added
 
 - `docs/audit-2026-09-24.md`: the full audit behind these fixes — 28 findings with the

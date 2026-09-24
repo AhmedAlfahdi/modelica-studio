@@ -353,8 +353,15 @@ export function mergeSettings(
   defaults: ModelicaStudioSettings,
   stored: Partial<ModelicaStudioSettings> | null | undefined
 ): ModelicaStudioSettings {
-  if (!stored) return { ...defaults };
-  const merged: Record<string, unknown> = { ...(defaults as unknown as Record<string, unknown>) };
+  if (!stored) return cloneGroups(defaults);
+  // Every group is copied, not shared. Handing out DEFAULT_SETTINGS' own nested
+  // object meant a first session (where the field is absent from data.json) edited
+  // the DEFAULTS: the value then survived a Reset that should have restored it, and
+  // the Reset could not report it either.
+  const merged: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(defaults as unknown as Record<string, unknown>)) {
+    merged[key] = isGroupValue(value, key) ? { ...(value as object) } : value;
+  }
   for (const [key, value] of Object.entries(stored)) {
     if (value === undefined) continue;
     const base = (defaults as unknown as Record<string, unknown>)[key];
@@ -380,6 +387,25 @@ export function mergeSettings(
  * object with the stored one, which happens to be harmless, but it also means a
  * user who deletes an entry cannot get rid of it -- the default would restore it.
  */
+/** Group settings (a nested object of preferences) are copied, never shared. */
+function isGroupValue(value: unknown, key: string): boolean {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    !isMapLike(key)
+  );
+}
+
+/** A defaults object safe to mutate: no nested object is shared with it. */
+function cloneGroups(defaults: ModelicaStudioSettings): ModelicaStudioSettings {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(defaults as unknown as Record<string, unknown>)) {
+    out[key] = isGroupValue(value, key) ? { ...(value as object) } : value;
+  }
+  return out as unknown as ModelicaStudioSettings;
+}
+
 function isMapLike(key: string): boolean {
   return key === "modelFiles" || key === "modelStopTimes" || key === "charts";
 }
@@ -485,6 +511,15 @@ export function resetPreferences(settings: ModelicaStudioSettings): {
     reset.push("ai");
   }
   next.ai = { ...DEFAULT_SETTINGS.ai, secretName };
+  // A plaintext key still in the settings is the only copy there is: the migration
+  // leaves it in place when Obsidian has no keychain, or when writing the secret
+  // failed. Reset is a preference action, so it must not be the thing that
+  // destroys it -- the confirm dialog only ever promised to keep the secret's name.
+  const legacyKey = typeof settings.ai?.apiKey === "string" ? settings.ai.apiKey : "";
+  if (legacyKey) {
+    next.ai.apiKey = legacyKey;
+    kept.push("AI key (still in the settings)");
+  }
 
   for (const key of PRESERVED_ON_RESET) {
     // The live records themselves, shared rather than copied: the object the rest

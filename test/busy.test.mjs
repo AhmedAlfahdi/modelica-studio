@@ -91,6 +91,10 @@ const HEAD = [
   "  view.runBtns = [runBtn];",
   "  view.checkBtns = [];",
   "  view.busy = false;",
+  "  // Class fields are initialised in the class body, which `Object.create` skips,",
+  "  // and the busy indicator is now shared through a count of its users.",
+  "  view.busyOwners = 0;",
+  "  view.checking = false;",
   "  view.family = [];",
   "  view.seriesStyles = {};",
   "  view.flushEditorIntoModel = () => {};",
@@ -399,4 +403,90 @@ test("a run that finishes after the model was replaced is not adopted", async ()
   assert.equal(state.adopted, "nothing", "a finished run is not the new model's result");
   assert.equal(state.busy, false, "and the studio is not left busy");
   assert.match(state.status, /discarded/, "and it says what it did with the result");
+});
+
+test("a model change takes the sweep family with it", async () => {
+  // A FamilyRun holds another model's SimResult, and paint folds every run in
+  // unconditionally -- a name the current model does not have defaults to visible,
+  // in one shared colour. Opening B after sweeping A drew A's curves, dashed, inside
+  // B's plot, and let them set B's y extent.
+  const out = await runInDom(
+    [
+      HEAD,
+      "const { view } = makeView();",
+      "const sweep = view.runSweep('e', '0.4, 0.8, 1.2');",
+      "await settle();",
+      "view.__resolve(); await settle();",
+      "view.__resolve(); await settle();",
+      "view.__resolve(); await sweep;",
+      "await settle();",
+      "const afterSweep = { family: view.family.length, label: view.lastSweep ? view.lastSweep.parameter : 'none' };",
+      // A model change, as the plugin performs one.
+      "view.plugin.model = { name: 'Other', components: [], connections: [], equations: [], graphics: [] };",
+      "view.loadModelIntoEditor();",
+      "const afterLoad = { family: view.family.length, label: view.lastSweep ? view.lastSweep.parameter : 'none' };",
+      // And again through the other funnel.
+      "view.family = [{ label: 'e=1', result: { time: [0, 1], series: [], warnings: [] } }];",
+      "view.lastSweep = { parameter: 'e', value: '1' };",
+      "view.reloadFromPlugin();",
+      "const afterReload = view.family.length;",
+      "window.test('the sweep is there to begin with', () => JSON.stringify(afterSweep));",
+      "window.test('and gone after the model changes', () => JSON.stringify(afterLoad));",
+      "window.test('through either path', () => String(afterReload));",
+      "window.finish();",
+    ].join("\n")
+  );
+
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const d = Object.fromEntries(out.results.map((r) => [r.name, r.detail]));
+
+  assert.equal(
+    d["the sweep is there to begin with"],
+    JSON.stringify({ family: 2, label: "e" }),
+    "two of the three runs are the family, and the last is the result"
+  );
+  assert.equal(
+    d["and gone after the model changes"],
+    JSON.stringify({ family: 0, label: "none" }),
+    "the next model's plot cannot contain the previous model's curves"
+  );
+  assert.equal(d["through either path"], "0", "and reloading clears it too");
+});
+
+test("a sweep that cannot start says so instead of doing nothing", async () => {
+  // The t_end field commits on blur and starts a silent run, so clicking Sweep
+  // while that run is in flight hit a bare `return`: no Notice, no status, no
+  // queue. It read as a broken button.
+  const out = await runInDom(
+    [
+      HEAD,
+      `import { Notice } from "${ROOT}/test/helpers/obsidian-stub";`,
+      "Notice.messages.length = 0;",
+      "const { view } = makeView();",
+      "const running = view.runSimulation();",
+      "await settle();",
+      "Notice.messages.length = 0;",
+      "await view.runSweep('e', '0.4, 0.8');",
+      "const refusal = Notice.messages.slice();",
+      "const during = { family: view.family.length };",
+      "view.__resolve();",
+      "await running;",
+      "await settle();",
+      "window.test('the refusal is spoken, and names the reason', () =>",
+      "  'family=' + during.family + ' notice=' + refusal.join(' / '));",
+      "window.finish();",
+    ].join("\n")
+  );
+
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const said = out.results.find((r) => r.name === "the refusal is spoken, and names the reason")?.detail ?? "";
+
+  assert.match(said, /^family=0 /, "the sweep did not run");
+  assert.match(said, /already going/, `and the notice says why: ${said}`);
 });

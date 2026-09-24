@@ -1308,15 +1308,9 @@ export default class ModelicaStudioPlugin extends Plugin {
 
       this.diag(`toolchain: status=${found.status} path=${found.omcPath ?? "-"} version=${found.versionNumber ?? "-"}`);
       if (found.status === "found" && found.omcPath) {
-        this.backend = createBackend({
-          omcPath: found.omcPath,
-          jobs: this.settings.jobs,
-          extraOptions: this.settings.extraOmcOptions
-            ? this.settings.extraOmcOptions.split(/\s+/).filter(Boolean)
-            : undefined,
-        });
         this.applySettingsToBackend();
       } else {
+        this.backend?.dispose();
         this.backend = null;
       }
     } catch (err) {
@@ -1342,8 +1336,41 @@ export default class ModelicaStudioPlugin extends Plugin {
     }
   }
 
-  /** Push settings that the backend reads at call time. */
-  private applySettingsToBackend(): void {
+  /**
+   * Re-probe for OpenModelica, e.g. after the path setting changed.
+   *
+   * The rows for the toolchain and the library wrote their value and stopped, so
+   * typing a path after an automatic detection failed left the status box saying
+   * "not detected" and Simulate offering the install help until a restart.
+   */
+  async reprobeToolchain(): Promise<void> {
+    this.omc = null;
+    this.libraryIndex = null;
+    this.libraryPromise = null;
+    this.libraryReady = false;
+    await this.detectToolchain();
+    // The rows below the path show what was found, so the tab has to be redrawn.
+    this.settingsTab?.onLibraryReady();
+    this.settingsTab?.display();
+    this.warmLibrary();
+  }
+
+  /**
+   * Rebuild the component index, e.g. after the library paths changed.
+   *
+   * The index is memoised and cached on disk under its roots, so a new path only
+   * takes effect if the memo is dropped first. Without this the classes a user had
+   * just added never reached the palette, search or completion.
+   */
+  reloadLibrary(): void {
+    this.libraryIndex = null;
+    this.libraryPromise = null;
+    this.libraryReady = false;
+    this.warmLibrary();
+  }
+
+  /** Push settings that the backend reads when it is created. */
+  applySettingsToBackend(): void {
     // Settings that affect compilation are read when the backend is created;
     // recreate it so changes take effect without a reload.
     if (!this.omc?.omcPath) return;

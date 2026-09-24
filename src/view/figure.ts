@@ -83,11 +83,25 @@ export async function saveCanvasImage(
   }
   const active = app.workspace.getActiveFile();
   const folder = (active?.parent?.path ?? fallbackFolder ?? "").replace(/^\/+|\/+$/g, "");
-  const path = folder ? `${folder}/${figureFileName(model, new Date())}` : figureFileName(model, new Date());
+  const stem = figureFileName(model, new Date()).replace(/\.png$/, "");
 
   try {
     if (folder && !app.vault.getAbstractFileByPath(folder)) {
       await app.vault.createFolder(folder);
+    }
+    // A free name. The name carries the minute, and two saves inside one minute --
+    // comparing a plot with a sweep, or the plot with the diagram -- computed the
+    // same path, and `createBinary` on an existing path is refused: the second save
+    // reported "the figure could not be saved" and inserted no link.
+    let path = "";
+    for (let n = 1; ; n++) {
+      const name = n === 1 ? `${stem}.png` : `${stem}-${n}.png`;
+      const candidate = folder ? `${folder}/${name}` : name;
+      if (!app.vault.getAbstractFileByPath(candidate)) {
+        path = candidate;
+        break;
+      }
+      if (n > 99) throw new Error("too many figures saved in this minute");
     }
     const file = await app.vault.createBinary(path, await blob.arrayBuffer());
     new Notice(`Modelica: figure saved as ${file.path}`);

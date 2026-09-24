@@ -329,3 +329,127 @@ test("a reset with nothing to keep says so", () => {
   assert.deepEqual(reset, [], "nothing was changed, so nothing is named");
   assert.deepEqual(kept, [], "and there was no work to keep");
 });
+
+test("a reset does not delete a plaintext key that is still the only copy", () => {
+  // The migration moves an old plaintext key into Obsidian's secret storage and
+  // removes it from the settings -- but only AFTER the secret is written. With no
+  // keychain, or when writing it threw, the plaintext key is all the user has, and
+  // the Reset dialog only ever promised to keep the secret's NAME.
+  const { resetPreferences } = merge;
+  const live = {
+    ...DEFAULT_SETTINGS,
+    solver: "ida",
+    ai: {
+      ...DEFAULT_SETTINGS.ai,
+      baseUrl: "https://api.deepseek.com/v1",
+      secretName: "MODELICA_STUDIO_KEY",
+      apiKey: "sk-legacy-plaintext",
+    },
+  };
+
+  const { settings: next, kept } = resetPreferences(live);
+
+  assert.equal(next.ai.apiKey, "sk-legacy-plaintext", "the key survived the reset");
+  assert.equal(next.ai.secretName, "MODELICA_STUDIO_KEY", "and so did the secret's name");
+  assert.equal(next.ai.baseUrl, DEFAULT_SETTINGS.ai.baseUrl, "while the preferences went back");
+  assert.ok(
+    kept.some((k) => /AI key/.test(k)),
+    `and the notice says the key was kept: ${kept.join(", ")}`
+  );
+
+  // With no legacy key there is nothing to keep, so the field stays absent.
+  const clean = resetPreferences({ ...DEFAULT_SETTINGS, ai: { ...DEFAULT_SETTINGS.ai } });
+  assert.equal(clean.settings.ai.apiKey, undefined, "nothing invented");
+});
+
+test("a first session cannot edit the defaults through the settings object", () => {
+  // With no data.json, mergeSettings handed out DEFAULT_SETTINGS' own nested
+  // objects. Editing settings.ai then changed the DEFAULTS, so a later Reset
+  // restored the user's value instead of the default and could not report "ai" as
+  // reset -- a preference that could not be put back.
+  const { resetPreferences } = merge;
+  const fresh = mergeSettings(DEFAULT_SETTINGS, null);
+  assert.notEqual(fresh.ai, DEFAULT_SETTINGS.ai, "the group is a copy, not the default object");
+
+  fresh.ai.model = "someone-elses-model";
+  fresh.ai.thinking = "high";
+  assert.equal(DEFAULT_SETTINGS.ai.model !== "someone-elses-model", true, "the default is untouched");
+  assert.notEqual(DEFAULT_SETTINGS.ai.thinking, "high", "and so is every other field");
+
+  const { settings: next, reset } = resetPreferences(fresh);
+  assert.equal(next.ai.model, DEFAULT_SETTINGS.ai.model, "a reset puts the model back");
+  assert.ok(reset.includes("ai"), `and says so: ${reset.join(", ")}`);
+
+  // The same leak, one level down: a stored config that simply lacks `ai`.
+  const partial = mergeSettings(DEFAULT_SETTINGS, { stopTime: 5 });
+  assert.notEqual(partial.ai, DEFAULT_SETTINGS.ai, "an absent group is still a copy");
+  partial.ai.model = "third-party";
+  const second = resetPreferences(partial);
+  assert.equal(second.settings.ai.model, DEFAULT_SETTINGS.ai.model, "so a later reset restores it too");
+});
+
+test("the toolchain and library rows actually apply what they save", () => {
+  // Four rows persisted their value and did nothing else: `applySettingsToBackend`
+  // and `warmLibrary` each had exactly one caller, both inside onload, and the
+  // library index is memoised. So setting the OpenModelica path after a failed
+  // detection still said "not detected" until a restart, and adding a library path
+  // never brought its classes into the palette.
+  const tab = fs.readFileSync(path.join(repoRoot, "src/settings.ts"), "utf8");
+  const main = fs.readFileSync(path.join(repoRoot, "src/main.ts"), "utf8");
+
+  const row = (name) => {
+    const at = tab.indexOf(`.setName("${name}")`);
+    assert.ok(at > 0, `the row for ${name} exists`);
+    return tab.slice(at, at + 900);
+  };
+
+  assert.match(row("OpenModelica path"), /reprobeToolchain\(\)/, "the path row re-probes");
+  assert.match(row("Library paths"), /reloadLibrary\(\)/, "the library row rebuilds the index");
+  assert.match(row("Parallel compile jobs"), /applySettingsToBackend\(\)/, "the jobs row reaches the backend");
+  assert.match(row("Extra omc options"), /applySettingsToBackend\(\)/, "and so does the options row");
+
+  // Both entry points exist, and each one drops what would otherwise be reused.
+  const reprobe = /async reprobeToolchain\(\): Promise<void> \{[\s\S]*?\n  \}/.exec(main);
+  assert.ok(reprobe, "reprobeToolchain is defined");
+  assert.match(reprobe[0], /detectToolchain\(\)/, "it probes again");
+  assert.match(reprobe[0], /this\.settingsTab\?\.display\(\)/, "and redraws the status box");
+
+  const reload = /  reloadLibrary\(\): void \{[\s\S]*?\n  \}/.exec(main);
+  assert.ok(reload, "reloadLibrary is defined");
+  assert.match(reload[0], /this\.libraryIndex = null/, "the memoised index is dropped");
+  assert.match(reload[0], /this\.libraryPromise = null/, "and so is an in-flight build");
+  assert.match(reload[0], /this\.warmLibrary\(\)/, "before the rebuild is started");
+
+  // The backend is built in ONE place, so a probe and a settings change cannot
+  // disagree -- and detection no longer creates a backend and recreates it.
+  const detect = /private async detectToolchain\(\): Promise<void> \{[\s\S]*?\n  \}/.exec(main);
+  assert.ok(detect, "detectToolchain is defined");
+  assert.doesNotMatch(detect[0], /createBackend\(/, "detection does not build its own backend");
+  assert.match(detect[0], /this\.applySettingsToBackend\(\)/, "it goes through the shared path");
+});
+
+test("the stop-time row says which span it edits, and the default is settable", () => {
+  // The row was labelled "Default end time in seconds" and wrote the OPEN model's
+  // span (`setStopTime`), so `settings.stopTime` -- the plugin-wide default, reset
+  // by Reset, and the value a block with no model name uses -- was assigned nowhere
+  // in the tree. A new model therefore always ran over 1 s and no UI could change it.
+  const tab = fs.readFileSync(path.join(repoRoot, "src/settings.ts"), "utf8");
+  const main = fs.readFileSync(path.join(repoRoot, "src/main.ts"), "utf8");
+
+  const perModel = /\.setName\("Stop time for this model"\)[\s\S]*?\n      \);/.exec(tab);
+  assert.ok(perModel, "the per-model row exists and says so");
+  assert.match(perModel[0], /this\.plugin\.setStopTime\(n\)/, "it writes this model's span");
+
+  const fallback = /\.setName\("Default stop time"\)[\s\S]*?\n      \);/.exec(tab);
+  assert.ok(fallback, "and a row for the default exists");
+  assert.match(
+    fallback[0],
+    /this\.plugin\.settings\.stopTime = n/,
+    "which writes the plugin-wide default"
+  );
+
+  // The default is what a model with no span of its own gets.
+  const resolution = /  stopTime\(model = this\.model\.name\): number \{[\s\S]*?\n  \}/.exec(main);
+  assert.ok(resolution, "stopTime() resolves the two");
+  assert.match(resolution[0], /settings\.stopTime/, "with the plugin-wide default as the fallback");
+});

@@ -17,4 +17,11 @@
 export function noLabelTooltip(el: HTMLElement, name: string): void {
   el.setAttribute("aria-label", name);
   el.style.setProperty("--no-tooltip", "true");
+  // Custom properties INHERIT, so silencing a group also silenced every labelled
+  // control inside it: Obsidian shows a tooltip only when the computed
+  // `--no-tooltip` on the labelled element is not "true", and the toolbar's
+  // buttons rely on `aria-label` as their only tooltip source. The class lets
+  // `styles.css` give the property back to the children -- see the
+  // `.modelica-studio-tooltip-host` rule there.
+  el.addClass("modelica-studio-tooltip-host");
 }

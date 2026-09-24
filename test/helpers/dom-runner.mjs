@@ -48,7 +48,14 @@ app.whenReady().then(async () => {
     // under parallel load is otherwise a message with no place attached: one test in
     // this suite fails roughly once in ten full runs with a page error nobody can
     // locate from the text alone.
-    if (level >= 2) {
+    // The one message Chromium reports at error level that is not an error: a
+    // ResizeObserver that delivered its notifications in the same frame. It says
+    // the observer was busy, not that anything failed, and it appears when several
+    // DOM tests lay out at once -- which is why it surfaced only in a full run.
+    const benign =
+      String(message).includes("ResizeObserver loop") &&
+      String(message).includes("undelivered notifications");
+    if (level >= 2 && !benign) {
       // A plain string replace: this whole runner is generated from a template literal,
       // and a regex here needs four backslashes to survive the trip.
       const where = sourceId ? " (" + String(sourceId).split("file://").join("") + ":" + line + ")" : "";

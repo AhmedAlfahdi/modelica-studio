@@ -248,6 +248,21 @@ export class ModelicaStudioView extends ItemView {
     this.result = result;
     this.seriesScroll = 0;
   }
+
+  /**
+   * Drop the sweep family and the label that goes with it.
+   *
+   * A `FamilyRun` holds another model's `SimResult`, and `paint` folds every run
+   * in unconditionally — a name the current model does not have defaults to
+   * visible in one shared colour. Nothing cleared it on a model change, so opening
+   * B after sweeping A drew A's curves, dashed and in A's colour, inside B's plot
+   * and let them set B's y extent. A family is cleared by its own button, by a
+   * sweep, and now by the model changing under it.
+   */
+  private forgetFamily(): void {
+    this.family = [];
+    this.lastSweep = null;
+  }
   /** Which bottom tab is showing. */
   private bottomTab: ResultsTab = "plot";
   /** Header of the bottom pane, whose actions depend on the tab. */
@@ -505,6 +520,12 @@ export class ModelicaStudioView extends ItemView {
     this.loadModelIntoEditor();
     this.applyDebugOverlay();
     this.updateToolbarState();
+    // The mode buttons are drawn with `aria-pressed="false"` and the active one is
+    // shown ONLY by that attribute and `.is-active`, both written by
+    // `syncToolbarToMode` -- which ran on a mode CHANGE. So every open in the
+    // default diagram mode looked like neither button was selected, until Code and
+    // Diagram were pressed once.
+    this.syncToolbarToMode();
     this.renderPalette();
     this.renderInspector();
     this.editor.scheduleFit();
@@ -535,6 +556,9 @@ export class ModelicaStudioView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    // A menu left open when the view closes must not leave its document handlers
+    // behind for the rest of the session.
+    this.exampleMenuClose?.();
     this.resultsReclamp?.disconnect();
     this.resultsReclamp = undefined;
     this.editor?.destroy();
@@ -1417,6 +1441,12 @@ export class ModelicaStudioView extends ItemView {
 
     this.aiBusy = true;
     this.aiCancel = false;
+    // The controller is created HERE, not when the loop reports a later phase.
+    // It used to be made inside `onProgress` for every phase except "asking" --
+    // and "asking" is the first phase, so the first request was sent with no
+    // signal at all: Stop reached nothing and the user waited out the provider's
+    // timeout, which is the exact failure the abort was added to fix.
+    this.aiAbort = new AbortController();
     // The wait that most needs saying: a request can legitimately take minutes,
     // and the text beside it is a countdown the eye has to read. The bar is on the
     // element that already exists to report the run, and the button that started
@@ -1487,8 +1517,8 @@ export class ModelicaStudioView extends ItemView {
           // Compiling and repairing are quick, so the clock restarts per phase
           // and the number always describes the step on screen.
           if (event.phase !== "asking") {
+            // The clock restarts per phase; the controller lives for the whole run.
             this.aiStartedAt = Date.now();
-      this.aiAbort = new AbortController();
             this.setAiProgress(`${this.aiPhase}…`);
           }
         },
@@ -1866,9 +1896,16 @@ export class ModelicaStudioView extends ItemView {
       if (inst) this.setStatus(`Added ${inst.id}.`);
     };
     btn.addEventListener("keydown", (ev) => {
+      // The index space IS the drawn order. `paletteItems` grows in the order
+      // packages were EXPANDED, which is not the order they are drawn in once a
+      // later package is opened before an earlier one -- so ArrowDown from a row in
+      // the second package landed on a row in the first, skipping the list being
+      // walked.
+      const all = this.paletteEl?.querySelectorAll<HTMLElement>(".modelica-studio-palette-item");
+      const rows = all ? Array.from(all) : [];
       const move = paletteKeyTarget(
-        this.paletteItems.map((_, i) => i),
-        index,
+        rows.map((_, i) => i),
+        rows.indexOf(btn),
         ev.key
       );
       if (!move) return;
@@ -1879,8 +1916,7 @@ export class ModelicaStudioView extends ItemView {
       }
       // Focus moves rather than a cursor being drawn: the browser already tracks
       // focus, and a second notion of "current row" would have to be kept in step.
-      const all = this.paletteEl?.querySelectorAll<HTMLElement>(".modelica-studio-palette-item");
-      all?.[move.next]?.focus();
+      rows[move.next]?.focus();
     });
     btn.addEventListener("focus", () => this.setStatus(`${item.name} — press Enter to place it.`));
 
@@ -2454,6 +2490,10 @@ export class ModelicaStudioView extends ItemView {
       }
       this.renderInspector();
       this.drawResults();
+      // Published like every other change to what is drawn: a note's block for the
+      // same model kept drawing the traces that were just cleared, because the
+      // shared per-model chart state was only written from some of the paths.
+      this.publishChart();
     });
 
     const filter = parent.createEl("input", {
@@ -3161,6 +3201,12 @@ export class ModelicaStudioView extends ItemView {
    * the next run, so asking is nearly free.
    */
   async checkModel(): Promise<void> {
+    if (this.checking) {
+      new Notice("Modelica: a check is already running.");
+      return;
+    }
+    this.checking = true;
+    this.beginBusy();
     const source = this.plugin.sourceForSave();
     const findings = this.lintFindings();
     const backend = this.plugin.backend;
@@ -3203,8 +3249,10 @@ export class ModelicaStudioView extends ItemView {
       return;
     } finally {
       // In a `finally`, because the catch above returns: a bar left running after
-      // the work has stopped is worse than no bar at all.
-      setBusy(this.resultsEl, false);
+      // the work has stopped is worse than no bar at all. `endBusy` only clears the
+      // pane when this was the last operation using it.
+      this.checking = false;
+      this.endBusy();
       for (const b of this.checkBtns) setButtonBusy(b, false, "clipboard-check");
     }
     const report = formatLint(findings, diagnostics, checked);
@@ -3240,7 +3288,32 @@ export class ModelicaStudioView extends ItemView {
       }
       return;
     }
-    if (this.busy || !this.plugin.backend || !parameter) return;
+    if (this.busy) {
+      // Silence here read as a broken button: the t_end field commits on blur and
+      // starts a silent run, so clicking Sweep during it did nothing at all.
+      if (!opts.silent) {
+        new Notice(
+          "Modelica: a run is already going — the sweep starts when it finishes. " +
+            "Try again in a moment."
+        );
+      }
+      return;
+    }
+    if (!this.plugin.backend) {
+      if (!opts.silent) this.plugin.showSetupHelp();
+      return;
+    }
+    if (!parameter) return;
+    this.beginBusy();
+    if (this.plugin.stopTime() <= this.plugin.settings.startTime) {
+      const msg =
+        `the run window is empty: start ${this.plugin.settings.startTime} s, ` +
+        `end ${this.plugin.stopTime()} s. The end time must be greater than the start.`;
+      this.setStatus(`Not swept — ${msg}`);
+      if (!opts.silent) new Notice(`Modelica: ${msg}`, 8000);
+      this.endBusy();
+      return;
+    }
     this.flushEditorIntoModel();
     this.busy = true;
     // The same text Check, Save and a note block compile. Simulating the
@@ -3279,6 +3352,29 @@ export class ModelicaStudioView extends ItemView {
       }
     } catch (err) {
       this.setStatus("Sweep failed");
+      // Recorded like any other failed run, so the log and "Send to AI" carry the
+      // compiler's own output for THIS failure.
+      const detail = describeFailure(err);
+      this.plugin.diag(`sweep failed: ${firstLine(err instanceof Error ? err.message : String(err))}`, "error");
+      this.lastSimulationError = detail;
+      this.setCodeStatus(firstLine(err instanceof Error ? err.message : String(err)), true);
+      this.plugin.runLog.add({
+        at: new Date().toISOString(),
+        model: ranName,
+        ok: false,
+        source,
+        parameters: { ...base, [parameter]: values.join(", ") },
+        settings: {
+          startTime: this.plugin.settings.startTime,
+          stopTime: this.plugin.stopTime(),
+          tolerance: this.plugin.settings.tolerance,
+          numberOfIntervals: this.plugin.settings.numberOfIntervals,
+          solver: this.plugin.settings.solver,
+        },
+        detail: firstLine(err instanceof Error ? err.message : String(err)),
+        elapsedMs: 0,
+        reused: false,
+      });
       // Named, because a sweep of the wrong model is the failure that looks like
       // a physics problem: the error quotes components the user did not draw.
       new Notice(
@@ -3286,11 +3382,11 @@ export class ModelicaStudioView extends ItemView {
           `${err instanceof Error ? err.message : err}`
       );
       this.busy = false;
-      this.clearBusy();
+      this.endBusy();
       return;
     }
     this.busy = false;
-    this.clearBusy();
+    this.endBusy();
     if (this.plugin.model !== ranModel) {
       // The sweep belongs to a model that is no longer open: its runs would be
       // drawn as a family over the new model's plot.
@@ -3305,6 +3401,30 @@ export class ModelicaStudioView extends ItemView {
     this.lastSweep = last ? { parameter, value: String(values[values.length - 1]) } : null;
     if (last) this.adoptResult(last.result);
     this.family = runs;
+    // A sweep is a run, and the log is where runs are recorded: a twelve-value
+    // sweep used to leave no trace in the panel that exists to hold them, and a
+    // failure inside one left the previous failure standing -- so "Send to AI"
+    // sent a compiler error from an earlier run, possibly of another model.
+    this.lastSimulationError = null;
+    this.setCodeStatus("");
+    this.clearLogBadge();
+    this.plugin.runLog.add({
+      at: new Date().toISOString(),
+      model: ranName,
+      ok: true,
+      source,
+      parameters: { ...base, [parameter]: values.join(", ") },
+      settings: {
+        startTime: this.plugin.settings.startTime,
+        stopTime: this.plugin.stopTime(),
+        tolerance: this.plugin.settings.tolerance,
+        numberOfIntervals: this.plugin.settings.numberOfIntervals,
+        solver: this.plugin.settings.solver,
+      },
+      detail: `swept ${parameter} over ${values.length} values: ${values.join(", ")}`,
+      elapsedMs: 0,
+      reused: runs.length > 0 ? runs[runs.length - 1].result.reusedBinary : false,
+    });
     // The traces are chosen by the ONE seeder, exactly as a single run chooses
     // them: a second rule here would override it, which is the fault the seeding
     // invariant exists for (a sweep of a 25-variable model would draw all 25).
@@ -3499,6 +3619,9 @@ export class ModelicaStudioView extends ItemView {
       this.resetZoom();
       this.drawResults();
       this.drawFullScreen();
+      // As above: without this the block beside the studio stayed zoomed into the
+      // window the studio had just left.
+      this.publishChart();
     });
   }
 
@@ -3712,8 +3835,10 @@ export class ModelicaStudioView extends ItemView {
     this.freshModel = true;
     this.editor?.setModel(this.plugin.model);
     // Anything derived from the previous model goes with it: a result would plot
-    // traces that no longer match the source.
+    // traces that no longer match the source, and a family of runs would plot
+    // another model's variables.
     this.adoptResult(null);
+    this.forgetFamily();
     this.lastSimulationError = null;
     this.clearCodeProblem();
     // The exact source when there is one, and the serialised diagram only as a
@@ -3751,9 +3876,41 @@ export class ModelicaStudioView extends ItemView {
     this.editor?.requestDraw();
   }
 
+  /**
+   * How many operations are sharing the busy indicator.
+   *
+   * `setBusy` has no ownership: Simulate, Sweep and Check all mark the same
+   * results pane, and Check did not even set `this.busy`. Whichever finished first
+   * cleared the bar, so pressing Check during a run removed the run's progress
+   * mid-compile, and the run's end reset a still-running Check's spinner. The
+   * count keeps the pane marked until the LAST of them is done.
+   */
+  private busyOwners = 0;
+
+  private beginBusy(): void {
+    this.busyOwners++;
+  }
+
+  private endBusy(): void {
+    this.busyOwners = Math.max(0, this.busyOwners - 1);
+    if (this.busyOwners === 0) this.clearBusy();
+  }
+
+  /**
+   * How to close the Examples menu, when one is open.
+   *
+   * The menu installs document-level listeners, so it needs a single, reachable
+   * way out that every closing path uses.
+   */
+  private exampleMenuClose: (() => void) | null = null;
+
+  /** A check and a run share the results pane, so only one check at a time. */
+  private checking = false;
+
   /** Re-read the plugin's model, e.g. after it was replaced elsewhere. */
   reloadFromPlugin(): void {
     this.adoptResult(null);
+    this.forgetFamily();
     this.editor?.setModel(this.plugin.model);
     this.renderInspector();
     // Loading a model replaces the source too, or code mode keeps showing the
@@ -3789,8 +3946,11 @@ export class ModelicaStudioView extends ItemView {
   private showExamplePicker(anchor: HTMLElement): void {
     const existing = this.contentEl.querySelector(".modelica-studio-examples-menu");
     if (existing) {
-      existing.remove();
-      anchor.setAttribute("aria-expanded", "false");
+      // Through `close`, not by removing the element: two of the four ways this
+      // menu could go away left its capture-phase handlers on `document`, so arrow
+      // keys stayed swallowed app-wide and Enter re-clicked items[0] -- loading a
+      // DIFFERENT example over the model on the canvas.
+      this.exampleMenuClose?.();
       return;
     }
     const menu = this.contentEl.createDiv({ cls: "modelica-studio-examples-menu" });
@@ -3834,7 +3994,8 @@ export class ModelicaStudioView extends ItemView {
           : ex.description;
         item.createDiv({ cls: "modelica-studio-examples-desc", text: detail });
         item.addEventListener("click", () => {
-          menu.remove();
+          // `close` rather than `menu.remove()`: see the toggle above.
+          this.exampleMenuClose?.();
           this.loadExample(ex.name);
         });
       }
@@ -3851,7 +4012,10 @@ export class ModelicaStudioView extends ItemView {
       anchor.setAttribute("aria-expanded", "false");
       document.removeEventListener("pointerdown", onDown, true);
       document.removeEventListener("keydown", onKey, true);
+      // Idempotent, and registered so every other path can reach it.
+      if (this.exampleMenuClose === close) this.exampleMenuClose = null;
     };
+    this.exampleMenuClose = close;
 
     const onDown = (ev: MouseEvent) => {
       if (!menu.contains(ev.target as Node) && ev.target !== anchor) close();
@@ -4193,6 +4357,22 @@ export class ModelicaStudioView extends ItemView {
       if (!opts.silent) this.plugin.showSetupHelp();
       return;
     }
+    // The share of the busy indicator is taken BEFORE the checks below, so every
+    // early return releases what it took. (Matching them up is exactly the kind of
+    // bookkeeping this counter exists to replace, so it is worth saying.)
+    this.beginBusy();
+    // An empty window is not a run, and OpenModelica does not say so: asked for
+    // start=5, stop=1 it returns a valid two-sample result whose time is [5, 5],
+    // which plotted as a blank canvas while the status line reported success.
+    if (this.plugin.stopTime() <= this.plugin.settings.startTime) {
+      const msg =
+        `the run window is empty: start ${this.plugin.settings.startTime} s, ` +
+        `end ${this.plugin.stopTime()} s. The end time must be greater than the start.`;
+      this.setStatus(`Not run — ${msg}`);
+      new Notice(`Modelica: ${msg}`, 8000);
+      this.endBusy();
+      return;
+    }
     // Nothing to simulate: no components, no wires, no equations. Sending this
     // to the compiler produces "Too few equations, under-determined system. The
     // model has 0 equation(s) and N variable(s)", which names the symptom and
@@ -4208,6 +4388,7 @@ export class ModelicaStudioView extends ItemView {
       this.setStatus(message);
       this.setCodeStatus(message, true);
       new Notice(`Modelica: ${message}`, 6000);
+      this.endBusy();
       return;
     }
 
@@ -4351,7 +4532,7 @@ export class ModelicaStudioView extends ItemView {
       void previous;
     } finally {
       this.busy = false;
-      this.clearBusy();
+      this.endBusy();
     }
   }
 

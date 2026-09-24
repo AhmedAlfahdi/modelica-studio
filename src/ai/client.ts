@@ -72,9 +72,16 @@ export async function chat(
   // told not to. Any other level is passed through as `reasoning_effort`, which is
   // the provider's own parameter name.
   const thinking = cfg.thinking ?? "off";
+  const deepseek = /(^|\.)deepseek\.com/i.test(cfg.baseUrl);
   if (thinking === "off") {
-    body.thinking = { type: "disabled" };
+    // ONLY to the provider the field belongs to. The default preset points at
+    // OpenAI, whose API rejects an unrecognised request argument outright with a
+    // 400 -- so a fresh install's first request could fail as though the plugin
+    // were broken. DeepSeek is the one that needs to be told: it reasons at high
+    // effort (and silently ignores `temperature`) unless the switch says otherwise.
+    if (deepseek) body.thinking = { type: "disabled" };
   } else {
+    // `reasoning_effort` is the parameter both providers document by that name.
     body.reasoning_effort = thinking;
   }
 
@@ -157,13 +164,27 @@ export async function listModels(cfg: AiConfig, apiKey: string): Promise<string[
   const url = `${cfg.baseUrl.replace(/\/+$/, "")}/models`;
   let response;
   try {
-    response = await requestUrl({
-      url,
-      method: "GET",
-      headers: { Authorization: `Bearer ${apiKey.trim()}` },
-      throw: false,
-    });
+    // The same deadline `chat` uses. `requestUrl` takes no AbortSignal and applies
+    // no timeout of its own, so an endpoint that accepts the connection and never
+    // answers left this promise pending for the session -- and the settings button
+    // is renamed "Asking…" and disabled until it settles.
+    const timeoutMs = Math.max(5, cfg.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS) * 1000;
+    response = await withTimeout(
+      requestUrl({
+        url,
+        method: "GET",
+        headers: { Authorization: `Bearer ${apiKey.trim()}` },
+        throw: false,
+      }),
+      timeoutMs,
+      () =>
+        new AiError(
+          `The model list did not arrive within ${Math.round(timeoutMs / 1000)} s. ` +
+            "Check the base URL, or raise the timeout in settings."
+        )
+    );
   } catch (err) {
+    if (err instanceof AiError) throw err;
     throw new AiError(`Could not reach ${url}. (${String(err)})`);
   }
   if (response.status < 200 || response.status >= 300) {

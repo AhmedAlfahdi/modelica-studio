@@ -182,3 +182,40 @@ test("a sweep offers only parameters that can be overridden", () => {
   // the failure being fixed here.
   assert.deepEqual(sweepableParameters({ start: "1", startup: "2" }), ["startup"]);
 });
+
+test("two figures saved in the same minute do not collide", async () => {
+  // The name carries the model and the MINUTE, and `createBinary` refuses a path
+  // that already exists -- so a second save inside the minute reported "the figure
+  // could not be saved" and inserted no link. Comparing a plot with a sweep takes
+  // seconds, which is exactly when this happened.
+  const existing = new Set();
+  const created = [];
+  const app = {
+    workspace: { getActiveFile: () => ({ parent: { path: "Figures" } }) },
+    vault: {
+      getAbstractFileByPath: (p) => (existing.has(p) ? { path: p } : null),
+      createFolder: async () => {},
+      createBinary: async (p, bytes) => {
+        if (existing.has(p)) throw new Error("File already exists.");
+        existing.add(p);
+        created.push({ path: p, bytes: bytes.byteLength });
+        return { path: p };
+      },
+    },
+  };
+  const canvas = {
+    toBlob: (cb) => cb({ arrayBuffer: async () => new ArrayBuffer(8) }),
+  };
+
+  const first = await figure.saveCanvasImage(app, canvas, "Tank", "Figures");
+  const second = await figure.saveCanvasImage(app, canvas, "Tank", "Figures");
+  const third = await figure.saveCanvasImage(app, canvas, "Tank", "Figures");
+
+  assert.ok(first, "the first save worked");
+  assert.ok(second, "and so did the second, in the same minute");
+  assert.ok(third, "and the third");
+  assert.equal(new Set(created.map((c) => c.path)).size, 3, `three distinct paths: ${created.map((c) => c.path)}`);
+  assert.match(second, /-2\.png$/, "the second is the minute's second figure");
+  assert.match(third, /-3\.png$/, "and the third the third");
+  assert.match(first, /^Figures\/Tank-\d{4}-\d{2}-\d{2}-\d{4}\.png$/, `named as before: ${first}`);
+});

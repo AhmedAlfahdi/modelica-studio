@@ -2581,3 +2581,99 @@ test("the help window is tabbed, and every subject is still reachable", async ()
     assert.ok(length > 60, `panel ${i + 1} has content (${length} characters)`);
   }
 });
+
+test("the embed picker's keyboard, span and scroll hold together", async () => {
+  // Three reports about the same dialog, each about a control that lied:
+  //   - the arrow-key highlight scrolled out of view and STAYED there, because
+  //     `offsetTop` (measured from the modal) was compared with `scrollTop`
+  //     (measured from the list), so Enter inserted a row nobody could see;
+  //   - hovering a row overwrote the span the user had just typed, so reaching the
+  //     Height field -- which means crossing the list -- destroyed it;
+  //   - the rows announce `role="button"` and are tab stops, and Enter on one did
+  //     nothing at all.
+  const SETTLE = "for (let i = 0; i < 10; i++) { await Promise.resolve(); }";
+  const out = page(
+    `import { EmbedPickerModal, buildEmbedCandidates } from "${ROOT}/src/view/embed-insert";`,
+    "const cand = (label, group, detail, stopTime) => ({",
+    "  label, group, detail, stopTime, load: () => 'model ' + label + '\\nend ' + label + ';',",
+    "});",
+    "const many = buildEmbedCandidates({",
+    "  examples: Array.from({ length: 30 }, (_, i) => cand('M' + i, 'Examples', 'machine ' + i, i + 1)),",
+    "  saved: [],",
+    "});",
+    "let placed = null;",
+    "const editor = { getCursor: () => ({ line: 0, ch: 0 }), getLine: () => '', replaceSelection: (t) => { placed = t; } };",
+    "function mount() {",
+    "  placed = null;",
+    "  const modal = new EmbedPickerModal({ app: {}, candidates: many, editor });",
+    "  modal.open();",
+    "  const el = modal.contentEl;",
+    "  const rows = () => Array.from(el.querySelectorAll('.modelica-studio-embed-item'));",
+    "  const list = el.querySelector('.modelica-studio-embed-list');",
+    "  const search = el.querySelector('.modelica-studio-embed-search');",
+    "  const span = el.querySelectorAll('.modelica-studio-embed-number')[0];",
+    "  const key = (k) => search.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));",
+    "  return { modal, el, rows, list, search, span, key };",
+    "}",
+    "",
+    "const walk = mount();",
+    "// A short, scrollable list, or nothing can scroll and the test proves nothing.",
+    "walk.list.style.maxHeight = '60px';",
+    "walk.list.style.overflowY = 'auto';",
+    "const visible = (m) => {",
+    "  const sel = m.el.querySelector('.modelica-studio-embed-item.is-selected');",
+    "  if (!sel) return 'NONE';",
+    "  const r = sel.getBoundingClientRect();",
+    "  const b = m.list.getBoundingClientRect();",
+    "  const inside = r.top >= b.top - 0.5 && r.bottom <= b.bottom + 0.5;",
+    "  return (sel.querySelector('.modelica-studio-embed-item-label').textContent) + (inside ? '+' : '-');",
+    "};",
+    "for (let i = 0; i < 6; i++) walk.key('ArrowDown');",
+    "const downTrail = [visible(walk)];",
+    "for (let i = 0; i < 3; i++) { walk.key('ArrowUp'); downTrail.push(visible(walk)); }",
+    "window.test('the highlighted row is always inside the list', () => downTrail.join(' '));",
+    "",
+    "const typed = mount();",
+    "typed.list.style.maxHeight = '60px';",
+    "typed.list.style.overflowY = 'auto';",
+    "typed.span.value = '42';",
+    "typed.span.dispatchEvent(new Event('change'));",
+    "typed.rows()[4].dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }));",
+    "window.test('a typed span survives the pointer crossing the list',",
+    "  () => 'span=' + typed.span.value + ' highlighted=' +",
+    "    (typed.el.querySelector('.modelica-studio-embed-item.is-selected .modelica-studio-embed-item-label') || {}).textContent);",
+    "",
+    "const kb = mount();",
+    "const row = kb.rows()[1];",
+    "row.focus();",
+    "row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));",
+    SETTLE,
+    "window.test('Enter on a focused row places it', () =>",
+    "  (placed === null ? 'NOTHING PLACED' : placed));",
+    "",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  const d = passed(out);
+
+  assert.equal(
+    d["the highlighted row is always inside the list"],
+    "M6+ M5+ M4+ M3+",
+    "walking down and back up leaves the highlight where the user can see it"
+  );
+  assert.match(
+    d["a typed span survives the pointer crossing the list"],
+    /^span=42 /,
+    "and the span the user typed is still there"
+  );
+  assert.match(
+    d["a typed span survives the pointer crossing the list"],
+    /highlighted=M4/,
+    "while the hover still moves the selection"
+  );
+  assert.match(
+    d["Enter on a focused row places it"],
+    /model M1/,
+    `a row that says role=button can be activated from the keyboard: ${d["Enter on a focused row places it"]}`
+  );
+});

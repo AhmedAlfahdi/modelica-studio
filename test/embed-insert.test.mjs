@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { repoRoot, testTmpDir } from "./helpers/build.mjs";
+import { buildLibs, repoRoot, testTmpDir } from "./helpers/build.mjs";
 
 // The module imports `obsidian` for its dialog; stub it the way the embed's tests
 // do, so the pure parts can be exercised in plain Node.
@@ -45,10 +45,32 @@ fs.writeFileSync(
   [
     "export class Notice { constructor(m) { this.message = m; } }",
     "export class App {}",
+    "export function setIcon() {}",
+    "export class TFile { constructor(p) { this.path = p; } }",
+    "export class TFolder {}",
     "export class Setting { constructor(el) { this.el = el; } setName() { return this; } setDesc() { return this; } addText() { return this; } addToggle() { return this; } }",
     "export class Modal { constructor(app) { this.app = app; this.contentEl = { empty() {}, createEl() {}, createDiv() {}, addClass() {} }; this.titleEl = { setText() {} }; } open() {} close() {} }",
   ].join("\n")
 );
+// The block's own directive parser, so the field's range can be checked against
+// what a block actually honours. Built into the same staging directory, whose
+// `obsidian` stub the module needs.
+execFileSync(
+  "npx",
+  [
+    "esbuild",
+    "src/view/embed.ts",
+    "--bundle",
+    "--format=esm",
+    "--platform=node",
+    "--external:obsidian",
+    `--outdir=${staging}`,
+    "--log-level=error",
+  ],
+  { cwd: repoRoot, stdio: "pipe" }
+);
+const { parseDirective } = await import(path.join(staging, "embed.js"));
+
 const {
   embedBlockText,
   insertEmbedBlock,
@@ -56,6 +78,9 @@ const {
   filterCandidates,
   EMBED_DEFAULTS,
   EMBED_DEFAULT_HEIGHT,
+  EMBED_HEIGHT_MIN,
+  EMBED_HEIGHT_MAX,
+  clampEmbedHeight,
   EMBED_GROUPS,
 } = await import(path.join(staging, "embed-insert.js"));
 
@@ -214,4 +239,30 @@ test("the search ranks names first and still finds a model by its path", () => {
 
   assert.deepEqual(filterCandidates(list, "nothinglikethis"), [], "no match, no rows");
   assert.equal(filterCandidates(list, "e", 1).length, 1, "the limit is respected");
+});
+
+test("the height field writes a height the block will actually use", () => {
+  // The field accepted any finite value > 0, and `parseDirective` honours only
+  // 120..2000 and otherwise keeps its own default of 320. A block told `height=100`
+  // was written into the note and then rendered at 320: the dialog and the block
+  // disagreed, and nothing said so.
+  assert.equal(clampEmbedHeight(100), EMBED_HEIGHT_MIN, "below the range is raised to it");
+  assert.equal(clampEmbedHeight(3000), EMBED_HEIGHT_MAX, "above it is lowered");
+  assert.equal(clampEmbedHeight(420), 420, "and a value inside it is left alone");
+  assert.equal(clampEmbedHeight(420.6), 421, "rounded, since the directive is an integer");
+
+  for (const asked of [1, 100, 119, EMBED_HEIGHT_MIN, 320, 640, EMBED_HEIGHT_MAX, 4000]) {
+    const written = embedBlockText(SOURCE, { ...EMBED_DEFAULTS, height: clampEmbedHeight(asked) });
+    const { opts } = parseDirective(written.replace(/^```modelica\n/, "").replace(/\n```$/, ""));
+    const rendered = opts.height ?? EMBED_DEFAULT_HEIGHT;
+    assert.equal(
+      rendered,
+      clampEmbedHeight(asked),
+      `what the field would write for ${asked} is what the block reads back (${written.split("\n")[1]})`
+    );
+  }
+  // The default writes no directive at all, and reads back as the default.
+  const plain = embedBlockText(SOURCE, { ...EMBED_DEFAULTS, height: EMBED_DEFAULT_HEIGHT });
+  assert.doesNotMatch(plain, /height=/, "no directive for the default");
+  assert.equal(parseDirective(plain.replace(/^```modelica\n/, "").replace(/\n```$/, "")).opts.height, undefined);
 });

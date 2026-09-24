@@ -586,3 +586,76 @@ test("the studio shows which model is open, in the view and in the tab", () => {
   // appear is a label that a reader sees.
   assert.ok(!/label: "unsaved changes"/.test(state), "and no label still reads 'unsaved changes'");
 });
+
+test("Stop reaches the FIRST AI request, not only the second", () => {
+  // `aiAbort` was created inside `onProgress` for every phase except "asking" --
+  // and "asking" is the phase the loop reports first, so attempt one was sent with
+  // `undefined` as its signal. Stop set the cancel flag, which is only read BETWEEN
+  // attempts, so the button said "Stopping…" and nothing stopped until the provider
+  // returned on its own.
+  const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+
+  const start = /this\.aiBusy = true;[\s\S]*?try \{/.exec(view);
+  assert.ok(start, "the run's setup is there");
+  assert.match(
+    start[0],
+    /this\.aiAbort = new AbortController\(\)/,
+    "the controller is created before the first request"
+  );
+
+  // And nothing creates a second one mid-run, which would leave the first request's
+  // signal pointing at a controller nobody aborts.
+  const progress = /onProgress: \(event\) => \{[\s\S]*?\n        \},/.exec(view);
+  assert.ok(progress, "the progress handler is there");
+  assert.doesNotMatch(
+    progress[0],
+    /new AbortController\(\)/,
+    "the handler no longer replaces the controller per phase"
+  );
+
+  // The signal is what the request is given, and Stop aborts it.
+  assert.match(view, /chat\(cfg, messages, \(\) => this\.plugin\.aiKey\(\), this\.aiAbort\?\.signal\)/);
+  assert.match(view, /this\.aiAbort\?\.abort\(\)/, "Stop aborts the request in flight");
+});
+
+test("a silenced container does not silence the controls inside it", () => {
+  // `--no-tooltip` is a custom property, so it inherits. Obsidian shows a tooltip
+  // only when the computed value on the labelled element is not "true", so setting
+  // it on a toolbar GROUP removed the tooltip from every button inside -- and for
+  // those buttons `aria-label` is the only tooltip source.
+  const a11y = fs.readFileSync(path.join(repoRoot, "src/view/a11y.ts"), "utf8");
+  const css = fs.readFileSync(path.join(repoRoot, "styles.css"), "utf8");
+
+  assert.match(a11y, /--no-tooltip/, "the helper still suppresses the container's own label");
+  assert.match(a11y, /addClass\("modelica-studio-tooltip-host"\)/, "and marks the container");
+
+  const rule = /\.modelica-studio-tooltip-host \[aria-label\] \{([^}]*)\}/.exec(css);
+  assert.ok(rule, "styles.css gives the property back to the children");
+  assert.match(rule[1], /--no-tooltip:\s*initial/, "with the guaranteed-invalid value, which is not \"true\"");
+});
+
+test("a check and a run share the busy pane without clearing each other", () => {
+  // `setBusy` has no ownership: Simulate, Sweep and Check all mark the same results
+  // pane, and Check did not even set `this.busy`. Whichever finished first cleared
+  // the bar -- so pressing Check during a run removed the run's progress bar
+  // mid-compile, and the run's end reset a still-running Check's spinner.
+  const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+
+  const count = /private beginBusy\(\): void \{[\s\S]*?\n  \}/.exec(view);
+  assert.ok(count, "the owner count exists");
+  const release = /private endBusy\(\): void \{[\s\S]*?\n  \}/.exec(view);
+  assert.ok(release, "and its release");
+  assert.match(release[0], /this\.busyOwners === 0/, "the pane is cleared only by the LAST owner");
+
+  // Every operation that marks the pane takes a share, and releases it.
+  for (const fn of ["runSimulation", "runSweep", "checkModel"]) {
+    const body = new RegExp(`async ${fn}\\([\\s\\S]*?\\n  \\}`).exec(view);
+    assert.ok(body, `${fn} is present`);
+    assert.match(body[0], /this\.beginBusy\(\)/, `${fn} takes a share of the indicator`);
+    assert.match(body[0], /this\.endBusy\(\)/, `${fn} releases it`);
+  }
+
+  // A second Check is refused rather than overlapping the first.
+  assert.match(view, /if \(this\.checking\) \{/, "a check cannot start while one is running");
+  assert.match(view, /this\.checking = false;/, "and the flag is cleared when it ends");
+});

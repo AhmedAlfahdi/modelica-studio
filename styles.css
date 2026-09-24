@@ -2506,3 +2506,19 @@ body.modelica-studio-resizing * {
   color: var(--text-error, var(--text-normal));
   border-color: var(--text-error, var(--background-modifier-border));
 }
+
+/*
+ * Give the tooltip back to the controls inside a silenced container.
+ *
+ * `--no-tooltip` is a custom property, so it inherits: `noLabelTooltip` sets it on
+ * a group whose own `aria-label` exists only for a screen reader (Obsidian's
+ * tooltip handler is delegated on `[aria-label]`, so a labelled group raised its
+ * label whenever the pointer crossed anything inside it). The side effect was that
+ * every button in that group lost its tooltip too -- and for the toolbar buttons
+ * `aria-label` is the ONLY tooltip source. `initial` is the property's
+ * guaranteed-invalid value, so Obsidian's `=== "true"` check sees "" and shows the
+ * button's own tooltip again.
+ */
+.modelica-studio-tooltip-host [aria-label] {
+  --no-tooltip: initial;
+}

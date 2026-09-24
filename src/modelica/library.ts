@@ -191,6 +191,10 @@ export class LibraryIndex {
     for (const [qn, cls] of this.classes) {
       if (!qn.startsWith(prefix)) continue;
       if (isLibraryScaffolding(qn) || cls.isPartial) continue;
+      // An excluded library is not offered, so it must not keep a package alive
+      // either: `Modelica.Electrical` stayed in the palette after being excluded
+      // precisely because this test never asked.
+      if (this.isExcluded(qn)) continue;
       if (cls.kind !== "model" && cls.kind !== "block") continue;
       if (cls.icon.length > 0 || cls.componentIcons.length > 0) return true;
     }
@@ -1005,6 +1009,10 @@ export function buildPackageTree(index: LibraryIndex, root: string): TreeNode {
     // Skipped before the parent is created, so no `Icons` folder appears: these
     // classes are pictures to inherit, not components to browse.
     if (isLibraryScaffolding(name)) continue;
+    // The exclusion policy applies to the TREE as much as to search, which is what
+    // this module's own comment promises: an excluded library used to be listed
+    // here, expandable, with every class in it draggable onto the canvas.
+    if (index.isExcluded(name)) continue;
     const cls = index.get(name);
     if (!cls) continue;
     const parentFull = name.split(".").slice(0, -1).join(".");

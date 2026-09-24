@@ -348,8 +348,23 @@ export class OmcBackend implements SimulationBackend {
     ].join("\n");
   }
 
-  /** Build if needed, then run the model. Reuses the binary when possible. */
+  /**
+   * Build if needed, then run the model. Reuses the binary when possible.
+   *
+   * One run at a time PER MODEL. Everything a run writes is keyed by the model's
+   * name -- the work directory, the compiled binary and the result CSV -- so two
+   * surfaces running the same model at once used to compile into the same
+   * directory and run with the same `-r`, and whichever process finished last left
+   * its CSV for both readers. That happens without anything unusual: a note with
+   * the model embedded beside the studio, two blocks of one model with different
+   * parameter overrides, or a Sweep while a Simulate is still going. The second
+   * run therefore waits its turn, and each run writes its own result file.
+   */
   async simulate(opts: SimulateOptions): Promise<SimResult> {
+    return this.queued(opts.modelName, () => this.simulateOnce(opts));
+  }
+
+  private async simulateOnce(opts: SimulateOptions): Promise<SimResult> {
     const compiled = await this.compile(opts);
     if (!compiled.ok || !compiled.executable) {
       const msg =
@@ -359,7 +374,10 @@ export class OmcBackend implements SimulationBackend {
     }
 
     const started = Date.now();
-    const csvPath = path.join(compiled.workDir!, `${opts.modelName}_res.csv`);
+    // Per RUN, not per model: a second run of the same model must not overwrite the
+    // file the first one is still reading.
+    const runId = ++this.runCounter;
+    const csvPath = path.join(compiled.workDir!, `${opts.modelName}_${runId}_res.csv`);
 
     const runArgs = buildRunArgs(opts, csvPath);
     const { stdout, stderr } = await this.run(compiled.executable, runArgs, compiled.workDir!);
@@ -375,6 +393,13 @@ export class OmcBackend implements SimulationBackend {
     }
 
     const csv = fs.readFileSync(csvPath, "utf8");
+    // Read it, then take it away: one file per run would otherwise accumulate in
+    // the work directory for the life of the install.
+    try {
+      fs.unlinkSync(csvPath);
+    } catch {
+      /* a file we cannot remove is not a failed simulation */
+    }
     const { header, rows } = parseOmcCsv(csv);
 
     // An unrecognised solver name is not an error to OpenModelica: it warns,
@@ -392,6 +417,29 @@ export class OmcBackend implements SimulationBackend {
     if (unusable) throw new SimulationError(unusable, []);
     return result;
 
+  }
+
+  /** Serialises runs of one model; see `simulate`. */
+  private readonly running = new Map<string, Promise<unknown>>();
+  private runCounter = 0;
+
+  /**
+   * Run `fn` after every run already queued for this model has settled.
+   *
+   * The chain never rejects: a failed run is answered to its own caller, and the
+   * next one still gets its turn.
+   */
+  private queued<T>(modelName: string, fn: () => Promise<T>): Promise<T> {
+    const previous = this.running.get(modelName) ?? Promise.resolve();
+    const next = previous.then(fn, fn);
+    this.running.set(
+      modelName,
+      next.then(
+        () => undefined,
+        () => undefined
+      )
+    );
+    return next;
   }
 
   /** Force the next simulate() to recompile. */

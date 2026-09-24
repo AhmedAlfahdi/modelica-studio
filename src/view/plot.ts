@@ -220,6 +220,26 @@ export function visibleSeries(
  * legend allowance -- so the time under the crosshair disagreed with the axis it
  * was pointing at, and by more the narrower the pane.
  */
+/**
+ * The time range to draw, never degenerate.
+ *
+ * A zero-width window is possible and is not an error the compiler reports: with
+ * start >= stop OpenModelica returns a valid two-sample result whose time is
+ * [5, 5]. Dividing by that range made every coordinate non-finite, and the canvas
+ * silently drops non-finite paths and labels -- so the plot was blank, with no x
+ * ticks and no readout, while the status line reported "2 samples" as a success.
+ * Widening it by a hair keeps the one real point on screen and the axis honest
+ * about there being nothing either side of it.
+ */
+export function plotTimeRange(
+  result: SimResult,
+  view?: { xMin: number; xMax: number }
+): { xMin: number; xMax: number } {
+  const xMin = view?.xMin ?? result.time[0] ?? 0;
+  const rawMax = view?.xMax ?? result.time[result.time.length - 1] ?? 1;
+  return { xMin, xMax: rawMax > xMin ? rawMax : xMin + Math.max(1e-9, Math.abs(xMin) * 1e-6) };
+}
+
 export function layoutForResult(
   w: number,
   h: number,
@@ -229,8 +249,7 @@ export function layoutForResult(
   view?: { xMin: number; xMax: number }
 ): PlotLayout {
   const visible = visibleSeries(result.series, styles);
-  const xMin = view?.xMin ?? result.time[0] ?? 0;
-  const xMax = view?.xMax ?? result.time[result.time.length - 1] ?? 1;
+  const { xMin, xMax } = plotTimeRange(result, view);
   const plans = planAxes(
     visible.map((s) => {
       const [a, b] = seriesExtent(result.time, s, xMin, xMax);
@@ -259,7 +278,11 @@ export function timeAtPlotX(
   styles: Record<string, SeriesStyle> = {},
   view: { xMin: number; xMax: number }
 ): number | undefined {
-  const lay = layoutForResult(width, height, result, styles);
+  // `view` is passed through: the right margin is reserved from the zoomed window's
+  // own tick labels, so a layout computed for the FULL run is a few pixels wider
+  // than the one on screen -- and the time shown was not the time under the
+  // crosshair. Measured at ~13 px of drift on a two-axis result.
+  const lay = layoutForResult(width, height, result, styles, view);
   if (x < lay.left || x > lay.left + lay.width) return undefined;
   return view.xMin + ((x - lay.left) / lay.width) * (view.xMax - view.xMin);
 }

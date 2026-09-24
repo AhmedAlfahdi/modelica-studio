@@ -27,6 +27,20 @@ import { copyText } from "./clipboard";
 
 /** The height a block uses when the directive does not say. */
 export const EMBED_DEFAULT_HEIGHT = 320;
+/**
+ * The height range a block honours.
+ *
+ * `parseDirective` in `embed.ts` accepts 120..2000 and keeps its own default
+ * otherwise, so a value outside this range was written into the note and ignored:
+ * the dialog said 100, the block drew at 320.
+ */
+export const EMBED_HEIGHT_MIN = 120;
+export const EMBED_HEIGHT_MAX = 2000;
+
+/** A height the block will actually use. */
+export function clampEmbedHeight(n: number): number {
+  return Math.min(EMBED_HEIGHT_MAX, Math.max(EMBED_HEIGHT_MIN, Math.round(n)));
+}
 
 export interface EmbedBlockOptions {
   /** Seconds to run for. */
@@ -280,20 +294,33 @@ export class EmbedPickerModal extends Modal {
         this.stopInput = t.inputEl;
         t.onChange((v) => {
           const n = Number(v);
-          if (Number.isFinite(n) && n > 0) this.chosen.stopTime = n;
+          if (Number.isFinite(n) && n > 0) {
+            this.chosen.stopTime = n;
+            // Remembered, because the pointer crossing the list below fires
+            // `pointerenter` on each row, and that used to overwrite this.
+            this.spanTyped = true;
+          }
         });
       });
 
     new Setting(contentEl)
       .setName("Height")
-      .setDesc(`Pixels. ${EMBED_DEFAULT_HEIGHT} is the default, and the block's own field can change it later.`)
+      .setDesc(
+        `Pixels, ${EMBED_HEIGHT_MIN}–${EMBED_HEIGHT_MAX}. ${EMBED_DEFAULT_HEIGHT} is the ` +
+          "default, and the block's own field can change it later."
+      )
       .addText((t) => {
         t.inputEl.type = "number";
         t.inputEl.addClass("modelica-studio-embed-number");
         t.setValue(String(this.chosen.height));
         t.onChange((v) => {
           const n = Number(v);
-          if (Number.isFinite(n) && n > 0) this.chosen.height = Math.round(n);
+          // Clamped to the range the block's directive parser honours. Any other
+          // value was written into the note and then ignored on the way back in, so
+          // the dialog said 100 and the block drew at 320.
+          if (Number.isFinite(n) && n > 0) {
+            this.chosen.height = clampEmbedHeight(n);
+          }
         });
       });
 
@@ -368,6 +395,14 @@ export class EmbedPickerModal extends Modal {
       // pointer moves a different row beneath it, which highlights in turn, which
       // scrolls again. The row the pointer is on is by definition visible.
       item.addEventListener("pointerenter", () => this.select(i, false));
+      // `role="button"` and a tab stop, so Enter and Space have to work. They did
+      // nothing: the row was reachable by Tab and could not be activated.
+      item.addEventListener("keydown", (ev) => {
+        if (ev.key !== "Enter" && ev.key !== " ") return;
+        ev.preventDefault();
+        this.select(i);
+        void this.place(false);
+      });
     });
   }
 
@@ -405,19 +440,35 @@ export class EmbedPickerModal extends Modal {
     return Array.from(this.listEl.querySelectorAll<HTMLElement>(".modelica-studio-embed-item"));
   }
 
+  /** Set once the user edits the span field, so hovering cannot overwrite it. */
+  private spanTyped = false;
+
   private scrollRowIntoView(el: HTMLElement | undefined): void {
     const list = this.listEl;
     if (!list || !el) return;
-    const top = el.offsetTop;
-    const bottom = top + el.offsetHeight;
-    if (top < list.scrollTop) list.scrollTop = top;
-    else if (bottom > list.scrollTop + list.clientHeight) {
-      list.scrollTop = bottom - list.clientHeight;
-    }
+    // Measured against the LIST, not against `offsetTop`. `offsetTop` is relative
+    // to the offset parent -- Obsidian's positioned modal, which holds the title,
+    // the search box and the option rows above the list -- while `scrollTop` is
+    // measured from the list's own top edge. The ~80 px of chrome between them made
+    // the up-branch fire only once the row was already above the viewport, and then
+    // pin it there: the keyboard highlight vanished for every further press, and
+    // Enter inserted a row the user could not see.
+    const row = el.getBoundingClientRect();
+    const box = list.getBoundingClientRect();
+    if (row.top < box.top) list.scrollTop -= box.top - row.top;
+    else if (row.bottom > box.bottom) list.scrollTop += row.bottom - box.bottom;
   }
 
-  /** Point the span field at whatever is selected. */
+  /**
+   * Point the span field at whatever is selected.
+   *
+   * Not when the user has typed one: the field exists so that ONE note can run the
+   * model for a different span, and `pointerenter` fired on every row the pointer
+   * crossed -- so reaching the Height control (which means crossing the list)
+   * silently replaced what had just been typed with the hovered model's own span.
+   */
   private followSelection(): void {
+    if (this.spanTyped) return;
     const row = this.rows[this.selected];
     if (!row) return;
     this.chosen.stopTime = row.candidate.stopTime > 0 ? row.candidate.stopTime : EMBED_DEFAULTS.stopTime;
