@@ -49,7 +49,9 @@ app.whenReady().then(async () => {
     // this suite fails roughly once in ten full runs with a page error nobody can
     // locate from the text alone.
     if (level >= 2) {
-      const where = sourceId ? " (" + String(sourceId).replace(/^file:\/\//, "") + ":" + line + ")" : "";
+      // A plain string replace: this whole runner is generated from a template literal,
+      // and a regex here needs four backslashes to survive the trip.
+      const where = sourceId ? " (" + String(sourceId).split("file://").join("") + ":" + line + ")" : "";
       errors.push(String(message) + where);
     }
   });
