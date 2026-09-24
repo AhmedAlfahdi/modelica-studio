@@ -5,6 +5,38 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.12] — 2026-10-14
+
+### Fixed
+
+- **`Ctrl`/`Cmd`+`S` did not work in the studio.** Reported after 0.3.10 shipped it.
+  0.3.10 bound it with a capture-phase DOM listener on the view's root, which sounds
+  right and is not: Obsidian's own `editor:save-file` command claims Mod+S at the
+  **application** level and consumes the keystroke before any handler in the page sees
+  it. The listener never fired; pressing the key did nothing at all.
+
+  It is now registered in the **view's scope** (`Scope.register(["Mod"], "s", …)`), which
+  is the API for exactly this — a scope's bindings take precedence while its view is in
+  focus, and the handler returns `false` so the core command does not also run. Obsidian's
+  own editor owns the same key the same way. The DOM listener stays as the fallback for a
+  host where the page does see the key.
+
+  The wiring is now a free function, `wireSaveShortcut(view, root, save)`, because a view
+  needs a whole application to exist and the wiring is the part that was wrong: it is
+  tested by handing it a scope and an element.
+
+### Added (test infrastructure)
+
+- **The test stub has a faithful `Scope`, and the DOM harness awaits asynchronous tests.**
+  Both gaps are why this bug shipped:
+
+  - The stub had no `Scope`, so a view's keymap binding was invisible to the suite.
+    `Scope` now records its bindings and can `trigger` them the way the application does,
+    with `Mod` satisfied by either Ctrl or Meta.
+  - `window.test` was synchronous: an `async` test callback resolved to a Promise and was
+    recorded as **passing**, with the detail `[object Promise]` — an assertion that ran
+    after being scored. It now awaits each test, and the runner polls for `finish()`.
+
 ## [0.3.11] — 2026-10-14
 
 ### Fixed

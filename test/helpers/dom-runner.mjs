@@ -57,7 +57,12 @@ app.whenReady().then(async () => {
   });
   await win.loadFile(pagePath);
   // The page sets this when its tests have finished.
-  const results = await win.webContents.executeJavaScript("window.__done ? window.__results : null");
+  // Polled: the tests may be asynchronous, and finish() then lands after the load.
+  let results = null;
+  for (let i = 0; i < 120 && results === null; i++) {
+    results = await win.webContents.executeJavaScript("window.__done ? window.__results : null");
+    if (results === null) await new Promise((r) => setTimeout(r, 250));
+  }
   if (results === null) {
     console.log("RESULT " + JSON.stringify({ fatal: "tests did not finish", errors }));
   } else {
@@ -152,13 +157,24 @@ export function runInDom(entrySource, opts = {}) {
 export const DOM_PREAMBLE = `
 window.__results = [];
 window.__done = false;
+window.__pending = [];
 window.test = function (name, fn) {
-  try {
-    const detail = fn();
-    window.__results.push({ name, ok: true, detail: detail === undefined ? "" : String(detail) });
-  } catch (err) {
-    window.__results.push({ name, ok: false, error: String(err && err.message ? err.message : err) });
-  }
+  // Awaited. Until this was, an async test resolved to a Promise and was recorded as
+  // ok with the detail "[object Promise]" -- a passing test that asserted nothing, which
+  // is worse than a failing one.
+  const run = (async () => {
+    try {
+      const detail = await fn();
+      window.__results.push({ name, ok: true, detail: detail === undefined ? "" : String(detail) });
+    } catch (err) {
+      window.__results.push({ name, ok: false, error: String(err && err.message ? err.message : err) });
+    }
+  })();
+  window.__pending.push(run);
+  return run;
 };
-window.finish = function () { window.__done = true; };
+window.finish = async function () {
+  await Promise.all(window.__pending);
+  window.__done = true;
+};
 `;

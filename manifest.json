@@ -1,7 +1,7 @@
 {
   "id": "modelica-studio",
   "name": "Modelica Studio",
-  "version": "0.3.11",
+  "version": "0.3.12",
   "minAppVersion": "1.11.4",
   "description": "Model, simulate, and plot Modelica systems with a visual drag-and-drop schematic editor powered by OpenModelica.",
   "author": "Ahmed N. Alfahdi",

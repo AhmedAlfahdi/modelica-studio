@@ -12,6 +12,7 @@
 import {
   App,
   ItemView,
+  Scope,
   MarkdownView,
   Modal,
   Notice,
@@ -84,6 +85,53 @@ import { DEFAULT_TIMEOUT_SECONDS } from "../ai/prompts";
 import type { SimResult, SimSeries } from "../omc/backend";
 
 export const VIEW_TYPE_MODELICA = "modelica-studio-view";
+
+/**
+ * Bind Ctrl/Cmd+S to saving the model, two ways.
+ *
+ * Through a view SCOPE first: Obsidian's own `editor:save-file` command claims Mod+S at
+ * the application level and consumes the keystroke before anything in the page sees it,
+ * so a DOM listener alone does nothing — which is what shipped, and what a user found
+ * by pressing it. A scope is the API for this: its bindings take precedence while the
+ * view is in focus, which is how Obsidian's own editor owns the same key.
+ *
+ * The DOM listener stays as the fallback for a host where the page does see the key.
+ * Both paths call the same save, and a save that arrives twice is harmless because the
+ * second finds nothing to write.
+ *
+ * Exported and free-standing because the wiring is the part that was wrong: a view needs
+ * a whole application to exist, and this needs a scope and an element.
+ */
+export function wireSaveShortcut(
+  view: { scope?: unknown; app?: { scope?: unknown } },
+  root: HTMLElement,
+  save: () => void
+): void {
+  const apply = (): false => {
+    save();
+    return false;
+  };
+  try {
+    const ScopeClass = Scope as unknown as new (parent?: unknown) => {
+      register(modifiers: string[], key: string, func: () => false): unknown;
+    };
+    const scope = (view.scope as InstanceType<typeof ScopeClass> | undefined) ?? new ScopeClass(view.app?.scope);
+    view.scope = scope;
+    scope.register(["Mod"], "s", apply);
+  } catch {
+    // A host without scopes: the listener below is all there is.
+  }
+  root.addEventListener(
+    "keydown",
+    (ev) => {
+      if (!isSaveShortcut(ev)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      apply();
+    },
+    true
+  );
+}
 
 /**
  * Is this keystroke "save"?
@@ -282,22 +330,7 @@ export class ModelicaStudioView extends ItemView {
     root.empty();
     root.addClass("modelica-studio-root");
 
-    // Ctrl/Cmd+S saves the model, the way it saves a document everywhere else.
-    //
-    // Without it the keystroke reached Obsidian, which saved the active NOTE -- so a
-    // reader who had just arranged a diagram and pressed the reflex got a silent write
-    // to the wrong thing, and the model stayed unsaved. Capture phase, because the code
-    // pane is a CodeMirror instance and its handlers would otherwise see the key first.
-    root.addEventListener(
-      "keydown",
-      (ev) => {
-        if (!isSaveShortcut(ev)) return;
-        ev.preventDefault();
-        ev.stopPropagation();
-        void this.saveWithConflictCheck();
-      },
-      true
-    );
+    wireSaveShortcut(this, root, () => void this.saveWithConflictCheck());
 
     const header = root.createDiv({ cls: "modelica-studio-toolbar" });
     this.buildToolbar(header);

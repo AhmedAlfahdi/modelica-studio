@@ -507,10 +507,17 @@ test("Ctrl+S saves the model, and only with the modifier", () => {
     /root\.addEventListener\(\s*"keydown",[\s\S]{0,600}?true\s*\)/,
     "and it is bound in the capture phase, or CodeMirror sees the key first"
   );
+  // The wiring lives in `wireSaveShortcut`, and both call sites hand it the
+  // conflict-checked save: the toolbar button and this one.
   assert.match(
     view,
-    /ev\.preventDefault\(\);[\s\S]{0,80}?saveWithConflictCheck\(\)/,
+    /wireSaveShortcut\(this, root, \(\) => void this\.saveWithConflictCheck\(\)\)/,
     "which saves the model -- through the conflict check, like the toolbar button"
+  );
+  assert.match(
+    view,
+    /export function wireSaveShortcut\(/,
+    "the wiring is a function of its own, so it can be tested without an application"
   );
   // The Help window must list it, in both modes: a shortcut nobody can find is not one.
   const help = fs.readFileSync(path.join(repoRoot, "src/view/help-modal.ts"), "utf8");

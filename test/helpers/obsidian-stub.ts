@@ -520,7 +520,80 @@ export function requestUrl(): never {
   throw new Error("requestUrl is not available in tests");
 }
 
-export class ItemView {}
+/**
+ * A keymap scope, as Obsidian provides it to a view.
+ *
+ * Faithful enough to test what a view DOES with it: `register` records the binding, and
+ * `trigger` fires it the way the application would. It exists because its absence hid a
+ * real bug — Ctrl+S was bound with a DOM listener that Obsidian's own `editor:save-file`
+ * command swallowed before it arrived, and no test could see the difference because
+ * nothing in the suite could mount a view.
+ */
+export class Scope {
+  private handlers: Array<{ modifiers: string[] | null; key: string | null; func: (ev: unknown, ctx: unknown) => unknown }> = [];
+
+  constructor(public parent?: Scope) {}
+
+  register(modifiers: string[] | null, key: string | null, func: (ev: unknown, ctx: unknown) => unknown) {
+    const handler = { modifiers, key, func };
+    this.handlers.push(handler);
+    return handler;
+  }
+
+  unregister(handler: unknown) {
+    this.handlers = this.handlers.filter((h) => h !== handler);
+  }
+
+  /**
+   * Fire the handler bound to this combination, as the application would.
+   *
+   * `Mod` is translated the way Obsidian documents it — Meta on macOS, Ctrl elsewhere —
+   * because a binding registered as `["Mod"]` never matches a raw `["Ctrl"]` otherwise,
+   * and the test would report a working shortcut as broken.
+   */
+  trigger(modifiers: string[], key: string): unknown {
+    // Both sides are normalised: a binding registered as ["Mod"] never matches a raw
+    // ["Ctrl"], and translating only the caller's side silently reports a working
+    // shortcut as missing.
+    // A handler's modifiers must all be SATISFIED by the ones pressed. `Mod` is satisfied
+    // by either Ctrl or Meta -- the page has no `process.platform` to ask, and a stub
+    // that guesses wrong reports a working binding as missing.
+    const pressed = modifiers;
+    const satisfied = (list: string[]) =>
+      list.every((m) => (m === "Mod" ? pressed.includes("Ctrl") || pressed.includes("Meta") : pressed.includes(m)));
+    const handler = this.handlers.find((h) => (h.modifiers === null || satisfied(h.modifiers ?? [])) && (h.key === null || h.key === key));
+    if (!handler) return "no binding for " + modifiers.join("+") + "+" + key;
+    return handler.func({ key, ctrlKey: modifiers.includes("Ctrl"), metaKey: modifiers.includes("Meta") }, {});
+  }
+
+  /** Every binding registered here, for a test that wants to assert on them. */
+  bindings(): string[] {
+    return this.handlers.map((h) => (h.modifiers ?? []).join("+") + "+" + (h.key ?? "*"));
+  }
+}
+
+export class ItemView {
+  scope?: Scope;
+  contentEl: HTMLElement = document.createElement("div");
+  containerEl: HTMLElement = document.createElement("div");
+  private domEvents: Array<{ el: EventTarget; type: string; listener: EventListener; options?: unknown }> = [];
+
+  /** Obsidian's Component.registerDomEvent: attach now, detach when the view closes. */
+  registerDomEvent(el: EventTarget, type: string, listener: EventListener, options?: unknown) {
+    el.addEventListener(type, listener, options as AddEventListenerOptions);
+    this.domEvents.push({ el, type, listener, options });
+  }
+
+  registerEvent(): void {}
+  addChild(child: { onload?: () => void }): void {
+    child.onload?.();
+  }
+  async onOpen(): Promise<void> {}
+  async onClose(): Promise<void> {
+    for (const e of this.domEvents) e.el.removeEventListener(e.type, e.listener, e.options as EventListenerOptions);
+    this.domEvents = [];
+  }
+}
 export class WorkspaceLeaf {}
 export class Plugin {}
 export class App {}
