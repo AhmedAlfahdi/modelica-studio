@@ -328,3 +328,46 @@ test("a mode switch keeps the diagram's undo, and Ctrl+Enter runs it", async () 
   assert.equal(run.runs, 1, `the model ran: ${JSON.stringify(run)}`);
   assert.deepEqual(run.prevented, [true], "and the key was handled, not left to the browser");
 });
+
+test("the Examples menu shows which example is open, and loads what it shows", async () => {
+  // Reported as "I used the Examples menu and the change didn't take effect": the
+  // click had loaded the row NEXT to the one intended (two rows in that menu are
+  // called "Electrical" -- the group heading and the model under it), and with no
+  // marker in the list there was nothing on screen to say which model was loaded.
+  const out = await runInDom(
+    [
+      DOM_PREAMBLE,
+      SETUP,
+      "await view.onOpen();",
+      "loaded.length = 0;",
+      "window.test('the open example is marked, and a click loads its own row', async () => {",
+      "  view.plugin.model = { name: 'RLC', components: [], connections: [], equations: [], graphics: [] };",
+      "  const anchor = view.contentEl.createEl('button');",
+      "  view.showExamplePicker(anchor);",
+      "  await tick();",
+      "  const rows = [...view.contentEl.querySelectorAll('.modelica-studio-examples-item')];",
+      "  const marked = rows.filter((r) => r.classList.contains('is-current'))",
+      "    .map((r) => r.querySelector('.modelica-studio-examples-name').textContent);",
+      "  const aria = rows.filter((r) => r.getAttribute('aria-current') === 'true').length;",
+      "  // Whatever row is clicked, the model that loads is the one the row NAMES.",
+      "  const target = rows.find((r) => r.querySelector('.modelica-studio-examples-name').textContent === 'Electrical');",
+      "  const shown = target.querySelector('.modelica-studio-examples-name').textContent;",
+      "  target.dispatchEvent(new MouseEvent('click', { bubbles: true }));",
+      "  await tick();",
+      "  return JSON.stringify({ marked, aria, shown, loaded });",
+      "});",
+      "window.finish();",
+    ].join("\n")
+  );
+
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const state = JSON.parse(out.results[0].detail);
+
+  assert.deepEqual(state.marked, ["RLC"], `exactly the open example is marked: ${JSON.stringify(state)}`);
+  assert.equal(state.aria, 1, "and it says so to a screen reader");
+  assert.equal(state.shown, "Electrical", "the row clicked names the model");
+  assert.deepEqual(state.loaded, ["Electrical"], `and that is the model that loaded: ${JSON.stringify(state)}`);
+});

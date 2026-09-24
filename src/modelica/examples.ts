@@ -65,8 +65,8 @@ const RLC = `model RLC "Series RLC circuit: underdamped step response"
     annotation(Placement(transformation(extent={{-40,20},{-20,40}})));
   Modelica.Electrical.Analog.Basic.Inductor inductor(L=0.1)
     annotation(Placement(transformation(extent={{0,20},{20,40}})));
-  Modelica.Electrical.Analog.Basic.Capacitor capacitor(C=0.0001)
-    annotation(Placement(transformation(extent={{40,20},{60,40}})));
+  Modelica.Electrical.Analog.Basic.Capacitor capacitor(C=0.001)
+    annotation(Placement(transformation(extent={{20,20},{40,40}})));
   Modelica.Electrical.Analog.Basic.Ground ground
     annotation(Placement(transformation(extent={{40,-40},{60,-20}})));
 equation

@@ -2522,3 +2522,21 @@ body.modelica-studio-resizing * {
 .modelica-studio-tooltip-host [aria-label] {
   --no-tooltip: initial;
 }
+
+/*
+ * Which example is open, in the Examples menu.
+ *
+ * A click on the row beside the one you meant still loads a model and redraws the
+ * canvas -- so with no marker the menu gives no feedback about what it did, and the
+ * group heading and the row under it being called the same thing ("Electrical")
+ * makes the wrong row easy to hit. The accent bar says which model is loaded, and
+ * `(open)` says it in words.
+ */
+.modelica-studio-examples-item.is-current {
+  box-shadow: inset 2px 0 0 var(--interactive-accent);
+}
+.modelica-studio-examples-item.is-current .modelica-studio-examples-name::after {
+  content: " (open)";
+  color: var(--text-muted);
+  font-weight: 400;
+}

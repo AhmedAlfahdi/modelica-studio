@@ -4001,19 +4001,46 @@ export class ModelicaStudioView extends ItemView {
    */
   loadExample(name: string): void {
     const ex = findExample(name);
-    if (!ex) return;
+    if (!ex) {
+      // Named but not found is a bug of ours, not something to swallow.
+      this.plugin.diag(`example ${name}: not in the shipped set`, "error");
+      new Notice(`Modelica: there is no example called "${name}".`);
+      return;
+    }
     const t0 = performance.now();
-    void this.plugin.setModelFromSource(ex.source).then((m) => {
-      this.plugin.diag(`example ${name}: loaded in ${(performance.now() - t0).toFixed(0)} ms`);
-      if (!m) return;
-      // Adopt the example's natural time span. Done through the plugin so it
-      // replaces any span restored with the previous model rather than being
-      // ignored as one the user had chosen.
-      this.plugin.setStopTime(ex.stopTime, ex.name);
-      this.editor?.scheduleFit();
+    this.setStatus(`Loading ${ex.name}…`);
+    void this.plugin
+      .setModelFromSource(ex.source)
+      .then((m) => {
+        this.plugin.diag(`example ${name}: loaded in ${(performance.now() - t0).toFixed(0)} ms`);
+        if (!m) {
+          // The source parsed to nothing usable. Saying so beats leaving the
+          // previous model on screen as if the click had not registered.
+          this.plugin.diag(`example ${name}: the source produced no model`, "error");
+          new Notice(`Modelica: "${ex.name}" could not be read as a model.`, 8000);
+          this.setStatus(`Could not load ${ex.name}.`);
+          return;
+        }
+        // Adopt the example's natural time span. Done through the plugin so it
+        // replaces any span restored with the previous model rather than being
+        // ignored as one the user had chosen.
+        this.plugin.setStopTime(ex.stopTime, ex.name);
+        this.editor?.scheduleFit();
         this.renderInspector();
-      this.setStatus(`Loaded example: ${ex.name} — ${ex.description}`);
-    });
+        this.setStatus(`Loaded example: ${ex.name} — ${ex.description}`);
+      })
+      // A rejected load used to be INVISIBLE: the promise was neither awaited nor
+      // caught, so an error anywhere along it -- the library index, the parse, the
+      // flush that saves the outgoing model, the persist -- left the previous model
+      // on screen with no notice, no status line and nothing in the log. That is
+      // indistinguishable from a menu click that never registered, which is exactly
+      // how it was reported: "I used the Examples menu and the change didn't take".
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.plugin.diag(`example ${name}: could not load — ${msg}`, "error");
+        new Notice(`Modelica: "${ex.name}" could not be loaded — ${msg}`, 10000);
+        this.setStatus(`Could not load ${ex.name}.`);
+      });
   }
 
   /** Toolbar picker listing the built-in examples. */
@@ -4060,6 +4087,15 @@ export class ModelicaStudioView extends ItemView {
         const item = menu.createDiv({ cls: "modelica-studio-examples-item" });
         item.setAttribute("role", "menuitem");
         item.tabIndex = -1;
+        // Which example is OPEN, marked in the list. Without it a click that loads
+        // the row next to the one you meant looks like "nothing happened", because
+        // the canvas simply redraws a different model -- and two rows in this menu
+        // are easy to confuse: the group heading and the row under it are both
+        // called "Electrical".
+        if (ex.name === this.plugin.model.name) {
+          item.addClass("is-current");
+          item.setAttribute("aria-current", "true");
+        }
         items.push(item);
         item.createDiv({ cls: "modelica-studio-examples-name", text: ex.name });
         // The domain prefix is already the group heading.
