@@ -109,4 +109,4 @@ Every example note follows the same shape:
 
 That third section is the point. Anyone can produce a curve. These notes show a curve that was *predicted before it was plotted*, and they are re-checked by `test/audit.test.mjs` on every test run — so a value that drifts fails the build rather than quietly misleading you.
 
-Start with any example below, or read one end to end: **[Electrical — RC step response](electrical.md)** is the simplest complete case.
+Start with any example below, or read one end to end: **[Electrical — RC step response](01-Electrical/01-electrical.md)** is the simplest complete case.

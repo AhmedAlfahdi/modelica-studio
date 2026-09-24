@@ -51,7 +51,7 @@ understanding**.
 
 ## Worked example: three questions about a wing
 
-Take the **[AirfoilLift](airfoil-lift.md)** model. It sweeps the angle of attack
+Take the **[AirfoilLift](07-Aerospace/27-airfoil-lift.md)** model. It sweeps the angle of attack
 from -5 to 25 degrees over 20 seconds. Press Simulate and the plot answers three
 questions that a textbook presents as separate facts.
 
@@ -88,7 +88,7 @@ textbook cannot close.
 
 ## Worked example: a motion you can feel
 
-The second model, **[Phugoid](phugoid.md)**, is stranger and more convincing.
+The second model, **[Phugoid](07-Aerospace/28-phugoid.md)**, is stranger and more convincing.
 
 Nudge an aircraft 5 m/s faster than its trim speed and something counter-intuitive
 happens. It does not settle back. It pitches up, trades speed for height, slows,
@@ -142,10 +142,10 @@ found only because a number had to be predicted *before* it was plotted.
 
 Both models are live notes. Press **Simulate**, then change something:
 
-- In **[AirfoilLift](airfoil-lift.md)**: change `AR` from 7 to 4 and watch induced
+- In **[AirfoilLift](07-Aerospace/27-airfoil-lift.md)**: change `AR` from 7 to 4 and watch induced
   drag rise — the same wing, more drag, no change in the lift curve. Then change
   `S` and see the stall speed move.
-- In **[Phugoid](phugoid.md)**: change `V0` from 70 to 140 and see the period
+- In **[Phugoid](07-Aerospace/28-phugoid.md)**: change `V0` from 70 to 140 and see the period
   *double*. Then change the initial disturbance from 5 to 1 and confirm the
   period does **not** change — which is what "linear" means, and is much easier to
   believe once you have watched it happen.

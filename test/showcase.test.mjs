@@ -15,9 +15,11 @@ import path from "node:path";
 import { buildLibs, repoRoot } from "./helpers/build.mjs";
 
 const NOTES_DIR = path.join(repoRoot, "showcase", "notes");
+const { buildPlacement } = await import(path.join(repoRoot, "showcase", "placement.mjs"));
 const { EXAMPLES } = await import(
   path.join(buildLibs("showcase-ex", ["src/modelica/examples.ts"]), "examples.js")
 );
+const P = buildPlacement(EXAMPLES);
 
 /** Every `modelica` fence in a note, with its info line. */
 function fences(text) {
@@ -32,13 +34,19 @@ const NON_EXAMPLE_NOTES = ["00-modelica-intro.md", "01-learning-with-a-simulator
 
 test("every example has a showcase note, plus the introduction", () => {
   assert.ok(fs.existsSync(NOTES_DIR), "showcase/notes exists");
-  const files = fs
-    .readdirSync(NOTES_DIR)
-    .filter((f) => f.endsWith(".md") && f !== "README.md" && !NON_EXAMPLE_NOTES.includes(f));
+  // One note per example, at the path the shared placement says, plus the two guides and
+  // the index at the top level.
+  const placed = EXAMPLES.map((ex) => P.pathOf(ex.name));
+  const missing = placed.filter((rel) => !fs.existsSync(path.join(NOTES_DIR, rel)));
+  assert.deepEqual(missing, [], `${missing.length} examples have no note at their placed path`);
+  const inFolders = fs
+    .readdirSync(NOTES_DIR, { recursive: true })
+    .map(String)
+    .filter((f) => f.endsWith(".md") && f.includes("/"));
   assert.equal(
-    files.length,
+    inFolders.length,
     EXAMPLES.length,
-    `one note per example: ${files.length} notes for ${EXAMPLES.length} examples`
+    `one note per example: ${inFolders.length} notes in folders for ${EXAMPLES.length} examples`
   );
   for (const extra of NON_EXAMPLE_NOTES) {
     assert.ok(fs.existsSync(path.join(NOTES_DIR, extra)), `${extra} exists`);
@@ -57,16 +65,16 @@ test("the introduction explains Modelica and links into the examples", () => {
   }
   // It carries one runnable model, and links to the notes in both directions.
   assert.equal(fences(intro).length, 1, "one runnable model in the introduction");
-  assert.match(intro, /\]\(electrical\.md\)/, "it links to an example");
+  assert.match(intro, /\]\(01-Electrical\/01-electrical\.md\)/, "it links to an example");
   assert.match(intro, /\]\(README\.md\)/, "and to the index");
 
   // Every example links back, so a reader who lands anywhere can find it.
   for (const ex of EXAMPLES) {
-    const slug = ex.name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
-    const text = fs.readFileSync(path.join(NOTES_DIR, `${slug}.md`), "utf8");
+    // A note sits one folder down, so its way back is `../`.
+    const text = fs.readFileSync(path.join(NOTES_DIR, P.pathOf(ex.name)), "utf8");
     assert.match(
       text,
-      /\]\(00-modelica-intro\.md\)/,
+      /\]\(\.\.\/00-modelica-intro\.md\)/,
       `${ex.name} links back to the introduction`
     );
   }
@@ -78,9 +86,8 @@ test("the introduction explains Modelica and links into the examples", () => {
 
 test("each note embeds the example it documents, unchanged", () => {
   for (const ex of EXAMPLES) {
-    const slug = ex.name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
-    const file = path.join(NOTES_DIR, `${slug}.md`);
-    assert.ok(fs.existsSync(file), `${ex.name}: note ${slug}.md exists`);
+    const file = path.join(NOTES_DIR, P.pathOf(ex.name));
+    assert.ok(fs.existsSync(file), `${ex.name}: note ${P.pathOf(ex.name)} exists`);
     const text = fs.readFileSync(file, "utf8");
     const found = fences(text);
     assert.equal(found.length, 1, `${ex.name}: exactly one modelica block, found ${found.length}`);
@@ -119,8 +126,8 @@ test("every note has a plain-language explanation, not only mathematics", async 
     assert.ok(why.takeaway && why.takeaway.length > 80, `${ex.name}: draws a conclusion`);
 
     // And it must actually appear in the generated note.
-    const slug = ex.name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
-    const text = fs.readFileSync(path.join(NOTES_DIR, `${slug}.md`), "utf8");
+    const rel = P.pathOf(ex.name);
+    const text = fs.readFileSync(path.join(NOTES_DIR, rel), "utf8");
     assert.ok(text.includes("## What this shows"), `${ex.name}: the note carries it`);
     assert.ok(text.includes("### Reading the equations"), `${ex.name}: and explains the equations`);
   }
@@ -128,11 +135,53 @@ test("every note has a plain-language explanation, not only mathematics", async 
 
 test("each note states the derivation and the agreement", () => {
   for (const ex of EXAMPLES) {
-    const slug = ex.name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
-    const text = fs.readFileSync(path.join(NOTES_DIR, `${slug}.md`), "utf8");
+    const rel = P.pathOf(ex.name);
+    const text = fs.readFileSync(path.join(NOTES_DIR, rel), "utf8");
     assert.ok(text.includes("## The physics"), `${ex.name}: has a derivation section`);
     assert.ok(/\$\$[\s\S]+?\$\$/.test(text), `${ex.name}: states at least one equation`);
     assert.ok(text.includes("## Does the simulation agree?"), `${ex.name}: states the agreement`);
     assert.ok(/Expected \(independent\)/.test(text), `${ex.name}: distinguishes expected from measured`);
   }
+});
+
+test("the notes are numbered and grouped exactly as the picker lists them", () => {
+  // Asked for by a reader working through the examples: subfolders per domain, numbered
+  // so the folder tree reads in the same order as the studio's Examples picker. The
+  // picker groups by domain BEFORE it lists, so this is not the order of the flat
+  // EXAMPLES array -- numbering that array put 16, 17 and 27 inside 01-Electrical.
+  const numbers = P.ordered.map((ex) => P.numberOf(ex.name));
+  assert.deepEqual(
+    numbers,
+    EXAMPLES.length === 30 ? [...Array(30)].map((_, i) => String(i + 1).padStart(2, "0")) : numbers,
+    "the numbers run 01..30 in the picker's order, with no gaps and no repeats"
+  );
+
+  // One folder per domain, in the order the picker first meets them.
+  const folders = [...new Set(P.ordered.map((ex) => P.folderOf(ex.name)))];
+  assert.deepEqual(
+    folders,
+    P.domains.map((d, i) => `${String(i + 1).padStart(2, "0")}-${d.replace(/\s+/g, "-")}`),
+    "folders are numbered in the order the picker meets each domain"
+  );
+  for (const folder of folders) {
+    assert.doesNotMatch(folder, / /, "a folder name with a space breaks a Markdown link");
+  }
+
+  // Every note is inside the folder for its own domain, and each folder holds its own.
+  for (const ex of P.ordered) {
+    const folder = P.folderOf(ex.name);
+    assert.ok(
+      folder.slice(3) === P.domainOf(ex).replace(/\s+/g, "-"),
+      `${ex.name} is in ${folder}, which is not its domain`
+    );
+    assert.ok(
+      fs.existsSync(path.join(NOTES_DIR, P.pathOf(ex.name))),
+      `${ex.name} is at ${P.pathOf(ex.name)}`
+    );
+  }
+
+  // The index rows follow the same order as the folders.
+  const index = fs.readFileSync(path.join(NOTES_DIR, "README.md"), "utf8");
+  const rowOrder = [...index.matchAll(/^\| <span[^>]*>([^<]+)<\/span>/gm)].map((m) => m[1]);
+  assert.deepEqual(rowOrder, P.domains, "the index lists the domains in the picker's order");
 });

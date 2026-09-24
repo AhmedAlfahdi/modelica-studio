@@ -125,7 +125,7 @@ export const NOTES = {
   },
   DoublePendulum: {
     title: "Mechanical — double pendulum (chaotic)",
-    domain: "Mechanical",
+    domain: "Mechanics",
     equations: [
       "M_{11}\\ddot{\\theta}_1 + M_{12}\\ddot{\\theta}_2 + mLa_2\\sin(\\theta_1-\\theta_2)\\dot{\\theta}_2^2 + (m a_1 + mL)g\\cos\\theta_1 = 0",
       "M_{12}\\ddot{\\theta}_1 + M_{22}\\ddot{\\theta}_2 - mLa_2\\sin(\\theta_1-\\theta_2)\\dot{\\theta}_1^2 + m g a_2\\cos\\theta_2 = 0",
@@ -243,7 +243,7 @@ export const NOTES = {
   },
   StateMachine: {
     title: "Discrete — a two-state machine on timers",
-    domain: "Discrete",
+    domain: "State machine",
     equations: [
       "\\text{initial} \\xrightarrow{1\\,\\text{s}} \\text{running} \\xrightarrow{2\\,\\text{s}} \\text{stopped} \\xrightarrow{1\\,\\text{s}} \\text{initial}",
       "\\text{period} = 1 + 2 + 1 = 4\\ \\text{s}",

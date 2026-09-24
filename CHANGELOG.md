@@ -5,6 +5,48 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.14] — 2026-10-14
+
+### Changed
+
+- **The worked-example notes are grouped into a folder per domain and numbered in the
+  order the studio's Examples picker lists them.** Asked for by a reader working through
+  them: the picker groups by domain *before* it lists, so the numbers follow that order
+  and not the flat array's — numbering the array put `16`, `17` and `27` inside
+  `01-Electrical`, which reads as nonsense beside the list it is meant to match.
+
+  ```
+  showcase/notes/
+    00-modelica-intro.md            01-Electrical/01-electrical.md … 08-half-wave-rectifier.md
+    01-learning-with-a-simulator.md 02-Mechanical/09-mass-spring.md  … 15-gear-train.md
+    README.md                       03-Fluid/16-fluid-pipe.md        … 21-pipe-friction.md
+                                    04-Thermal/22-thermal.md         … 24-heat-exchanger.md
+                                    05-State-machine/25-state-machine.md
+                                    06-Mechanics/26-double-pendulum.md
+                                    07-Aerospace/27-airfoil-lift.md  · 28-phugoid.md
+                                    08-Control/29-control-loop.md
+                                    09-Multiphysics/30-resistor-self-heating.md
+  ```
+
+  Numbers run **across** the folders rather than restarting, so a folder listing and the
+  picker read in the same order, and a note's number says where it sits in the whole set.
+  Folder names carry no spaces, because a Markdown link destination with one is not a link
+  unless it is wrapped or percent-encoded — the index had `05-State machine/25-….md`.
+
+  Two labels disagreed with the picker and were corrected: `StateMachine` said *Discrete*
+  where the picker groups it under *State machine*, and `DoublePendulum` said *Mechanical*
+  where the picker says *Mechanics*. The index grouped by the note's own label, so it
+  listed the double pendulum inside the Mechanical row.
+
+  The layout now has **one definition** — `showcase/placement.mjs`, a pure function of the
+  examples — used by the generator that writes the notes and by the four tests that read
+  them. A layout computed in two places is a layout that disagrees with itself, and the
+  tests would have been reduced to guessing paths. A new test holds the arrangement to the
+  picker: numbers `01..30` in its order with no gaps, one folder per domain in the order it
+  meets them, every note inside its own domain's folder, and the index rows in that order.
+  Falsified by numbering the flat array instead: *"the numbers run 01..30 in the picker's
+  order"* fails.
+
 ## [0.3.13] — 2026-10-14
 
 ### Added

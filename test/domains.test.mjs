@@ -160,7 +160,7 @@ test("the mapping reads the vocabulary that is already there", () => {
   });
 });
 
-test("the palette and the examples actually use it", () => {
+test("the palette and the examples actually use it", async () => {
   // A mapping nothing applies is not a colour code.
   const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
   assert.match(
@@ -183,9 +183,15 @@ test("the palette and the examples actually use it", () => {
     "a note's Domain line is coloured"
   );
 
-  // Really rendered, not just present in the source.
+  // Really rendered, not just present in the source. The path comes from the shared
+  // placement: the notes are grouped into a folder per domain, so a literal path here is
+  // a test that breaks the next time a note moves.
+  const { buildPlacement } = await import(path.join(repoRoot, "showcase", "placement.mjs"));
+  const { EXAMPLES } = await import(
+    path.join(buildLibs("domains-ex", ["src/modelica/examples.ts"]), "examples.js")
+  );
   const note = fs.readFileSync(
-    path.join(repoRoot, "showcase/notes/resistor-self-heating.md"),
+    path.join(repoRoot, "showcase", "notes", buildPlacement(EXAMPLES).pathOf("ResistorSelfHeating")),
     "utf8"
   );
   assert.match(

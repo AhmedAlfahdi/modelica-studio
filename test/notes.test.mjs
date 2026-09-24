@@ -213,7 +213,14 @@ test("the two copies of the notes are the same notes", () => {
   // the repaired mathematics and the other still had `rac{<newline>ho v^2}{2}`.
   const a = path.join(repoRoot, "showcase", "notes");
   const b = path.join(repoRoot, "examples", "vault", "showcase");
-  const list = (dir) => fs.readdirSync(dir).filter((f) => f.endsWith(".md")).sort();
+  // Recursive: the notes are grouped into a folder per domain, so a top-level listing is
+  // empty and the comparison would pass while comparing nothing.
+  const list = (dir) =>
+    fs
+      .readdirSync(dir, { recursive: true })
+      .map(String)
+      .filter((f) => f.endsWith(".md"))
+      .sort();
   assert.deepEqual(list(a), list(b), "the same file names in both trees");
   const differ = list(a).filter(
     (f) => fs.readFileSync(path.join(a, f), "utf8") !== fs.readFileSync(path.join(b, f), "utf8")

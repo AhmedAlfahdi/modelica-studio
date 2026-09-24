@@ -21,10 +21,15 @@ const { domainOfLabel } = await import(
   path.join(buildLibs("showcase-dom", ["src/render/domains.ts"]), "domains.js")
 );
 
+const P = buildPlacement(EXAMPLES);
+const { pathOf, domainOf } = P;
+
 const outDir = process.argv[2] ?? path.join(import.meta.dirname, "notes");
 fs.mkdirSync(outDir, { recursive: true });
 
-const slug = (s) => s.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
+import { buildPlacement } from "./placement.mjs";
+
+
 
 /** A markdown table of expected-versus-measured rows. */
 function table(rows) {
@@ -44,7 +49,7 @@ function table(rows) {
 > A short tour of what Modelica is, how the plugin runs it, and how to read the
 > worked examples that follow.
 
-**Next:** [Electrical — RC step response](electrical.md) · **All examples:** [index](README.md)
+**Next:** [01 · Electrical](01-Electrical/01-electrical.md) · **All examples:** [index](README.md)
 
 ---
 
@@ -63,7 +68,7 @@ ${live.source.trim()}
 \`\`\`
 
 The derivation and the checked numbers for it are in
-**[Electrical — RC step response](electrical.md)**.
+**[Electrical — RC step response](01-Electrical/01-electrical.md)**.
 `;
   fs.writeFileSync(path.join(outDir, "00-modelica-intro.md"), intro);
 }
@@ -120,7 +125,7 @@ for (const ex of EXAMPLES) {
 
 **Domain:** <span class="modelica-studio-domain" data-domain="${domainOfLabel(note.domain)}">${note.domain}</span> · **Simulated span:** ${ex.stopTime} s · **Example:** \`${ex.name}\`
 
-*New to Modelica? Read [Modelica in ten minutes](00-modelica-intro.md) first.*
+*New to Modelica? Read [Modelica in ten minutes](../00-modelica-intro.md) first.*
 
 ---
 
@@ -168,14 +173,18 @@ node --test test/audit.test.mjs
 \`\`\`
 `;
 
-  fs.writeFileSync(path.join(outDir, `${slug(ex.name)}.md`), body);
+  fs.mkdirSync(path.join(outDir, P.folderOf(ex.name)), { recursive: true });
+  fs.writeFileSync(path.join(outDir, P.pathOf(ex.name)), body);
   count++;
 }
 
 // An index so the set can be read in order.
 const byDomain = new Map();
 for (const ex of EXAMPLES) {
-  const d = NOTES[ex.name].domain;
+  // The same rule the picker and the folders use. Taking the label from the note's own
+  // front matter let it disagree: DoublePendulum's note said "Mechanical" while the
+  // picker grouped it under "Mechanics", and the index then listed it inside the wrong row.
+  const d = domainOf(ex);
   if (!byDomain.has(d)) byDomain.set(d, []);
   byDomain.get(d).push(ex);
 }
@@ -198,11 +207,14 @@ is, how a model becomes a result, and how to read the notes.
 a worked demonstration of using this to learn something new, with two aerospace
 models.
 
+Notes are grouped into a folder per domain and numbered in the order the studio's
+**Examples** picker lists them, so the two read the same way.
+
 | Domain | Examples |
 |---|---|
 `;
 for (const [domain, list] of byDomain) {
-  const links = list.map((e) => `[${e.name}](${slug(e.name)}.md)`).join(", ");
+  const links = list.map((e) => `[${P.numberOf(e.name)} · ${e.name}](${pathOf(e.name)})`).join(" · ");
   // The domain name carries its colour here too, so the index is a legend for the
   // palette rather than a plain list.
   const dom = `<span class="modelica-studio-domain" data-domain="${domainOfLabel(domain)}">${domain}</span>`;

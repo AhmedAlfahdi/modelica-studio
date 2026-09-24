@@ -1,6 +1,6 @@
 {
   "name": "modelica-studio",
-  "version": "0.3.13",
+  "version": "0.3.14",
   "description": "Obsidian plugin for visual Modelica modeling and simulation. Beta.",
   "main": "main.js",
   "type": "module",

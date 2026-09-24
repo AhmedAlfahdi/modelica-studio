@@ -17,16 +17,20 @@ is, how a model becomes a result, and how to read the notes.
 a worked demonstration of using this to learn something new, with two aerospace
 models.
 
+Notes are grouped into a folder per domain and numbered in the order the studio's
+**Examples** picker lists them, so the two read the same way.
+
 | Domain | Examples |
 |---|---|
-| <span class="modelica-studio-domain" data-domain="electrical">Electrical</span> | [Electrical](electrical.md), [RLC](rlc.md), [Rectifier](rectifier.md), [SineAC](sine-ac.md), [BuckConverter](buck-converter.md), [BatteryDischarge](battery-discharge.md), [DCMotor](dcmotor.md), [HalfWaveRectifier](half-wave-rectifier.md) |
-| <span class="modelica-studio-domain" data-domain="mechanical">Mechanical</span> | [MassSpring](mass-spring.md), [RotationalPendulum](rotational-pendulum.md), [MassSpringDamper](mass-spring-damper.md), [DoublePendulum](double-pendulum.md), [DampedOscillator](damped-oscillator.md), [ForcedOscillator](forced-oscillator.md), [DampedBounce](damped-bounce.md), [GearTrain](gear-train.md) |
-| <span class="modelica-studio-domain" data-domain="fluid">Fluid</span> | [FluidPipe](fluid-pipe.md), [FluidReservoir](fluid-reservoir.md), [FluidLoop](fluid-loop.md), [TankOrifice](tank-orifice.md), [NonlinearOrifice](nonlinear-orifice.md), [PipeFriction](pipe-friction.md) |
-| <span class="modelica-studio-domain" data-domain="thermal">Thermal</span> | [Thermal](thermal.md), [HeatConduction](heat-conduction.md), [HeatExchanger](heat-exchanger.md) |
-| <span class="modelica-studio-domain" data-domain="discrete">Discrete</span> | [StateMachine](state-machine.md) |
-| <span class="modelica-studio-domain" data-domain="aerospace">Aerospace</span> | [AirfoilLift](airfoil-lift.md), [Phugoid](phugoid.md) |
-| <span class="modelica-studio-domain" data-domain="blocks">Control</span> | [ControlLoop](control-loop.md) |
-| <span class="modelica-studio-domain" data-domain="multiphysics">Multiphysics</span> | [ResistorSelfHeating](resistor-self-heating.md) |
+| <span class="modelica-studio-domain" data-domain="electrical">Electrical</span> | [01 · Electrical](01-Electrical/01-electrical.md) · [02 · RLC](01-Electrical/02-rlc.md) · [03 · Rectifier](01-Electrical/03-rectifier.md) · [04 · SineAC](01-Electrical/04-sine-ac.md) · [05 · BuckConverter](01-Electrical/05-buck-converter.md) · [06 · BatteryDischarge](01-Electrical/06-battery-discharge.md) · [07 · DCMotor](01-Electrical/07-dcmotor.md) · [08 · HalfWaveRectifier](01-Electrical/08-half-wave-rectifier.md) |
+| <span class="modelica-studio-domain" data-domain="mechanical">Mechanical</span> | [09 · MassSpring](02-Mechanical/09-mass-spring.md) · [10 · RotationalPendulum](02-Mechanical/10-rotational-pendulum.md) · [11 · MassSpringDamper](02-Mechanical/11-mass-spring-damper.md) · [12 · DampedOscillator](02-Mechanical/12-damped-oscillator.md) · [13 · ForcedOscillator](02-Mechanical/13-forced-oscillator.md) · [14 · DampedBounce](02-Mechanical/14-damped-bounce.md) · [15 · GearTrain](02-Mechanical/15-gear-train.md) |
+| <span class="modelica-studio-domain" data-domain="fluid">Fluid</span> | [16 · FluidPipe](03-Fluid/16-fluid-pipe.md) · [17 · FluidReservoir](03-Fluid/17-fluid-reservoir.md) · [18 · FluidLoop](03-Fluid/18-fluid-loop.md) · [19 · TankOrifice](03-Fluid/19-tank-orifice.md) · [20 · NonlinearOrifice](03-Fluid/20-nonlinear-orifice.md) · [21 · PipeFriction](03-Fluid/21-pipe-friction.md) |
+| <span class="modelica-studio-domain" data-domain="thermal">Thermal</span> | [22 · Thermal](04-Thermal/22-thermal.md) · [23 · HeatConduction](04-Thermal/23-heat-conduction.md) · [24 · HeatExchanger](04-Thermal/24-heat-exchanger.md) |
+| <span class="modelica-studio-domain" data-domain="other">State machine</span> | [25 · StateMachine](05-State-machine/25-state-machine.md) |
+| <span class="modelica-studio-domain" data-domain="other">Mechanics</span> | [26 · DoublePendulum](06-Mechanics/26-double-pendulum.md) |
+| <span class="modelica-studio-domain" data-domain="aerospace">Aerospace</span> | [27 · AirfoilLift](07-Aerospace/27-airfoil-lift.md) · [28 · Phugoid](07-Aerospace/28-phugoid.md) |
+| <span class="modelica-studio-domain" data-domain="blocks">Control</span> | [29 · ControlLoop](08-Control/29-control-loop.md) |
+| <span class="modelica-studio-domain" data-domain="multiphysics">Multiphysics</span> | [30 · ResistorSelfHeating](09-Multiphysics/30-resistor-self-heating.md) |
 
 ---
 
