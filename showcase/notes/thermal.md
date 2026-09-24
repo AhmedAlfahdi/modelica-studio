@@ -68,8 +68,10 @@ a stale number here fails the suite rather than misleading a reader.
 | Quantity | Expected (independent) | Simulated |
 |---|---|---|
 | time constant C/G | `500 s` | `500 s` |
-| initial heat flow G·ΔT | `113.70 W` | `113.70 W` |
-| body.T at t = 1000 s | `300.93 K` | `300.844 K` |
+| body.T at t = 500 s (one tau) | `314.064 K` | `314.064 K` |
+| body.T at t = 1000 s (two tau) | `300.843 K` | `300.844 K` |
+| body.T at t = 2000 s (four tau) | `294.191 K` | `294.191 K` |
+| heat flow at t = 0, G (T0 - Tamb) | `113.70 W` | `113.70 W` |
 
 ---
 

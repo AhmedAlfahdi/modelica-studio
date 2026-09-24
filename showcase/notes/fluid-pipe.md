@@ -78,9 +78,10 @@ a stale number here fails the suite rather than misleading a reader.
 
 | Quantity | Expected (independent) | Simulated |
 |---|---|---|
-| flow in equals flow out | `ṁ_a = −ṁ_b` | `exact` |
+| flow in equals flow out | `m_a = -m_b` | `exact` |
 | Reynolds number at 1 kg/s | `42 441 (turbulent)` | `42 441` |
-| Δp at 1 kg/s | `≈810 ± 40 Pa` | `correlation-limited` |
+| dp at 1 kg/s: rho g h + Colebrook friction | `6501.4 Pa` | `6499.6 Pa` |
+| dp at 0.5 kg/s | `5340.6 Pa` | `5338.9 Pa` |
 
 ---
 

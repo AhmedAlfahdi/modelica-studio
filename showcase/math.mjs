@@ -51,10 +51,12 @@ export const NOTES = {
     ],
     insight:
       "MSL's `Diode` is a Shockley model: the forward drop is **logarithmic and current-dependent**, with no knee voltage. The capacitor charges to the peak less that small drop during conduction, then discharges through the load with τ = 0.1 s — so by 20 ms it has fallen to about 23% of its peak, which is the shape you see.",
+
     checks: [
-      ["capacitor.v at t = 5 ms (charging)", "9.54 V", "9.5398 V"],
+      ["capacitor peak vs Vs - Vt ln(v/(R Ids) + 1)", "9.54136 V", "9.54057 V"],
       ["capacitor.v at t = 10 ms", "6.14 V", "6.1352 V"],
-      ["discharge τ = R·C", "0.1 s", "0.1 s"],
+      ["discharge over 10 ms (tau = R C = 10 ms)", "e^-1 = 0.367879", "0.367868"],
+      ["ripple period", "20 ms", "20 ms"],
     ],
   },
   SineAC: {
@@ -147,10 +149,12 @@ export const NOTES = {
     ],
     insight:
       "`StaticPipe` is massless with steady-state momentum dynamics: it evaluates Δp as a function of flow, not the other way round. The friction factor is correlation-limited, so Δp carries a few percent of genuine uncertainty — it is the weakest number in the whole example set, which is why the check below is a mass balance rather than a friction value.",
+
     checks: [
-      ["flow in equals flow out", "ṁ_a = −ṁ_b", "exact"],
+      ["flow in equals flow out", "m_a = -m_b", "exact"],
       ["Reynolds number at 1 kg/s", "42 441 (turbulent)", "42 441"],
-      ["Δp at 1 kg/s", "≈810 ± 40 Pa", "correlation-limited"],
+      ["dp at 1 kg/s: rho g h + Colebrook friction", "6501.4 Pa", "6499.6 Pa"],
+      ["dp at 0.5 kg/s", "5340.6 Pa", "5338.9 Pa"],
     ],
   },
   FluidReservoir: {
@@ -196,10 +200,13 @@ export const NOTES = {
     ],
     insight:
       "A single capacitor against a **fixed** temperature gives one clean exponential — unlike two capacitors sharing a conductor, where the equilibrium is an energy-weighted mean. Newton's law of cooling is itself a linearisation; it holds when radiation and convection coefficients are roughly constant.",
+
     checks: [
       ["time constant C/G", "500 s", "500 s"],
-      ["initial heat flow G·ΔT", "113.70 W", "113.70 W"],
-      ["body.T at t = 1000 s", "300.93 K", "300.844 K"],
+      ["body.T at t = 500 s (one tau)", "314.064 K", "314.064 K"],
+      ["body.T at t = 1000 s (two tau)", "300.843 K", "300.844 K"],
+      ["body.T at t = 2000 s (four tau)", "294.191 K", "294.191 K"],
+      ["heat flow at t = 0, G (T0 - Tamb)", "113.70 W", "113.70 W"],
     ],
   },
   HeatConduction: {
@@ -243,11 +250,13 @@ export const NOTES = {
     ],
     insight:
       "This is the one example with no differential equations at all. `StateGraph` steps are discrete states with Boolean `active` outputs, and transitions fire on `waitTime`. The whole behaviour is a timing table, so the check is a truth table rather than a numeric tolerance.",
+
     checks: [
       ["running.active at t = 0.5 s", "0", "0"],
       ["running.active at t = 2 s", "1", "1"],
       ["stopped.active at t = 4 s", "1", "1"],
       ["running.active at t = 6 s (next cycle)", "1", "1"],
+      ["transition instants (timers 1 s, 2 s, 1 s)", "1 / 3 / 4 s", "exact"],
     ],
   },
   BuckConverter: {

@@ -48,7 +48,7 @@ releases and updates it for you. The plugin is pre-1.0, so the version numbers a
    Settings → Community plugins.
 
 To pin a version instead of tracking the latest, use BRAT's **frozen** option and
-name the release, for example `0.3.12`.
+name the release, for example `0.3.13`.
 
 BRAT reports a mismatch if a release's tag, its name and the version inside the
 released `manifest.json` disagree. They are kept identical here on purpose, so an
@@ -73,7 +73,7 @@ To try it without your own vault, `examples/vault/` is a ready-made one — see
 npm install
 npm run build          # typecheck, then bundle to main.js
 npm run dev            # rebuild on change
-npm test               # 694 tests, including a numerical audit of the examples
+npm test               # 695 tests, including a numerical audit of the examples
 ```
 
 `npm test` runs the real OpenModelica compiler, so it needs `omc` on your PATH and
@@ -244,12 +244,10 @@ the cursor, which turns "this valve opens a little later" into a number.
   have it written into the editor, or ask for a compile error to be fixed. See
   [AI assistance](#ai-assistance).
 - **30 worked examples** across electrical, mechanical, fluid, thermal, aerospace,
-  control and discrete domains, each with a derivation and the live model. **26 of them
-  also carry a table comparing an independent calculation against the simulation**, and
-  those tables are re-checked against a real OpenModelica run by `test/audit.test.mjs` on
-  every test run — so a stale number fails the suite rather than misleading a reader.
-  `Rectifier`, `FluidPipe`, `Thermal` and `StateMachine` have no such table yet; their
-  notes say what to look for instead of quoting a number nobody has checked.
+  control and discrete domains, each with a derivation, the live model, and a table
+  comparing an independent calculation against the simulation. Every table is re-checked
+  against a real OpenModelica run by `test/audit.test.mjs` on every test run, so a stale
+  number fails the suite rather than misleading a reader.
 - **A record of what went wrong.**
   [Testing findings](docs/testing-findings.md) lists every expectation that failed,
   which side was wrong, and the five models dropped for being unverifiable.

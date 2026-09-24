@@ -5,6 +5,42 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [0.3.13] — 2026-10-14
+
+### Added
+
+- **All 30 examples are now verified.** `Rectifier`, `FluidPipe`, `Thermal` and
+  `StateMachine` had no coverage in the numerical audit, and their notes carried three
+  numbers that were simply wrong. Eighteen new checks, each derived independently of the
+  simulation:
+
+  | example | checked against | expected | simulated |
+  |---|---|---|---|
+  | `Thermal` | `C dT/dt = −G(T − T_amb)`, so `T(t) = T_amb + 56.85 e^{−t/τ}`, `τ = C/G = 500 s` | 314.064 K at t = τ | 314.064 K |
+  | | at four time constants | 294.191 K | 294.191 K |
+  | | heat flow at t = 0, `G(T₀ − T_amb)` | 113.700 W | 113.700 W |
+  | `Rectifier` | the capacitor peak is the source peak minus the Shockley drop, `V_t ln(v/(R I_s) + 1)` | 9.54136 V | 9.54057 V |
+  | | discharge between peaks over 10 ms, `e^{−Δt/RC}` with `RC = 10 ms` | 0.367879 | 0.367868 |
+  | | the ripple repeats at the source's period | 20 ms | 20 ms |
+  | `FluidPipe` | Darcy-Weisbach with Colebrook's `f` plus `ρgh` over the 0.5 m rise | 6501.4 Pa | 6499.6 Pa |
+  | | the same at half flow | 5340.6 Pa | 5338.9 Pa |
+  | | mass in equals mass out, and the ramp is the flow | exact | exact |
+  | `StateMachine` | three timers in a ring; transitions are events, so they land on the timer | 1 / 3 / 4 s | exact |
+
+  The audit now runs **115 checks over all 30 examples**.
+
+### Fixed
+
+- **Three wrong numbers in the four notes**, found while deriving the checks: the
+  Rectifier's discharge time constant said 0.1 s (`R·C` is 10 ms), the Thermal note gave
+  300.93 K at t = 1000 s (the closed form is 300.843 K), and the FluidPipe note predicted
+  a pressure drop of ≈810 Pa where the model's is 6500 Pa — it had left out the 0.5 m of
+  elevation, which is three quarters of the total.
+
+- The README said "a numerical audit of every example" while four had none. It now says
+  it because it is true, and the test that holds the claim to the audit accepts either
+  form — a count, or "every" — failing if a single example loses its coverage.
+
 ## [0.3.12] — 2026-10-14
 
 ### Fixed

@@ -81,6 +81,7 @@ a stale number here fails the suite rather than misleading a reader.
 | running.active at t = 2 s | `1` | `1` |
 | stopped.active at t = 4 s | `1` | `1` |
 | running.active at t = 6 s (next cycle) | `1` | `1` |
+| transition instants (timers 1 s, 2 s, 1 s) | `1 / 3 / 4 s` | `exact` |
 
 ---
 

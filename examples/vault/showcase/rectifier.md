@@ -73,9 +73,10 @@ a stale number here fails the suite rather than misleading a reader.
 
 | Quantity | Expected (independent) | Simulated |
 |---|---|---|
-| capacitor.v at t = 5 ms (charging) | `9.54 V` | `9.5398 V` |
+| capacitor peak vs Vs - Vt ln(v/(R Ids) + 1) | `9.54136 V` | `9.54057 V` |
 | capacitor.v at t = 10 ms | `6.14 V` | `6.1352 V` |
-| discharge τ = R·C | `0.1 s` | `0.1 s` |
+| discharge over 10 ms (tau = R C = 10 ms) | `e^-1 = 0.367879` | `0.367868` |
+| ripple period | `20 ms` | `20 ms` |
 
 ---
 

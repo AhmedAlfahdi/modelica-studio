@@ -535,6 +535,94 @@ test("every example matches an independently derived result", { skip: !HAS_OMC }
     check("never overshoots the steady value", 1, Math.max(...T) <= Tamb + rise + 1e-6 ? 1 : 0, 0, "");
   }
 
+  {
+    const r = await sim("Thermal", { stopTime: 2000, numberOfIntervals: 8000 });
+    // A heat capacity losing heat through a conductance obeys C dT/dt = -G (T - Tamb),
+    // so the approach to ambient is exponential with tau = C/G and the heat flow at any
+    // instant is G (T - Tamb). Both come from the two parameters and nothing else.
+    const tau = 1000 / 2;
+    const T = (t) => 293.15 + (350 - 293.15) * Math.exp(-t / tau);
+    check("body.T(500 s) -> one time constant", T(500), at(r, "body.T", 500), 5e-3, " K");
+    check("body.T(1000 s) -> two time constants", T(1000), at(r, "body.T", 1000), 5e-3, " K");
+    check("body.T(2000 s) -> four time constants", T(2000), at(r, "body.T", 2000), 1e-3, " K");
+    check("conductor.Q_flow(0) -> G (T0 - Tamb)", 2 * (350 - 293.15), at(r, "conductor.Q_flow", 0), 5e-2, " W");
+    check("conductor.Q_flow(500 s) -> G (T - Tamb)", 2 * (T(500) - 293.15), at(r, "conductor.Q_flow", 500), 5e-2, " W");
+  }
+  {
+    const r = await sim("Rectifier", { stopTime: 0.2, numberOfIntervals: 20000, tolerance: 1e-9 });
+    // An ideal 50 Hz source, a Shockley diode and a loaded capacitor. The capacitor
+    // charges to the source peak MINUS the diode's forward drop, and that drop is the
+    // diode's own law at the current the load draws: Vt ln(v/(R Ids) + 1). Nothing here is
+    // fitted to the simulation: the amplitude, R, and the diode's two datasheet
+    // parameters give the answer.
+    const Vt = 0.04;
+    const Ids = 1e-6;
+    const vPeak = peak(r, "capacitor.v");
+    check(
+      "capacitor peak -> Vs - Vt ln(v/(R Ids) + 1)",
+      10 - Vt * Math.log(vPeak / (100 * Ids) + 1),
+      vPeak,
+      5e-3,
+      " V"
+    );
+    // Between peaks the capacitor discharges through the 100 ohm load alone, so over the
+    // 10 ms between two samples in that phase it must fall by exp(-dt/RC) = e^-1.
+    check(
+      "discharge over 10 ms -> e^-1 (RC = 10 ms)",
+      Math.exp(-1),
+      at(r, "capacitor.v", 0.16) / at(r, "capacitor.v", 0.15),
+      2e-3,
+      ""
+    );
+    // And the whole ripple repeats at the source's own period.
+    check("the ripple repeats after 20 ms", at(r, "capacitor.v", 0.14), at(r, "capacitor.v", 0.16), 1e-4, " V");
+  }
+  {
+    const r = await sim("FluidPipe", { stopTime: 2, numberOfIntervals: 8000 });
+    // Darcy-Weisbach with Colebrook's friction factor, plus the 0.5 m the outlet stands
+    // above the inlet:
+    //     dp = rho g h + f (L/d) (rho v^2 / 2)
+    // rho and mu are MSL's own constants for ConstantPropertyLiquidWater, the roughness is
+    // the pipe's default, and f is solved from Colebrook here rather than read from the
+    // result.
+    const rho = 995.586;
+    const mu = 1e-3;
+    const d = 0.03;
+    const area = Math.PI * (d / 2) ** 2;
+    const expectedDp = (mdot) => {
+      const v = mdot / (rho * area);
+      const Re = (rho * v * d) / mu;
+      let f = 0.03;
+      for (let i = 0; i < 60; i++) f = 1 / (-2 * Math.log10(2.5e-5 / (3.7 * d) + 2.51 / (Re * Math.sqrt(f)))) ** 2;
+      return rho * 9.81 * 0.5 + f * (2 / d) * ((rho * v * v) / 2);
+    };
+    // The outlet pressure is the boundary condition the model declares -- 101325 Pa -- and
+    // it is not in the result at all, because a prescribed pressure is a parameter rather
+    // than something the solver computes. Reading it from the result gave NaN, which is how
+    // the first version of these two checks "failed".
+    const sink = 101325;
+    const full = expectedDp(1);
+    check("dp at 1 kg/s -> Colebrook + rho g h", full, at(r, "pipe.port_a.p", 2) - sink, 0.01 * full, " Pa");
+    const half = expectedDp(0.5);
+    check("dp at 0.5 kg/s -> Colebrook + rho g h", half, at(r, "pipe.port_a.p", 0.6) - sink, 0.01 * half, " Pa");
+    // Mass is conserved through the pipe, and the two ends report it with opposite signs
+    // because a flow INTO a port is positive.
+    check("mass in equals mass out", at(r, "pipe.port_a.m_flow", 2), -at(r, "pipe.port_b.m_flow", 2), 1e-6, " kg/s");
+    check("the ramp is the flow", 1, at(r, "pipe.port_a.m_flow", 2), 1e-6, " kg/s");
+  }
+  {
+    const r = await sim("StateMachine", { stopTime: 6, numberOfIntervals: 12000 });
+    // Three timers in a ring: 1 s before running, 2 s running, 1 s stopped. A transition is
+    // an event, so it lands exactly on the timer value -- which the samples either side of
+    // it show, and a period of 4 s follows.
+    check("not running at 0.999 s", 0, at(r, "running.active", 0.999), 0, "");
+    check("running at 1.001 s", 1, at(r, "running.active", 1.001), 0, "");
+    check("still running at 2.999 s", 1, at(r, "running.active", 2.999), 0, "");
+    check("stopped at 3.001 s", 0, at(r, "running.active", 3.001), 0, "");
+    check("stopped.active at 3.999 s", 1, at(r, "stopped.active", 3.999), 0, "");
+    check("the cycle repeats after 4 s", at(r, "running.active", 1.5), at(r, "running.active", 5.5), 0, "");
+  }
+
   console.log(`\n${results.filter((r) => r.ok).length}/${results.length} checks passed`);
 
   const failed = results.filter((r) => !r.ok);

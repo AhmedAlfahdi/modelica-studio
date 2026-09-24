@@ -233,23 +233,26 @@ test("the model checker is present and knows how to call omc", () => {
 });
 
 test("the README's claim about verification matches the audit", () => {
-  // "Every example is verified" was written when it was nearly true and stayed after it
-  // stopped being true: four of the thirty are not in the numerical audit at all. A
-  // claim about verification is the one claim a reader cannot check for themselves
-  // without doing the work again, so it is held to the audit by a test.
+  // A claim about verification is the one claim a reader cannot check without doing the
+  // work again. Written as "every example" it stayed after four of them lost their audit
+  // coverage; written as a count it can go stale the same way. Both forms are held to the
+  // audit, and the "all" form is the stronger one: it fails if ANY example is uncovered.
   const audit = fs.readFileSync(path.join(repoRoot, "test", "audit.test.mjs"), "utf8");
   const verified = new Set([...audit.matchAll(/sim\("([A-Za-z0-9_]+)"/g)].map((m) => m[1]));
   const unverified = EXAMPLES.filter((e) => !verified.has(e.name)).map((e) => e.name);
 
-  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
-  const claimed = /\*\*(\d+) of them\s+also carry a table/.exec(readme.replace(/\n\s*/g, " "))?.[1];
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8").replace(/\n\s*/g, " ");
+  if (/Every table is re-checked/.test(readme)) {
+    assert.deepEqual(unverified, [], `the README says every example is verified; ${unverified.join(", ")} are not`);
+    return;
+  }
+  const claimed = /\*\*(\d+) of them also carry a table/.exec(readme)?.[1];
   assert.ok(claimed, "the README states how many examples are verified");
   assert.equal(
     Number(claimed),
     EXAMPLES.length - unverified.length,
     `the README claims ${claimed} verified; the audit covers ${EXAMPLES.length - unverified.length}`
   );
-  // And the ones left out are named, so a reader knows which notes quote no number.
   for (const name of unverified) {
     assert.ok(readme.includes(`\`${name}\``), `${name} is not verified and must be named in the README`);
   }
