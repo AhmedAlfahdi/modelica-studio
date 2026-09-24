@@ -84,6 +84,19 @@ import type { SimResult, SimSeries } from "../omc/backend";
 
 export const VIEW_TYPE_MODELICA = "modelica-studio-view";
 
+/**
+ * Is this keystroke "save"?
+ *
+ * A plain function so it can be tested on its own: the listener above is attached to a
+ * view that needs a whole application to build, and "does Ctrl+S mean save" is the part
+ * worth pinning down.
+ */
+export function isSaveShortcut(ev: { key?: string; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean }): boolean {
+  const mod = ev.ctrlKey === true || ev.metaKey === true;
+  // Alt is excluded: Ctrl+Alt+S is somebody else's shortcut on Windows.
+  return mod && ev.altKey !== true && (ev.key === "s" || ev.key === "S");
+}
+
 export class ModelicaStudioView extends ItemView {
   plugin: ModelicaStudioPlugin;
 
@@ -267,6 +280,23 @@ export class ModelicaStudioView extends ItemView {
     const root = this.contentEl;
     root.empty();
     root.addClass("modelica-studio-root");
+
+    // Ctrl/Cmd+S saves the model, the way it saves a document everywhere else.
+    //
+    // Without it the keystroke reached Obsidian, which saved the active NOTE -- so a
+    // reader who had just arranged a diagram and pressed the reflex got a silent write
+    // to the wrong thing, and the model stayed unsaved. Capture phase, because the code
+    // pane is a CodeMirror instance and its handlers would otherwise see the key first.
+    root.addEventListener(
+      "keydown",
+      (ev) => {
+        if (!isSaveShortcut(ev)) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        void this.saveToNote();
+      },
+      true
+    );
 
     const header = root.createDiv({ cls: "modelica-studio-toolbar" });
     this.buildToolbar(header);

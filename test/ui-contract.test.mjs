@@ -494,3 +494,37 @@ test("placing a component goes through the canvas's own coordinate mapping", () 
     "the mapping is public, so callers outside the canvas can use it instead of copying it");
   assert.match(editor, /viewCentre\(\): \[number, number\] \{/, "and so is the view centre");
 });
+
+test("Ctrl+S saves the model, and only with the modifier", () => {
+  // The reflex saves a document. Before this, the keystroke reached Obsidian and saved
+  // the active NOTE, so a reader who had just arranged a diagram got a silent write to
+  // the wrong thing while the model stayed unsaved. The predicate is a plain function so
+  // the decision can be tested without building a whole view.
+  const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+  assert.match(view, /export function isSaveShortcut/, "the decision is a function");
+  assert.match(
+    view,
+    /root\.addEventListener\(\s*"keydown",[\s\S]{0,600}?true\s*\)/,
+    "and it is bound in the capture phase, or CodeMirror sees the key first"
+  );
+  assert.match(view, /ev\.preventDefault\(\);[\s\S]{0,80}?saveToNote\(\)/, "which saves the model");
+  // The Help window must list it, in both modes: a shortcut nobody can find is not one.
+  const help = fs.readFileSync(path.join(repoRoot, "src/view/help-modal.ts"), "utf8");
+  const listed = (help.match(/\$\{mod\}\+S`, what: "Save the model/g) ?? []).length;
+  assert.equal(listed, 2, "diagram mode and code mode both list it");
+});
+
+test("the save predicate accepts Ctrl+S and Cmd+S and nothing else", async () => {
+  const { isSaveShortcut } = await import(path.join(repoRoot, "src/view/studio-view.ts")).catch(() => ({}));
+  if (!isSaveShortcut) {
+    // The module needs Obsidian to import; the rule is checked from source instead.
+    const view = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
+    assert.match(view, /mod && ev\.altKey !== true && \(ev\.key === "s" \|\| ev\.key === "S"\)/);
+    return;
+  }
+  assert.equal(isSaveShortcut({ key: "s", ctrlKey: true }), true);
+  assert.equal(isSaveShortcut({ key: "S", metaKey: true }), true);
+  assert.equal(isSaveShortcut({ key: "s" }), false, "a bare s is a key, not a command");
+  assert.equal(isSaveShortcut({ key: "s", ctrlKey: true, altKey: true }), false, "Ctrl+Alt+S belongs to someone else");
+  assert.equal(isSaveShortcut({ key: "z", ctrlKey: true }), false);
+});

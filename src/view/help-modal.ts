@@ -120,6 +120,7 @@ interface Shortcut {
 
 /** Diagram shortcuts, from the canvas editor's key handler. */
 export const DIAGRAM_SHORTCUTS: Shortcut[] = [
+  { keys: `${mod}+S`, what: "Save the model to its .mo file" },
   { keys: `${mod}+Z / ${mod}+Shift+Z`, what: "Undo / redo" },
   { keys: `${mod}+A`, what: "Select every component" },
   { keys: `${mod}+C / ${mod}+V / ${mod}+X`, what: "Copy, paste, cut" },
@@ -136,6 +137,7 @@ export const DIAGRAM_SHORTCUTS: Shortcut[] = [
 
 /** Code editor shortcuts, from the code editor's key handler. */
 export const CODE_SHORTCUTS: Shortcut[] = [
+  { keys: `${mod}+S`, what: "Save the model to its .mo file" },
   { keys: `${mod}+Space`, what: "Complete the name being typed" },
   { keys: `${mod}+Enter`, what: "Simulate" },
   { keys: `${mod}+Z / ${mod}+Shift+Z`, what: "Undo / redo" },

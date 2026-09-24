@@ -42,10 +42,16 @@ app.disableHardwareAcceleration();
 app.whenReady().then(async () => {
   const win = new BrowserWindow({ width: 1200, height: 900, show: false });
   const errors = [];
-  win.webContents.on("console-message", (_e, level, message) => {
+  win.webContents.on("console-message", (_e, level, message, line, sourceId) => {
     // A page error is a failed test, not noise: the suite must not pass because a
-    // module threw on import.
-    if (level >= 2) errors.push(String(message));
+    // module threw on import. The source and line come along because a rare failure
+    // under parallel load is otherwise a message with no place attached: one test in
+    // this suite fails roughly once in ten full runs with a page error nobody can
+    // locate from the text alone.
+    if (level >= 2) {
+      const where = sourceId ? " (" + String(sourceId).replace(/^file:\/\//, "") + ":" + line + ")" : "";
+      errors.push(String(message) + where);
+    }
   });
   await win.loadFile(pagePath);
   // The page sets this when its tests have finished.
