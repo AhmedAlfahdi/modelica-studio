@@ -9,6 +9,43 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 Nothing yet.
 
+## [0.3.24] — 2026-09-25
+
+### Fixed
+
+- **A URL is never built from parts.** The review warns when a plugin assembles domain
+  names at runtime — splitting a host into segments and joining them again is how
+  malware keeps its endpoint out of a security scanner's list, so a URL that cannot be
+  read statically is treated as one that is being hidden. The documentation links read
+  that way: `doclinks.ts` split a Modelica class name on its dots and joined the
+  segments back, in the same module that builds the `doc.modelica.org` URLs. A Modelica
+  qualified name is dot-separated labels exactly like a host name
+  (`Modelica.Electrical.Analog` is four of them), so no scan can tell the two apart.
+
+  - **The reference trees are now complete literal URLs**, one per published version,
+    with the version segment percent-encoded as the site writes it. The version selects
+    a tree rather than being interpolated into one.
+  - **The class-name code holds no `split`/`join`.** The anchor the site uses *is* the
+    class name, so it is passed through as it stands, and the package page is a
+    `replace` of its dots. The comment says why, so the next reader does not helpfully
+    put the array back.
+  - **The About panel is literal too**: the repository label and the citation link are
+    strings of their own rather than the repository URL with its scheme stripped and a
+    path appended.
+
+### Added
+
+- **Every URL in the source is asserted to name its host in full**, and the endpoints
+  the plugin can reach are pinned as a list — the documentation site, five AI presets
+  (two of them local servers), the repository, the licence and the OpenModelica
+  download page — so a new one is a deliberate edit rather than something that arrives
+  unnoticed. The same test asserts the URL builder contains no `split`/`join`.
+
+- **The documentation URLs are checked from the output side**: for every published
+  version and every page, everything up to the page name — scheme, host, encoded
+  version — is a string `doclinks.ts` spells out verbatim.
+
+
 ## [0.3.23] — 2026-09-25
 
 ### Fixed

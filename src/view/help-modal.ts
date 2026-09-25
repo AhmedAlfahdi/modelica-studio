@@ -33,6 +33,18 @@ const mod = Platform.isMacOS ? "Cmd" : "Ctrl";
  * and the copyright notice cannot disagree.
  */
 export const PLUGIN_REPO = "https://github.com/AhmedAlfahdi/modelica-studio";
+/**
+ * The repository as a reader copies it.
+ *
+ * Written out rather than derived from `PLUGIN_REPO`, because both halves of the
+ * plugin directory's rule land on the derived form: a URL assembled at runtime is
+ * one a review cannot see, and pulling a host out of a string by splitting it is
+ * the pattern the check exists for. These are literals, so both are reviewable.
+ */
+export const PLUGIN_REPO_LABEL = "AhmedAlfahdi/modelica-studio";
+/** The citation file, named in full for the same reason. */
+export const PLUGIN_CITATION_URL =
+  "https://github.com/AhmedAlfahdi/modelica-studio/blob/main/CITATION.cff";
 export const PLUGIN_LICENSE = "GPL-3.0-or-later";
 export const PLUGIN_LICENSE_URL = "https://www.gnu.org/licenses/gpl-3.0.html";
 
@@ -584,10 +596,10 @@ export class HelpModal extends Modal {
       { text: PLUGIN_LICENSE, url: PLUGIN_LICENSE_URL },
       " — use it, change it, keep it free",
     ]);
-    aboutRow("Source", [{ text: PLUGIN_REPO.replace("https://github.com/", ""), url: PLUGIN_REPO }]);
+    aboutRow("Source", [{ text: PLUGIN_REPO_LABEL, url: PLUGIN_REPO }]);
     aboutRow("Cite it", [
       "Please cite it in published work: ",
-      { text: "CITATION.cff", url: `${PLUGIN_REPO}/blob/main/CITATION.cff` },
+      { text: "CITATION.cff", url: PLUGIN_CITATION_URL },
     ]);
 
     el.createEl("p", {

@@ -838,3 +838,77 @@ test("the README discloses every capability the directory's analysis flags", () 
   assert.match(all, /from "node:child_process"/, "a shell command is really run");
   assert.match(all, /from "node:fs"/, "and files outside the vault are really read");
 });
+
+test("every URL in the source names its host in full", () => {
+  // The plugin directory warns when a plugin "assembles domain names at runtime": a
+  // host built by splitting segments into an array and joining them again is how
+  // malware keeps its endpoint out of a security scanner's list, so a URL that cannot
+  // be read statically is treated as one that is being hidden. This plugin has
+  // nothing to hide -- five provider endpoints, one documentation site, the
+  // repository and the licence -- so the shapes that look like hiding are asserted
+  // away rather than argued about.
+  const sources = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(p);
+      else if (entry.name.endsWith(".ts")) sources.push({ file: path.relative(repoRoot, p), text: fs.readFileSync(p, "utf8") });
+    }
+  };
+  walk(path.join(repoRoot, "src"));
+  assert.ok(sources.length > 40, `the source tree was walked (${sources.length} files)`);
+
+  const urls = [];
+  for (const { file, text } of sources) {
+    for (const m of text.matchAll(/https?:\/\/[^"'`\s)]*/g)) urls.push({ file, url: m[0] });
+  }
+  assert.ok(urls.length >= 10, `the plugin names its endpoints (${urls.length})`);
+
+  // No interpolation in a URL. `https://${host}/...` is the shape the warning is
+  // about, and there is no reason for the host or the path of a written URL to be
+  // computed -- every one of them is a constant or a user setting.
+  const computed = urls.filter((u) => u.url.includes("${"));
+  assert.deepEqual(computed.map((u) => `${u.file}: ${u.url}`), [], "no URL is built from a template");
+
+  // And the host is complete, so a scanner reads a host rather than a fragment of one.
+  // A port is allowed and dropped from the list below: the local presets carry one.
+  const hosts = new Set();
+  const partial = [];
+  for (const { file, url } of urls) {
+    const host = /^https?:\/\/([^/?#]+)/.exec(url)?.[1] ?? "";
+    if (!/^(localhost|127\.0\.0\.1|[a-z0-9-]+(\.[a-z0-9-]+)+)(:\d+)?$/i.test(host)) partial.push(`${file}: ${url}`);
+    else hosts.add(host.replace(/:\d+$/, ""));
+  }
+  assert.deepEqual(partial, [], "every URL names a whole host");
+
+  // The complete list, so a new endpoint is a deliberate edit to this line rather than
+  // something that arrives unnoticed: the documentation site, the five AI presets (two
+  // of them local servers), the repository and the licence. Three of these appear only
+  // in text the user reads -- the OpenModelica download page, the licence, the
+  // repository -- so they are named, not contacted.
+  assert.deepEqual(
+    [...hosts].sort(),
+    [
+      "api.deepseek.com",
+      "api.groq.com",
+      "api.openai.com",
+      "doc.modelica.org",
+      "github.com",
+      "localhost",
+      "openmodelica.org",
+      "openrouter.ai",
+      "www.gnu.org",
+    ],
+    "the endpoints the source names"
+  );
+
+  // The URL builder is the one module that appends to a URL at runtime, so it is the
+  // one that could assemble a host: it holds no split/join at all. The class names it
+  // works with look exactly like host names -- `Modelica.Electrical.Analog` is four
+  // dot-separated labels -- which is why this is asserted rather than trusted.
+  const builder = sources.find((s) => s.file.endsWith("modelica/doclinks.ts"));
+  assert.ok(builder, "the documentation URL builder is where it was");
+  assert.ok(!/\bsplit\(/.test(builder.text), "it splits nothing");
+  assert.ok(!/\bjoin\(/.test(builder.text), "and joins nothing: the pair is the flagged pattern");
+  assert.ok(builder.text.includes('"https://doc.modelica.org/Modelica%204.1.0/'), "the tree it links into is a literal");
+});

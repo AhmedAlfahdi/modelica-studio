@@ -9,8 +9,9 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import path from "node:path";
-import { buildLibs } from "./helpers/build.mjs";
+import { buildLibs, repoRoot } from "./helpers/build.mjs";
 
 const { docPageFor, docUrlFor, libraryVersionFrom, libraryHelpUrl, libraryIconsUrl, PUBLISHED_VERSIONS, WSM_VERSIONS, WSM_FALLBACK_VERSION } = await import(
   path.join(buildLibs("doclinks", ["src/modelica/doclinks.ts"]), "doclinks.js")
@@ -138,4 +139,29 @@ test("no version produces the dead helpWSM URL", () => {
   // Anything unknown -- including build metadata -- falls back.
   assert.equal(libraryIconsUrl("9.9.9"), libraryIconsUrl());
   assert.equal(libraryIconsUrl("4.1.0+maint.om"), libraryIconsUrl());
+});
+
+test("every URL it can produce begins with a literal from the source", () => {
+  // The plugin directory's review reads the source for network endpoints, and warns
+  // when one is assembled at runtime: a host built by splitting segments into an
+  // array and joining them again is how malware keeps its endpoint out of a
+  // scanner's list. This module is the only place in the plugin that appends to a
+  // URL, so the assertion is here, and it is made against the endpoints rather than
+  // the code: everything up to the page name -- scheme, host and the version segment
+  // -- has to be a string the source spells out in full.
+  const source = fs.readFileSync(path.join(repoRoot, "src/modelica/doclinks.ts"), "utf8");
+  const produced = [];
+  for (const version of PUBLISHED_VERSIONS) {
+    produced.push(
+      docUrlFor("Modelica.Blocks.Continuous.PID", version),
+      libraryHelpUrl(version),
+      libraryIconsUrl(version)
+    );
+  }
+  assert.ok(produced.length >= 9, `every version and every page is measured (${produced.length})`);
+  for (const url of produced) {
+    const tree = url.slice(0, url.indexOf("/Resources/"));
+    assert.ok(tree.startsWith("https://doc.modelica.org/"), `an absolute URL: ${url}`);
+    assert.ok(source.includes(tree), `${tree} is written out in the source, not built from parts`);
+  }
 });
