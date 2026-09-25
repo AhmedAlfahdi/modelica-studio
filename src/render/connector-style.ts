@@ -32,7 +32,7 @@
  * RULE (which is what a reader needs) and this comment carries the measurement.
  */
 
-import type { Color, ComponentClass, Graphic } from "../modelica/types";
+import type { Color, ComponentClass } from "../modelica/types";
 import { isGraphicVisible } from "./canvas";
 
 export interface ConnectorWireStyle {

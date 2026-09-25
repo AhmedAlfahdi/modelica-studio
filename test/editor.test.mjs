@@ -106,6 +106,23 @@ class StubElement extends StubTarget {
   hasClass(c) {
     return this.classes.has(c);
   }
+  /**
+   * Obsidian's own style helpers, which the plugin uses instead of assigning
+   * `element.style.x` directly — `setCssStyles` for a dynamic value, `setCssProps` for a
+   * CSS custom property. The stub records them where a test can read them back.
+   */
+  setCssStyles(styles) {
+    this.style = Object.assign(this.style ?? {}, styles);
+  }
+  setCssProps(props) {
+    this.cssProps = Object.assign(this.cssProps ?? {}, props);
+  }  setCssProps(props) {
+    this.cssProps = Object.assign(this.cssProps ?? {}, props);
+  }
+  /** Obsidian's cross-window-safe `instanceof`; in one realm it is `instanceof`. */
+  instanceOf(type) {
+    return this instanceof type;
+  }
   remove() {
     this.isConnected = false;
     if (this.parent) {
@@ -201,6 +218,28 @@ function stubCtx() {
   );
 }
 
+// Obsidian provides `createEl` (and `createDiv`/`createSpan`) as GLOBALS, not exports of
+// its module, and the plugin uses them where it used to call `document.createElement`.
+// The harness has to provide them too, or a Node test fails with "createEl is not
+// defined" the moment the editor builds its canvas.
+globalThis.createEl = (tag, o = {}) => {
+  const el = doc.createElement(tag);
+  if (typeof o === "string") el.setText(o);
+  else {
+    if (o.cls) el.addClass(...String(o.cls).split(/\s+/).filter(Boolean));
+    if (o.text) el.setText(o.text);
+    for (const [k, v] of Object.entries(o.attr ?? {})) el.setAttribute(k, String(v));
+  }
+  return el;
+};
+globalThis.createDiv = (o) => globalThis.createEl("div", o);
+globalThis.createSpan = (o) => globalThis.createEl("span", o);
+globalThis.createFragment = (cb) => {
+  const frag = doc.createElement("fragment");
+  cb?.(frag);
+  return frag;
+};
+
 const observers = [];
 
 const doc = new StubTarget();
@@ -222,6 +261,9 @@ function installDom() {
     disconnect() {}
   };
   globalThis.document = doc;
+  // The plugin asks `window` for its timers and frames, not the globals: a view in a
+  // popped-out pane must be timed by that window's clock, and the plugin directory's
+  // linter requires it. The harness has to answer on the same object.
   globalThis.window = {
     devicePixelRatio: 1,
     addEventListener: () => {},
@@ -229,9 +271,13 @@ function installDom() {
     // The editor's click marker uses timers.
     setTimeout: (fn) => setTimeout(fn, 0),
     clearTimeout: (id) => clearTimeout(id),
+    setInterval: (fn, ms) => setInterval(fn, ms),
+    clearInterval: (id) => clearInterval(id),
+    requestAnimationFrame: (fn) => setTimeout(() => fn(0), 0),
+    cancelAnimationFrame: (id) => clearTimeout(id),
   };
-  globalThis.requestAnimationFrame = () => 1;
-  globalThis.cancelAnimationFrame = () => {};
+  globalThis.requestAnimationFrame = globalThis.window.requestAnimationFrame;
+  globalThis.cancelAnimationFrame = globalThis.window.cancelAnimationFrame;
   // `navigator` is a getter-only global in Node 22, so it must be redefined.
   Object.defineProperty(globalThis, "navigator", {
     value: { clipboard: { readText: async () => "", writeText: async () => {} } },
@@ -1482,8 +1528,10 @@ test("every committed edit asks for a repaint", () => {
   // The assertion is the general one, over every edit entry point, because the
   // bug was a missing frame rather than a broken rotation.
   const frames = [];
-  const realRaf = globalThis.requestAnimationFrame;
-  globalThis.requestAnimationFrame = (cb) => {
+  const realRaf = globalThis.window.requestAnimationFrame;
+  // The editor asks `window` for its frames (a popped-out pane has its own), so the
+  // recording stub has to answer there, not on the global.
+  globalThis.window.requestAnimationFrame = (cb) => {
     frames.push(cb);
     return frames.length;
   };
@@ -1535,7 +1583,7 @@ test("every committed edit asks for a repaint", () => {
   for (let i = 0; i < 5; i++) editor.rotateSelection(90);
   const burst = painted();
 
-  globalThis.requestAnimationFrame = realRaf;
+  globalThis.window.requestAnimationFrame = realRaf;
   editor.destroy();
 
   assert.deepEqual(missing, [], "every edit asks for a frame");
@@ -1547,8 +1595,10 @@ test("a rotation is visible in the next frame it asks for", () => {
   // The end of the same story: the frame that rotation asks for must actually
   // draw the rotated symbol, not the one before it.
   const frames = [];
-  const realRaf = globalThis.requestAnimationFrame;
-  globalThis.requestAnimationFrame = (cb) => {
+  const realRaf = globalThis.window.requestAnimationFrame;
+  // The editor asks `window` for its frames (a popped-out pane has its own), so the
+  // recording stub has to answer there, not on the global.
+  globalThis.window.requestAnimationFrame = (cb) => {
     frames.push(cb);
     return frames.length;
   };
@@ -1600,7 +1650,7 @@ test("a rotation is visible in the next frame it asks for", () => {
   // Run the frame it asked for, then paint by hand: what the frame WOULD draw.
   for (const cb of frames.splice(0)) cb();
   const after = paint();
-  globalThis.requestAnimationFrame = realRaf;
+  globalThis.window.requestAnimationFrame = realRaf;
   editor.destroy();
 
   assert.notEqual(after, before, "and the frame it asked for draws something different");

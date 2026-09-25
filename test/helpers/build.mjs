@@ -18,6 +18,18 @@ import path from "node:path";
 export const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 
 /**
+ * Give Node a `window`, because the code under test is browser code.
+ *
+ * The plugin asks `window` for its timers and animation frames rather than the bare
+ * globals: a pane popped out into its own window has to be timed by that window's clock,
+ * and the plugin directory's linter requires it. Node has no `window` at all, so a test
+ * that loads `ai/client.ts` or the editor would fail with "window is not defined" for a
+ * reason that has nothing to do with what it is testing. The timers on this object are
+ * the same ones; nothing else about the DOM is implied.
+ */
+globalThis.window ??= globalThis;
+
+/**
  * Where simulated models are compiled during tests.
  *
  * NOT the system temp directory. `/tmp` here is a 7.8 GB tmpfs, and each

@@ -62,8 +62,8 @@ export function redact(text: string, secret: string | null | undefined): string 
     out = out.split(secret).join("[REDACTED-KEY]");
   }
   // Bearer tokens and OpenAI-style keys, whatever the configured key is.
-  out = out.replace(/\b(Bearer\s+)[A-Za-z0-9._\-]{12,}/gi, "$1[REDACTED]");
-  out = out.replace(/\bsk-[A-Za-z0-9._\-]{12,}/g, "[REDACTED-KEY]");
+  out = out.replace(/\b(Bearer\s+)[A-Za-z0-9._-]{12,}/gi, "$1[REDACTED]");
+  out = out.replace(/\bsk-[A-Za-z0-9._-]{12,}/g, "[REDACTED-KEY]");
   return out;
 }
 

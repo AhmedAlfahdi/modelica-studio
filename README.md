@@ -89,8 +89,14 @@ download — with the [GitHub CLI](https://cli.github.com) installed. A release 
 npm install
 npm run build          # typecheck, then bundle to main.js
 npm run dev            # rebuild on change
-npm test               # ~780 tests, including a numerical audit of the examples
+npm test               # ~790 tests, including a numerical audit of the examples
+npm run lint           # the plugin directory's own review rules
 ```
+
+`npm run lint` runs `eslint-plugin-obsidianmd`'s recommended config — the same rules the
+Obsidian community directory reviews a submission with, at the same severities — so that
+list is never seen for the first time during a review. `test/lint.test.mjs` fails the
+suite when it is not clean.
 
 `npm test` runs the real OpenModelica compiler, so it needs `omc` on your PATH and
 takes a few minutes. Without it, the simulation-dependent tests skip.

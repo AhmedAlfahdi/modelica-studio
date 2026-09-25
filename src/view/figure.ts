@@ -12,6 +12,7 @@
  */
 
 import { App, Notice } from "obsidian";
+import { describeError } from "../errors";
 
 /** The PNG a canvas holds, or null when it has nothing drawn on it yet. */
 export function canvasPng(canvas: HTMLCanvasElement): Promise<Blob | null> {
@@ -55,7 +56,7 @@ export async function copyCanvasImage(canvas: HTMLCanvasElement, what: string): 
     await clipboard.write([new ClipboardItem({ "image/png": blob })]);
   } catch (err) {
     new Notice(
-      `Modelica: ${what} could not be copied — ${err instanceof Error ? err.message : err}`
+      `Modelica: ${what} could not be copied — ${describeError(err)}`
     );
     return false;
   }
@@ -108,7 +109,7 @@ export async function saveCanvasImage(
     return file.path;
   } catch (err) {
     new Notice(
-      `Modelica: the figure could not be saved — ${err instanceof Error ? err.message : err}`
+      `Modelica: the figure could not be saved — ${describeError(err)}`
     );
     return null;
   }

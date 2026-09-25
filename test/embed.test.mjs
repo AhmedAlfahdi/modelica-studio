@@ -167,7 +167,13 @@ test("the block shows its result and keeps the diagram one button away", async (
   // position and visibility. `display: none` or `height: 0` would measure 0x0,
   // leaving the editor unable to size itself for when the user switches back.
   assert.match(source, /canvas\.style\.visibility = this\.opts\.showPlot/, "hidden, not removed");
-  assert.match(source, /canvas\.style\.position = this\.opts\.showPlot \? "absolute"/, "and out of flow");
+  // Out of flow through Obsidian's own helper rather than an assignment: the plugin
+  // directory's linter forbids `element.style.x = …` outright.
+  assert.match(
+    source,
+    /canvas\.setCssStyles\(\{ position: this\.opts\.showPlot \? "absolute" : "relative" \}\)/,
+    "and out of flow"
+  );
   assert.doesNotMatch(
     source,
     /canvas\.style\.display = this\.opts\.showPlot/,

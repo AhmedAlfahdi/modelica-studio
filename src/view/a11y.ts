@@ -16,7 +16,7 @@
 
 export function noLabelTooltip(el: HTMLElement, name: string): void {
   el.setAttribute("aria-label", name);
-  el.style.setProperty("--no-tooltip", "true");
+  el.setCssProps({ "--no-tooltip": "true" });
   // Custom properties INHERIT, so silencing a group also silenced every labelled
   // control inside it: Obsidian shows a tooltip only when the computed
   // `--no-tooltip` on the labelled element is not "true", and the toolbar's

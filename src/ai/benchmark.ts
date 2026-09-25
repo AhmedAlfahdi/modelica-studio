@@ -136,7 +136,7 @@ export async function runBenchmark(opts: BenchOptions): Promise<BenchResult[]> {
           backend: opts.backend,
           settings: opts.settings,
           send: opts.send,
-          buildMessages: opts.buildMessages as never,
+          buildMessages: opts.buildMessages,
         });
       } catch (err) {
         note = (err instanceof Error ? err.message : String(err)).slice(0, 120);

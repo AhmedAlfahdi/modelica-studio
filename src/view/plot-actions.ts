@@ -203,6 +203,6 @@ export function buildPlotActions(parent: HTMLElement, host: PlotActionHost): voi
       item.setTitle("Save image…").setIcon("save").onClick(() => host.saveFigure())
     );
     // Anchored to the button, so the menu appears where it was asked for.
-    menu.showAtMouseEvent(ev as MouseEvent);
+    menu.showAtMouseEvent(ev);
   });
 }

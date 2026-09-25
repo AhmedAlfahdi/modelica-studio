@@ -11,7 +11,7 @@
  */
 
 import { tokenize, type Token } from "./lexer";
-import type { ArrowKind, BitmapGraphic, BorderPattern, Color, ComponentClass, Connection, ConnectorRef, DiagramModel, EllipseGraphic, FillPattern, Graphic, LineGraphic, LinePattern, ParameterDef, Placement, PolygonGraphic, PortDef, RectangleGraphic, SmoothKind, TextGraphic, VariableInstance } from "./types";
+import type { ArrowKind, BitmapGraphic, BorderPattern, Color, ComponentClass, Connection, ConnectorRef, DiagramModel, EllipseGraphic, FillPattern, Graphic, LineGraphic, LinePattern, ParameterDef, Placement, PolygonGraphic, RectangleGraphic, SmoothKind, TextGraphic, VariableInstance } from "./types";
 
 /** Depth-first flatten of a class tree into a list, parents first. */
 function collectNested(cls: ParsedClass, out: ParsedClass[]): void {
@@ -1638,7 +1638,7 @@ interface DynamicArgument {
 }
 
 function isDynamic(v: unknown): v is DynamicArgument {
-  return !!v && typeof v === "object" && "editing" in (v as object) && "editingText" in (v as object);
+  return !!v && typeof v === "object" && "editing" in (v) && "editingText" in (v);
 }
 
 /** The six Modelica graphical primitives (MLS §18.6.5). */

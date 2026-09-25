@@ -57,7 +57,7 @@ export function setButtonBusy(
   idleIcon: string
 ): void {
   if (!btn) return;
-  const label = Array.from(btn.children).find((el) => !(el instanceof SVGSVGElement));
+  const label = Array.from(btn.children).find((el) => !(el.instanceOf(SVGSVGElement)));
   setIcon(btn, busy ? "loader-2" : idleIcon);
   if (label && label.parentElement) btn.appendChild(label);
   btn.toggleClass("modelica-studio-spin", busy);

@@ -207,21 +207,21 @@ export const SOLVERS: SolverInfo[] = [
  * appended after it and floated loose below.
  */
 export function solverDescription(solver: SolverInfo): DocumentFragment {
-  const frag = document.createDocumentFragment();
-  const summary = document.createElement("div");
+  const frag = createFragment();
+  const summary = createDiv();
   summary.setText(solver.summary);
   frag.appendChild(summary);
 
-  const list = document.createElement("ul");
+  const list = createEl("ul");
   list.addClass("modelica-studio-solver-points");
   for (const point of solver.points) {
-    const li = document.createElement("li");
+    const li = createEl("li");
     li.setText(point);
     list.appendChild(li);
   }
   frag.appendChild(list);
 
-  const use = document.createElement("div");
+  const use = createDiv();
   use.addClass("modelica-studio-solver-use");
   use.setText(solver.use);
   frag.appendChild(use);
@@ -255,12 +255,14 @@ export interface AiConfig {
    */
   secretName: string;
   /**
-   * Legacy field: a plaintext key from before secret storage was used.
+   * The plaintext key from before Obsidian's keychain was used.
    *
-   * Still declared so the value can be found and migrated. It is cleared by
-   * `migrateLegacyKey` and must never be read for a request.
-   *
-   * @deprecated use {@link secretName}
+   * NOT deprecated, deliberately. Keychain storage arrived with the plugin itself, so a
+   * `data.json` written before it may hold the only copy of a user's key; `legacyKeyOf` is
+   * the single reader, the migration empties it into the keychain on load, and a reset that
+   * cannot write the secret puts it back rather than destroying it. Calling it deprecated
+   * would say "nothing should touch this", which is untrue while that data is out there —
+   * and it is what made three unrelated files carry a suppression comment.
    */
   apiKey?: string;
   /** Base URL without the trailing path. */
@@ -428,6 +430,8 @@ export function secretNameOf(cfg: AiConfig): string {
  * in `data.json`, so it wants migrating out.
  */
 export function legacyKeyOf(cfg: AiConfig): string {
+  // The ONE place the plaintext field is read: everything else asks for the secret's name,
+  // and this exists so the migration has a single caller to change.
   return cfg.apiKey?.trim() ?? "";
 }
 

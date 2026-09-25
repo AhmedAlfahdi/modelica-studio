@@ -26,7 +26,7 @@ import {
   type SeriesStyle,
 } from "./plot";
 import { currentTheme } from "../render/theme";
-import { parseModelica, findClass, toDiagramModel } from "../modelica/parser";
+import { parseModelica, toDiagramModel } from "../modelica/parser";
 import type { ComponentInstance } from "../modelica/types";
 import { copyCanvasImage } from "./figure";
 import { setBusy } from "./busy";
@@ -500,7 +500,7 @@ export class EmbeddedDiagram {
     this.editor.requestDraw();
     this.diag("mounted");
     if (typeof requestAnimationFrame === "function") {
-      requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
         this.editor?.resize();
         this.editor?.requestDraw();
         this.editor?.scheduleFit();
@@ -714,8 +714,8 @@ export class EmbeddedDiagram {
       // of pixels of empty canvas above its result — but taken OUT OF FLOW
       // rather than hidden. `display: none` measures 0x0, which would leave the
       // editor unable to size or draw itself for when the user switches back.
-      canvas.style.display = "";
-      canvas.style.position = this.opts.showPlot ? "absolute" : "relative";
+      canvas.removeClass("modelica-studio-hidden");
+      canvas.setCssStyles({ position: this.opts.showPlot ? "absolute" : "relative" });
       canvas.style.visibility = this.opts.showPlot ? "hidden" : "";
       canvas.style.pointerEvents = this.opts.showPlot ? "none" : "";
       // The box keeps its full size so it still measures; only its visibility

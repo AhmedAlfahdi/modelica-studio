@@ -178,7 +178,9 @@ test("the settings tab and the README quote the same performance figures", () =>
   assert.ok(perf.length > 500, "the README has a performance section");
 
   const settings = fs.readFileSync(path.join(repoRoot, "src/settings.ts"), "utf8");
-  const block = /createEl\("h3", \{ text: "Performance" \}\)([\s\S]*?)\n  \}/.exec(settings);
+  // The heading is built with Obsidian's own `setHeading`, which the plugin directory's
+  // linter requires of a settings tab; the section runs from it to the next heading.
+  const block = /setName\("Performance"\)\.setHeading\(\);([\s\S]*?)\n    new Setting\(/.exec(settings);
   assert.ok(block, "the settings tab has one too");
 
   const quoted = [...block[1].matchAll(/metric\(\w+, "([^"]+)", "([^"]+)"/g)].map((m) => ({

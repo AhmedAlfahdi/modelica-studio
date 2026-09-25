@@ -14,7 +14,6 @@ import type {
   ComponentClass,
   DiagramModel,
   Graphic,
-  LineGraphic,
   Placement,
   VariableInstance,
 } from "./types";
@@ -34,11 +33,6 @@ export function fmt(n: number): string {
   const r = Number(n.toFixed(6));
   if (Number.isInteger(r)) return String(r);
   return String(r);
-}
-
-function color(c: Color | undefined, fallback?: Color): Color | undefined {
-  if (!c) return fallback;
-  return c;
 }
 
 function colorStr(c: Color | undefined, fallback: Color): string {
@@ -81,7 +75,7 @@ export function serializeGraphic(g: Graphic): string {
 
   switch (g.kind) {
     case "Line": {
-      const l = g as LineGraphic;
+      const l = g;
       add("points", pointsStr(l.points));
       add("color", colorStr(l.color, [0, 0, 0]));
       if (l.pattern) add("pattern", enumStr(l.pattern));

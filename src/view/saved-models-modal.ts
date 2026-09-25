@@ -184,7 +184,7 @@ export class SavedModelsModal extends Modal {
           .onClick(() => void this.deleteModel(row))
       );
       // Anchored to the button, so the menu appears where it was asked for.
-      menu.showAtMouseEvent(ev as MouseEvent);
+      menu.showAtMouseEvent(ev);
     });
 
     if (row.status === "missing") {
@@ -238,9 +238,10 @@ export class SavedModelsModal extends Modal {
     try {
       if (file instanceof TFile) {
         this.plugin.snapshotRevision(row.name, await this.app.vault.read(file));
-        // `trash` rather than `delete`: it is the vault's own reversible removal,
-        // and it respects the user's file-recovery setting.
-        await this.app.vault.trash(file, true);
+        // `FileManager.trashFile`, not `Vault.trash`: the file manager is what applies
+        // the user's own deletion preference — trash, a system trash folder, or a
+        // permanent delete — and `Vault.trash` ignored it.
+        await this.app.fileManager.trashFile(file);
       }
       delete this.plugin.settings.modelFiles[row.name];
       await this.plugin.saveSettings();

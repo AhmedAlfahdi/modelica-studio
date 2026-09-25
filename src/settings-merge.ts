@@ -386,7 +386,7 @@ export function mergeSettings(
       typeof value === "object" &&
       !Array.isArray(value) &&
       !isMapLike(key);
-    merged[key] = isGroup ? { ...(base as object), ...(value as object) } : value;
+    merged[key] = isGroup ? { ...(base), ...(value as object) } : value;
   }
   return merged as unknown as ModelicaStudioSettings;
 }
@@ -508,10 +508,10 @@ export function resetPreferences(settings: ModelicaStudioSettings): {
   const kept: string[] = [];
 
   for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof ModelicaStudioSettings)[]) {
-    if ((PRESERVED_ON_RESET as readonly string[]).includes(key as string)) continue;
+    if ((PRESERVED_ON_RESET as readonly string[]).includes(key)) continue;
     if (key === "ai") continue;
     if (JSON.stringify(settings[key]) !== JSON.stringify(DEFAULT_SETTINGS[key])) {
-      reset.push(key as string);
+      reset.push(key);
     }
   }
 
@@ -541,7 +541,7 @@ export function resetPreferences(settings: ModelicaStudioSettings): {
       if ((settings.aiModels ?? []).length > 0) kept.push(key);
       continue;
     }
-    if (Object.keys((settings[key] ?? {}) as object).length > 0) kept.push(key);
+    if (Object.keys((settings[key] ?? {})).length > 0) kept.push(key);
   }
 
   return { settings: next, reset, kept };

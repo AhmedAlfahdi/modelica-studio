@@ -78,7 +78,10 @@ test("the dialog offers deletion and history, safely", () => {
   const src = fs.readFileSync(path.join(repoRoot, "src/view/saved-models-modal.ts"), "utf8");
 
   // Deletion is reversible twice: the vault's trash, and a snapshot first.
-  assert.match(src, /this\.app\.vault\.trash\(file, true\)/, "the file goes to the vault's trash");
+  // Through the file manager, which applies the user's own deletion preference (trash, a
+  // system trash folder, or a permanent delete). `Vault.trash` ignored that preference,
+  // which is why the plugin directory's linter requires this call instead.
+  assert.match(src, /this\.app\.fileManager\.trashFile\(file\)/, "the file is trashed the user's way");
   assert.ok(!/vault\.delete\(file\)/.test(src), "not permanently removed");
   const del = /private async deleteModel[\s\S]*?\n  \}/.exec(src);
   assert.ok(del, "the delete path is present");

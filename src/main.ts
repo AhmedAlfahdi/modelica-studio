@@ -31,6 +31,7 @@ import {
   type Editor,
   type MarkdownPostProcessorContext,
 } from "obsidian";
+import { describeError } from "./errors";
 import { LibraryIndex, loadLibraryIndex } from "./modelica/library";
 import {
   EmbeddedDiagram,
@@ -42,7 +43,14 @@ import {
 import { createBackend, SimulationError, type SimulationBackend } from "./omc/backend";
 import { detectOmc, installHint, type OmcInstallation } from "./omc/locate";
 import { emptyDiagram, type DiagramModel } from "./modelica/types";
-import { findClass, parseModelica, toDiagramModel } from "./modelica/parser";
+// Node's own modules, imported once at the top rather than `require`d inside the methods
+// that use them. Obsidian loads the plugin as CommonJS on the desktop, so these are
+// available; `isDesktopOnly` in the manifest is what makes that a promise the plugin
+// keeps. Written as static imports so the types apply: a runtime `require(...)` is `any`,
+// and every `nodeFs.readFileSync` behind one then reads as an unsafe call.
+import * as nodeFs from "node:fs";
+import * as nodePath from "node:path";
+import { parseModelica, toDiagramModel } from "./modelica/parser";
 import { serializeDiagram } from "./modelica/serializer";
 import { lastPatchRefusal, patchDiagramEdits, structureLostBy } from "./modelica/text-edit";
 import { EXAMPLES, findExample } from "./modelica/examples";
@@ -385,7 +393,7 @@ export default class ModelicaStudioPlugin extends Plugin {
    * yet applied — was not written. The user saw a saved file that did not contain
    * their fix, and after a restart the old text was back.
    *
-   * The serializer is a fallback, not the primary path. It rebuilds from the
+   * The serializer is a fallback, not the primary nodePath. It rebuilds from the
    * parsed model, which is lossy: declaration comments go, formatting is
    * normalised, and anything the parser does not model is simply absent. It is
    * only correct when the diagram IS the truth, which is the case for a model
@@ -459,9 +467,7 @@ export default class ModelicaStudioPlugin extends Plugin {
       const adapter = this.app.vault.adapter as { getBasePath?: () => string };
       const base = adapter.getBasePath?.();
       if (!base) return undefined;
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const path = require("node:path") as typeof import("node:path");
-      return path.join(base, this.app.vault.configDir, "plugins", this.manifest.id, "history");
+      return nodePath.join(base, this.app.vault.configDir, "plugins", this.manifest.id, "history");
     } catch {
       return undefined;
     }
@@ -472,17 +478,13 @@ export default class ModelicaStudioPlugin extends Plugin {
     const root = this.revisionsRoot();
     if (!root) return [];
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const fs = require("node:fs") as typeof import("node:fs");
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const path = require("node:path") as typeof import("node:path");
-      const dir = path.join(root, revisionDirName(modelName));
-      if (!fs.existsSync(dir)) return [];
+      const dir = nodePath.join(root, revisionDirName(modelName));
+      if (!nodeFs.existsSync(dir)) return [];
       const out: Revision[] = [];
-      for (const file of fs.readdirSync(dir)) {
+      for (const file of nodeFs.readdirSync(dir)) {
         const at = revisionTime(file);
         if (!at) continue;
-        out.push({ file, at, bytes: fs.statSync(path.join(dir, file)).size });
+        out.push({ file, at, bytes: nodeFs.statSync(nodePath.join(dir, file)).size });
       }
       return out.sort((a, b) => b.at.getTime() - a.at.getTime());
     } catch {
@@ -495,14 +497,10 @@ export default class ModelicaStudioPlugin extends Plugin {
     const root = this.revisionsRoot();
     if (!root) return null;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const fs = require("node:fs") as typeof import("node:fs");
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const path = require("node:path") as typeof import("node:path");
       // `file` comes from our own listing, but it is still checked: a name with a
       // separator in it would escape the model's directory.
       if (file.includes("/") || file.includes("\\") || file.includes("..")) return null;
-      return fs.readFileSync(path.join(root, revisionDirName(modelName), file), "utf8");
+      return nodeFs.readFileSync(nodePath.join(root, revisionDirName(modelName), file), "utf8");
     } catch {
       return null;
     }
@@ -519,20 +517,16 @@ export default class ModelicaStudioPlugin extends Plugin {
     const root = this.revisionsRoot();
     if (!root || !source.trim()) return;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const fs = require("node:fs") as typeof import("node:fs");
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const path = require("node:path") as typeof import("node:path");
-      const dir = path.join(root, revisionDirName(modelName));
+      const dir = nodePath.join(root, revisionDirName(modelName));
       const existing = this.listRevisions(modelName);
       const newest = existing[0] ? this.readRevision(modelName, existing[0].file) : undefined;
       if (!isNewRevision(newest ?? undefined, source)) return;
 
-      fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, revisionFileName(new Date())), source, "utf8");
+      nodeFs.mkdirSync(dir, { recursive: true });
+      nodeFs.writeFileSync(nodePath.join(dir, revisionFileName(new Date())), source, "utf8");
 
       for (const old of revisionsToPrune(this.listRevisions(modelName))) {
-        fs.rmSync(path.join(dir, old.file), { force: true });
+        nodeFs.rmSync(nodePath.join(dir, old.file), { force: true });
       }
       this.trace.add("snapshot", modelName, { revisions: existing.length + 1 });
       this.diag(`history: kept a revision of ${modelName} (${existing.length + 1} total)`);
@@ -546,11 +540,7 @@ export default class ModelicaStudioPlugin extends Plugin {
     const root = this.revisionsRoot();
     if (!root) return;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const fs = require("node:fs") as typeof import("node:fs");
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const path = require("node:path") as typeof import("node:path");
-      fs.rmSync(path.join(root, revisionDirName(modelName)), { recursive: true, force: true });
+      nodeFs.rmSync(nodePath.join(root, revisionDirName(modelName)), { recursive: true, force: true });
     } catch {
       /* a history that cannot be removed is not worth a failure */
     }
@@ -564,9 +554,7 @@ export default class ModelicaStudioPlugin extends Plugin {
       const adapter = this.app.vault.adapter as { getBasePath?: () => string };
       const base = adapter.getBasePath?.();
       if (!base) return undefined;
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const path = require("node:path") as typeof import("node:path");
-      return path.join(base, this.app.vault.configDir, "plugins", this.manifest.id, "library-index.json");
+      return nodePath.join(base, this.app.vault.configDir, "plugins", this.manifest.id, "library-index.json");
     } catch {
       return undefined;
     }
@@ -653,7 +641,7 @@ export default class ModelicaStudioPlugin extends Plugin {
     return describeSaveState({
       source: this.sourceForSave(),
       onDisk,
-      // What this plugin last read or wrote for that path. Anything else on disk now is
+      // What this plugin last read or wrote for that nodePath. Anything else on disk now is
       // somebody else's write — another editor, a script, a repair — and saving over it
       // would destroy it silently.
       lastSeen: this.fileSeen.get(file.path),
@@ -661,7 +649,7 @@ export default class ModelicaStudioPlugin extends Plugin {
   }
 
   /**
-   * The file contents this plugin last read or wrote, by path.
+   * The file contents this plugin last read or wrote, by nodePath.
    *
    * Recorded on load and after every save. It is what separates "the user has unsaved
    * edits" from "the file changed underneath the studio" — two states that used to look
@@ -678,24 +666,20 @@ export default class ModelicaStudioPlugin extends Plugin {
    * A file's text, cached by modification time.
    *
    * `saveState` runs to draw the status bar, which happens often; reading the file
-   * each time would put a disk read in the paint path. The mtime is what makes the
+   * each time would put a disk read in the paint nodePath. The mtime is what makes the
    * cache safe -- a file changed outside the plugin is still picked up.
    */
   private fileTextCache = new Map<string, { mtime: number; text: string }>();
   private cachedFileText(path: string): string | null {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const fs = require("node:fs") as typeof import("node:fs");
       const adapter = this.app.vault.adapter as { getBasePath?: () => string };
       const base = adapter.getBasePath?.();
       if (!base) return null;
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const nodePath = require("node:path") as typeof import("node:path");
       const full = nodePath.join(base, path);
-      const mtime = fs.statSync(full).mtimeMs;
+      const mtime = nodeFs.statSync(full).mtimeMs;
       const hit = this.fileTextCache.get(path);
       if (hit && hit.mtime === mtime) return hit.text;
-      const text = fs.readFileSync(full, "utf8");
+      const text = nodeFs.readFileSync(full, "utf8");
       this.fileTextCache.set(path, { mtime, text });
       return text;
     } catch {
@@ -713,8 +697,6 @@ export default class ModelicaStudioPlugin extends Plugin {
   aiLogPath(): string | undefined {
     const data = this.dataFilePath();
     if (!data) return undefined;
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const nodePath = require("node:path") as typeof import("node:path");
     return nodePath.join(nodePath.dirname(data), "ai-exchanges.jsonl");
   }
 
@@ -729,14 +711,12 @@ export default class ModelicaStudioPlugin extends Plugin {
     const file = this.aiLogPath();
     if (!file) return;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const fs = require("node:fs") as typeof import("node:fs");
-      fs.appendFileSync(file, toLogLine(exchange, this.aiKey()) + "\n");
+      nodeFs.appendFileSync(file, toLogLine(exchange, this.aiKey()) + "\n");
       // Trimmed on write rather than on read: the file is bounded by construction,
       // so it cannot grow without limit if nobody ever opens it.
-      const text = fs.readFileSync(file, "utf8");
+      const text = nodeFs.readFileSync(file, "utf8");
       const pruned = pruneLines(text);
-      if (pruned !== text) fs.writeFileSync(file, pruned, "utf8");
+      if (pruned !== text) nodeFs.writeFileSync(file, pruned, "utf8");
     } catch (err) {
       this.diag(`ai log: could not record the exchange: ${String(err)}`, "warn");
     }
@@ -747,10 +727,8 @@ export default class ModelicaStudioPlugin extends Plugin {
     const file = this.aiLogPath();
     if (!file) return [];
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const fs = require("node:fs") as typeof import("node:fs");
-      if (!fs.existsSync(file)) return [];
-      return parseLog(fs.readFileSync(file, "utf8")).exchanges;
+      if (!nodeFs.existsSync(file)) return [];
+      return parseLog(nodeFs.readFileSync(file, "utf8")).exchanges;
     } catch {
       return [];
     }
@@ -761,9 +739,7 @@ export default class ModelicaStudioPlugin extends Plugin {
     const file = this.aiLogPath();
     if (!file) return;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const fs = require("node:fs") as typeof import("node:fs");
-      if (fs.existsSync(file)) fs.unlinkSync(file);
+      if (nodeFs.existsSync(file)) nodeFs.unlinkSync(file);
     } catch {
       /* nothing to clear */
     }
@@ -820,17 +796,29 @@ export default class ModelicaStudioPlugin extends Plugin {
    * between two useful ones is not debugging.
    */
   diag(message: string, level: "debug" | "info" | "warn" | "error" = "debug"): void {
-    if (level === "error" || level === "warn") {
-      const out = level === "error" ? console.error : console.warn;
-      out(`[Modelica Studio] ${message}`);
-      this.appendDiagnosticLog(`[${level}] ${message}`);
-      return;
-    }
-    if (!this.settings.debugLog) {
-      // Nothing to print and nothing to write; return before doing either.
-      return;
-    }
-    if (level === "info" || this.verbose) console.log(`[Modelica Studio] ${message}`);
+    // The plugin's own log file is the destination; the CONSOLE is the user's, and the
+    // plugin directory's guidelines ask for no unsolicited logging there. So `error` and
+    // `warn` are always written to the log (and surfaced in the UI where it matters —
+    // a failed run says so on the status line), and nothing is printed to the console
+    // unless the debug log is switched on, which is the setting that exists for it.
+    const wanted = level === "error" || level === "warn" || level === "info" || this.verbose;
+    if (!wanted) return;
+    this.appendDiagnosticLog(level === "debug" ? message : `[${level}] ${message}`);
+    if (!this.settings.debugLog) return;
+    // `error` and `warn` are the two the guidelines allow: a failure the user cannot see
+    // is the one they report as "nothing happened", and it is rare. The rest belongs in
+    // the log file, where it can be read and pasted into a bug report.
+    if (level === "error") console.error(`[Modelica Studio] ${message}`);
+    else if (level === "warn") console.warn(`[Modelica Studio] ${message}`);
+  }
+
+  /**
+   * Write a line to the plugin's own log, for a surface with something to report.
+   *
+   * Not the console: the log is where a reader (and a bug report) can find it, and the
+   * plugin directory's guidelines ask for no unsolicited console output.
+   */
+  appendDiagnostic(message: string): void {
     this.appendDiagnosticLog(message);
   }
 
@@ -841,9 +829,7 @@ export default class ModelicaStudioPlugin extends Plugin {
       const base = adapter.getBasePath?.();
       if (!base) return;
       const line = `${new Date().toISOString()} ${message}\n`;
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const fs = require("node:fs") as typeof import("node:fs");
-      fs.appendFileSync(`${base}/.modelica-studio.log`, line);
+      nodeFs.appendFileSync(`${base}/.modelica-studio.log`, line);
     } catch {
       /* diagnostics must never break the plugin */
     }
@@ -866,6 +852,58 @@ export default class ModelicaStudioPlugin extends Plugin {
    *   modelicaStudio.runLog.toText()  // every simulation this session
    *   modelicaStudio.verbose = true   // and then every diag line prints
    */
+  /**
+   * Measure the AI prompts against the configured provider.
+   *
+   * A method rather than a closure inside the debug handle: two entries there (`bench` and
+   * `benchmark`) share this one body, and a closure cannot reach its sibling to say so.
+   */
+  async benchmarkAi(options?: {
+    styles?: Array<"visual" | "equations">;
+    only?: string[];
+  }): Promise<string> {
+          if (!this.backend) return "No OpenModelica backend, so nothing can be compiled.";
+          const library = await this.ensureLibrary();
+          const prompts = options?.only?.length
+            ? BENCH_PROMPTS.filter((p) => options.only!.includes(p.id))
+            : BENCH_PROMPTS;
+          const environment = describeEnvironment(this.aiEnvironment());
+          const available = describeAvailableClasses(library, "modelica", 24);
+          this.appendDiagnosticLog(
+            `benchmark: ${prompts.length} prompt(s), ` +
+              `${(options?.styles ?? ["visual", "equations"]).length} style(s)`
+          );
+          const results = await runBenchmark({
+            config: this.settings.ai,
+            backend: this.backend,
+            environment,
+            getKey: () => this.aiKey(),
+            settings: {
+              startTime: this.settings.startTime,
+              stopTime: this.stopTime(),
+              numberOfIntervals: this.settings.numberOfIntervals,
+              tolerance: this.settings.tolerance,
+              solver: this.settings.solver,
+            },
+            prompts,
+            styles: options?.styles,
+            buildMessages: (prompt, current, failure, style) =>
+              buildMessages({
+                prompt,
+                current,
+                diagnostics: failure || undefined,
+                library: this.library,
+                systemPrompt: this.settings.ai.systemPrompt,
+                environment,
+                availableClasses: available,
+                style,
+              }),
+            send: (messages) => chat(this.settings.ai, messages, () => this.aiKey()),
+            onProgress: (line) => this.appendDiagnosticLog(`benchmark: ${line}`),
+          });
+          return formatBenchmark(results);
+  }
+
   debugHandle(): Record<string, unknown> {
     return {
       plugin: this,
@@ -914,54 +952,12 @@ export default class ModelicaStudioPlugin extends Plugin {
        * typeable from memory, and results print as they arrive rather than at the
        * end, so nothing has to be kept on screen.
        */
-      bench: (options?: { styles?: Array<"visual" | "equations">; only?: string[] }) => {
-        const handle = (window as unknown as { modelicaStudio: Record<string, unknown> }).modelicaStudio;
-        void (handle.benchmark as (o?: unknown) => Promise<string>)(options).then((table) => {
-          console.log(table);
-        });
-        return "Running… results print here as they finish.";
-      },
-      benchmark: async (options?: { styles?: Array<"visual" | "equations">; only?: string[] }) => {
-        if (!this.backend) return "No OpenModelica backend, so nothing can be compiled.";
-        const library = await this.ensureLibrary();
-        const prompts = options?.only?.length
-          ? BENCH_PROMPTS.filter((p) => options.only!.includes(p.id))
-          : BENCH_PROMPTS;
-        const environment = describeEnvironment(this.aiEnvironment());
-        const available = describeAvailableClasses(library, "modelica", 24);
-        console.log(`[Modelica Studio] benchmark: ${prompts.length} prompt(s), ${(options?.styles ?? ["visual", "equations"]).length} style(s)`);
-        const results = await runBenchmark({
-          config: this.settings.ai,
-          backend: this.backend,
-          environment,
-          getKey: () => this.aiKey(),
-          settings: {
-            startTime: this.settings.startTime,
-            stopTime: this.stopTime(),
-            numberOfIntervals: this.settings.numberOfIntervals,
-            tolerance: this.settings.tolerance,
-            solver: this.settings.solver,
-          },
-          prompts,
-          styles: options?.styles,
-          buildMessages: (prompt, current, failure, style) =>
-            buildMessages({
-              prompt,
-              current,
-              diagnostics: failure || undefined,
-              library: this.library,
-              systemPrompt: this.settings.ai.systemPrompt,
-              environment,
-              availableClasses: available,
-              style,
-            }),
-          send: (messages) => chat(this.settings.ai, messages, () => this.aiKey()),
-          onProgress: (line) => console.log(`[Modelica Studio] ${line}`),
-        });
-        const table = formatBenchmark(results);
-        console.log(table);
-        return table;
-      },
+      // The table is RETURNED, so the console shows it: this is a command the reader
+      // typed there, and printing it here as well would print it twice.
+      bench: (options?: { styles?: Array<"visual" | "equations">; only?: string[] }) =>
+        this.benchmarkAi(options),
+      benchmark: (options?: { styles?: Array<"visual" | "equations">; only?: string[] }) =>
+        this.benchmarkAi(options),
       /**
        * What the plugin has held, step by step.
        *
@@ -975,9 +971,9 @@ export default class ModelicaStudioPlugin extends Plugin {
           : options?.all
             ? this.trace.all()
             : this.trace.last(options?.last ?? 20);
-        const text = this.trace.toText(entries);
-        console.log(text);
-        return text;
+        // Returned rather than logged: typing `modelicaStudio.trace()` in the console
+        // prints the returned string itself, so a `console.log` here would print it twice.
+        return this.trace.toText(entries);
       },
       /**
        * The AI exchanges, as text.
@@ -987,11 +983,9 @@ export default class ModelicaStudioPlugin extends Plugin {
        */
       aiLog: (options?: { all?: boolean }) => {
         const exchanges = this.readAiExchanges();
-        const text = options?.all
+        return options?.all
           ? exchanges.map((e) => toLogLine(e, null)).join("\n")
           : formatSummary(summarise(exchanges), exchanges.slice(-15));
-        console.log(text);
-        return text;
       },
       /** Delete the AI log. */
       clearAiLog: () => {
@@ -1004,8 +998,8 @@ export default class ModelicaStudioPlugin extends Plugin {
         return "Trace cleared.";
       },
       probeHelp: () => {
-        const anchor = document.querySelector(".modelica-studio-help") as HTMLElement | null;
-        const row = document.querySelector(".modelica-studio-classrow") as HTMLElement | null;
+        const anchor = document.querySelector(".modelica-studio-help");
+        const row = document.querySelector(".modelica-studio-classrow");
         const svg = anchor?.querySelector("svg") ?? null;
         return {
           classRowFound: !!row,
@@ -1071,14 +1065,11 @@ export default class ModelicaStudioPlugin extends Plugin {
     // Exposed before anything can fail, so a plugin that fails to load is still
     // inspectable from the console rather than silent.
     (window as unknown as { modelicaStudio?: unknown }).modelicaStudio = this.debugHandle();
-    // Only with the debug log on. The console is the user's, not ours: a line printed
-    // on every load is noise in everyone's DevTools to advertise a tool that the
-    // README documents and that a reader who wants it knows how to find.
-    if (this.settings.debugLog) {
-      console.log(
-        "[Modelica Studio] loaded. Type modelicaStudio.help() in this console for what you can inspect."
-      );
-    }
+    // Said through the plugin's own log, never the console: the console is the user's,
+    // and a line on every load is noise in everyone's DevTools to advertise a tool the
+    // README documents. With the debug log on, the setting's own description points at
+    // `modelicaStudio.help()`.
+    this.diag("loaded; modelicaStudio.help() lists what this console handle can inspect", "info");
     this.diag(`onload start; omcPath="${this.settings.omcPath}" jobs=${this.settings.jobs}`, "info");
 
     this.register(() => {
@@ -1113,7 +1104,7 @@ export default class ModelicaStudioPlugin extends Plugin {
     // Studio". The submission requirements call this out by name.
     this.addCommand({
       id: "open-view",
-      name: "Open Modelica Studio",
+      name: "Open the studio view",
       callback: () => void this.activateView(),
     });
 
@@ -1236,7 +1227,7 @@ export default class ModelicaStudioPlugin extends Plugin {
 
     this.addCommand({
       id: "new-model-from-note",
-      name: "Open the active .mo file in Modelica Studio",
+      name: "Open the active .mo file",
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         if (!file || file.extension !== "mo") return false;
@@ -1294,7 +1285,15 @@ export default class ModelicaStudioPlugin extends Plugin {
     this.diag("onload complete: view registered, commands added");
   }
 
-  async onunload(): Promise<void> {
+  /**
+   * Unload. Synchronous, as Obsidian's `Plugin.onunload` is.
+   *
+   * It used to be `async`, which Obsidian's own type says is a promise nobody waits for:
+   * the lifecycle would move on and the writes it makes could outlive the plugin object.
+   * Everything here is deliberate synchronous work — the pending state is flushed with
+   * `flushPersistSync`, precisely because `await` would not be honoured on this path.
+   */
+  onunload(): void {
     // Before anything else: a change made in the last 600 ms is still in the
     // debounce timer, and once this returns there is no plugin left to write it.
     this.flushPersistSync();
@@ -1325,7 +1324,7 @@ export default class ModelicaStudioPlugin extends Plugin {
       this.omc = {
         status: "error",
         libraryRoots: [],
-        message: err instanceof Error ? err.message : String(err),
+        message: describeError(err),
       };
       this.backend = null;
     }
@@ -1358,6 +1357,8 @@ export default class ModelicaStudioPlugin extends Plugin {
     this.libraryReady = false;
     await this.detectToolchain();
     // The rows below the path show what was found, so the tab has to be redrawn.
+    // (`display` is the classic settings-tab entry point; see the note in settings.ts for
+    // why this plugin still calls it rather than the 1.13 declarative API.)
     this.settingsTab?.onLibraryReady();
     this.settingsTab?.display();
     this.warmLibrary();
@@ -1573,7 +1574,9 @@ export default class ModelicaStudioPlugin extends Plugin {
       leaf = this.app.workspace.getLeaf("tab");
       await leaf.setViewState({ type: VIEW_TYPE_MODELICA, active: true });
     }
-    this.app.workspace.revealLeaf(leaf);
+    // `revealLeaf` returns a promise; nothing here depends on the reveal finishing, and
+    // the library build below is what the caller waits for.
+    void this.app.workspace.revealLeaf(leaf);
 
     // Build the library, then refresh the view that was waiting on it.
     const index = await this.ensureLibrary();
@@ -1632,6 +1635,7 @@ export default class ModelicaStudioPlugin extends Plugin {
     try {
       this.app.secretStorage.setSecret(name, legacy);
       this.settings.ai.secretName = name;
+      // The legacy plaintext field, deleted as the migration's last step.
       delete this.settings.ai.apiKey;
       await this.saveSettings();
       new Notice(
@@ -1859,9 +1863,7 @@ export default class ModelicaStudioPlugin extends Plugin {
       const adapter = this.app.vault.adapter as { getBasePath?: () => string };
       const base = adapter.getBasePath?.();
       if (!base) return undefined;
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const path = require("node:path") as typeof import("node:path");
-      return path.join(
+      return nodePath.join(
         base,
         this.app.vault.configDir,
         "plugins",
@@ -1916,9 +1918,7 @@ export default class ModelicaStudioPlugin extends Plugin {
     const file = this.dataFilePath();
     if (!file) return;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const fs = require("node:fs") as typeof import("node:fs");
-      fs.writeFileSync(file, JSON.stringify(this.persistPayload(), null, 2), "utf8");
+      nodeFs.writeFileSync(file, JSON.stringify(this.persistPayload(), null, 2), "utf8");
       this.traceStep("unload");
       this.diag("unload: wrote the pending change synchronously");
     } catch (err) {
@@ -1970,7 +1970,7 @@ export default class ModelicaStudioPlugin extends Plugin {
     try {
       classes = parseModelica(text);
     } catch (err) {
-      new Notice(`Could not parse ${file.name}: ${err instanceof Error ? err.message : err}`);
+      new Notice(`Could not parse ${file.name}: ${describeError(err)}`);
       return;
     }
     if (classes.length === 0) {
@@ -2058,7 +2058,7 @@ export default class ModelicaStudioPlugin extends Plugin {
      *
      * The intended path is checked FIRST and the remembered one second, so a model
      * saved before a folder was configured is found where it is rather than shadowed
-     * by a new file at the conventional path. A path only counts when a FILE is
+     * by a new file at the conventional nodePath. A path only counts when a FILE is
      * there: taking the remembered path on trust is what made a save whose .mo had
      * been deleted call `vault.modify(null, …)` -- "Cannot read properties of null
      * (reading 'path')" -- instead of recreating it, which is what the Saved-models
@@ -2454,15 +2454,16 @@ function promptForText(
       attr: { type: "text", placeholder: opts.placeholder ?? "" },
     });
     input.value = opts.initial ?? "";
-    const problem = modal.contentEl.createDiv({ cls: "modelica-studio-warn" });
-    problem.style.display = "none";
+    const problem = modal.contentEl.createDiv({
+      cls: "modelica-studio-warn modelica-studio-hidden",
+    });
 
     const submit = (action: PromptAction = "confirm") => {
       const value = input.value.trim();
       const error = opts.validate?.(value) ?? null;
       if (error) {
         problem.setText(error);
-        problem.style.display = "";
+        problem.removeClass("modelica-studio-hidden");
         return;
       }
       finish(value);

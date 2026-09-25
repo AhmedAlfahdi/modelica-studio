@@ -144,6 +144,42 @@ export function installDomHelpers(target: { Element: typeof Element; HTMLElement
     Object.assign(this.style, styles);
   };
 
+  // Custom properties, which `Object.assign` cannot set: they need `setProperty`. The
+  // plugin uses this for the tooltip marker the stylesheet reads (`--no-tooltip`).
+  proto.setCssProps = function (this: ObsidianElement, props: Record<string, string>) {
+    for (const [name, value] of Object.entries(props)) this.style.setProperty(name, value);
+  };
+  // Obsidian's cross-window-safe type check, which it asks plugin authors to use instead
+  // of `instanceof` (an element from a popped-out window is not an instance of THIS
+  // window's classes). In one window it is exactly `instanceof`.
+  proto.instanceOf = function (this: ObsidianElement, type: unknown) {
+    return this instanceof (type as new () => unknown);
+  };
+
   htmlProto.setText = proto.setText;
   htmlProto.empty = proto.empty;
+
+  // Obsidian's element factories are also GLOBAL functions — `createEl("div")` builds a
+  // detached element — and the plugin uses them (the linter prefers them to
+  // `document.createElement`). Without these the page dies with "createEl is not defined"
+  // at the first row of UI and the harness waits for a page that will never finish.
+  const win = globalThis as unknown as Record<string, unknown>;
+  win.createEl ??= (tag: string, opts?: unknown) => {
+    const el = globalThis.document.createElement(tag) as ObsidianElement;
+    if (typeof opts === "string") el.setText(opts);
+    else if (opts && typeof opts === "object") {
+      const o = opts as { cls?: string; text?: string; attr?: Record<string, string> };
+      if (o.cls) el.addClass(...String(o.cls).split(/\s+/).filter(Boolean));
+      if (o.text) el.setText(o.text);
+      for (const [k, v] of Object.entries(o.attr ?? {})) el.setAttribute(k, String(v));
+    }
+    return el;
+  };
+  win.createDiv ??= (opts?: unknown) => (win.createEl as (t: string, o?: unknown) => ObsidianElement)("div", opts);
+  win.createSpan ??= (opts?: unknown) => (win.createEl as (t: string, o?: unknown) => ObsidianElement)("span", opts);
+  win.createFragment ??= (callback?: (el: DocumentFragment) => void) => {
+    const frag = globalThis.document.createDocumentFragment();
+    callback?.(frag);
+    return frag;
+  };
 }

@@ -58,7 +58,6 @@ import {
 } from "../render/connector-style";
 import {
   apply,
-  defaultComponentSize,
   defaultExtent,
   diagramBounds,
   instanceBounds,
@@ -363,7 +362,7 @@ export class SchematicEditor {
   ) {
     this.model = model ?? emptyDiagram();
 
-    this.canvas = document.createElement("canvas");
+    this.canvas = createEl("canvas");
     this.canvas.className = "modelica-studio-canvas";
     // Focusable so it can hold keyboard focus, even though key handling is
     // document-level, so Obsidian's own shortcuts can see the focus location.
@@ -807,9 +806,9 @@ export class SchematicEditor {
         outcome: "map",
         boxes: this.model.components.map((c) => ({
           id: c.id,
-          box: c.placement.extent as [number, number, number, number],
+          box: c.placement.extent,
         })),
-      } as never);
+      });
     }
 
     // Which pin, if any, is under the press. Computed BEFORE the handles, because
@@ -1219,7 +1218,7 @@ export class SchematicEditor {
         }
       }
     }
-    this.canvas.style.cursor = "default";
+    this.canvas.setCssStyles({ cursor: "default" });
 
     const bodyHit = hitTestComponent(this.model, this.cb.lookup, dx, dy, 2 / this.viewport.scale);
     const p = bodyHit
@@ -1244,7 +1243,7 @@ export class SchematicEditor {
       this.hoveredWire = wireId;
       this.requestDraw();
     }
-    if (wire) this.canvas.style.cursor = "pointer";
+    if (wire) this.canvas.setCssStyles({ cursor: "pointer" });
   }
 
   private setHoveredPort(p: { component: string; port: string } | undefined): void {
@@ -1776,7 +1775,12 @@ export class SchematicEditor {
 
     this.closeContextMenu();
     const rect = this.container.getBoundingClientRect();
-    const menu = this.container.ownerDocument.createElement("div");
+    // Through the document's own window: an editor in a popped-out pane belongs to that
+    // window, and `ownerDocument.win` is how Obsidian reaches it. The cast is Obsidian's
+    // own augmentation of `Window` with `createDiv`, which the DOM lib does not know.
+    const menu = (
+      this.container.ownerDocument.win as unknown as { createDiv(): HTMLDivElement }
+    ).createDiv();
     menu.className = "modelica-studio-context-menu";
 
     // Delete applies to either kind; the clipboard and rotation are component
@@ -1831,7 +1835,7 @@ export class SchematicEditor {
     const onDown = (e: MouseEvent) => {
       if (this.menuEl && !this.menuEl.contains(e.target as Node)) this.closeContextMenu();
     };
-    setTimeout(() => document.addEventListener("pointerdown", onDown, true), 0);
+    window.setTimeout(() => document.addEventListener("pointerdown", onDown, true), 0);
     this.menuCleanup = () => document.removeEventListener("pointerdown", onDown, true);
   }
 
@@ -2202,7 +2206,7 @@ export class SchematicEditor {
 
   requestDraw(): void {
     if (this.destroyed || this.rafId !== null) return;
-    this.rafId = requestAnimationFrame(() => {
+    this.rafId = window.requestAnimationFrame(() => {
       this.rafId = null;
       if (!this.destroyed) this.draw();
     });

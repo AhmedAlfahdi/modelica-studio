@@ -9,6 +9,57 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 Nothing yet.
 
+## [0.3.21] — 2026-09-25
+
+### Fixed
+
+- **The plugin directory's review findings, all of them.** `eslint-plugin-obsidianmd`'s
+  recommended config is now part of the repository — `npm run lint`, and `test/lint.test.mjs`
+  fails the suite when it is not clean — so the findings were reproduced and fixed rather
+  than guessed at. Its errors, in the order the review listed them:
+
+  - **Direct style assignment, 26 sites.** `element.style.x = …` is replaced by Obsidian's
+    own `setCssStyles`/`setCssProps`, or by the `.modelica-studio-hidden` class where the
+    change is show/hide. An editor in a popped-out pane belongs to that window, so the
+    class also fixes a case where a hidden pane was hidden in the wrong document.
+  - **Manual heading elements, 8 sites.** `containerEl.createEl("h3", …)` becomes
+    `new Setting(containerEl).setName(…).setHeading()`, which is what Obsidian renders for
+    a section and what its search reads.
+  - **`innerHTML` in the code gutter.** The line numbers and diagnostic marks are built as
+    DOM now. The message comes from the compiler, so the old form relied on an escape
+    function being right about every character a diagnostic can contain.
+  - **Undescribed directive comments, 19 sites.** The `require("node:fs")` calls they
+    guarded are gone: the builtins are import-ed at the top, which also removed the whole
+    `no-unsafe-*` family (a runtime `require` is `any`, so every `fs` call behind one read
+    as unsafe).
+
+  And its warnings: `builtin-modules` is replaced by `node:module`'s own
+`builtinModules`; `Vault.trash` by `FileManager.trashFile`, which applies the user's
+  deletion preference; `document.createElement` by `createEl`; bare `setTimeout` and
+  `requestAnimationFrame` by `window.…` (popout compatibility); `globalThis` by `window`;
+  `instanceof SVGSVGElement` by `instanceOf`; the promise-returning handlers and
+  lifecycle methods are awaited or explicitly ignored; and the two command names no
+  longer repeat the plugin name, which the palette already shows.
+- **Nothing is printed to the console unless the debug log is on.** Diagnostics go to the
+  plugin's own log file, where a reader can find them and paste them into a bug report;
+  only `console.error` and `console.warn` still reach the console, which the guidelines
+  allow and which is what a silent failure needs.
+
+### Added
+
+- **`test/lint.test.mjs`** — the review, run locally. Two families of warning are allowed
+  and asserted by name (deprecated APIs, and the 1.13 declarative settings API), so a new
+  warning fails the suite instead of appearing for the first time in a submission.
+
+### Notes
+
+- The declarative settings API (`getSettingDefinitions()`) is **not** adopted yet, and
+  neither `display()` nor `setDynamicTooltip()` is removed: all three are 1.13+ while
+  `minAppVersion` is 1.11.4, and the tab's custom parts — the toolchain status box, the
+  library checkboxes, the performance table, the keychain row — would need `render`
+  callbacks to survive the migration. The reasons are written where the calls are, and the
+  warnings are the reminder to revisit them when the minimum version rises.
+
 ## [0.3.20] — 2026-09-25
 
 ### Fixed

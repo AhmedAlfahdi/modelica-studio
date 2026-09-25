@@ -125,7 +125,10 @@ test("a .mo file can be opened four ways, and the default is left alone", () => 
 
   // 2. The command palette.
   assert.match(src, /id: "new-model-from-note"/, "a command exists");
-  assert.match(src, /Open the active \.mo file in Modelica Studio/, "named for a file, not a note");
+  // The palette already says which plugin a command belongs to, so the name says what
+  // the command does to what: the plugin directory's linter requires that, and it reads
+  // better besides.
+  assert.match(src, /Open the active \.mo file/, "named for a file, not a note");
 
   // 3. Dragging onto the canvas or the code pane.
   assert.match(view, /droppedVaultFile/, "a dropped file is recognised");

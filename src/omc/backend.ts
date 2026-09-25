@@ -470,8 +470,10 @@ export class OmcBackend implements SimulationBackend {
       });
       let stdout = "";
       let stderr = "";
-      child.stdout.on("data", (d) => (stdout += d.toString()));
-      child.stderr.on("data", (d) => (stderr += d.toString()));
+      // The event's payload is typed `any` by Node's stream types; naming it keeps the
+      // rest of the function typed rather than letting `any` spread through the parser.
+      child.stdout.on("data", (d: Buffer | string) => (stdout += d.toString()));
+      child.stderr.on("data", (d: Buffer | string) => (stderr += d.toString()));
       child.on("error", reject);
       child.on("close", (code) => resolve({ stdout, stderr, code }));
     });
@@ -594,7 +596,7 @@ export function parseOmcDiagnostics(output: string): CompileDiagnostic[] {
     const sev = sevRe.exec(line);
     if (!sev?.groups) continue;
 
-    const sevRaw = sev.groups.sev!;
+    const sevRaw = sev.groups.sev;
     const severity: CompileDiagnostic["severity"] =
       sevRaw === "Error" ? "error" : sevRaw === "Warning" ? "warning" : "notification";
     const message = (sev.groups.msg ?? "").trim();

@@ -1284,20 +1284,25 @@ export function substituteMacros(
   _g: TextGraphic,
   resolve?: (name: string) => string | undefined
 ): string {
-  return text.replace(/%(%)|%\{([^}]*)\}|%([A-Za-z_][A-Za-z0-9_.]*)/g, (all, esc, braced, bare) => {
-    if (esc) return "%";
-    // With nothing to ask, the text is wanted as written -- a caller measuring a
-    // label's width has no values to offer and must not get question marks.
-    if (!resolve) return all;
-    const name = braced ?? bare;
-    const v = resolve(name);
-    // A parameter with no value YET becomes unknown rather than staying a macro.
-    // MSL is full of labels like `T=%T` for a parameter declared `T(start=1)` with
-    // no default: measured over the library, 375 icon labels name a parameter the
-    // class cannot supply a value for, and `T=%T` reads as a broken renderer where
-    // `T=?` reads as "not set yet", which is what is true.
-    return v !== undefined && v !== "" ? v : "?";
-  });
+  // The captures are spelled out: `String.replace`'s replacer is typed with `any[]`
+  // arguments, so an untyped callback makes every value below it `any`.
+  return text.replace(
+    /%(%)|%\{([^}]*)\}|%([A-Za-z_][A-Za-z0-9_.]*)/g,
+    (all: string, esc: string, braced: string, bare: string) => {
+      if (esc) return "%";
+      // With nothing to ask, the text is wanted as written -- a caller measuring a
+      // label's width has no values to offer and must not get question marks.
+      if (!resolve) return all;
+      const name = braced ?? bare;
+      const v = resolve(name);
+      // A parameter with no value YET becomes unknown rather than staying a macro.
+      // MSL is full of labels like `T=%T` for a parameter declared `T(start=1)` with
+      // no default: measured over the library, 375 icon labels name a parameter the
+      // class cannot supply a value for, and `T=%T` reads as a broken renderer where
+      // `T=?` reads as "not set yet", which is what is true.
+      return v !== undefined && v !== "" ? v : "?";
+    }
+  );
 }
 
 /**
@@ -1335,16 +1340,6 @@ export const imageCache = new Map<string, HTMLImageElement>();
 /* ------------------------------------------------------------------ */
 
 export interface DrawOptions {
-  /**
-   * Diagnostic: receives the drawn symbol's device-pixel box and the instance's
-   * hit box, so a mismatch between the picture and the clickable region can be
-   * read directly instead of inferred from a screenshot.
-   */
-  onGeometry?: (
-    id: string,
-    drawn: [number, number, number, number],
-    hit: [number, number, number, number]
-  ) => void;
   /** Render below this on-screen size as a simplified box (level of detail). */
   lodThreshold?: number;
   /** Resolve a class name to its visual definition. */
@@ -1451,11 +1446,6 @@ export function drawComponent(
   // text lands on top of its neighbours.
   const showLabels = onScreenSize >= 36;
 
-  // Ink bounds, in device pixels, accumulated as the symbol is plotted.
-  let inkMinX = Infinity, inkMinY = Infinity, inkMaxX = -Infinity, inkMaxY = -Infinity;
-  const inkMin: [number, number] = [0, 0];
-  const inkMax: [number, number] = [0, 0];
-
   const icon = classDef?.icon ?? [];
   if (icon.length > 0 && classDef?.portPositions) {
     // The artwork THIS instance draws: a port stub reaches from the pin to the nearest
@@ -1504,7 +1494,7 @@ export function drawComponent(
       drewSomething = true;
       drawGraphic(
         ctx,
-        { ...resolved, visible: true } as Graphic,
+        { ...resolved, visible: true },
         t,
         totalScale,
         theme,
@@ -1591,16 +1581,6 @@ export function drawComponent(
     // spot is taken and naming a free one instead.
     ctx.fillText(inst.id, opts.labelAt?.x ?? (vb[0] + vb[2]) / 2, opts.labelAt?.y ?? vb[3] + 3);
     ctx.restore();
-  }
-
-  if (opts.onGeometry) {
-    // Gather what was actually plotted for this component.
-    const hb = transformedBounds(vt, ...instanceHitBounds(inst, classDef));
-    opts.onGeometry(
-      inst.id,
-      [inkMin[0], inkMin[1], inkMax[0], inkMax[1]],
-      [hb[0], hb[1], hb[2], hb[3]]
-    );
   }
 
   ctx.restore();

@@ -173,8 +173,14 @@ test("the grip follows the pointer", () => {
   // The editing area is never given a height of its own.
   const mode = /private applyModeResultsHeight[\s\S]*?\n  \}/.exec(src);
   assert.ok(mode, "the mode handler is present");
-  assert.match(mode[0], /codeHost\.style\.flex = ""/, "the editor is allowed to grow");
-  assert.match(mode[0], /codeHost\.style\.height = ""/, "and carries no height of its own");
+  assert.match(
+    mode[0],
+    /codeHost\.setCssStyles\(\{ flex: "", height: "" \}\)/,
+    "the editor is allowed to grow"
+  );
+  // `setCssStyles` clears both in one call, so the assertion above covers the flex and
+  // the height; what matters is that neither is ever SET to a measurement here.
+  assert.ok(!/codeHost\.style\.height\s*=/.test(mode[0]), "and carries no height of its own");
 });
 
 test("every handle in the view moves with the pointer", () => {

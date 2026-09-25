@@ -24,7 +24,7 @@
  */
 
 import { LibraryIndex } from "../modelica/library";
-import { Completion, applyCompletion, completionsFor, highlight, highlightRuns, indentForNewline, prefixAt } from "./modelica-lang";
+import { Completion, applyCompletion, completionsFor, highlightRuns, indentForNewline, prefixAt } from "./modelica-lang";
 
 export interface CodeEditorOptions {
   /** Called after every edit, debounced. */
@@ -89,9 +89,8 @@ export function createCodeEditor(
   const scroll = root.createDiv({ cls: "mst-code-scroll" });
   // The single editable layer. `pre` behaviour comes from CSS (`white-space:
   // pre`), not from the tag, so the markup stays a plain div.
-  const editor = scroll.createEl("div", { cls: "mst-code-editor" });
-  const popup = root.createDiv({ cls: "mst-code-popup" });
-  popup.style.display = "none";
+  const editor = scroll.createDiv({ cls: "mst-code-editor" });
+  const popup = root.createDiv({ cls: "mst-code-popup modelica-studio-hidden" });
 
   editor.setAttribute("contenteditable", "plaintext-only");
   editor.setAttribute("spellcheck", "false");
@@ -186,19 +185,26 @@ export function createCodeEditor(
   function renderGutter(): void {
     const byLine = new Map<number, Diagnostic>();
     for (const d of diagnostics) byLine.set(d.line, d);
-    const parts: string[] = [];
+    // Built as DOM rather than as an HTML string. The message comes from the compiler, so
+    // assembling markup around it meant trusting `escapeAttr` to be right about every
+    // character a diagnostic can contain; `setText` and `setAttribute` cannot be wrong.
+    gutterInner.empty();
     for (let i = 1; i <= lineCount(); i++) {
       const d = byLine.get(i);
-      // The tooltip is the ONLY place this message appears, so it has to stay --
-      // but as `aria-label`, which is what Obsidian builds a tooltip from and
-      // what a screen reader reads. `role="img"` gives the span an accessible
-      // name; without a role, `aria-label` on a bare span is not exposed.
-      const mark = d
-        ? `<span class="mst-code-mark is-${d.severity}" role="img" aria-label="${escapeAttr(d.message)}"></span>`
-        : "";
-      parts.push(`<div class="mst-code-ln${d ? " has-" + d.severity : ""}">${i}${mark}</div>`);
+      const lineEl = gutterInner.createDiv({
+        cls: d ? `mst-code-ln has-${d.severity}` : "mst-code-ln",
+      });
+      lineEl.appendText(String(i));
+      if (d) {
+        // The tooltip is the ONLY place this message appears, so it has to stay --
+        // but as `aria-label`, which is what Obsidian builds a tooltip from and what
+        // a screen reader reads. `role="img"` gives the span an accessible name;
+        // without a role, `aria-label` on a bare span is not exposed.
+        const mark = lineEl.createSpan({ cls: `mst-code-mark is-${d.severity}` });
+        mark.setAttribute("role", "img");
+        mark.setAttribute("aria-label", d.message);
+      }
     }
-    gutterInner.innerHTML = parts.join("");
   }
 
   function syncScroll(): void {
@@ -246,13 +252,13 @@ export function createCodeEditor(
    * saves, so opening code mode on a Windows-saved model rewrote its line endings.
    */
   function paint(source: string): void {
-    const frag = document.createDocumentFragment();
+    const frag = createFragment();
     for (const run of highlightRuns(source)) {
       if (run.kind === "plain") {
         frag.appendChild(document.createTextNode(run.text));
         continue;
       }
-      const span = document.createElement("span");
+      const span = createSpan();
       span.className = `mst-${run.kind}`;
       span.textContent = run.text;
       frag.appendChild(span);
@@ -313,7 +319,7 @@ export function createCodeEditor(
   /* ---- completion ---- */
 
   function hidePopup(): void {
-    popup.style.display = "none";
+    popup.addClass("modelica-studio-hidden");
     popupItems = [];
   }
 
@@ -345,7 +351,7 @@ export function createCodeEditor(
         acceptPopup(i);
       });
     });
-    popup.style.display = "";
+    popup.removeClass("modelica-studio-hidden");
   }
 
   /**
@@ -358,7 +364,7 @@ export function createCodeEditor(
   function measureFont(style: CSSStyleDeclaration): CanvasRenderingContext2D | null {
     if (measureCtx === undefined) {
       try {
-        measureCtx = document.createElement("canvas").getContext("2d");
+        measureCtx = createEl("canvas").getContext("2d");
       } catch {
         measureCtx = null;
       }
@@ -626,6 +632,3 @@ export function createCodeEditor(
   };
 }
 
-function escapeAttr(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-}

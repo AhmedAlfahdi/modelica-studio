@@ -6,7 +6,7 @@
  * unusual setup rather than to require tuning.
  */
 
-import { App, Notice, PluginSettingTab, SecretComponent, Setting } from "obsidian";
+import { Notice, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import type ModelicaStudioPlugin from "./main";
 import { FolderSuggest } from "./view/folder-suggest";
 // The snap distance is defined by the plot, which has to clamp whatever it is
@@ -15,7 +15,7 @@ import { FolderSuggest } from "./view/folder-suggest";
 import { MAX_SNAP_TOLERANCE_PX, MIN_SNAP_TOLERANCE_PX, snapTolerancePx } from "./view/plot";
 import { exclusionsFrom, libraryRows } from "./modelica/library-exclusions";
 import { SOLVERS, solverDescription, AI_THINKING_LEVELS, MODEL_STYLES, type AiThinking, type ModelStyle, AI_DEFAULTS,
-  DEFAULT_TIMEOUT_SECONDS, AI_PROVIDERS, AiConfig, LEGACY_SECRET_NAME, legacyKeyOf } from "./ai/prompts";
+  DEFAULT_TIMEOUT_SECONDS, AI_PROVIDERS, LEGACY_SECRET_NAME, legacyKeyOf } from "./ai/prompts";
 
 
 
@@ -28,11 +28,27 @@ import {
 } from "./settings-merge";
 import { confirm } from "./view/confirm";
 
+/*
+ * Two Obsidian APIs this tab still calls are deprecated, and it calls them on purpose.
+ * The directory lists a deprecation as a recommendation, so they stay visible there; what
+ * follows is why they have not been replaced.
+ *
+ * - `setDynamicTooltip` (nine sliders) prints a slider's value while it is dragged. On
+ *   Obsidian 1.13 and later the value is shown beside the control anyway, and the call is
+ *   a no-op; before 1.13 it is the only place the number appears. `minAppVersion` is
+ *   1.11.4, so removing the call would take the value away from those readers.
+ * - `display` is the classic entry point for a settings tab. Its replacement,
+ *   `getSettingDefinitions()`, is `@since 1.13.0` and describes rows declaratively: it
+ *   cannot express this tab's custom parts — the toolchain status box, the library
+ *   checkboxes, the performance table, the keychain row — without `render` callbacks, and
+ *   adopting it while `minAppVersion` is 1.11.4 would leave older Obsidian with a tab
+ *   that draws nothing. Revisit both when the minimum version rises to 1.13.
+ */
 export class ModelicaStudioSettingTab extends PluginSettingTab {
   plugin: ModelicaStudioPlugin;
 
   constructor(plugin: ModelicaStudioPlugin) {
-    super(plugin.app as App, plugin);
+    super(plugin.app, plugin);
     this.plugin = plugin;
   }
 
@@ -118,11 +134,12 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
     const again = () => {
       for (const [el, top] of places) if (top > 0 && el.scrollTop === 0) el.scrollTop = top;
     };
-    const raf = globalThis.requestAnimationFrame;
-    if (typeof raf === "function") {
-      raf(() => {
+    if (typeof window.requestAnimationFrame === "function") {
+      // Called on `window` rather than through an alias: the method has to keep its
+      // receiver, and an alias loses it (the linter says so, and it is right).
+      window.requestAnimationFrame(() => {
         again();
-        raf(again);
+        window.requestAnimationFrame(again);
       });
     }
     // And on a timer as well, not instead: frames do not arrive in a hidden or
@@ -202,13 +219,13 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
     containerEl.empty();
     // A heading through the API rather than an `h2` in the container, which is what
     // the plugin submission checklist asks for.
-    new Setting(containerEl).setName("Modelica Studio").setHeading();
+    ;
 
     /* ---- toolchain status ---- */
     const status = this.plugin.toolchainSummary();
     const statusBox = containerEl.createDiv({ cls: "modelica-studio-setting-status" });
     statusBox.createEl("strong", { text: status.ok ? "OpenModelica detected" : "OpenModelica not detected" });
-    statusBox.createEl("div", { cls: "modelica-studio-muted", text: status.text });
+    statusBox.createDiv({ cls: "modelica-studio-muted", text: status.text });
     if (!status.ok && status.action) {
       statusBox.createEl("pre", { cls: "modelica-studio-muted", text: status.action });
     }
@@ -287,7 +304,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           })
       );
 
-    containerEl.createEl("h3", { text: "Simulation defaults" });
+    new Setting(containerEl).setName("Simulation defaults").setHeading();
 
     // Two different things, which were one row: the span the OPEN model runs over
     // (kept per model) and the span a model starts with. The row was labelled
@@ -407,8 +424,8 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           "made of it, in the plugin folder as ai-exchanges.jsonl. The reasons a " +
           "model was rejected after building are what a prompt change should be " +
           "aimed at, and they are only visible at the moment of the exchange. " +
-          "Your API key is never written. Read it with the \"Show the AI prompt " +
-          'log\" command.'
+          'Your API key is never written. Read it with the "Show the AI prompt ' +
+          '"log" command.'
       )
       .addToggle((t) =>
         t.setValue(this.plugin.settings.aiLog).onChange(async (v) => {
@@ -437,7 +454,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
       );
 
     /* ---- the diagram ---- */
-    containerEl.createEl("h3", { text: "Diagram" });
+    new Setting(containerEl).setName("Diagram").setHeading();
 
     // The names are how a diagram is read while it is being built and clutter
     // once it is understood, so they can be switched off. The SIZE below then has
@@ -690,7 +707,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
       );
 
     /* ---- reading the results plot ---- */
-    containerEl.createEl("h3", { text: "Results plot" });
+    new Setting(containerEl).setName("Results plot").setHeading();
     containerEl.createEl("p", {
       cls: "modelica-studio-muted",
       text:
@@ -791,7 +808,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
     snapDistance.setDisabled(!this.plugin.settings.plotSnapCrossings);
 
     /* ---- AI assistance ---- */
-    containerEl.createEl("h3", { text: "AI assistance" });
+    new Setting(containerEl).setName("AI assistance").setHeading();
     containerEl.createEl("p", {
       cls: "modelica-studio-muted",
       text:
@@ -864,9 +881,12 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
       )
       .addDropdown((d) => {
         d.addOption("", "Choose...");
-        AI_PROVIDERS.forEach((p, i) => d.addOption(String(i), p.label));
+        for (const [i, p] of AI_PROVIDERS.entries()) d.addOption(String(i), p.label);
         d.setValue("");
-        d.onChange(async (v) => {
+        d.onChange((v) => {
+          // The async work is voided rather than awaited: `onChange` is a void callback,
+          // and the dropdown must not report a rejected promise into it.
+          void (async (): Promise<void> => {
           if (v === "") return;
           const p = AI_PROVIDERS[Number(v)];
           if (!p) return;
@@ -876,6 +896,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           this.plugin.settings.aiModels = [];
           await this.plugin.saveSettings();
           this.display();
+          })();
         });
       });
 
@@ -917,7 +938,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
             this.plugin.settings.ai.model = v.trim();
             await this.plugin.saveSettings();
           });
-        t.inputEl.style.minWidth = "220px";
+        t.inputEl.addClass("modelica-studio-path-input");
       });
 
     if (suggested.length) {
@@ -934,8 +955,9 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
       });
     }
 
-    const modelStatus = containerEl.createDiv({ cls: "modelica-studio-setting-status" });
-    modelStatus.style.display = "none";
+    const modelStatus = containerEl.createDiv({
+      cls: "modelica-studio-setting-status modelica-studio-hidden",
+    });
 
     new Setting(containerEl)
       .setName("Refresh model list")
@@ -951,7 +973,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           const result = await this.plugin.refreshAiModels();
           b.setButtonText("Refresh");
           b.setDisabled(false);
-          modelStatus.style.display = "";
+          modelStatus.removeClass("modelica-studio-hidden");
           modelStatus.setText(result.text);
           modelStatus.toggleClass("is-ok", result.ok);
           modelStatus.toggleClass("is-bad", !result.ok);
@@ -1038,7 +1060,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
       .setName("Extra instructions")
       .setDesc("Appended to every request. Use it for house style or units.")
       .addTextArea((t) => {
-        t.setPlaceholder("e.g. Prefer SI units and add a comment above each equation.")
+        t.setPlaceholder("Prefer SI units, and add a comment above each equation.")
           .setValue(this.plugin.settings.ai.systemPrompt)
           .onChange(async (v) => {
             this.plugin.settings.ai.systemPrompt = v;
@@ -1047,8 +1069,9 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         t.inputEl.rows = 3;
       });
 
-    const resultBox = containerEl.createDiv({ cls: "modelica-studio-setting-status" });
-    resultBox.style.display = "none";
+    const resultBox = containerEl.createDiv({
+      cls: "modelica-studio-setting-status modelica-studio-hidden",
+    });
 
     new Setting(containerEl)
       .setName("Test connection")
@@ -1060,7 +1083,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           const result = await this.plugin.testAiConnection();
           b.setButtonText("Test");
           b.setDisabled(false);
-          resultBox.style.display = "";
+          resultBox.removeClass("modelica-studio-hidden");
           resultBox.setText(result.text);
           resultBox.toggleClass("is-ok", result.ok);
           resultBox.toggleClass("is-bad", !result.ok);
@@ -1074,7 +1097,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         "in the studio: open it and choose Help in the toolbar.",
     });
 
-    containerEl.createEl("h3", { text: "Models" });
+    new Setting(containerEl).setName("Models").setHeading();
     containerEl.createEl("p", {
       cls: "modelica-studio-muted",
       text:
@@ -1098,9 +1121,11 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           });
         // `addSearch` supplies a search-shaped input, which is also what
         // AbstractInputSuggest expects.
-        new FolderSuggest(this.app, t.inputEl, async (path) => {
+        // `void`, not an `async` callback: the suggest component wants a void handler,
+        // and the save is asynchronous.
+        new FolderSuggest(this.app, t.inputEl, (path) => {
           this.plugin.settings.modelFolder = path;
-          await this.plugin.saveSettings();
+          void this.plugin.saveSettings();
         });
       });
 
@@ -1112,7 +1137,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         "it is about the model being worked on, not a preference.",
     });
 
-    containerEl.createEl("h3", { text: "Library" });
+    new Setting(containerEl).setName("Library").setHeading();
     containerEl.createEl("p", {
       cls: "modelica-studio-muted",
       text:
@@ -1143,7 +1168,10 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
       // Re-applying is cheap: the index clears its caches only when the list
       // actually changed.
       this.plugin.applyExclusions();
-      this.plugin.getView()?.refreshLibrary();
+      // The view's refresh is asynchronous and nothing here waits for it; the exclusions
+      // are already applied to the index, which is what the palette reads.
+      const view = this.plugin.getView();
+      if (view) void view.refreshLibrary();
     };
 
     const renderRows = () => {
@@ -1171,7 +1199,8 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           // because something above it is, so ticking it here alone does nothing.
           line.createSpan({ cls: "modelica-studio-library-note", text: `excluded by ${row.excludedBy}` });
         }
-        box.addEventListener("change", async () => {
+        box.addEventListener("change", () => {
+          void (async () => {
           const next = libraryRows(packages, this.plugin.settings.excludedLibraries).map((r) => ({
             name: r.name,
             excluded: r.name === row.name ? !box.checked : r.excluded,
@@ -1185,6 +1214,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           // `Modelica` excluded, ticking `Modelica.Fluid` changes its note.
           renderRows();
           area.value = this.plugin.settings.excludedLibraries;
+          })();
         });
       }
     };
@@ -1206,13 +1236,12 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
     const area = advanced.createEl("textarea", { cls: "modelica-studio-library-text" });
     area.rows = 4;
     area.value = this.plugin.settings.excludedLibraries;
-    area.addEventListener("change", async () => {
+    area.addEventListener("change", () => {
       this.plugin.settings.excludedLibraries = area.value;
-      await apply();
-      renderRows();
+      void apply().then(renderRows);
     });
 
-    containerEl.createEl("h3", { text: "Performance" });
+    new Setting(containerEl).setName("Performance").setHeading();
     containerEl.createEl("p", {
       cls: "modelica-studio-muted",
       text:
@@ -1271,7 +1300,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
     // registry, each model's stop time and chart, the AI model list, the name of
     // the API-key secret — and says so, because "reset" beside a plugin whose
     // settings include a model registry is a button someone presses carefully.
-    containerEl.createEl("h3", { text: "Reset" });
+    new Setting(containerEl).setName("Reset").setHeading();
     new Setting(containerEl)
       .setName("Reset settings to defaults")
       .setDesc(
@@ -1284,10 +1313,13 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
       .addButton((b) =>
         b
           .setButtonText("Reset")
+          // `setWarning`, not `setDestructive`: the replacement is Obsidian 1.13+ and
+          // `minAppVersion` is 1.11.4, so the newer call would break the promise the
+          // manifest makes. The deprecation is a recommendation; the version gate is not.
           .setWarning()
           .onClick(async () => {
             const confirmed = await confirm(
-              this.app as App,
+              this.app,
               "Reset settings to defaults?",
               "Every setting in this tab goes back to its default value, including " +
                 "the solver, the panel widths and the line weights. Your saved " +

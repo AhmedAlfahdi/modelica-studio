@@ -1,6 +1,6 @@
 {
   "name": "modelica-studio",
-  "version": "0.3.20",
+  "version": "0.3.21",
   "description": "Obsidian plugin for visual Modelica modeling and simulation. Beta.",
   "main": "main.js",
   "type": "module",
@@ -10,7 +10,8 @@
     "typecheck": "tsc -noEmit -skipLibCheck",
     "test": "node --test test/*.test.mjs",
     "check:bundle": "node scripts/check-bundle.mjs",
-    "check:repo": "node scripts/check-repo.mjs"
+    "check:repo": "node scripts/check-repo.mjs",
+    "lint": "eslint src"
   },
   "author": "Ahmed N. Alfahdi",
   "repository": {
@@ -27,7 +28,10 @@
     "@types/node": "^22.10.2",
     "builtin-modules": "^4.0.0",
     "esbuild": "^0.24.2",
+    "eslint": "^9.39.5",
+    "eslint-plugin-obsidianmd": "^0.4.2",
     "obsidian": "^1.7.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.70.1"
   }
 }

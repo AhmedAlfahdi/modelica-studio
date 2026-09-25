@@ -12,14 +12,14 @@
 import {
   App,
   ItemView,
-  Scope,
   MarkdownView,
   Modal,
   Notice,
   Platform,
+  Scope,
+  setIcon,
   TFile,
   WorkspaceLeaf,
-  setIcon,
 } from "obsidian";
 import type ModelicaStudioPlugin from "../main";
 import { SchematicEditor } from "./editor";
@@ -38,6 +38,7 @@ import {
 } from "./plot";
 import { defaultSeriesNames, seriesPreset, SERIES_PRESETS, summarizeSeries } from "./series";
 import type { SeriesPreset, SeriesPresetId } from "./series";
+import { describeError } from "../errors";
 import { collectParameters, sweepableParameters } from "./parameters";
 import type { TreeNode as PackageNode } from "../modelica/library";
 import { drawGraphic, portIsEnabled, substituteMacros } from "../render/canvas";
@@ -825,8 +826,7 @@ export class ModelicaStudioView extends ItemView {
    * the first switch stutter, and the pane is cheap when it is empty.
    */
   private buildCodePane(root: HTMLElement): void {
-    const host = root.createDiv({ cls: "modelica-studio-code" });
-    host.style.display = "none";
+    const host = root.createDiv({ cls: "modelica-studio-code modelica-studio-hidden" });
     this.codeHost = host;
     // Dragging a `.mo` onto the code pane opens it too: it is the surface where
     // source is edited, so it is where someone would expect to drop source.
@@ -884,8 +884,7 @@ export class ModelicaStudioView extends ItemView {
     this.codeDiagEl = diagEl;
 
     // The AI request row, hidden until asked for.
-    const aiRow = host.createDiv({ cls: "modelica-studio-ai" });
-    aiRow.style.display = "none";
+    const aiRow = host.createDiv({ cls: "modelica-studio-ai modelica-studio-hidden" });
     aiRow.setAttribute("role", "group");
     noLabelTooltip(aiRow, "Generate a model with AI");
     this.aiRow = aiRow;
@@ -894,7 +893,7 @@ export class ModelicaStudioView extends ItemView {
       cls: "modelica-studio-ai-input",
       attr: {
         type: "text",
-        placeholder: "e.g. a tank draining through an orifice, 2 m of water",
+        placeholder: "A tank draining through an orifice, 2 m of water",
         "aria-label": "Describe the model you want",
       },
     });
@@ -933,7 +932,7 @@ export class ModelicaStudioView extends ItemView {
     setIcon(stop, "square");
     stop.createSpan({ text: "Stop" });
     stop.setAttribute("aria-label", "Stop the run after the current step");
-    stop.style.display = "none";
+    stop.addClass("modelica-studio-hidden");
     stop.addEventListener("click", () => {
       this.aiCancel = true;
       // Interrupt the call, not just the loop: the loop only looks at the flag
@@ -957,8 +956,7 @@ export class ModelicaStudioView extends ItemView {
     logBtn.addEventListener("click", () => this.showAiLog());
     this.aiLogBtn = logBtn;
 
-    const progress = aiRow.createDiv({ cls: "modelica-studio-ai-progress" });
-    progress.style.display = "none";
+    const progress = aiRow.createDiv({ cls: "modelica-studio-ai-progress modelica-studio-hidden" });
     progress.setAttribute("role", "status");
     progress.setAttribute("aria-live", "polite");
     this.aiProgressEl = progress;
@@ -1062,8 +1060,7 @@ export class ModelicaStudioView extends ItemView {
     // drag appeared to move a fixed block about inside it rather than resizing
     // the editor.
     if (this.codeHost) {
-      this.codeHost.style.flex = "";
-      this.codeHost.style.height = "";
+      this.codeHost.setCssStyles({ flex: "", height: "" });
     }
     // Only the results pane carries a height. Code mode starts it small, because
     // there a plot is a reference rather than the subject.
@@ -1512,7 +1509,6 @@ export class ModelicaStudioView extends ItemView {
     }
 
     const original = this.codeEditor?.getValue() ?? "";
-    const failure = repair ? this.fullFailureText() : "";
 
     this.aiBusy = true;
     this.aiCancel = false;
@@ -1535,7 +1531,7 @@ export class ModelicaStudioView extends ItemView {
     setButtonBusy(pressed, true, repair ? "wrench" : "sparkles");
     this.aiGoBtn?.setAttribute("disabled", "true");
     this.aiFixBtn?.setAttribute("disabled", "true");
-    if (this.aiStopBtn) this.aiStopBtn.style.display = "";
+    this.aiStopBtn?.removeClass("modelica-studio-hidden");
     // A previous model is worth keeping: a run that produces nothing must leave
     // the editor as it was, not empty.
     this.setAiProgress("Asking " + cfg.model + "…");
@@ -1616,7 +1612,7 @@ export class ModelicaStudioView extends ItemView {
       this.aiGoBtn?.removeAttribute("disabled");
       this.aiFixBtn?.removeAttribute("disabled");
       if (this.aiStopBtn) {
-        this.aiStopBtn.style.display = "none";
+        this.aiStopBtn.addClass("modelica-studio-hidden");
         this.aiStopBtn.removeAttribute("disabled");
       }
       this.aiCancel = false;
@@ -1739,7 +1735,7 @@ export class ModelicaStudioView extends ItemView {
   /** Write a line into the AI row, and show a stop button while running. */
   private setAiProgress(text: string): void {
     if (!this.aiProgressEl) return;
-    this.aiProgressEl.style.display = "";
+    this.aiProgressEl.removeClass("modelica-studio-hidden");
     this.aiProgressEl.setText(text);
     this.aiPhase ||= text;
   }
@@ -1944,7 +1940,7 @@ export class ModelicaStudioView extends ItemView {
 
   private addPaletteItem(
     item: ComponentClass,
-    list: HTMLElement = this.paletteEl!,
+    list: HTMLElement = this.paletteEl,
     /** Character positions that matched, to highlight. */
     positions?: number[]
   ): void {
@@ -1959,7 +1955,6 @@ export class ModelicaStudioView extends ItemView {
     btn.tabIndex = 0;
     btn.setAttribute("role", "button");
     this.paletteItems.push(item.name);
-    const index = this.paletteItems.length - 1;
     // Placing from the keyboard needs a canvas position; the centre of the
     // visible area is the least surprising one.
     const placeFromKeyboard = () => {
@@ -2089,7 +2084,7 @@ export class ModelicaStudioView extends ItemView {
             ),
           };
           try {
-            drawGraphic(ctx, withValues as typeof g, t, 1, theme, strokePx);
+            drawGraphic(ctx, withValues, t, 1, theme, strokePx);
           } catch {
             /* a single bad primitive must not break the palette */
           }
@@ -2739,8 +2734,7 @@ export class ModelicaStudioView extends ItemView {
       this.plotCanvas = host.createEl("canvas");
       this.bindPlotEvents(this.plotCanvas, () => this.drawResults());
 
-      const logHost = el.createDiv({ cls: "modelica-studio-log" });
-      logHost.style.display = "none";
+      const logHost = el.createDiv({ cls: "modelica-studio-log modelica-studio-hidden" });
       this.logHost = logHost;
       const logBar = logHost.createDiv({ cls: "modelica-studio-log-bar" });
       const toAi = logBar.createEl("button", { cls: "modelica-studio-btn" });
@@ -2825,7 +2819,7 @@ export class ModelicaStudioView extends ItemView {
 
     this.applyBottomTab();
     // Freshly laid out, so draw on the next frame and again once it settles.
-    requestAnimationFrame(() => this.drawResults());
+    window.requestAnimationFrame(() => this.drawResults());
     window.setTimeout(() => this.drawResults(), 120);
   }
   /**
@@ -2911,8 +2905,7 @@ export class ModelicaStudioView extends ItemView {
       .createEl("button", { cls: "modelica-studio-btn", text: "Close" })
       .addEventListener("click", () => this.closeFullScreen());
 
-    this.scalePanel = overlay.createDiv({ cls: "modelica-studio-scale" });
-    this.scalePanel.style.display = "none";
+    this.scalePanel = overlay.createDiv({ cls: "modelica-studio-scale modelica-studio-hidden" });
     scaleBtn.addEventListener("click", () => {
       const open = this.scalePanel?.style.display !== "none";
       if (this.scalePanel) this.scalePanel.style.display = open ? "none" : "";
@@ -2951,7 +2944,7 @@ export class ModelicaStudioView extends ItemView {
       this.closeFullScreen();
     };
     document.addEventListener("keydown", onKey, true);
-    requestAnimationFrame(() => this.drawFullScreen());
+    window.requestAnimationFrame(() => this.drawFullScreen());
   }
 
   /**
@@ -3069,7 +3062,7 @@ export class ModelicaStudioView extends ItemView {
       if (this.plotHost?.parentElement === pane) {
         pane.insertBefore(this.inlineScale, this.plotHost);
       }
-      this.inlineScale.style.display = "none";
+      this.inlineScale.addClass("modelica-studio-hidden");
     }
     this.scaleOpen = !this.scaleOpen;
     this.inlineScale.style.display = this.scaleOpen ? "" : "none";
@@ -3117,7 +3110,9 @@ export class ModelicaStudioView extends ItemView {
       // right trace names but ran the studio's old values was still wrong.
       parameters: collectParameters(this.plugin.model),
     };
-    this.plugin.publishChart();
+    // `publishChart` returns the promise the save makes; nothing here waits for it, and
+    // the chart is published either way, so the rejection is the plugin's to report.
+    void this.plugin.publishChart();
   }
 
   /** The y-extent of the given series, for the slider bounds. */
@@ -3317,9 +3312,7 @@ export class ModelicaStudioView extends ItemView {
       new TextModal(
         this.app,
         "Check",
-        `${formatLint(findings)}\n\nthe compiler could not be asked: ${
-          err instanceof Error ? err.message : err
-        }`
+        `${formatLint(findings)}\n\nthe compiler could not be asked: ${describeError(err)}`
       ).open();
       return;
     } finally {
@@ -3468,8 +3461,7 @@ export class ModelicaStudioView extends ItemView {
       // Named, because a sweep of the wrong model is the failure that looks like
       // a physics problem: the error quotes components the user did not draw.
       new Notice(
-        `Modelica: the sweep of ${ranName} stopped — ` +
-          `${err instanceof Error ? err.message : err}`
+        `Modelica: the sweep of ${ranName} stopped — ` + describeError(err)
       );
       this.busy = false;
       this.endBusy();
@@ -4207,7 +4199,7 @@ export class ModelicaStudioView extends ItemView {
       }
     };
 
-    setTimeout(() => {
+    window.setTimeout(() => {
       document.addEventListener("pointerdown", onDown, true);
       document.addEventListener("keydown", onKey, true);
       // Focus the first item so the arrow keys work without a click first.
@@ -4794,7 +4786,10 @@ export class ModelicaStudioView extends ItemView {
         this.editor.requestDraw();
       }
     });
-    console.info(text);
+    // Through the plugin's own log rather than the console: the plugin directory's
+    // guidelines ask for no unsolicited console output, and this is a debug surface that
+    // the reader asked for by pressing the button.
+    this.plugin.appendDiagnostic(text);
   }
 
   async saveToNote(): Promise<void> {
@@ -5023,7 +5018,7 @@ function confirmDiscard(app: App, title: string, body: string): Promise<boolean>
  * chrome-less Electron popup instead.
  */
 export function openInBrowser(url: string): void {
-  const a = document.createElement("a");
+  const a = createEl("a");
   a.href = url;
   a.target = "_blank";
   a.rel = "noopener";

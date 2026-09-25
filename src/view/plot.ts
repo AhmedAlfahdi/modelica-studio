@@ -494,7 +494,7 @@ export function drawPlot(
   const lay = plotLayout(cssWidth, cssHeight, visible.length > 0, axisLabelColumnW(plans));
   plans.forEach((plan, i) => plan.names.forEach((n: string) => axisOf.set(n, i)));
 
-  (globalThis as { __PLOT_AXES__?: (m: string) => void }).__PLOT_AXES__?.(
+  (window as { __PLOT_AXES__?: (m: string) => void }).__PLOT_AXES__?.(
     plans.map((p, i) => `axis${i + 1}=${p.min.toPrecision(4)}..${p.max.toPrecision(4)}(${p.names.length})`).join(" ")
   );
 

@@ -59,7 +59,7 @@ export class FolderSuggest extends AbstractInputSuggest<string> {
     const exists = this.app.vault.getAbstractFileByPath(value) instanceof TFolder;
     if (!exists) {
       const note = el.createSpan({ cls: "modelica-studio-folder-new" });
-      note.setText("new folder");
+      note.setText("New folder");
     }
   }
 

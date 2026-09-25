@@ -19,7 +19,7 @@
  */
 
 import type { SimulationBackend } from "../omc/backend";
-import { SimulationError, type CompileDiagnostic } from "../omc/backend";
+import type { CompileDiagnostic } from "../omc/backend";
 import type { AiConfig, ChatMessage } from "./prompts";
 import { extractModelica, modelNameOf, type ModelStyle } from "./prompts";
 import { DEFAULT_LIMITS, runGenerationLoop, summarise, type Attempt, type LoopLimits, type LoopResult } from "./loop";

@@ -25,20 +25,22 @@ export async function withTimeout<T>(
   onTimeout: () => Error,
   signal?: AbortSignal
 ): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let poll: ReturnType<typeof setInterval> | undefined;
+  // `window.setTimeout`, not the global, so a request made from a popped-out pane is
+  // timed by that window's clock; the id it returns is a number, not Node's Timeout.
+  let timer: number | undefined;
+  let poll: number | undefined;
   try {
     return await new Promise<T>((resolve, reject) => {
-      timer = setTimeout(() => reject(onTimeout()), timeoutMs);
+      timer = window.setTimeout(() => reject(onTimeout()), timeoutMs);
       if (signal) {
-        poll = setInterval(() => {
+        poll = window.setInterval(() => {
           if (signal.aborted) reject(new Error("Cancelled."));
         }, 250);
       }
       work.then(resolve, reject);
     });
   } finally {
-    if (timer !== undefined) clearTimeout(timer);
-    if (poll !== undefined) clearInterval(poll);
+    if (timer !== undefined) window.clearTimeout(timer);
+    if (poll !== undefined) window.clearInterval(poll);
   }
 }

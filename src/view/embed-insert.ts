@@ -20,6 +20,7 @@
 import { App, Editor, Modal, Notice, Setting } from "obsidian";
 import { fuzzyFilter } from "../modelica/fuzzy";
 import { copyText } from "./clipboard";
+import { describeError } from "../errors";
 
 /* ------------------------------------------------------------------ */
 /* The block                                                          */
@@ -498,7 +499,7 @@ export class EmbedPickerModal extends Modal {
     } catch (err) {
       // A file that cannot be read must not become an empty block in the note:
       // that would look like the model was embedded and simply does nothing.
-      new Notice(`Modelica: could not read ${row.candidate.label} — ${err instanceof Error ? err.message : err}`);
+      new Notice(`Modelica: could not read ${row.candidate.label} — ${describeError(err)}`);
       return;
     }
     if (!source.trim()) {
