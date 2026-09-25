@@ -797,3 +797,44 @@ test("the release workflow builds the assets it attests", () => {
     "the README shows the command that verifies an installed file"
   );
 });
+
+test("the README discloses every capability the directory's analysis flags", () => {
+  // The directory's behaviour scan lists five capabilities: runs a shell command, reads
+  // files outside the vault, reads machine details, lists the vault's files, and uses the
+  // clipboard. A plugin that runs a compiler should say so, and the listing is where a
+  // reader looks before installing — so each one is named, and the machine-details row
+  // says what is NOT read, which is the finding's actual worry (fingerprinting).
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+  const section = /### What it accesses, and what leaves your machine([\s\S]*?)\n---/.exec(readme);
+  assert.ok(section, "the disclosure section is present");
+  const text = section[1];
+  for (const capability of [
+    /Runs a shell command/,
+    /Reads files outside the vault/,
+    /Machine details/,
+    /Lists your vault's files/,
+    /The clipboard/,
+  ]) {
+    assert.match(text, capability, `${capability} is disclosed`);
+  }
+  assert.match(text, /No hostname, no username/, "and what is NOT read is stated");
+  // The claims in that row are checked against the source, so the README cannot drift
+  // into promising something the code contradicts.
+  const sources = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(p);
+      else if (entry.name.endsWith(".ts")) sources.push(fs.readFileSync(p, "utf8"));
+    }
+  };
+  walk(path.join(repoRoot, "src"));
+  const all = sources.join("\n");
+  for (const forbidden of ["os.hostname", "os.userInfo", "os.networkInterfaces", "os.arch", "os.release", "os.platform"]) {
+    assert.ok(!all.includes(forbidden), `${forbidden} would contradict the README's machine-details row`);
+  }
+  // And the two capabilities the directory named are in the shipped code, so the row is
+  // describing something real rather than a stale claim.
+  assert.match(all, /from "node:child_process"/, "a shell command is really run");
+  assert.match(all, /from "node:fs"/, "and files outside the vault are really read");
+});

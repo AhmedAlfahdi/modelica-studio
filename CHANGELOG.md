@@ -9,6 +9,31 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 Nothing yet.
 
+## [0.3.22] — 2026-09-25
+
+### Changed
+
+- **The AI brief no longer describes the machine.** `describeEnvironment` sent
+  OpenModelica's full PATH along with its version; the version is what a model needs to
+  write Modelica, and a path is the user's home directory spelled out in a request to a
+  remote service. Library names are basenames now whatever a caller passes, so a root
+  given as a path cannot leak either. Nothing else about the installation was ever sent.
+
+- **Two fewer environment reads.** The default parallel-job count comes from the
+  renderer's `navigator.hardwareConcurrency` rather than `os.cpus()`, and the library
+  search uses `os.homedir()` instead of `process.env.HOME` — the same place on Linux and
+  macOS, the right one on Windows.
+
+### Added
+
+- **The capabilities the plugin directory flags are now a table in the README**, so a
+  reader of the listing knows before installing: it runs `omc` as a shell command, reads
+  files outside the vault (the Modelica libraries, its own cache and logs), reads machine
+  details (home directory, Flatpak/Snap detection, core count — and **no hostname,
+  username, serial or network interfaces**), lists the vault's files for Model list, and
+  uses the clipboard for copy and paste inside the plugin. A test holds the table to the
+  source: the banned identity reads fail the suite if they are ever added.
+
 ## [0.3.21] — 2026-09-25
 
 ### Fixed

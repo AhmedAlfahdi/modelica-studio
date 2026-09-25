@@ -321,7 +321,16 @@ the cursor, which turns "this valve opens a little later" into a number.
 
 ### What it accesses, and what leaves your machine
 
-Stated plainly, because a plugin that runs a compiler should say so.
+Stated plainly, because a plugin that runs a compiler should say so. The plugin
+directory's own analysis flags five capabilities here; this is what each one is for.
+
+| Capability | What it is used for |
+|---|---|
+| **Runs a shell command** | `omc`, the OpenModelica compiler: translate, compile and run a model. Nothing else is executed, and only when you press Simulate, Sweep, Check or Rebuild. |
+| **Reads files outside the vault** | The Modelica Standard Library of your installed OpenModelica (to index classes for the palette), and its own cache, history and logs under your Obsidian configuration folder. No file is scanned for anything but `.mo` source. |
+| **Machine details** | Your home directory, to find OpenModelica's library folder; whether Obsidian runs in a Flatpak or a Snap, to find `omc` inside it; the core count, to default the compiler's parallel jobs. **No hostname, no username, no hardware serial, no network interfaces** — and none of it is ever sent anywhere. |
+| **Lists your vault's files** | **Model list…** and the embed picker: they show the `.mo` files that exist, so you can open one. The list is not stored or sent. |
+| **The clipboard** | Copy and paste *inside the plugin* — a component, a selection, the model as text — and the `Ctrl+C`/`Ctrl+V` you already expect. It is read only when you paste, and written only when you copy. |
 
 **Files, and what for.** Everything inside your vault is reached through Obsidian's
 own API, and the plugin writes only where you ask it to: `.mo` files in the model
@@ -352,6 +361,14 @@ that model to the provider you configured:
   OpenRouter (`openrouter.ai`), or
 - any OpenAI-compatible base URL you type in instead, including a local Ollama or
   llama.cpp server — in which case nothing leaves the machine.
+
+What it sends is the prompt, the model source, the compiler's output, the OpenModelica
+**version**, the names of the libraries you have indexed, and your run settings. It does
+not send file paths, your vault's contents, or anything identifying the machine.
+
+The **benchmark** (`modelicaStudio.bench()`, documented under [Debugging](#debugging))
+is the one exception, and it is a developer tool: it measures a fixed set of prompts and
+reports the timings, from your console.
 
 The key is stored in Obsidian's keychain and sent only to that provider. The plugin
 has **no telemetry, no analytics and no update check**: it never contacts this

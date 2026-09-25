@@ -547,7 +547,11 @@ function computeStepSize(opts: SimulateOptions): number {
 }
 
 function defaultJobs(): number {
-  const n = os.cpus()?.length ?? 2;
+  // `navigator.hardwareConcurrency`, not `os.cpus()`: the renderer knows the machine's
+  // core count already, and reading the environment for it is one more thing the plugin
+  // directory's capability scan has to explain.
+  // `window`, not `globalThis`: a pane popped out into its own window has its own.
+  const n = window.navigator?.hardwareConcurrency || 2;
   // Leave a core for the UI thread; OMC's own default of 1 costs 2.4x.
   return Math.max(1, Math.min(8, n - 1));
 }

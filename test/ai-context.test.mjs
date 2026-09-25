@@ -45,6 +45,22 @@ test("the environment brief states what a model would otherwise get wrong", () =
   assert.match(text, /Modelica\.Media/);
 });
 
+test("the brief carries nothing about the machine it was written on", () => {
+  // What the plugin directory's behaviour scan worries about is fingerprinting: a request
+  // that describes the user's machine to a remote service. The brief is the only thing
+  // that leaves the plugin, and it is built from this one value — so the omc PATH is not
+  // in it. The version is: a model has to know which compiler it is writing for, and a
+  // version number says nothing about who is running it.
+  const text = describeEnvironment({
+    ...ENV,
+    omcPath: "/home/someone/opt/openmodelica/bin/omc",
+    libraryNames: ["/home/someone/.openmodelica/libraries/Modelica 4.1.0"],
+  });
+  assert.ok(!text.includes("/home/someone"), `no path reaches the brief: ${text}`);
+  assert.ok(!/\bomc\b\s*at\b/.test(text), "and no path is named as such");
+  assert.match(text, /OpenModelica 1\.27\.0/, "the version still does");
+});
+
 test("a missing OpenModelica is stated rather than omitted", () => {
   const text = describeEnvironment({ ...ENV, omcVersion: undefined, omcPath: undefined });
   assert.match(text, /not detected/);

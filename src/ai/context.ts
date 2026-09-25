@@ -56,13 +56,23 @@ export function describeEnvironment(env: AiEnvironment): string {
   const lines: string[] = ["## This installation"];
 
   lines.push(
+    // The VERSION, not the path: the path adds nothing a model needs to write Modelica,
+    // and it describes the machine's layout to a remote service. This is the only place
+    // anything about the installation is sent, and it goes only when AI assistance is on.
     env.omcVersion
-      ? `- OpenModelica ${env.omcVersion}${env.omcPath ? ` at ${env.omcPath}` : ""}`
+      ? `- OpenModelica ${env.omcVersion}`
       : "- OpenModelica: not detected, so nothing can be simulated until it is installed"
   );
+  // Basenames, whatever the caller passes: a library root is a path, and a path is the
+  // user's home directory spelled out in a request to a remote service. The plugin already
+  // shortens these, and this makes the guarantee the function's own rather than the
+  // caller's.
+  const libraryNames = (env.libraryNames ?? []).map(
+    (n) => n.split(/[\\/]/).filter(Boolean).pop() ?? n
+  );
   lines.push(
-    env.libraryNames?.length
-      ? `- Libraries indexed: ${env.libraryNames.join(", ")}`
+    libraryNames.length
+      ? `- Libraries indexed: ${libraryNames.join(", ")}`
       : "- Libraries: none indexed"
   );
   if (env.classCount) {

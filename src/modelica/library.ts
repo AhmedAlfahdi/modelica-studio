@@ -14,6 +14,7 @@
  */
 
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { parseModelica, placementCenter as extentCenter, type ParsedClass } from "./parser";
 import type { ComponentClass, Graphic, ParameterDef, PortDef } from "./types";
@@ -672,7 +673,9 @@ export class LibraryIndex {
 
   /** Candidate library roots found on this machine. */
   static discoverLibraryRoots(): string[] {
-    const home = process.env.HOME ?? "";
+    // `os.homedir()`, not `process.env.HOME`: the same place on Linux and macOS, the
+    // right one on Windows, and one fewer environment variable read.
+    const home = os.homedir();
     const candidates = [
       path.join(home, ".openmodelica", "libraries"),
       "/usr/lib/omc/libraries",
