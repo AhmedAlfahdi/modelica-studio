@@ -305,13 +305,18 @@ export class HelpModal extends Modal {
       el.createDiv({ cls: "modelica-studio-help-legend-head", text: heading });
       const grid = el.createDiv({ cls: "modelica-studio-help-domains" });
       for (const info of infos) {
-        const line = grid.createDiv({ cls: "modelica-studio-help-domain" });
-        // The same class the palette and the notes use, so the legend cannot
-        // drift from what it describes.
-        line.createSpan({ ...domainAttributes(info.domain), text: info.label });
-        line.createSpan({ cls: "modelica-studio-help-domain-code", text: info.msl ?? "—" });
+        // Each cell is a child of the grid itself rather than of a row wrapper: the
+        // wrapper existed only to be laid out with `display: contents`, which the
+        // review rejects as a partially supported feature. Three cells per row in one
+        // grid is also what lines the columns up, and a row with no "from" simply
+        // leaves the third cell empty.
+        //
+        // The colour cell carries the same class the palette and the notes use, so the
+        // legend cannot drift from what it describes.
+        grid.createSpan({ ...domainAttributes(info.domain), text: info.label });
+        grid.createSpan({ cls: "modelica-studio-help-domain-code", text: info.msl ?? "—" });
         if (info.from) {
-          line.createSpan({ cls: "modelica-studio-help-domain-from", text: info.from });
+          grid.createSpan({ cls: "modelica-studio-help-domain-from", text: info.from });
         }
       }
     };
@@ -598,13 +603,20 @@ export class HelpModal extends Modal {
     });
   }
 
-  /** Keys on the left, what they do on the right, aligned so they can be scanned. */
+  /**
+   * Keys on the left, what they do on the right, aligned so they can be scanned.
+   *
+   * Both cells are children of the one grid, which is what aligns them: the
+   * per-row wrapper that used to hold them was laid out with
+   * `display: contents`, which the review rejects as a partially supported
+   * feature, and separate grids per row would size each row's key column on its
+   * own, so "Z" and "Shift+Ctrl+Z" would sit in different columns.
+   */
   private shortcutTable(parent: HTMLElement, shortcuts: Shortcut[]): void {
     const table = parent.createDiv({ cls: "modelica-studio-keys" });
     for (const s of shortcuts) {
-      const line = table.createDiv({ cls: "modelica-studio-key-row" });
-      line.createSpan({ cls: "modelica-studio-key-combo", text: s.keys });
-      line.createSpan({ cls: "modelica-studio-key-what", text: s.what });
+      table.createSpan({ cls: "modelica-studio-key-combo", text: s.keys });
+      table.createSpan({ cls: "modelica-studio-key-what", text: s.what });
     }
   }
 }

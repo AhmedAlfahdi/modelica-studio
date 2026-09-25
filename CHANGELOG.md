@@ -9,6 +9,64 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 Nothing yet.
 
+## [0.3.23] — 2026-09-25
+
+### Fixed
+
+- **The stylesheet findings from the plugin directory's review, all of them.** The
+  review reports CSS as well as TypeScript, and `styles.css` had seven findings: four
+  `:has()` selectors and three `display: contents` declarations, plus an `!important`
+  pair and a property declared twice. Reproducing the review's CSS rules locally
+  (`stylelint.config.mjs`, below) found exactly those seven, so they are fixed against
+  the real check rather than guessed at:
+
+  - **`:has()` is gone, four sites.** A selector that depends on a descendant
+    invalidates broadly, which is why the review rejects it. The inspector pane knew it
+    was holding the Traces tab by looking for its own body's class
+    (`.…-inspector:has(> .…-body.is-results)`); the pane is now told directly, by a
+    class toggled beside the body's in `renderInspector`. The Solver row in settings
+    matched on the list inside its description
+    (`.setting-item:has(.…-solver-points)`); the row now carries a class of its own,
+    set where the row is built.
+
+  - **`display: contents` is gone, three sites.** The scale controls, the shortcut
+    table and the colour legend each wrapped every row in an element that only existed
+    to be laid out with `display: contents` — a feature the review treats as not
+    reliably supported, and the browser data behind that flags the accessibility bugs
+    around it. The wrappers are removed and their cells are children of the grid that
+    lays them out, which is not a workaround but the same layout: one grid per table is
+    what keeps the columns aligned, and a grid per row would have sized each row on its
+    own, so `Z` and `Shift+Ctrl+Z` would have sat in different columns.
+
+  - **`!important` is gone, and the drag cursor is proven without it.** A drag on a
+    pane divider holds the cursor shape across the window and stops the drag selecting
+    text, and it did that with `!important`. Obsidian's own equivalent rule
+    (`body.is-grabbing *`) uses `!important` too, so this one is won on specificity
+    instead — the surfaces that carry a cursor of their own (the editor, a canvas in a
+    leaf, the leaf itself) are named, and `test/drag-cursor.test.mjs` renders the page
+    in a real engine with the app's competing rules inlined and asserts the computed
+    cursor, in both stylesheet orders. That test caught a gap on its first run: a theme
+    rule two classes deep beat the canvas selector, which is why the canvas rule
+    carries the leaf as well.
+
+  - **A duplicate `box-sizing`** in the results pane's rule, declaring what its
+    neighbour already declared.
+
+### Added
+
+- **The review's CSS checks, run locally.** `stylelint.config.mjs` carries the rules
+  Obsidian publishes for plugin and theme stylesheets — `:has()`, `!important`,
+  features no supported Electron renders, external URLs, named colours, `all`,
+  duplicate properties, unknown syntax — without the stylistic base, so the gate fails
+  on what a review reports and not on formatting. `npm run lint` runs it after eslint,
+  `npm run lint:css` runs it alone, and `test/lint.test.mjs` fails the suite when it is
+  not clean. That test also carries a canary: `:has()` and `display: contents` are
+  linted in-memory and must still come back as findings, because a gate that quietly
+  stopped looking would read as coverage.
+
+- **`test/drag-cursor.test.mjs`**, which had no equivalent before: the divider drag's
+  cursor and text selection were the one stylesheet behaviour asserted nowhere.
+
 ## [0.3.22] — 2026-09-25
 
 ### Changed

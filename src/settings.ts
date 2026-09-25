@@ -382,6 +382,11 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
     // description used to be one line and the detail was appended to the container
     // afterwards, so it floated loose below the block it belonged to.
     const solverSetting = new Setting(containerEl).setName("Solver");
+    // Named so the stylesheet can give this row the width its bulleted
+    // description needs. It matched the row with `:has(.…-solver-points)`
+    // before, which the review rejects: a selector that depends on a descendant
+    // invalidates broadly.
+    solverSetting.setClass("modelica-studio-solver-setting");
     const showSolver = (id: string) => {
       const solver = SOLVERS.find((s) => s.id === id);
       solverSetting.setDesc(

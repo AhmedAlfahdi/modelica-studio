@@ -663,3 +663,31 @@ test("a check and a run share the busy pane without clearing each other", () => 
   assert.match(view, /if \(this\.checking\) \{/, "a check cannot start while one is running");
   assert.match(view, /this\.checking = false;/, "and the flag is cleared when it ends");
 });
+
+test("every class the stylesheet matches for a tab or a row is one the code sets", () => {
+  // Two rules that used to find their element with `:has()` -- which the plugin
+  // directory rejects, because a selector that depends on a descendant invalidates
+  // broadly -- are now classes toggled from the code. That trade moves the risk
+  // rather than removing it: a class matched in `styles.css` and never set applies to
+  // nothing, silently, and the pane or row simply keeps the layout it used to have.
+  // The stylesheet half of each pair is asserted here with the code half.
+  const settings = fs.readFileSync(path.join(repoRoot, "src/settings.ts"), "utf8");
+
+  assert.match(css, /\.modelica-studio-inspector\.is-results-tab \{/, "the pane has a rule of its own");
+  assert.match(
+    view,
+    /inspectorCol\?\.toggleClass\(\s*"is-results-tab",\s*this\.inspectorTab === "results"\s*\)/,
+    "and the pane is told which tab it holds, beside the body's own class"
+  );
+
+  assert.match(
+    css,
+    /\.setting-item\.modelica-studio-solver-setting \{/,
+    "the solver row has a rule of its own"
+  );
+  assert.match(
+    settings,
+    /setClass\(\s*"modelica-studio-solver-setting"\s*\)/,
+    "and the row is named where it is built"
+  );
+});

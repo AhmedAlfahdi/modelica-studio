@@ -2187,6 +2187,12 @@ export class ModelicaStudioView extends ItemView {
     // to be able to scroll the pane; the Traces tab is a list, and a list should
     // fill the space it is given.
     el.toggleClass("is-results", this.inspectorTab === "results");
+    // The pane carries the same fact as a class of its own, because the rule that
+    // turns it into a column has to match the PANE. It was written as
+    // `:has(> .…-body.is-results)`, which the review rejects: a selector that
+    // depends on a descendant invalidates broadly. Toggled here, next to the
+    // class it mirrors, so the two cannot drift.
+    this.inspectorCol?.toggleClass("is-results-tab", this.inspectorTab === "results");
     if (this.inspectorTab === "results") {
       this.renderResultSummary(el);
     } else {
@@ -2977,13 +2983,16 @@ export class ModelicaStudioView extends ItemView {
     const y = { yMin: this.yLimits?.yMin ?? yFull.min, yMax: this.yLimits?.yMax ?? yFull.max };
 
     const row = (label: string, lo: number, hi: number, get: () => number, set: (v: number) => void) => {
-      const line = panel.createDiv({ cls: "modelica-studio-scale-row" });
-      line.createSpan({ cls: "modelica-studio-scale-label", text: label });
-      const range = line.createEl("input", { type: "range" });
+      // The three controls go into the panel's own grid, not into a row wrapper.
+      // The wrapper was laid out with `display: contents`, which the review
+      // rejects as a partially supported feature, and one grid for every row is
+      // what keeps the columns shared so the labels line up down the panel.
+      panel.createSpan({ cls: "modelica-studio-scale-label", text: label });
+      const range = panel.createEl("input", { type: "range" });
       range.min = "0";
       range.max = "1";
       range.step = "0.001";
-      const num = line.createEl("input", { type: "number", cls: "modelica-studio-scale-num" });
+      const num = panel.createEl("input", { type: "number", cls: "modelica-studio-scale-num" });
       const span = hi - lo || 1;
       const toPos = (v: number) => Math.min(1, Math.max(0, (v - lo) / span));
       const refresh = () => {

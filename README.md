@@ -93,10 +93,12 @@ npm test               # ~790 tests, including a numerical audit of the examples
 npm run lint           # the plugin directory's own review rules
 ```
 
-`npm run lint` runs `eslint-plugin-obsidianmd`'s recommended config — the same rules the
-Obsidian community directory reviews a submission with, at the same severities — so that
-list is never seen for the first time during a review. `test/lint.test.mjs` fails the
-suite when it is not clean.
+`npm run lint` runs `eslint-plugin-obsidianmd`'s recommended config over the source and
+the CSS checks the directory's published stylelint config applies to `styles.css` — the
+same rules a submission is reviewed with — so that list is never seen for the first time
+during a review. `test/lint.test.mjs` fails the suite when either is not clean, and
+carries a canary proving the CSS gate still rejects `:has()` and `display: contents`
+rather than passing because it stopped looking.
 
 `npm test` runs the real OpenModelica compiler, so it needs `omc` on your PATH and
 takes a few minutes. Without it, the simulation-dependent tests skip.

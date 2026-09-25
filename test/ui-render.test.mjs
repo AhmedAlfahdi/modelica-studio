@@ -159,7 +159,16 @@ test("the help dialog renders its facts, its links and every shortcut", async ()
     "modal.open();",
     "const root = modal.contentEl;",
     "const facts = Array.from(root.querySelectorAll('.modelica-studio-help-fact'));",
-    "const keys = Array.from(root.querySelectorAll('.modelica-studio-key-row'));",
+    // The keys and their meanings are the CHILDREN of their grid, two per row:
+    // there is no per-row element, because the wrapper that used to hold them
+    // needed `display: contents`, which the review rejects. Pairing the cells
+    // here also checks the thing the two columns depend on -- a combo followed
+    // by its meaning, in that order. There are two grids (the diagram keys and
+    // the code keys), and each begins its own first column, so the cells are
+    // collected per grid rather than as one flat run.",
+    "const keyCells = Array.from(root.querySelectorAll('.modelica-studio-keys')).flatMap((g) => Array.from(g.children));",
+    "const keys = [];",
+    "for (let i = 0; i + 1 < keyCells.length; i += 2) keys.push([keyCells[i], keyCells[i + 1]]);",
     "",
     "window.test('the installation facts are shown', () => facts.map(f => f.textContent).join(' || '));",
     "window.test('the reading-the-diagram notes are shown', () => {",
@@ -169,9 +178,9 @@ test("the help dialog renders its facts, its links and every shortcut", async ()
     "  const paras = Array.from(root.querySelectorAll('p'));",
     "  return paras.filter((p) => p.textContent.includes('Hovering a component') || p.textContent.includes('dimmed connector')).map((p) => p.textContent).join(' || ');",
     "});",
-    "window.test('every shortcut is rendered', () => keys.length + ' of ' + (DIAGRAM_SHORTCUTS.length + CODE_SHORTCUTS.length));",
+    "window.test('every shortcut is rendered', () => keys.length + ' of ' + (DIAGRAM_SHORTCUTS.length + CODE_SHORTCUTS.length) + ' in ' + keyCells.length + ' cells');",
     "window.test('each shortcut has a key and a meaning', () =>",
-    "  keys.filter(k => k.querySelector('.modelica-studio-key-combo').textContent.trim() && k.querySelector('.modelica-studio-key-what').textContent.trim()).length + ' complete');",
+    "  keys.filter(([combo, what]) => combo.classList.contains('modelica-studio-key-combo') && combo.textContent.trim() && what.classList.contains('modelica-studio-key-what') && what.textContent.trim()).length + ' complete');",
     "window.test('the documentation links are buttons', () => {",
     "  const links = Array.from(root.querySelectorAll('.modelica-studio-help-links button'));",
     "  // The TEXT, which is what a user reads; the aria-label is the tooltip.",
@@ -233,8 +242,15 @@ test("the help dialog renders its facts, its links and every shortcut", async ()
   assert.match(d["the reading-the-diagram notes are shown"], /Hovering a component/);
   assert.match(d["the reading-the-diagram notes are shown"], /dimmed connector/);
 
-  const [shown, total] = d["every shortcut is rendered"].split(" of ").map(Number);
+  // "N of M in C cells". The cell count is asserted too: the list is one grid
+  // with two children per shortcut and no row element, so a shortcut that lost
+  // half of itself would show up as an odd cell count rather than as a row that
+  // still looks complete.
+  const shape = /^(\d+) of (\d+) in (\d+) cells$/.exec(d["every shortcut is rendered"]);
+  assert.ok(shape, `the shortcut list reports its shape: ${d["every shortcut is rendered"]}`);
+  const [shown, total, cells] = shape.slice(1).map(Number);
   assert.equal(shown, total, `every exported shortcut is rendered: ${d["every shortcut is rendered"]}`);
+  assert.equal(cells, total * 2, "two cells per shortcut: the key and its meaning");
   assert.ok(total >= 15, `enough to be worth listing, got ${total}`);
   assert.equal(d["each shortcut has a key and a meaning"], `${total} complete`);
 
@@ -347,8 +363,11 @@ test("the settings tab renders every section, with the solver's details in its b
     "  if (!item) return 'NO SOLVER SETTING';",
     "  const points = item.querySelectorAll('.modelica-studio-solver-points li');",
     "  const use = item.querySelector('.modelica-studio-solver-use');",
-    "  // The detail must be INSIDE the block: it used to be appended after it.",
-    "  return 'bullets=' + points.length + ' use=' + !!use + ' inside=' + item.contains(points[0]);",
+    "  // The detail must be INSIDE the block: it used to be appended after it. And the",
+    "  // row carries the class the stylesheet keys on to give the description room --",
+    "  // it matched with `:has(.…-solver-points)` before, which the review rejects.",
+    "  return 'bullets=' + points.length + ' use=' + !!use + ' inside=' + item.contains(points[0])",
+    "    + ' named=' + item.classList.contains('modelica-studio-solver-setting');",
     "});",
     "window.test('the solver choices are the runtime\\'s own', () => {",
     "  const item = Array.from(root.querySelectorAll('.setting-item')).find((i) => i.querySelector('.setting-item-name').textContent === 'Solver');",
@@ -427,6 +446,11 @@ test("the settings tab renders every section, with the solver's details in its b
   assert.match(d["the solver keeps its detail inside the setting block"], /bullets=[3-9]/);
   assert.match(d["the solver keeps its detail inside the setting block"], /use=true/);
   assert.match(d["the solver keeps its detail inside the setting block"], /inside=true/);
+  assert.match(
+    d["the solver keeps its detail inside the setting block"],
+    /named=true/,
+    "the row carries the class its stylesheet rule matches"
+  );
 
   const solvers = d["the solver choices are the runtime's own"].split(",");
   assert.ok(solvers.includes("cvode"), "the measured-best solver is offered");

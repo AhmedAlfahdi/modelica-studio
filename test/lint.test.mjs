@@ -1,25 +1,29 @@
 /**
- * The plugin directory's own linter, as a test.
+ * The plugin directory's own linters, as tests.
  *
  * The submission review runs `eslint-plugin-obsidianmd`'s recommended config over the
- * source, and a submission is a bad place to see that list for the first time: a style
- * finding means a rewrite in public, and an error holds the plugin out of the directory
- * until it is fixed. `eslint.config.mjs` reproduces the same rules with the same
- * severities, so this test is the review, run locally.
+ * source and the same family of CSS checks the published `stylelint-config-obsidianmd`
+ * applies over the stylesheet. A submission is a bad place to see either list for the
+ * first time: a style finding means a rewrite in public, and an error holds the plugin
+ * out of the directory until it is fixed. `eslint.config.mjs` and `stylelint.config.mjs`
+ * reproduce those rules with the same severities, so these tests are the review, run
+ * locally.
  *
- * It is the slowest test in the suite (type-aware linting over the whole source: about
- * forty seconds), which is why it is one test rather than one per rule. Skipped when
- * eslint is not installed — the suite is otherwise usable without the dev tooling.
+ * The source test is the slowest in the suite (type-aware linting over the whole source:
+ * about forty seconds), which is why it is one test rather than one per rule. Both are
+ * skipped when their linter is not installed — the suite is otherwise usable without the
+ * dev tooling.
  */
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { repoRoot } from "./helpers/build.mjs";
 
 const eslint = path.join(repoRoot, "node_modules", ".bin", "eslint");
+const stylelint = path.join(repoRoot, "node_modules", ".bin", "stylelint");
 const config = path.join(repoRoot, "eslint.config.mjs");
 
 test("the source passes the plugin directory's linter", { skip: !fs.existsSync(eslint) && "eslint is not installed" }, () => {
@@ -63,4 +67,54 @@ test("the source passes the plugin directory's linter", { skip: !fs.existsSync(e
   assert.ok(warnings.length >= 1, "the two known warning families are still being reported");
   void status;
   void config;
+});
+
+/**
+ * Run stylelint over `code` and return its findings as text lines.
+ *
+ * Over stdin the report goes to STDERR, not stdout: stdout is where `--fix` writes the
+ * corrected CSS, so it stays empty unless a fix was asked for. Both streams are read and
+ * the JSON is taken from whichever carried it, because the exit code cannot be used to
+ * decide -- a stylesheet with findings is a normal result here, not a crash.
+ */
+function cssFindings(code) {
+  const run = spawnSync(stylelint, ["--stdin", "--stdin-filename", "styles.css", "-f", "json"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    input: code,
+  });
+  assert.equal(run.error, undefined, `stylelint did not run: ${run.error}`);
+  const out = `${run.stderr ?? ""}${run.stdout ?? ""}`;
+  const at = out.indexOf("[");
+  assert.notEqual(at, -1, `stylelint reported nothing (status ${run.status}):\n${out}`);
+  const files = JSON.parse(out.slice(at));
+  return files.flatMap((f) =>
+    f.warnings.map((w) => `${path.relative(repoRoot, f.source)}:${w.line}:${w.column} ${w.rule} ${w.text}`)
+  );
+}
+
+test("the stylesheet passes the review's CSS checks", { skip: !fs.existsSync(stylelint) && "stylelint is not installed" }, () => {
+  const findings = cssFindings(fs.readFileSync(path.join(repoRoot, "styles.css"), "utf8"));
+  assert.deepEqual(findings, [], `${findings.length} stylesheet findings:\n  ${findings.join("\n  ")}`);
+});
+
+// A gate that cannot fail is worse than no gate, because it reads as coverage. These two
+// constructs are the ones this stylesheet has actually been pulled up on, so they are the
+// ones checked here: `:has()` for broad invalidation, and the row wrappers that were laid
+// out with `display: contents`.
+test("the CSS gate still rejects what the review rejects", { skip: !fs.existsSync(stylelint) && "stylelint is not installed" }, () => {
+  const has = cssFindings(".modelica-studio-x:has(> .modelica-studio-y) { color: var(--text-normal); }");
+  assert.ok(
+    has.some((f) => f.includes("selector-pseudo-class-disallowed-list")),
+    `a :has() selector is reported:\n  ${has.join("\n  ")}`
+  );
+
+  const contents = cssFindings(".modelica-studio-x { display: contents; }");
+  assert.ok(
+    contents.some((f) => f.includes("plugin/no-unsupported-browser-features")),
+    `display: contents is reported:\n  ${contents.join("\n  ")}`
+  );
+
+  // And a rule that is fine stays fine, so the gate is not simply failing everything.
+  assert.deepEqual(cssFindings(".modelica-studio-x { display: grid; }"), []);
 });

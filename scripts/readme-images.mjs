@@ -57,6 +57,13 @@ function bundle(entry, outfile, platform) {
 /* ------------------------------------------------------------------ */
 
 const LIB = path.join(TMP, "lib");
+// The plugin's code runs in a renderer, where `window` exists: the backend reads
+// `window.navigator.hardwareConcurrency` for its default parallel-job count. This
+// script runs that same code in Node, so the global it reaches for is provided here
+// rather than guarded for in the plugin -- a bare `globalThis` in the source is itself
+// a finding of the review this plugin has to pass. `test/helpers/build.mjs` does the
+// same for the test suites.
+globalThis.window ??= globalThis;
 const nodeBundle = bundle("scripts/readme-images-entry.ts", path.join(TMP, "node.mjs"), "node");
 const { buildSceneData } = await import(nodeBundle);
 

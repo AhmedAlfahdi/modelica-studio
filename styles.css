@@ -213,8 +213,12 @@
    count. `height: 100%` on the body would be 100% of the PANE, which ignores the
    tab strip above it and pushes the body that much past the bottom.
    Only this tab: the Selection tab is a long form, and pinning its body to the
-   pane's height would leave its lower fields unreachable. */
-.modelica-studio-inspector:has(> .modelica-studio-inspector-body.is-results) {
+   pane's height would leave its lower fields unreachable.
+   The pane is told which tab it is holding by a class, toggled beside the body's
+   own `is-results` in `renderInspector`. A `:has()` on that body would say the
+   same thing, but a selector that depends on a descendant invalidates broadly,
+   and the review rejects it. */
+.modelica-studio-inspector.is-results-tab {
   display: flex;
   flex-direction: column;
   /* The list scrolls, not the pane, so the heading and the filter stay put and
@@ -601,10 +605,31 @@
   inset: -2px 0 -5px;
 }
 
+/* A drag on a divider holds the cursor shape everywhere the pointer travels, and
+   stops the drag from selecting the text it passes over.
+   Obsidian does the same for its own drags, but with `!important`
+   (`body.is-grabbing, body.is-grabbing *:not(…)`), which the plugin directory
+   rejects. These win on specificity instead, and each named selector earns its
+   place:
+     - `.cm-content` and `.cm-editor`, because the app turns selection back ON for
+       the editor (`body [contenteditable] { user-select: text }`, which is the same
+       specificity as the generic rule here) -- naming them means the outcome does
+       not depend on which stylesheet the app happens to load last, and a test runs
+       this page in both orders to hold that;
+     - `.workspace-leaf-content canvas`, because a theme rule like
+       `.workspace-leaf-content .view-content canvas` is two classes and an element,
+       which is more than the generic rule carries.
+   Deliberately not covered: a rule deeper than these (Obsidian's own canvas node
+   containers, at four selectors) keeps its cursor while the pointer is over that
+   one element. The drag still cannot select anything anywhere. */
 body.modelica-studio-resizing,
-body.modelica-studio-resizing * {
-  cursor: col-resize !important;
-  user-select: none !important;
+body.modelica-studio-resizing *,
+body.modelica-studio-resizing .cm-editor,
+body.modelica-studio-resizing .cm-content,
+body.modelica-studio-resizing .workspace-leaf-content,
+body.modelica-studio-resizing .workspace-leaf-content canvas {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .modelica-studio-plotbar {
@@ -956,7 +981,6 @@ body.modelica-studio-resizing * {
      together drew the same line twice. */
   background: var(--background-secondary);
   overflow: hidden;
-  box-sizing: border-box;
 }
 
 .modelica-studio-results .modelica-studio-plot {
@@ -1186,6 +1210,10 @@ body.modelica-studio-resizing * {
 /*
  * Four rows: the x and y limits, each as a slider for coarse movement beside a
  * number box for an exact value. The range worth inspecting is rarely round.
+ * The label, the slider and the number box are direct children of this grid --
+ * there is no per-row wrapper. A wrapper laid out with `display: contents` was
+ * rejected by the review as a partially supported feature, and one grid for all
+ * four rows is also what aligns the labels with each other.
  */
 .modelica-studio-scale {
   flex: 0 0 auto;
@@ -1198,10 +1226,6 @@ body.modelica-studio-resizing * {
   background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
   border-radius: 4px;
-}
-
-.modelica-studio-scale-row {
-  display: contents;
 }
 
 .modelica-studio-scale-label {
@@ -1882,15 +1906,18 @@ body.modelica-studio-resizing * {
   font-size: 12px;
 }
 /* The description holds a list, so it needs room to wrap under the label rather
-   than being squeezed into the narrow column Obsidian gives a one-line desc. */
-.setting-item:has(.modelica-studio-solver-points) {
+   than being squeezed into the narrow column Obsidian gives a one-line desc.
+   The class is set on the Setting itself, in `settings.ts`. Matching the row by
+   `:has(.modelica-studio-solver-points)` would say the same thing, but a
+   descendant-dependent selector invalidates broadly and the review rejects it. */
+.setting-item.modelica-studio-solver-setting {
   flex-direction: column;
   align-items: stretch;
 }
-.setting-item:has(.modelica-studio-solver-points) .setting-item-info {
+.setting-item.modelica-studio-solver-setting .setting-item-info {
   margin-right: 0;
 }
-.setting-item:has(.modelica-studio-solver-points) .setting-item-control {
+.setting-item.modelica-studio-solver-setting .setting-item-control {
   justify-content: flex-start;
   margin-top: 6px;
 }
@@ -2074,15 +2101,15 @@ body.modelica-studio-resizing * {
   gap: 6px;
   margin-top: 6px;
 }
-/* Keys and their meaning, in two columns so the eye can run down the list. */
+/* Keys and their meaning, in two columns so the eye can run down the list. The
+   two cells of a row are children of this grid, with no wrapper between them: a
+   wrapper would need `display: contents` to keep that role, which the review
+   rejects as a partially supported feature. */
 .modelica-studio-keys {
   display: grid;
   grid-template-columns: minmax(0, auto) minmax(0, 1fr);
   gap: 2px 14px;
   font-size: 12px;
-}
-.modelica-studio-key-row {
-  display: contents;
 }
 .modelica-studio-key-combo {
   color: var(--text-normal);
@@ -2260,15 +2287,17 @@ body.modelica-studio-resizing * {
   margin-top: 8px;
 }
 
+/* The colour, the library's code for it, and where this plugin uses it. Three
+   cells per row, all children of this grid: the per-row wrapper that used to
+   hold them was laid out with `display: contents` -- rejected by the review as a
+   partially supported feature -- and one grid is what keeps the three columns
+   aligned down the legend. */
 .modelica-studio-help-domains {
   display: grid;
   grid-template-columns: max-content max-content 1fr;
   gap: 2px 12px;
   align-items: baseline;
   margin: 6px 0 10px;
-}
-.modelica-studio-help-domain {
-  display: contents;
 }
 .modelica-studio-help-domain-code {
   font-family: var(--font-monospace);
