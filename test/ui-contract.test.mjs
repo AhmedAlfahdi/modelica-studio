@@ -160,9 +160,17 @@ test("toolbar groups declare the mode they belong to", () => {
   const scopes = groups.map((g) => g[2]);
   assert.ok(scopes.includes("diagram"), "some groups are diagram-only");
   assert.ok(scopes.includes("both"), "and some apply to both modes");
-  // The diagram-only ones must actually be hidden, or the scope is decoration.
+  // The diagram-only ones must actually be hidden, or the scope is decoration. Through
+  // the hidden class rather than an inline style: the class is how the panes are built,
+  // so a group toggled by style and a group created hidden by class were two mechanisms
+  // for one fact -- and the class lost to `.modelica-studio-btn-group`'s own `display`,
+  // which is what put the code pane's buttons on screen in diagram mode.
   assert.match(view, /group\.dataset\.scope === "diagram"/, "the scope is read back");
-  assert.match(view, /group\.style\.display = diagramOnly && isCode \? "none" : ""/, "and applied");
+  assert.match(
+    view,
+    /group\.toggleClass\("modelica-studio-hidden", diagramOnly && isCode\)/,
+    "and applied"
+  );
 });
 
 test("the group separator is styled, so grouping is visible", () => {

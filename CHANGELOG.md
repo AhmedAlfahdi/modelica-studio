@@ -9,6 +9,48 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 Nothing yet.
 
+## [0.3.27] — 2026-09-25
+
+### Fixed
+
+- **The code pane no longer shows up in the diagram view at startup.** Reported as the
+  code pane's action row — Simulate, Apply to diagram, AI, Check — and the AI prompt row
+  drawn under the Plot tab, which a switch to Code and back removed. The cause was in the
+  cascade, not in the code: the code pane is created with `modelica-studio-hidden`, and
+  that class is one lone class, so it lost to the pane's own `display: flex`, which comes
+  later in the stylesheet. The class had never hidden the pane; what hid it after a switch
+  was the inline style `setMode` set, and opening the view never calls `setMode`.
+
+  Five elements were in the same position — `.modelica-studio-body`, `-code`, `-ai`,
+  `-log` and `-scale` all set a `display` of their own, so the hidden class did nothing on
+  any of them. The scale panes in particular were meant to be hidden until Scale… was
+  pressed.
+
+- **`modelica-studio-hidden` now wins, without `!important`.** `.modelica-studio-hidden[class]`
+  carries the second class's worth of specificity, so the plugin's single hiding mechanism
+  beats any one-class layout rule in its own stylesheet — and, checked automatically, all
+  twenty-seven of them.
+
+- **One mechanism for visibility.** The mode panes, the toolbar groups, the AI row, the
+  bottom tabs and both scale panels were toggled with inline `display` styles, which is why
+  the state at open and the state after a switch could disagree. They all toggle the class
+  now, and the AI row asks the class for its state instead of reading a style back — the
+  first press of AI used to *hide* the row, because the row it was reading was already
+  visible by accident.
+
+### Added
+
+- **`test/visibility.test.mjs`** — every single-class rule in the shipped stylesheet that
+  sets a `display` is found, an element is built with that class plus the hidden one, and
+  the browser is asked what it computes. A rule added later is covered by it the day it is
+  written; the list of twenty-seven is not maintained by hand.
+
+- **A mounting test asserts the reported symptom**: the real view, the real stylesheet and
+  a real engine, checking that the code pane and the AI row are hidden when the view opens
+  in diagram mode, that they swap when the mode does, and that the AI row appears when
+  asked for and goes away when dismissed.
+
+
 ## [0.3.26] — 2026-09-25
 
 ### Fixed

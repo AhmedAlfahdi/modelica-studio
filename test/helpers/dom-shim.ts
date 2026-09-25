@@ -28,6 +28,7 @@ export interface ObsidianElement extends HTMLElement {
   setText(text: string): void;
   addClass(...classes: string[]): void;
   removeClass(...classes: string[]): void;
+  hasClass(cls: string): boolean;
   toggleClass(cls: string, on: boolean): void;
   setAttr(key: string, value: string): void;
   getAttr(key: string): string | null;
@@ -103,6 +104,10 @@ export function installDomHelpers(target: { Element: typeof Element; HTMLElement
 
   proto.removeClass = function (this: ObsidianElement, ...classes: string[]) {
     this.classList.remove(...classes.filter(Boolean));
+  };
+
+  proto.hasClass = function (this: ObsidianElement, cls: string) {
+    return this.classList.contains(cls);
   };
 
   proto.toggleClass = function (this: ObsidianElement, cls: string, on?: boolean) {

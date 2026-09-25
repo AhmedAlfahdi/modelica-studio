@@ -13,6 +13,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { runInDom, DOM_PREAMBLE } from "./helpers/dom-runner.mjs";
 import { repoRoot } from "./helpers/build.mjs";
 
@@ -259,4 +261,71 @@ test("the toolbar's icon-only buttons keep their names where they matter", async
   for (const word of ["Save as .mo", "Model list…", "Examples…", "Simulate"]) {
     assert.ok(named.includes(word), `"${word}" keeps its label: ${JSON.stringify(named)}`);
   }
+});
+
+test("the view opens in diagram mode with nothing of the code pane showing", async () => {
+  // Reported: at startup the DIAGRAM view showed the code pane's action row -- Simulate,
+  // Apply to diagram, AI, Check -- and the AI prompt row, and they went away as soon as
+  // Diagram and Code were switched back and forth. Switching worked because it set the
+  // panes' `display` inline; opening did not, because the code pane is created HIDDEN by
+  // the `modelica-studio-hidden` class and that class loses to the pane's own
+  // `display: flex` (both are one lone class, so the later rule wins). `styles.css` gives
+  // the hidden class the second class's worth of specificity now, and the mode panes are
+  // toggled through it rather than through a style, so the state at open and the state
+  // after a switch cannot disagree.
+  //
+  // Asserted with the REAL stylesheet in a real engine, because the whole bug lived in the
+  // cascade: reading the source, every line of it was correct.
+  const CSS = fs.readFileSync(path.join(repoRoot, "styles.css"), "utf8");
+  const out = await runInDom(
+    [
+      DOM_PREAMBLE,
+      MOUNT_SETUP,
+      "const style = document.createElement('style');",
+      `style.textContent = ${JSON.stringify(CSS)};`,
+      "document.head.appendChild(style);",
+      "await view.onOpen();",
+      "const pane = (sel) => view.contentEl.querySelector(sel);",
+      "const display = (sel) => getComputedStyle(pane(sel)).display;",
+      "const state = () =>",
+      "  'code=' + display('.modelica-studio-code') +",
+      "  ' ai=' + display('.modelica-studio-ai') +",
+      "  ' body=' + display('.modelica-studio-body');",
+      "const atOpen = state();",
+      "view.setMode('code');",
+      "const inCode = state();",
+      "view.setMode('diagram');",
+      "const backInDiagram = state();",
+      "// And the AI row, which its own button toggles rather than the mode.",
+      "const aiInDiagram = display('.modelica-studio-ai');",
+      "view.setMode('code');",
+      "view.toggleAiRow(true);",
+      "const aiWhenAsked = display('.modelica-studio-ai');",
+      "view.toggleAiRow(false);",
+      "const aiWhenDismissed = display('.modelica-studio-ai');",
+      "",
+      "window.test('at open', () => atOpen);",
+      "window.test('in code mode', () => inCode);",
+      "window.test('back in diagram mode', () => backInDiagram);",
+      "window.test('the AI row', () => [aiInDiagram, aiWhenAsked, aiWhenDismissed].join(' / '));",
+      "window.finish();",
+    ].join("\n")
+  );
+
+  assert.ok(!out.skip, `skipped: ${out.skip}`);
+  assert.ok(!out.fatal, out.fatal);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, r.error);
+  const by = Object.fromEntries(out.results.map((r) => [r.name, r.detail]));
+
+  const DIAGRAM = "code=none ai=none body=flex";
+  const CODE = "code=flex ai=none body=none";
+  assert.equal(by["at open"], DIAGRAM, "the code pane and the AI row are hidden, the diagram is not");
+  assert.equal(by["in code mode"], CODE, "and the two swap");
+  assert.equal(by["back in diagram mode"], DIAGRAM, "and swap back");
+  assert.equal(
+    by["the AI row"],
+    "none / flex / none",
+    "the prompt row appears when asked for and goes away when dismissed"
+  );
 });

@@ -809,7 +809,7 @@ export class ModelicaStudioView extends ItemView {
     const isCode = this.mode === "code";
     for (const group of Array.from(this.contentEl.querySelectorAll<HTMLElement>(".modelica-studio-btn-group"))) {
       const diagramOnly = group.dataset.scope === "diagram";
-      group.style.display = diagramOnly && isCode ? "none" : "";
+      group.toggleClass("modelica-studio-hidden", diagramOnly && isCode);
     }
     for (const [id, b] of Object.entries(this.modeButtons)) {
       b.toggleClass("is-active", id === this.mode);
@@ -1016,8 +1016,14 @@ export class ModelicaStudioView extends ItemView {
     this.plugin.traceStep("mode");
     void this.plugin.saveSettings();
     const isCode = mode === "code";
-    if (this.bodyEl) this.bodyEl.style.display = isCode ? "none" : "";
-    if (this.codeHost) this.codeHost.style.display = isCode ? "" : "none";
+    // Through the class, not an inline style. The panes are BUILT with the class --
+    // the code pane is created hidden by it -- so the state after the first paint and
+    // the state after a switch have to be the same mechanism, or they disagree: an
+    // inline `display: ""` cannot re-hide an element whose class has been overridden
+    // by its own layout rule, and clearing an inline style cannot reveal one whose
+    // class still applies.
+    this.bodyEl?.toggleClass("modelica-studio-hidden", isCode);
+    this.codeHost?.toggleClass("modelica-studio-hidden", !isCode);
     this.syncToolbarToMode();
     // Before the height is applied: the divider's side is read from the mode, so
     // it has to be on the right boundary first.
@@ -1464,8 +1470,10 @@ export class ModelicaStudioView extends ItemView {
 
   private toggleAiRow(force?: boolean): void {
     if (!this.aiRow) return;
-    const show = force ?? this.aiRow.style.display === "none";
-    this.aiRow.style.display = show ? "" : "none";
+    // The class is the state, so it is also what is asked -- the row is created
+    // hidden, and reading a style back would call that "shown".
+    const show = force ?? this.aiRow.hasClass("modelica-studio-hidden");
+    this.aiRow.toggleClass("modelica-studio-hidden", !show);
     if (show) this.aiInput?.focus();
   }
 
@@ -2363,22 +2371,20 @@ export class ModelicaStudioView extends ItemView {
     this.bottomTab = resultsTabState(this.bottomTab, this.bottomTab);
     const showPlot = this.bottomTab === "plot" && this.result !== null;
     const showLog = this.bottomTab === "log";
-    if (this.plotHost) this.plotHost.style.display = showPlot ? "" : "none";
-    if (this.logHost) this.logHost.style.display = showLog ? "" : "none";
+    this.plotHost?.toggleClass("modelica-studio-hidden", !showPlot);
+    this.logHost?.toggleClass("modelica-studio-hidden", !showLog);
     // Only the plot tab is empty without a result; the log is useful before one.
-    if (this.emptyEl) {
-      this.emptyEl.style.display = this.result || showLog ? "none" : "";
-    }
+    this.emptyEl?.toggleClass("modelica-studio-hidden", Boolean(this.result) || showLog);
     if (showLog) this.renderRunLog();
     // The plot's actions and scale controls belong to the plot, not the log.
-    if (this.bottomActionsEl) {
-      this.bottomActionsEl.style.display = showPlot ? "" : "none";
-    }
+    this.bottomActionsEl?.toggleClass("modelica-studio-hidden", !showPlot);
     if (this.inlineScale) {
       // Hidden while the log is showing, and hidden when the user closed it:
       // `scaleOpen` is the decision, the layout is not.
-      this.inlineScale.style.display =
-        this.scaleOpen && showPlot && this.inlineScale.childElementCount > 0 ? "" : "none";
+      this.inlineScale.toggleClass(
+        "modelica-studio-hidden",
+        !(this.scaleOpen && showPlot && this.inlineScale.childElementCount > 0)
+      );
     }
     // No tab is hidden per mode any more. The one that was -- Source, in code
     // mode, where it would have been a no-op -- is gone entirely.
@@ -2913,9 +2919,11 @@ export class ModelicaStudioView extends ItemView {
 
     this.scalePanel = overlay.createDiv({ cls: "modelica-studio-scale modelica-studio-hidden" });
     scaleBtn.addEventListener("click", () => {
-      const open = this.scalePanel?.style.display !== "none";
-      if (this.scalePanel) this.scalePanel.style.display = open ? "none" : "";
-      if (!open) this.buildScalePanel(this.scalePanel);
+      const panel = this.scalePanel;
+      if (!panel) return;
+      const open = !panel.hasClass("modelica-studio-hidden");
+      panel.toggleClass("modelica-studio-hidden", open);
+      if (!open) this.buildScalePanel(panel);
     });
 
     const row = overlay.createDiv({ cls: "modelica-studio-fullplot-body" });
@@ -3074,7 +3082,7 @@ export class ModelicaStudioView extends ItemView {
       this.inlineScale.addClass("modelica-studio-hidden");
     }
     this.scaleOpen = !this.scaleOpen;
-    this.inlineScale.style.display = this.scaleOpen ? "" : "none";
+    this.inlineScale.toggleClass("modelica-studio-hidden", !this.scaleOpen);
     if (this.scaleOpen) {
       this.buildScalePanel(this.inlineScale, () => {
         this.drawResults();

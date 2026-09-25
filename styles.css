@@ -715,8 +715,17 @@ body.modelica-studio-resizing .workspace-leaf-content canvas {
 
 /* A setting row that does not apply. Used by the thickness link, where all three
    rows exist and the link chooses which are shown: hiding a row keeps the pane's
-   scroll offset where the reader left it, which rebuilding the tab did not. */
-.modelica-studio-hidden {
+   scroll offset where the reader left it, which rebuilding the tab did not.
+   This is the plugin's single way of hiding something, so it has to beat the
+   stylesheet's own layout rules -- `.modelica-studio-body`, `-code`, `-ai`, `-log`,
+   `-scale` and the button groups all set `display` on the very element that gets
+   hidden, and a lone class loses to a later lone class. That is not theoretical: the
+   code pane is created with this class and drew anyway, so at startup the diagram view
+   showed the code pane's buttons and prompt row until a mode switch set the style
+   inline. `[class]` is the second class's worth of specificity that makes this rule
+   win, without `!important`, which the plugin directory rejects. */
+.modelica-studio-hidden,
+.modelica-studio-hidden[class] {
   display: none;
 }
 
