@@ -149,6 +149,18 @@ export class Setting {
     return this;
   }
 
+  /**
+   * A section heading, as Obsidian renders it.
+   *
+   * The plugin uses this instead of writing an `h2` into the container, which the
+   * submission checklist asks for by name. The stub marks the row so a test can find
+   * the headings the way a reader sees them.
+   */
+  setHeading(): this {
+    this.settingEl.addClass("setting-item-heading");
+    return this;
+  }
+
   setDesc(desc: string | DocumentFragment): this {
     this.descEl.empty();
     if (typeof desc === "string") this.descEl.setText(desc);

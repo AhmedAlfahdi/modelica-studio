@@ -1,0 +1,104 @@
+# Build the release from the tag, and attest what it uploads.
+#
+# The three files a user installs come from a GitHub release, and until now they were
+# built on a laptop and attached by hand: the release said nothing about where they came
+# from. An artifact attestation is a signed statement that these exact bytes were
+# produced by THIS workflow, from THIS repository, at THIS commit — so `gh attestation
+# verify` can prove the plugin a user installs was built from the source they can read.
+#
+# It has to be built here for that to mean anything: attesting a file compiled
+# elsewhere only certifies that someone uploaded it. So this workflow checks out the
+# tag, builds with the pinned toolchain, uploads the result, and attests it.
+#
+# Tag a release and push it:
+#
+#     git tag -a 0.3.20 -m 0.3.20 && git push origin 0.3.20
+#
+# The tag must equal `manifest.json`'s version — that is what Obsidian matches when a
+# user installs — and the job fails before uploading if it does not.
+
+name: Release
+
+on:
+  push:
+    tags: ["*"]
+  # So a release can be rebuilt from the Actions tab if an upload half-finished.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to build and release (must already exist)
+        required: true
+
+permissions:
+  contents: write # create the release and upload the assets
+  id-token: write # sign the attestation
+  attestations: write # store it
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      # `npm ci`, not `install`: the lockfile is what makes the build reproducible, and
+      # an attested artifact built from floating versions proves less than it looks.
+      - name: Install
+        run: npm ci
+
+      - name: Check the tag against the manifest
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          version="$(node -p "require('./manifest.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag '$tag' does not match manifest version '$version'"
+            exit 1
+          fi
+          echo "Tag and manifest agree on $version."
+
+      - name: Build
+        run: node esbuild.config.mjs production
+
+      # The installer fetches exactly three files. A build that emitted a fourth, or
+      # lost one, installs "successfully" and then fails at run time.
+      - name: Check the bundle is installable
+        run: node scripts/check-bundle.mjs
+
+      - name: Create the release if the tag has none
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          gh release view "$tag" >/dev/null 2>&1 ||
+            gh release create "$tag" --title "$tag" --notes "See CHANGELOG.md for what changed."
+
+      - name: Upload the assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          gh release upload "$tag" main.js manifest.json styles.css --clobber
+
+      - name: Attest the assets
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
+
+      # And verify it from the outside, the way a user would: an attestation that was
+      # never written is indistinguishable from one that is merely missing.
+      - name: Verify the attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for file in main.js manifest.json styles.css; do
+            gh attestation verify "$file" --repo "$GITHUB_REPOSITORY"
+          done

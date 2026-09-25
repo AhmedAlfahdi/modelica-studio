@@ -9,6 +9,43 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 Nothing yet.
 
+## [0.3.20] — 2026-09-25
+
+### Fixed
+
+- **Settings no longer jump while you change something.** Three causes, all of them a
+  rebuild of the tab that the reader did not ask for:
+
+  - **The scroll offset was restored before the browser had laid the pane out.**
+    A browser clamps a scroll offset while it lays out a container that momentarily had
+    no height — `empty()` then refill — and that layout can land in the frame AFTER the
+    rebuild, so a synchronous restore was overwritten. The offsets are now captured for
+    EVERY element on the way up (not the one element the old code guessed was
+    scrolling), restored immediately, and restored again after layout, on a frame and on
+    a timer, since frames do not arrive in a hidden window.
+  - **Typing in the OpenModelica path rebuilt the tab on every keystroke.** The field
+    being typed in was destroyed mid-word, caret and all, and the pane moved with it.
+    The re-probe and the redraw now happen once, when the field is left (or Enter is
+    pressed). `onChange` on a text component fires per character; the library-paths
+    field had the same shape, rebuilding the whole component index per keystroke.
+  - **The library index finishing redrew an unchanged tab.** It arrives seconds after
+    whatever the reader clicked, so the jump looked random. The list is compared first,
+    and a rebuild only happens when there is something new to show.
+
+  Each of the three has a test that fails without it, and the two rebuild-per-keystroke
+  tests assert the stronger property: the field element itself survives the typing.
+
+### Added
+
+- **Releases are built and attested by CI.** `.github/workflows/release.yml` checks out
+  the tag, installs from the lockfile, builds, checks the bundle is installable, uploads
+  `main.js`, `manifest.json` and `styles.css`, and signs a build-provenance attestation
+  for each — then verifies it from the outside, the way a user would. A release whose
+  assets are attested but built elsewhere would prove only that someone uploaded them,
+  which is why the workflow builds them itself, and why the tag is checked against the
+  manifest before anything is uploaded. The README documents the command a user runs to
+  check their own install: `gh attestation verify main.js --repo AhmedAlfahdi/modelica-studio`.
+
 ## [0.3.19] — 2026-09-25
 
 ### Added

@@ -757,3 +757,43 @@ test("every icon the plugin asks for is in the vendored picture set", () => {
   const empty = Object.entries(table).filter(([, shapes]) => !shapes || shapes.length < 10);
   assert.deepEqual(empty.map(([n]) => n), [], "no empty shapes in the table");
 });
+
+test("the release workflow builds the assets it attests", () => {
+  // A release whose assets are attested proves they came from this repository — but only
+  // if the workflow BUILT them. Attesting a file compiled elsewhere certifies that
+  // someone uploaded it, which is worse than no attestation: it looks like provenance.
+  // So the shape is checked: check out the tag, install from the lockfile, build, check
+  // the bundle, upload, attest, verify.
+  const file = path.join(repoRoot, ".github/workflows/release.yml");
+  assert.ok(fs.existsSync(file), "the release workflow exists");
+  const wf = fs.readFileSync(file, "utf8");
+
+  assert.match(wf, /tags: \["\*"\]/, "it runs on a tag");
+  for (const perm of ["contents: write", "id-token: write", "attestations: write"]) {
+    assert.ok(wf.includes(perm), `it asks for ${perm} (attestations need the OIDC token)`);
+  }
+  assert.match(wf, /npm ci\b/, "the build uses the lockfile, not floating versions");
+  assert.match(wf, /node esbuild\.config\.mjs production/, "it builds the bundle itself");
+  assert.match(wf, /node scripts\/check-bundle\.mjs/, "and refuses a bundle that installs badly");
+  assert.match(wf, /actions\/attest-build-provenance@v\d+/, "it attests what it built");
+  for (const asset of ["main.js", "manifest.json", "styles.css"]) {
+    assert.ok(wf.includes(asset), `${asset} is part of the release`);
+  }
+  // The attestation step has to name the assets, not just exist.
+  const attest = /- name: Attest the assets[\s\S]*?subject-path: \|([\s\S]*?)\n\n/.exec(wf);
+  assert.ok(attest, "the attest step lists its subjects");
+  for (const asset of ["main.js", "manifest.json", "styles.css"]) {
+    assert.ok(attest[1].includes(asset), `the attestation covers ${asset}`);
+  }
+  assert.match(wf, /gh attestation verify/, "and the job verifies one from the outside");
+  // The tag is what Obsidian matches to the manifest, so a mismatch must stop the run.
+  assert.match(wf, /does not match manifest version/, "a tag that disagrees with the manifest fails");
+
+  // The README tells a reader how to check it, which is the point of attesting.
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+  assert.match(
+    readme,
+    /gh attestation verify/,
+    "the README shows the command that verifies an installed file"
+  );
+});

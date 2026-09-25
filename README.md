@@ -68,6 +68,21 @@ update is never held back by a version string.
 To try it without your own vault, `examples/vault/` is a ready-made one — see
 [Testing](#testing).
 
+### Verify what you installed
+
+The three files on a release are built by
+[`.github/workflows/release.yml`](.github/workflows/release.yml) from the tagged commit
+and carry a **signed build-provenance attestation**, so you can check that the `main.js`
+running in your vault came from this repository rather than from somewhere else:
+
+```bash
+gh attestation verify main.js --repo AhmedAlfahdi/modelica-studio
+```
+
+Run it inside your vault's `.obsidian/plugins/modelica-studio/` — or against any release
+download — with the [GitHub CLI](https://cli.github.com) installed. A release from before
+0.3.20 has no attestation; the command says so rather than pretending otherwise.
+
 ### Build it yourself
 
 ```bash

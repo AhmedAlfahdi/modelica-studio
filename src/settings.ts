@@ -46,54 +46,163 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
    */
   private packagesReady: string[] | null = null;
 
-  /** Re-render if the tab is open and the library list has just become known. */
+  /**
+   * Re-render if the tab is open and the library list has CHANGED.
+   *
+   * It used to rebuild whenever the list had been empty a moment ago, and the index
+   * finishing is exactly the kind of thing that lands seconds after a click: a reader
+   * toggled something, scrolled, and the tab jumped when the index arrived. Comparing
+   * the list means a rebuild happens when there is something new to show and not
+   * otherwise — and `display()` keeps the place when it does (see below).
+   */
   onLibraryReady(): void {
     if (!this.containerEl.isShown?.()) return;
-    if (this.packagesReady === null) this.display();
+    const now = this.plugin.library.packages();
+    const drew = this.packagesReady ?? [];
+    if (now.length === drew.length && now.every((p, i) => p === drew[i])) return;
+    this.display();
   }
 
   /**
-   * Rebuild the tab without losing the reader's place.
+   * Every element the pane could be scrolled in, with its offset.
    *
-   * `display()` empties the container, and the settings pane is scrolled inside
-   * Obsidian's own `.vertical-tab-content-container` — emptying it drops the
-   * scroll offset to zero, so a switch halfway down the page threw the reader
-   * back to the top. Reported from the link switch, which rebuilds the rows below
-   * it by design.
+   * A LIST, not one element. The first version of this looked for the first ancestor
+   * that scrolls or carries Obsidian's own container class and restored only that one
+   * — and when the DOM around it changed, or an inner wrapper happened to report
+   * `scrollHeight > clientHeight`, the offset was restored on an element nobody was
+   * looking at while the real pane went back to the top. Which element Obsidian
+   * actually scrolls is its business, so every candidate on the way up is captured,
+   * and each is written back (the browser clamps any that are too short).
    *
-   * The offset is restored rather than an anchor element's position, because the
-   * anchor is destroyed by the rebuild: what the reader wants is the same place
-   * on the page, and for a control whose own row does not move (it is above the
-   * rows that change) the offset IS that place. The browser clamps it when the
-   * rebuilt content is shorter, which is the correct behaviour for a tab that
-   * just lost a row.
+   * The walk stops at the modal, and after a handful of levels, so the document
+   * itself is never touched.
    */
-  private rebuildKeepingPlace(): void {
-    const scroller = this.scroller();
-    const before = scroller?.scrollTop ?? 0;
-    this.display();
-    if (scroller) scroller.scrollTop = before;
-  }
-
-  /** The element the settings pane actually scrolls in. */
-  private scroller(): HTMLElement | null {
-    for (let el = this.containerEl?.parentElement ?? null; el; el = el.parentElement) {
-      const overflowY = el.style?.overflowY || "";
-      if (overflowY === "auto" || overflowY === "scroll") return el;
-      // Obsidian's own class, for the case where the style is set in CSS rather
-      // than inline.
-      if (el.classList?.contains("vertical-tab-content-container")) return el;
-      // Or anything that is in fact scrolling: the class is Obsidian's private
-      // DOM, and a pane that scrolls is the pane whose offset matters.
-      if (el.scrollHeight > el.clientHeight) return el;
+  private capturePlaces(): Array<[HTMLElement, number]> {
+    const out: Array<[HTMLElement, number]> = [];
+    let el = this.containerEl?.parentElement ?? null;
+    for (let depth = 0; el && depth < 8; depth++, el = el.parentElement) {
+      const classList = el.classList;
+      const scrolls =
+        el.scrollTop > 0 ||
+        el.scrollHeight > el.clientHeight ||
+        el.style?.overflowY === "auto" ||
+        el.style?.overflowY === "scroll" ||
+        !!classList?.contains("vertical-tab-content-container") ||
+        !!classList?.contains("vertical-tab-content");
+      if (scrolls) out.push([el, el.scrollTop]);
+      if (classList?.contains("modal") || classList?.contains("modal-container")) break;
     }
-    return null;
+    return out;
   }
 
+  /** Put the captured offsets back. */
+  private restorePlaces(places: Array<[HTMLElement, number]>): void {
+    for (const [el, top] of places) if (el.scrollTop !== top) el.scrollTop = top;
+  }
+
+  /**
+   * Undo a clamp that lands AFTER the rebuild, without fighting the reader.
+   *
+   * A browser clamps a scroll offset while it lays out content that momentarily had no
+   * height (`empty()` then refill), and that layout can happen in the frame after the
+   * rebuild — so restoring the offset synchronously is not always enough, which is
+   * exactly how this came back: the harness forces the layout read inside `empty()` and
+   * passed, while the app laid the pane out a frame later and jumped to the top.
+   *
+   * Only an offset that has been clamped to zero is put back, and only while the
+   * reader has not scrolled somewhere themselves: a deliberate scroll in that window is
+   * not ours to overwrite.
+   */
+  private keepPlaceAfterLayout(places: Array<[HTMLElement, number]>): void {
+    if (places.length === 0) return;
+    const again = () => {
+      for (const [el, top] of places) if (top > 0 && el.scrollTop === 0) el.scrollTop = top;
+    };
+    const raf = globalThis.requestAnimationFrame;
+    if (typeof raf === "function") {
+      raf(() => {
+        again();
+        raf(again);
+      });
+    }
+    // And on a timer as well, not instead: frames do not arrive in a hidden or
+    // occluded window — Obsidian minimised, or a pane that is not on screen — and a
+    // reader who comes back to a jumped pane is the same bug however it happened.
+    window.setTimeout(again, 0);
+    window.setTimeout(again, 60);
+  }
+
+  /**
+   * Run `after` when the reader has finished with a text field.
+   *
+   * `onChange` on a text component fires on every keystroke, and this tab rebuilds
+   * itself from several rows. Rebuilding per character destroyed the field being typed
+   * in — caret and all — and moved the pane, which is the other half of "settings jump
+   * whenever I toggle or click something". One edit, one rebuild: on blur, or on Enter
+   * for a reader who does not leave the field.
+   */
+  private whenDoneTyping(input: HTMLElement, after: () => void): void {
+    // The listeners are attached ONCE per field, and the action is looked up when they
+    // fire. Registering a blur listener per keystroke instead meant one keystroke, one
+    // listener, and then one re-probe per character typed the moment the field was
+    // left -- three letters, three toolchain probes, three rebuilds.
+    this.typingPending.set(input, after);
+    if (this.typingWired.has(input)) return;
+    this.typingWired.add(input);
+    const done = () => {
+      input.removeEventListener("blur", done);
+      input.removeEventListener("keydown", onKey);
+      this.typingWired.delete(input);
+      const action = this.typingPending.get(input);
+      this.typingPending.delete(input);
+      action?.();
+    };
+    const onKey = (ev: Event) => {
+      if ((ev as KeyboardEvent).key === "Enter") done();
+    };
+    input.addEventListener("blur", done);
+    input.addEventListener("keydown", onKey);
+  }
+
+  /** What each field should do when the reader leaves it. */
+  private typingPending = new WeakMap<HTMLElement, () => void>();
+  /** Fields already listening, so an edit per keystroke does not stack listeners. */
+  private typingWired = new WeakSet<HTMLElement>();
+
+  /** True once the tab has been built at least once for this showing. */
+  private builtOnce = false;
+
+  /** A fresh open starts at the top; a rebuild keeps the reader's place. */
+  hide(): void {
+    this.builtOnce = false;
+  }
+
+  /**
+   * Build the tab, and never move the reader while doing it.
+   *
+   * Every rebuild goes through here — the six rows that have to redraw the tab, the
+   * library index arriving, and the toolchain being re-probed from the main plugin —
+   * so "a rebuild keeps your place" is a property of the tab rather than a discipline
+   * each call site has to remember. The offsets are captured before the container is
+   * emptied, restored immediately, and restored again after layout.
+   */
   display(): void {
+    const places = this.builtOnce ? this.capturePlaces() : [];
+    this.buildSettings();
+    if (places.length > 0) {
+      this.restorePlaces(places);
+      this.keepPlaceAfterLayout(places);
+    }
+    this.builtOnce = true;
+  }
+
+  /** Empty the container and draw every row. */
+  private buildSettings(): void {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Modelica Studio" });
+    // A heading through the API rather than an `h2` in the container, which is what
+    // the plugin submission checklist asks for.
+    new Setting(containerEl).setName("Modelica Studio").setHeading();
 
     /* ---- toolchain status ---- */
     const status = this.plugin.toolchainSummary();
@@ -117,10 +226,11 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           .onChange(async (v) => {
             this.plugin.settings.omcPath = v.trim();
             await this.plugin.saveSettings();
-            // Re-probe, or the row above keeps reporting whatever was found before
-            // the path was typed.
-            await this.plugin.reprobeToolchain();
-            this.rebuildKeepingPlace();
+            // Re-probe and redraw when the field is DONE, not per keystroke. This row
+            // rebuilds the tab (the status box above and the library list below both
+            // depend on the path), so doing it on every character destroyed the field
+            // being typed in, caret and all, and moved the pane.
+            this.whenDoneTyping(t.inputEl, () => void this.plugin.reprobeToolchain());
           })
       );
 
@@ -134,9 +244,12 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         t.setValue(this.plugin.settings.libraryPaths).onChange(async (v) => {
           this.plugin.settings.libraryPaths = v;
           await this.plugin.saveSettings();
-          // The index is built from these roots and memoised, so it has to be
-          // rebuilt or the new library never appears in the palette.
-          this.plugin.reloadLibrary();
+          // The index is built from these roots and memoised, so it has to be rebuilt
+          // or the new library never appears in the palette — once the reader has
+          // finished with the field, rather than once per character: an index build per
+          // keystroke is seconds of work per word, and it re-renders this tab when it
+          // lands.
+          this.whenDoneTyping(t.inputEl, () => this.plugin.reloadLibrary());
         });
         t.inputEl.rows = 3;
       });
@@ -726,7 +839,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           .addButton((b) =>
             b.setButtonText("Move").onClick(async () => {
               await this.plugin.migrateLegacyAiKey();
-              this.rebuildKeepingPlace();
+              this.display();
             })
           );
       }
@@ -762,7 +875,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           // A list fetched from one provider says nothing about another.
           this.plugin.settings.aiModels = [];
           await this.plugin.saveSettings();
-          this.rebuildKeepingPlace();
+          this.display();
         });
       });
 
@@ -816,7 +929,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           if (!v) return;
           this.plugin.settings.ai.model = v;
           await this.plugin.saveSettings();
-          this.rebuildKeepingPlace();
+          this.display();
         });
       });
     }
@@ -842,7 +955,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           modelStatus.setText(result.text);
           modelStatus.toggleClass("is-ok", result.ok);
           modelStatus.toggleClass("is-bad", !result.ok);
-          if (result.ok) this.rebuildKeepingPlace();
+          if (result.ok) this.display();
         })
       );
 
@@ -1020,7 +1133,10 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
 
     const rowsHost = containerEl.createDiv({ cls: "modelica-studio-library-list" });
     const packages = this.plugin.library.packages();
-    this.packagesReady = packages.length ? packages : null;
+    // What this build actually drew, so `onLibraryReady` can tell a change from a
+    // repeat. An empty list is recorded as empty rather than as `null`, or every
+    // library event would look like news.
+    this.packagesReady = packages;
 
     const apply = async () => {
       await this.plugin.saveSettings();
@@ -1189,7 +1305,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
             // The library exclusions are part of what was reset, and they change
             // what the palette and completion offer.
             this.plugin.applyExclusions();
-            this.rebuildKeepingPlace();
+            this.display();
             this.plugin.getView()?.refreshDiagram();
             this.plugin.refreshEmbeds();
             new Notice(

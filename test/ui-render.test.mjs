@@ -1122,6 +1122,112 @@ test("rebuilding the tab does not throw the reader back to the top", async () =>
   );
 });
 
+test("a rebuild that is laid out a frame later still keeps the reader's place", async () => {
+  // The jump came BACK after the first fix, and the reason is timing: a browser clamps
+  // a scroll offset while it lays out a container that momentarily had no height, and
+  // that layout can land in the frame AFTER the rebuild. The old test forced the layout
+  // read inside `empty()` -- i.e. before the restore -- so it passed, while the app laid
+  // the pane out a frame later and was thrown to the top.
+  //
+  // This test stages the clamp where the app does it: in a `requestAnimationFrame`
+  // callback, after the rebuild has finished and after the synchronous restore. The
+  // offset must still be the reader's when the frames have run.
+  const out = await page(
+    `import { ModelicaStudioSettingTab } from "${ROOT}/src/settings";`,
+    "const vault = new StubVault();",
+    "const plugin = makePlugin(vault, { settings: {",
+    "  solver: 'cvode', excludedLibraries: '', debugLog: false, omcPath: '', libraryPaths: '', jobs: 1,",
+    "  showInstanceLabels: true, labelScale: 1, dynamicLabels: true, hoverParameters: true,",
+    "  wireScale: 0.9, symbolStrokeScale: 1.9, syncStrokeScale: false, plotSnapCrossings: true,",
+    "  plotSnapTolerance: 14, plotDeltas: false, aiModels: [], modelFolder: 'Modelica',",
+    "  ai: { secretName: '', baseUrl: '', model: '', temperature: 0.2, systemPrompt: '', thinking: 'off', style: 'visual', timeoutSeconds: 300 },",
+    "} });",
+    "plugin.library = { size: 0, packages: () => [], hasPlaceableClass: () => false, isExcluded: () => false };",
+    "plugin.toolchainSummary = () => 'omc';",
+    "plugin.hasSecretStorage = () => false;",
+    "plugin.applyExclusions = () => {};",
+    "plugin.setStopTime = () => {};",
+    "plugin.stopTime = () => 1;",
+    "plugin.getView = () => null;",
+    "plugin.refreshEmbeds = () => {};",
+    "plugin.reprobeToolchain = async () => { window.__reprobes = (window.__reprobes || 0) + 1; tab.display(); };",
+    "// Frames as timers: the DOM runner's window is hidden, and Chromium does not run",
+    "// animation frames for a window nobody can see -- so a test that waited for one",
+    "// would hang rather than fail. The plugin schedules both.",
+    "window.requestAnimationFrame = (fn) => setTimeout(() => fn(0), 0);",
+    "window.cancelAnimationFrame = (id) => clearTimeout(id);",
+    "const tab = new ModelicaStudioSettingTab(plugin);",
+    "tab.display();",
+    "const scroller = document.createElement('div');",
+    "scroller.className = 'vertical-tab-content-container';",
+    "scroller.style.overflowY = 'auto';",
+    "scroller.style.height = '200px';",
+    "document.body.appendChild(scroller);",
+    "scroller.appendChild(tab.containerEl);",
+    "// The clamp as the app does it: after the rebuild, on the next frame.",
+    "const empty = tab.containerEl.empty.bind(tab.containerEl);",
+    "tab.containerEl.empty = () => {",
+    "  empty();",
+    "  window.__empties = (window.__empties || 0) + 1;",
+    "  requestAnimationFrame(() => { void scroller.scrollHeight; });",
+    "};",
+    "const item = (n) => Array.from(tab.containerEl.querySelectorAll('.setting-item')).find((i) => {",
+    "  const el = i.querySelector('.setting-item-name'); return el && el.textContent === n; });",
+    "window.__scroller = scroller;",
+    "window.__tab = tab;",
+    "const settle = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 30))));",
+    "// ONE sequential case, not three: the harness starts each registered case",
+    "// without awaiting it, and these share one page, one scroller and one counter --",
+    "// so three of them measured each other and every reading came back zero.",
+    "window.test('a rebuild keeps the place, and typing does not rebuild', async () => {",
+    "  const out = [];",
+    "  // 1. A rebuild, with the clamp landing a frame AFTER it: the timing the app has.",
+    "  scroller.scrollTop = 160;",
+    "  window.__empties = 0;",
+    "  tab.display();",
+    "  await settle();",
+    "  out.push('rebuild:after=' + scroller.scrollTop + ' empties=' + window.__empties);",
+    "  // 2. Typing in the omc path: no rebuild, and the field survives.",
+    "  const input = item('OpenModelica path').querySelector('input');",
+    "  scroller.scrollTop = 160;",
+    "  window.__empties = 0;",
+    "  window.__reprobes = 0;",
+    "  for (const text of ['/usr', '/usr/bin', '/usr/bin/omc']) {",
+    "    // The stub reads the attribute, as Obsidian's component reads its own value.",
+    "    input.setAttribute('value', text);",
+    "    input.dispatchEvent(new Event('input'));",
+    "    input.dispatchEvent(new Event('change'));",
+    "  }",
+    "  await settle();",
+    "  out.push('typing:empties=' + window.__empties + ' reprobes=' + (window.__reprobes || 0) +",
+    "    ' sameField=' + (item('OpenModelica path').querySelector('input') === input) +",
+    "    ' after=' + scroller.scrollTop);",
+    "  // 3. Leaving the field: the work happens once, and the place is kept.",
+    "  scroller.scrollTop = 160;",
+    "  window.__empties = 0;",
+    "  window.__reprobes = 0;",
+    "  input.dispatchEvent(new Event('blur'));",
+    "  await settle();",
+    "  out.push('blur:reprobes=' + (window.__reprobes || 0) + ' empties=' + window.__empties +",
+    "    ' after=' + scroller.scrollTop);",
+    "  return out.join(' | ');",
+    "});",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  if (process.env.MST_DEBUG_SETTINGS) console.error("RESULTS " + JSON.stringify(out.results));
+  const d = passed(out);
+
+  assert.equal(
+    d["a rebuild keeps the place, and typing does not rebuild"],
+    "rebuild:after=160 empties=1 | typing:empties=0 reprobes=0 sameField=true after=160 | " +
+      "blur:reprobes=1 empties=1 after=160",
+    "a clamp a frame later does not move the reader, typing rebuilds nothing, and leaving " +
+      "the field does the work once"
+  );
+});
+
 test("the About panel states the author, the licence and how to cite", async () => {
   // The About panel is where someone looks to find out what they are allowed to do
   // with this, and who to credit. Both are read from the metadata rather than typed
@@ -2781,5 +2887,80 @@ test("the code pane's undo cannot cross documents, and a paste is a step", async
     branch.afterRedo,
     branch.afterTab,
     `and the redo branch was cleared by it: ${JSON.stringify(branch)}`
+  );
+});
+
+test("a library that finishes indexing does not rebuild an unchanged tab", async () => {
+  // The index finishing is asynchronous, so it lands seconds after whatever the reader
+  // was doing: toggling a setting, scrolling, or typing a library path triggers a
+  // rebuild, the index arrives, and the tab redrew — the jump looked random. A rebuild
+  // that has nothing new to show is not worth the risk, so the list is compared first.
+  const out = await page(
+    `import { ModelicaStudioSettingTab } from "${ROOT}/src/settings";`,
+    "const vault = new StubVault();",
+    "const plugin = makePlugin(vault, { settings: { excludedLibraries: '', solver: 'cvode',",
+    "  ai: { secretName: '', baseUrl: '', model: '', temperature: 0.2, systemPrompt: '', thinking: 'off', style: 'visual', timeoutSeconds: 300 },",
+    "  showInstanceLabels: true, labelScale: 1, dynamicLabels: true, hoverParameters: true,",
+    "  wireScale: 1, symbolStrokeScale: 1, syncStrokeScale: false, plotSnapCrossings: true,",
+    "  plotSnapTolerance: 14, plotDeltas: false, aiModels: [], modelFolder: 'Modelica' } });",
+    "plugin.packages = ['Modelica', 'ModelicaServices'];",
+    "plugin.library = { size: 2, packages: () => plugin.packages,",
+    "  hasPlaceableClass: () => false, isExcluded: () => false,",
+    "  packageTree: (r) => ({ name: r, full: r, children: [], placeable: false }) };",
+    "plugin.toolchainSummary = () => 'omc';",
+    "plugin.hasSecretStorage = () => false;",
+    "plugin.applyExclusions = () => {};",
+    "plugin.setStopTime = () => {};",
+    "plugin.stopTime = () => 1;",
+    "plugin.getView = () => null;",
+    "plugin.refreshEmbeds = () => {};",
+    "const tab = new ModelicaStudioSettingTab(plugin);",
+    "// The tab as Obsidian has it: its container inside the modal's scroller, shown.",
+    "const scroller = document.createElement('div');",
+    "scroller.className = 'vertical-tab-content-container';",
+    "scroller.style.overflowY = 'auto';",
+    "scroller.style.height = '200px';",
+    "document.body.appendChild(scroller);",
+    "scroller.appendChild(tab.containerEl);",
+    "tab.containerEl.isShown = () => true;",
+    "let builds = 0;",
+    "const empty = tab.containerEl.empty.bind(tab.containerEl);",
+    "tab.containerEl.empty = () => { builds++; empty(); };",
+    "tab.display();",
+    "window.test('the index arriving with the same list rebuilds nothing', () => {",
+    "  // The TAB's `onLibraryReady`: it is the plugin that calls it, not the other way",
+    "  // round -- calling it on the plugin threw at the top level of the page, which",
+    "  // aborted the module and left the runner waiting for a page that had died.",
+    "  builds = 0;",
+    "  tab.onLibraryReady();",
+    "  const unchanged = builds;",
+    "  plugin.packages = ['Modelica', 'ModelicaServices', 'ModelicaReference'];",
+    "  tab.onLibraryReady();",
+    "  return 'unchanged=' + unchanged + ' afterAChange=' + builds;",
+    "});",
+    "window.test('and a tab that has never drawn the list does rebuild', () => {",
+    "  const fresh = new ModelicaStudioSettingTab(plugin);",
+    "  fresh.containerEl.isShown = () => true;",
+    "  let n = 0;",
+    "  const e = fresh.containerEl.empty.bind(fresh.containerEl);",
+    "  fresh.containerEl.empty = () => { n++; e(); };",
+    "  fresh.packagesReady = null;",
+    "  fresh.onLibraryReady();",
+    "  return 'builds=' + n;",
+    "});",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  const d = passed(out);
+  assert.equal(
+    d["the index arriving with the same list rebuilds nothing"],
+    "unchanged=0 afterAChange=1",
+    "a rebuild only when the list actually changed"
+  );
+  assert.equal(
+    d["and a tab that has never drawn the list does rebuild"],
+    "builds=1",
+    "and the first list still arrives"
   );
 });
