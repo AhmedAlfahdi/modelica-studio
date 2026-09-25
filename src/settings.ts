@@ -413,7 +413,7 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
       .setName("Write diagnostic log")
       .setDesc(
         "Append startup and simulation events to .modelica-studio.log in the vault. " +
-          "Useful when reporting a problem."
+          "Useful when reporting a problem; the file keeps its most recent 512 KB."
       )
       .addToggle((t) =>
         t.setValue(this.plugin.settings.debugLog).onChange(async (v) => {

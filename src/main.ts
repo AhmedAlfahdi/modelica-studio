@@ -42,6 +42,7 @@ import {
 } from "./view/embed";
 import { createBackend, SimulationError, type SimulationBackend } from "./omc/backend";
 import { detectOmc, installHint, type OmcInstallation } from "./omc/locate";
+import { appendCappedLine, logLine } from "./log-file";
 import { emptyDiagram, type DiagramModel } from "./modelica/types";
 // Node's own modules, imported once at the top rather than `require`d inside the methods
 // that use them. Obsidian loads the plugin as CommonJS on the desktop, so these are
@@ -822,14 +823,20 @@ export default class ModelicaStudioPlugin extends Plugin {
     this.appendDiagnosticLog(message);
   }
 
-  /** Write one line to the vault's diagnostic file, when logging is enabled. */
+  /**
+   * Write one line to the vault's diagnostic file, when logging is enabled.
+   *
+   * The file is capped rather than merely appended to: it is written on startup and on
+   * every simulation event, and unbounded it reached 9 MB in the vault this was
+   * developed in. See `log-file.ts` -- the trim keeps the recent end, which is the part
+   * a bug report is read for.
+   */
   private appendDiagnosticLog(message: string): void {
     try {
       const adapter = this.app.vault.adapter as { getBasePath?: () => string };
       const base = adapter.getBasePath?.();
       if (!base) return;
-      const line = `${new Date().toISOString()} ${message}\n`;
-      nodeFs.appendFileSync(`${base}/.modelica-studio.log`, line);
+      appendCappedLine(`${base}/.modelica-studio.log`, logLine(message));
     } catch {
       /* diagnostics must never break the plugin */
     }

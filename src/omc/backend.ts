@@ -20,8 +20,8 @@
 import { spawn } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
+import { defaultWorkRoot, sweepStaleWorkRoots, workRootParent } from "./work-root";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -241,9 +241,11 @@ export class OmcBackend implements SimulationBackend {
   private disposed = false;
 
   constructor(private readonly opts: OmcBackendOptions) {
-    this.workRoot =
-      opts.cacheDir ??
-      path.join(os.tmpdir(), "modelica-studio", String(process.pid));
+    this.workRoot = opts.cacheDir ?? defaultWorkRoot();
+    // The default root is shared by every session, so the ones whose process has exited
+    // are removed here, before this session adds its own. A caller that named its own
+    // cache directory owns what is in it, and only that one is left alone.
+    if (!opts.cacheDir) sweepStaleWorkRoots(workRootParent());
     fs.mkdirSync(this.workRoot, { recursive: true });
     const jobs = opts.jobs ?? defaultJobs();
     this.info = {

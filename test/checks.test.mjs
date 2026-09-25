@@ -912,3 +912,48 @@ test("every URL in the source names its host in full", () => {
   assert.ok(!/\bjoin\(/.test(builder.text), "and joins nothing: the pair is the flagged pattern");
   assert.ok(builder.text.includes('"https://doc.modelica.org/Modelica%204.1.0/'), "the tree it links into is a literal");
 });
+
+test("what the plugin writes outside the vault is bounded, and the docs say so", () => {
+  // The directory's own analysis flags the file access as a warning -- it cannot tell a
+  // compiler's scratch space from a keylogger -- so the answer is not to hide it but to
+  // bound it: two places are written outside the vault, both stated in the README, and
+  // neither is allowed to grow without end.
+  const main = fs.readFileSync(path.join(repoRoot, "src/main.ts"), "utf8");
+  const settings = fs.readFileSync(path.join(repoRoot, "src/settings.ts"), "utf8");
+  const backend = fs.readFileSync(path.join(repoRoot, "src/omc/backend.ts"), "utf8");
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+  const logFile = fs.readFileSync(path.join(repoRoot, "src/log-file.ts"), "utf8");
+
+  // The vault's log goes through the capped appender: append-only with no ceiling is how
+  // it reached 9 MB in the vault this was developed in.
+  assert.match(main, /appendCappedLine\(\s*`\$\{base\}\/\.modelica-studio\.log`/, "the log is written through the capped appender");
+  assert.ok(
+    !/appendFileSync\(\s*`\$\{base\}\/\.modelica-studio\.log`/.test(main),
+    "and not by a bare append"
+  );
+  // The other log the plugin keeps -- the AI request log -- prunes itself as it writes,
+  // for the same reason: a file that is only ever appended to has no ceiling.
+  assert.match(main, /const pruned = pruneLines\(text\)/, "the AI exchange log prunes as it writes");
+
+  // The ceiling the code enforces is the one the docs state, read off the constant so the
+  // two cannot drift into disagreeing.
+  const capKb = Number(/LOG_MAX_BYTES = (\d+) \* 1024/.exec(logFile)?.[1]);
+  assert.ok(capKb >= 64, `room for a session's worth of events: ${capKb} KB`);
+  for (const [what, text] of [
+    ["the setting's description", settings],
+    ["the README", readme],
+  ]) {
+    assert.ok(text.includes(".modelica-studio.log"), `${what} names the log file`);
+    assert.ok(text.includes(`${capKb} KB`), `${what} states the ${capKb} KB ceiling`);
+  }
+
+  // The build cache under the system temporary folder is swept, and only the default
+  // root is: a caller that named its own cache directory owns what is in it.
+  assert.match(
+    backend,
+    /if \(!opts\.cacheDir\) sweepStaleWorkRoots\(workRootParent\(\)\)/,
+    "the shared temporary root is swept, and a named cache directory is not"
+  );
+  assert.match(readme, /temporary folder/, "the README says where the compiler writes");
+  assert.match(readme, /removed when\s+the plugin starts|removed when the plugin starts/, "and that those folders are cleaned up");
+});

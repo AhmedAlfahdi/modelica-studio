@@ -338,7 +338,10 @@ directory's own analysis flags five capabilities here; this is what each one is 
 own API, and the plugin writes only where you ask it to: `.mo` files in the model
 folder (`Modelica/` by default), the diagrams you embed in notes, and its own state
 under your Obsidian configuration folder (`<config>/plugins/modelica-studio/` —
-history, the library index cache, and optionally a debug log and an AI request log).
+history, the library index cache, and optionally an AI request log). The one other
+file it writes is `.modelica-studio.log` in the vault root, only when you turn
+**Write diagnostic log** on, and it keeps its most recent 512 KB rather than growing
+without end.
 
 Outside the vault it touches two things, both because the compiler lives there:
 
@@ -348,8 +351,10 @@ Outside the vault it touches two things, both because the compiler lives there:
   above, and re-read when a library changes;
 - the **system temporary folder**, where `omc` translates and compiles a model
   (`<tmp>/modelica-studio/<pid>`). That is OpenModelica's own scratch space: a
-  compiled model is tens of megabytes of generated C. It is not in your vault, and
-  nothing there is read by anything but the compiler.
+  compiled model is tens of megabytes of generated C. It is not in your vault,
+  nothing there is read by anything but the compiler, and the folders left by earlier
+  sessions — whose process has exited, so nothing can reuse them — are removed when
+  the plugin starts. A folder belonging to a running Obsidian is left alone.
 
 Nothing else is read or written, and no file is uploaded anywhere.
 
@@ -778,9 +783,9 @@ Experimental, and it wants more testing. Specifically:
   may hit a parser or serializer limitation the examples do not.
 - **No plugin-store review.** Nothing has been checked by anyone but its author.
 
-If something fails, enabling **Debug log** in settings writes a diagnostic log to
-`.modelica-studio.log` in the vault, and **Show coordinate diagnostics** overlays
-the editor's geometry.
+If something fails, enabling **Write diagnostic log** in settings writes a diagnostic
+log to `.modelica-studio.log` in the vault — the most recent 512 KB of it, trimmed as
+it fills — and **Show coordinate diagnostics** overlays the editor's geometry.
 
 ## Testing
 

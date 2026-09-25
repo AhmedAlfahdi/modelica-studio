@@ -9,6 +9,48 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 Nothing yet.
 
+## [0.3.25] — 2026-09-25
+
+### Fixed
+
+- **The diagnostic log is capped.** The review's behaviour analysis flags the plugin's
+  file access as a warning — it cannot tell a compiler's scratch space from a keylogger,
+  so what it reports is the capability. The honest answer is to say what the access is
+  for *and* to keep it bounded, and one file was not bounded: `.modelica-studio.log` is
+  appended to on startup and on every simulation event, and it had reached **9.4 MB** in
+  the vault this was developed in. It is written through a capped appender now: past
+  512 KB it keeps the newest half, whole lines only, so the recent end — the part a bug
+  report is read for — survives, and the rewrite happens once per half-cap of logging
+  rather than once per line. The setting and the README both state the ceiling, and a
+  test reads the number off the constant, so the documentation cannot drift from the code.
+
+- **The build cache is swept.** OpenModelica compiles into a directory per process under
+  the system temporary folder. A compiled model is tens of megabytes of generated C and a
+  re-run reuses it, so it is not deleted when a session ends — but a *later* session
+  cannot reuse the previous process's directory, and 199 of them (106 MB) had collected
+  on this machine in three days of work. Starting the plugin now removes the ones whose
+  process has exited. It keeps a directory whose process is alive (two Obsidian windows
+  can run at once), keeps anything younger than an hour (a shared temporary folder can
+  hold a build whose PID this process cannot see), and touches nothing that is not a PID
+  directory. A caller that names its own cache directory is left entirely alone.
+
+- **The README no longer contradicts itself about where the plugin writes.** It said the
+  plugin's state lives under the Obsidian configuration folder while the diagnostic log
+  was written to the vault root. It now names the log's real location and its ceiling, and
+  says that the temporary build folders of finished sessions are cleaned up.
+
+### Added
+
+- **`test/log-file.test.mjs`** — the cap, on a real file: whole lines at the top, the
+  newest line surviving the trim it caused, and an append that cannot happen being
+  reported to the caller that swallows it.
+
+- **`test/work-root.test.mjs`** — the sweep, on a real temporary directory: which
+  directories disappear, which are kept and why, a missing root, and a directory whose
+  timestamp is not in the past yet (the case that made the first version of this test
+  flaky, and that the code keeps on purpose).
+
+
 ## [0.3.24] — 2026-09-25
 
 ### Fixed
