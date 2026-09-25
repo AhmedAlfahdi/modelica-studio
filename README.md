@@ -35,6 +35,19 @@ not supported), and **OpenModelica** installed separately. The plugin finds `omc
 on your PATH, tells you if it is missing, and uses the Modelica Standard Library
 that ships with it.
 
+Where to get OpenModelica — the same list the plugin prints when it cannot find `omc`:
+
+| Platform | How to install it |
+|---|---|
+| **Arch Linux, CachyOS** | [`openmodelica-bin`](https://aur.archlinux.org/packages/openmodelica-bin) from the AUR — `yay -S openmodelica-bin` (or `openmodelica`, which builds from source). |
+| **Other Linux distributions** | The [Linux downloads page](https://openmodelica.org/download/download-linux/) has the official packages; most distributions also carry it in their own repositories — Fedora: `sudo dnf install openmodelica`. |
+| **macOS** | The [macOS installer](https://openmodelica.org/download/download-mac), then reload Obsidian. |
+| **Windows** | The [Windows installer](https://openmodelica.org/download/download-windows), keeping **Add OpenModelica to PATH** checked. |
+
+After installing, reload Obsidian (Ctrl/Cmd+R): the plugin looks for `omc` when it
+loads. If it cannot find it, the message names the install route for your platform,
+and **OpenModelica path** in the settings takes an explicit path to the binary.
+
 ### With BRAT, which keeps it updated
 
 [BRAT](https://tfthacker.com/BRAT) installs a plugin straight from its GitHub
