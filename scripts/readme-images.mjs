@@ -33,7 +33,7 @@ const ESCALE = 2;
 
 const EMPTY = path.join(TMP, "empty.ts");
 fs.writeFileSync(EMPTY, "export default {};\nexport const spawn = () => {};\n");
-const NODE_MODULES = ["node:child_process", "node:crypto", "node:fs", "node:path", "node:os", "node:util", "node:events", "node:stream", "node:url"];
+const NODE_MODULES = ["node:child_process", "node:crypto", "node:fs", "node:path", "node:os", "node:util", "node:events", "node:stream", "node:url", "node:process"];
 
 function bundle(entry, outfile, platform) {
   const args = [

@@ -126,7 +126,8 @@ export function runInDom(entrySource, opts = {}) {
   const builtins = [
     "node:child_process", "node:fs", "node:path", "node:os", "node:util",
     "node:crypto", "node:events", "node:stream", "node:url", "node:buffer",
-    "fs", "path", "os", "child_process", "crypto", "util",
+    "node:process",
+    "fs", "path", "os", "child_process", "crypto", "util", "process",
   ].map((m) => `--alias:${m}=${empty}`);
 
   const built = spawnSync(

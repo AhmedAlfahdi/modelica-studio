@@ -9,7 +9,7 @@
  * then happens once per half-cap of logging rather than once per line.
  */
 
-import * as fs from "node:fs";
+import { nodeFs as fs } from "./host/node";
 
 /** The size past which the log is trimmed. */
 export const LOG_MAX_BYTES = 512 * 1024;

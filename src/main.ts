@@ -49,8 +49,7 @@ import { emptyDiagram, type DiagramModel } from "./modelica/types";
 // available; `isDesktopOnly` in the manifest is what makes that a promise the plugin
 // keeps. Written as static imports so the types apply: a runtime `require(...)` is `any`,
 // and every `nodeFs.readFileSync` behind one then reads as an unsafe call.
-import * as nodeFs from "node:fs";
-import * as nodePath from "node:path";
+import { nodeFs, nodePath } from "./host/node";
 import { parseModelica, toDiagramModel } from "./modelica/parser";
 import { serializeDiagram } from "./modelica/serializer";
 import { lastPatchRefusal, patchDiagramEdits, structureLostBy } from "./modelica/text-edit";

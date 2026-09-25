@@ -1,6 +1,6 @@
 {
   "name": "modelica-studio",
-  "version": "0.3.25",
+  "version": "0.3.26",
   "description": "Obsidian plugin for visual Modelica modeling and simulation. Beta.",
   "main": "main.js",
   "type": "module",
@@ -27,7 +27,6 @@
   "license": "GPL-3.0-or-later",
   "devDependencies": {
     "@types/node": "^22.10.2",
-    "builtin-modules": "^4.0.0",
     "esbuild": "^0.24.2",
     "eslint": "^9.39.5",
     "eslint-plugin-obsidianmd": "^0.4.2",

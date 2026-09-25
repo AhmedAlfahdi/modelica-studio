@@ -51,3 +51,6 @@ examples/vault/.obsidian/plugins/modelica-studio/data.json
 
 # Scratch directory used while rendering the README's screenshots.
 .readme-images-*/
+
+# A copy of `src` linted without ambient Node types; see `test/lint.test.mjs`.
+.review-env-*/

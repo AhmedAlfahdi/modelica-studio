@@ -24,29 +24,34 @@ import { repoRoot } from "./helpers/build.mjs";
 
 const eslint = path.join(repoRoot, "node_modules", ".bin", "eslint");
 const stylelint = path.join(repoRoot, "node_modules", ".bin", "stylelint");
-const config = path.join(repoRoot, "eslint.config.mjs");
 
-test("the source passes the plugin directory's linter", { skip: !fs.existsSync(eslint) && "eslint is not installed" }, () => {
+/**
+ * Every finding eslint reports for `target`, as text lines.
+ *
+ * `target` is relative to the repository root, so the repository's own
+ * `eslint.config.mjs` applies — including for a target that is a temporary directory
+ * inside the repository, which is how the review's environment is reproduced below.
+ */
+function lintFindings(target) {
   let out = "";
-  let status = 0;
   try {
-    out = execFileSync(eslint, ["src", "-f", "json"], { cwd: repoRoot, encoding: "utf8" });
+    out = execFileSync(eslint, [target, "-f", "json"], { cwd: repoRoot, encoding: "utf8" });
   } catch (err) {
-    status = 1;
     out = String(err.stdout ?? "");
   }
-
   const files = JSON.parse(out.slice(out.indexOf("[")));
-  const errors = [];
-  const warnings = [];
-  for (const file of files) {
+  return files.flatMap((file) => {
     const rel = path.relative(repoRoot, file.filePath);
-    for (const m of file.messages) {
-      const line = `${rel}:${m.line}:${m.column} ${m.ruleId ?? "parse"} ${String(m.message).split("\n")[0]}`;
-      if (m.severity === 2) errors.push(line);
-      else warnings.push(line);
-    }
-  }
+    return file.messages.map(
+      (m) => `${rel}:${m.line}:${m.column} sev${m.severity} ${m.ruleId ?? "parse"} ${String(m.message).split("\n")[0]}`
+    );
+  });
+}
+
+test("the source passes the plugin directory's linter", { skip: !fs.existsSync(eslint) && "eslint is not installed" }, () => {
+  const findings = lintFindings("src");
+  const errors = findings.filter((f) => f.includes(" sev2 "));
+  const warnings = findings.filter((f) => f.includes(" sev1 "));
 
   // Errors are what the directory refuses to publish: none are allowed, and the message
   // lists them so a failure says what to fix rather than "lint failed".
@@ -55,19 +60,86 @@ test("the source passes the plugin directory's linter", { skip: !fs.existsSync(e
   // Warnings are allowed through, but the list is asserted so that it is a KNOWN list. A
   // new warning fails this test, which is the point: the count only ever moves because
   // someone decided it should.
-  const allowed = warnings.every(
-    (w) =>
-      w.includes("@typescript-eslint/no-deprecated") ||
-      w.includes("obsidianmd/settings-tab/prefer-setting-definitions")
-  );
+  const known = (w) =>
+    w.includes("@typescript-eslint/no-deprecated") ||
+    w.includes("obsidianmd/settings-tab/prefer-setting-definitions");
   assert.ok(
-    allowed,
-    `unexpected lint warnings:\n  ${warnings.filter((w) => !w.includes("no-deprecated") && !w.includes("prefer-setting-definitions")).join("\n  ")}`
+    warnings.every(known),
+    `unexpected lint warnings:\n  ${warnings.filter((w) => !known(w)).join("\n  ")}`
   );
   assert.ok(warnings.length >= 1, "the two known warning families are still being reported");
-  void status;
-  void config;
 });
+
+test("and passes it in the review's environment, which has no @types/node", { skip: !fs.existsSync(eslint) && "eslint is not installed" }, () => {
+  // The community directory's lint provides the `obsidian` package — the API types — and
+  // NOT this repository's devDependencies. Its report on this plugin cited roughly three
+  // hundred and fifty `no-unsafe-member-access` / `-call` / `-assignment` / `-argument`
+  // warnings on `node:fs`, `node:path`, `node:child_process` and `process` calls, which is
+  // what those APIs look like when `@types/node` is missing and nothing else is wrong.
+  //
+  // `src/host/node.ts` declares that surface and every other file reaches Node through it,
+  // so the same run is clean. This reproduces the condition exactly: a copy of `src` linted
+  // against a tsconfig with `types: []`, which is what removes the ambient Node types. The
+  // copy lives inside the repository so the repository's config applies to it; a file that
+  // goes back to importing a Node module directly brings the warnings back, which is what
+  // makes this a test rather than a note.
+  const dir = fs.mkdtempSync(path.join(repoRoot, ".review-env-"));
+  try {
+    fs.cpSync(path.join(repoRoot, "src"), path.join(dir, "src"), { recursive: true });
+    fs.symlinkSync(path.join(repoRoot, "node_modules"), path.join(dir, "node_modules"), "dir");
+    fs.writeFileSync(
+      path.join(dir, "tsconfig.json"),
+      JSON.stringify(
+        {
+          compilerOptions: {
+            baseUrl: ".",
+            module: "ESNext",
+            target: "ES2020",
+            moduleResolution: "node",
+            strict: true,
+            skipLibCheck: true,
+            noImplicitAny: true,
+            // The whole point: no ambient `@types/node`.
+            types: [],
+            lib: ["DOM", "ES2020"],
+          },
+          include: ["src/**/*.ts"],
+        },
+        null,
+        2
+      )
+    );
+
+    const findings = lintFindings(path.join(path.basename(dir), "src"));
+    const missingTypes = findings.filter(
+      (f) => f.includes("no-unsafe-") || f.includes("no-redundant-type-constituents")
+    );
+    assert.deepEqual(
+      missingTypes,
+      [],
+      `${missingTypes.length} findings that only exist where @types/node is absent:\n  ${missingTypes.join("\n  ")}`
+    );
+
+    // The known list is the same list there — the two families this plugin has decided to
+    // carry as the price of supporting Obsidian 1.11.4 — so the clean result above is not
+    // "the linter stopped looking".
+    const errors = findings.filter((f) => f.includes(" sev2 "));
+    assert.deepEqual(errors, [], `errors without @types/node:\n  ${errors.join("\n  ")}`);
+    const unknown = findings.filter((f) => f.includes(" sev1 ") && !knownWarning(f));
+    assert.deepEqual(unknown, [], `unexpected warnings without @types/node:\n  ${unknown.join("\n  ")}`);
+    assert.ok(findings.length >= 10, `the copy was really linted (${findings.length} findings)`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/** The two warning families this plugin carries deliberately (see `eslint.config.mjs`). */
+function knownWarning(line) {
+  return (
+    line.includes("@typescript-eslint/no-deprecated") ||
+    line.includes("obsidianmd/settings-tab/prefer-setting-definitions")
+  );
+}
 
 /**
  * Run stylelint over `code` and return its findings as text lines.

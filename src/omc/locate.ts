@@ -10,10 +10,7 @@
  * is only needed once per session.
  */
 
-import { execFile, execFileSync } from "node:child_process";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
+import { childProcess, hostProcess, nodeFs as fs, nodeOs as os, nodePath as path } from "../host/node";
 
 export type OmcStatus = "found" | "not-found" | "error";
 
@@ -63,7 +60,7 @@ function isExecutable(p: string): boolean {
   try {
     const st = fs.statSync(p);
     if (!st.isFile()) return false;
-    if (process.platform === "win32") return true;
+    if (hostProcess.platform === "win32") return true;
     fs.accessSync(p, fs.constants.X_OK);
     return true;
   } catch {
@@ -165,7 +162,7 @@ export function locateOmcSync(configuredPath?: string): OmcInstallation {
   }
 
   // 2. Well-known install locations, plus host-mounted equivalents.
-  const base = process.platform === "darwin" ? WELL_KNOWN_MAC : WELL_KNOWN_UNIX;
+  const base = hostProcess.platform === "darwin" ? WELL_KNOWN_MAC : WELL_KNOWN_UNIX;
   const candidates = [
     ...base,
     ...base.map((p) => `${FLATPAK_HOST_PREFIX}${p}`),
@@ -205,11 +202,11 @@ export function locateOmcSync(configuredPath?: string): OmcInstallation {
  * one-line command rather than an OpenModelica install.
  */
 export function detectSandbox(): { sandboxed: boolean; kind?: string; hint?: string } {
-  if (process.platform !== "linux") return { sandboxed: false };
+  if (hostProcess.platform !== "linux") return { sandboxed: false };
 
-  const inFlatpak = fs.existsSync("/.flatpak-info") || !!process.env.FLATPAK_ID;
+  const inFlatpak = fs.existsSync("/.flatpak-info") || !!hostProcess.env.FLATPAK_ID;
   if (inFlatpak) {
-    const appId = process.env.FLATPAK_ID || "md.obsidian.Obsidian";
+    const appId = hostProcess.env.FLATPAK_ID || "md.obsidian.Obsidian";
     return {
       sandboxed: true,
       kind: "Flatpak",
@@ -222,7 +219,7 @@ export function detectSandbox(): { sandboxed: boolean; kind?: string; hint?: str
     };
   }
 
-  if (process.env.SNAP || process.env.SNAP_NAME) {
+  if (hostProcess.env.SNAP || hostProcess.env.SNAP_NAME) {
     return {
       sandboxed: true,
       kind: "Snap",
@@ -239,8 +236,8 @@ export function detectSandbox(): { sandboxed: boolean; kind?: string; hint?: str
 
 function whichOmc(): string | undefined {
   try {
-    const cmd = process.platform === "win32" ? "where" : "which";
-    const out = execFileSync(cmd, ["omc"], {
+    const cmd = hostProcess.platform === "win32" ? "where" : "which";
+    const out = childProcess.execFileSync(cmd, ["omc"], {
       encoding: "utf8",
       timeout: 5000,
       windowsHide: true,
@@ -255,7 +252,7 @@ function whichOmc(): string | undefined {
 
 /** Platform-appropriate installation guidance. */
 export function installHint(): string {
-  switch (process.platform) {
+  switch (hostProcess.platform) {
     case "darwin":
       return (
         "  macOS:\n" +
@@ -288,7 +285,7 @@ export function installHint(): string {
  */
 export function probeOmc(omcPath: string): Promise<OmcInstallation> {
   return new Promise((resolve) => {
-    execFile(
+    childProcess.execFile(
       omcPath,
       ["--version"],
       { timeout: 20000, windowsHide: true, maxBuffer: 1024 * 1024 },

@@ -22,9 +22,7 @@
  *     direction.
  */
 
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
+import { hostProcess, nodeFs as fs, nodeOs as os, nodePath as path, type DirentLike } from "../host/node";
 
 /** The parent of every work root, and the directory a sweep runs over. */
 export function workRootParent(tmp: string = os.tmpdir()): string {
@@ -32,7 +30,7 @@ export function workRootParent(tmp: string = os.tmpdir()): string {
 }
 
 /** This process's work root. */
-export function defaultWorkRoot(pid: number = process.pid, tmp: string = os.tmpdir()): string {
+export function defaultWorkRoot(pid: number = hostProcess.pid, tmp: string = os.tmpdir()): string {
   return path.join(workRootParent(tmp), String(pid));
 }
 
@@ -44,7 +42,7 @@ export function defaultWorkRoot(pid: number = process.pid, tmp: string = os.tmpd
  */
 export function isProcessAlive(pid: number): boolean {
   try {
-    process.kill(pid, 0);
+    hostProcess.kill(pid, 0);
     return true;
   } catch (err) {
     return (err as { code?: string }).code === "EPERM";
@@ -67,13 +65,13 @@ export interface SweepOptions {
  * cannot be read is not a reason to fail to start.
  */
 export function sweepStaleWorkRoots(root: string, opts: SweepOptions = {}): string[] {
-  const current = opts.currentPid ?? process.pid;
+  const current = opts.currentPid ?? hostProcess.pid;
   const alive = opts.alive ?? isProcessAlive;
   const now = opts.now ?? Date.now();
   const minAge = opts.minAgeMs ?? 60 * 60 * 1000;
   const removed: string[] = [];
 
-  let entries: fs.Dirent[];
+  let entries: DirentLike[];
   try {
     entries = fs.readdirSync(root, { withFileTypes: true });
   } catch {

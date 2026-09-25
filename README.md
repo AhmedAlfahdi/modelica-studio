@@ -358,6 +358,12 @@ Outside the vault it touches two things, both because the compiler lives there:
 
 Nothing else is read or written, and no file is uploaded anywhere.
 
+**One file to read.** The plugin's whole system surface — every file it reads and writes,
+the compiler it spawns, the hashes it computes, the environment it looks at — is reached
+through `src/host/node.ts`, which declares exactly those calls. No other file in the
+source imports a Node module or touches `process`, and a test fails the suite if one does.
+That file is the complete answer to "what does this plugin do to my machine".
+
 **Network.** The plugin makes **no network requests unless you turn on AI
 assistance**. With it off — the default, and it stays off until you enter a key — it
 works entirely offline. With it on, and only when you press **AI**, it sends the

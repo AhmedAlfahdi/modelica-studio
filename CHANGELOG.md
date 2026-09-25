@@ -9,6 +9,60 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 Nothing yet.
 
+## [0.3.26] — 2026-09-25
+
+### Fixed
+
+- **The three hundred and fifty-five "unsafe value" warnings were an environment
+  difference, not a defect.** The review lints the source with the `obsidian` package's
+  API types — that is why it reports the deprecations below — but without this
+  repository's `@types/node`. In that environment every `node:fs`, `node:path`,
+  `node:child_process` and `process` member is an implicit `any`, and typescript-eslint's
+  `no-unsafe-*` family reports each use of one: 148 member accesses, 118 calls, 54
+  assignments, 23 arguments and 12 returns, plus two "unresolved `error` type" warnings.
+  Nothing in the list was about what the plugin does; all of it was about a missing
+  types package. Reproduced here by linting a copy of `src` against a tsconfig with
+  `types: []`, which is exactly that condition.
+
+- **The Node surface is declared once, and reached through one file.** `src/host/node.ts`
+  declares the fs, path, os, child-process, crypto and process calls the plugin makes,
+  imports the real modules once and casts them to those declarations; every other file
+  imports from it, so a call site reads the same as it did. Casting is only honest if the
+  declarations are the real shapes, so the file ends with compile-time assertions —
+  `Matches<typeof fsModule, FsSurface>` and friends — that fail `tsc` here, where
+  `@types/node` is installed, the moment a declaration drifts from the module it
+  describes. A mutation check confirms it: changing `readFileSync`'s declared return type
+  fails the typecheck.
+
+  In the review's environment the result is zero `no-unsafe-*` findings, and the plugin's
+  entire system surface — every read, every write, the one shell command — is in one file
+  that a reviewer can read in a minute.
+
+- **`builtin-modules` is gone.** The build script uses Node's own `builtinModules` from
+  `node:module`, which is the replacement the review points at, and the devDependency is
+  removed from `package.json`.
+
+### Added
+
+- **`test/lint.test.mjs` now runs eslint twice**: over the source, and over a copy of it
+  whose tsconfig has `types: []` — the review's environment. The second run fails on any
+  `no-unsafe-*` or unresolved-type finding, so putting a direct Node import back anywhere
+  outside `src/host/node.ts` is caught here. The copy is temporary and inside the
+  repository (`.review-env-*`, ignored) so the repository's own lint config applies to it.
+
+- **The README names that file** as the one to read to see what the plugin does to the
+  machine, next to the capability table the review's behaviour analysis is answered by.
+
+### Note
+
+- The eighteen remaining recommendations are unchanged and deliberate: `display`,
+  `setDynamicTooltip` and `setWarning` are deprecated in Obsidian **1.13**, and their
+  replacements exist only there. This plugin supports **1.11.4**, where the replacements
+  do not exist and the deprecated calls are what make sliders show their value and
+  destructive buttons read as destructive. `eslint.config.mjs` states that at the rule,
+  so the list stays in front of whoever raises `minAppVersion`.
+
+
 ## [0.3.25] — 2026-09-25
 
 ### Fixed

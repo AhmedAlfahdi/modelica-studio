@@ -17,10 +17,14 @@
  * already-built executable with `-override` for the latter.
  */
 
-import { spawn } from "node:child_process";
-import * as crypto from "node:crypto";
-import * as fs from "node:fs";
-import * as path from "node:path";
+import {
+  childProcess,
+  hostProcess,
+  nodeCrypto as crypto,
+  nodeFs as fs,
+  nodePath as path,
+  type ByteChunk,
+} from "../host/node";
 import { defaultWorkRoot, sweepStaleWorkRoots, workRootParent } from "./work-root";
 
 /* ------------------------------------------------------------------ */
@@ -464,18 +468,18 @@ export class OmcBackend implements SimulationBackend {
     cwd: string
   ): Promise<{ stdout: string; stderr: string; code: number | null }> {
     return new Promise((resolve, reject) => {
-      const child = spawn(cmd, args, {
+      const child = childProcess.spawn(cmd, args, {
         cwd,
         windowsHide: true,
         // OMC needs its own libs on the loader path on Linux.
-        env: { ...process.env, ...this.loaderEnv() },
+        env: { ...hostProcess.env, ...this.loaderEnv() },
       });
       let stdout = "";
       let stderr = "";
       // The event's payload is typed `any` by Node's stream types; naming it keeps the
       // rest of the function typed rather than letting `any` spread through the parser.
-      child.stdout.on("data", (d: Buffer | string) => (stdout += d.toString()));
-      child.stderr.on("data", (d: Buffer | string) => (stderr += d.toString()));
+      child.stdout.on("data", (d: ByteChunk) => (stdout += d.toString()));
+      child.stderr.on("data", (d: ByteChunk) => (stderr += d.toString()));
       child.on("error", reject);
       child.on("close", (code) => resolve({ stdout, stderr, code }));
     });
@@ -498,11 +502,11 @@ export class OmcBackend implements SimulationBackend {
         return false;
       }
     });
-    if (process.platform === "darwin") {
-      const existing = process.env.DYLD_LIBRARY_PATH ?? "";
+    if (hostProcess.platform === "darwin") {
+      const existing = hostProcess.env.DYLD_LIBRARY_PATH ?? "";
       return { DYLD_LIBRARY_PATH: [...libDirs, existing].filter(Boolean).join(":") };
     }
-    const existing = process.env.LD_LIBRARY_PATH ?? "";
+    const existing = hostProcess.env.LD_LIBRARY_PATH ?? "";
     return { LD_LIBRARY_PATH: [...libDirs, existing].filter(Boolean).join(":") };
   }
 }
@@ -663,7 +667,7 @@ export interface BackendFactoryOptions extends OmcBackendOptions {
  * re-simulation (1.8-6.7 ms vs ~20 ms) by linking the generated model as a
  * shared library. It is not enabled because OpenModelica's Boehm garbage
  * collector spawns marker threads that crash inside Obsidian's Electron
- * process. This seam exists so it can be enabled once that is solved.
+ * hostProcess. This seam exists so it can be enabled once that is solved.
  */
 export function createBackend(opts: BackendFactoryOptions): SimulationBackend {
   return new OmcBackend(opts);

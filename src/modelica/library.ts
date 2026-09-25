@@ -13,9 +13,7 @@
  * show a resistor with no pins.
  */
 
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
+import { nodeFs as fs, nodeOs as os, nodePath as path, type DirentLike } from "../host/node";
 import { parseModelica, placementCenter as extentCenter, type ParsedClass } from "./parser";
 import type { ComponentClass, Graphic, ParameterDef, PortDef } from "./types";
 
@@ -294,7 +292,7 @@ export class LibraryIndex {
     let count = 0;
     const walk = (dir: string) => {
       if (count >= maxFiles) return;
-      let entries: fs.Dirent[];
+      let entries: DirentLike[];
       try {
         entries = fs.readdirSync(dir, { withFileTypes: true });
       } catch {
@@ -716,7 +714,7 @@ export class LibraryIndex {
  * kept as it is: there is nothing to choose between.
  */
 export function newestLibraries(dir: string): string[] {
-  let entries: fs.Dirent[];
+  let entries: DirentLike[];
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
   } catch {
