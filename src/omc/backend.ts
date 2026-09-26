@@ -151,6 +151,39 @@ export function parseOmcCsv(text: string): { header: string[]; rows: number[][] 
   return { header, rows };
 }
 
+/**
+ * Units for the variables in a result, read from the model description.
+ *
+ * `buildModel` writes `<Model>_info.json` beside the compiled model, and it is
+ * the only place a unit is stated in a form a reader of the results can use: the
+ * result CSV has bare names in its header, and the units that appear in
+ * `<Model>_init.xml` are attribute soup. The description is keyed by variable
+ * name, which is the same string the CSV header carries, so matching the two is a
+ * lookup rather than a parse.
+ *
+ * The unit is usually inherited from the declared type — `Modelica.Units.SI.
+ * Voltage v` never says "V" anywhere in the source — which is exactly why this
+ * comes from the compiler instead of from the plugin's own parser.
+ *
+ * Never throws. A model description that is missing, truncated or reshaped by a
+ * different OpenModelica version costs the units and nothing else.
+ */
+export function parseVariableUnits(json: string): Record<string, string> {
+  try {
+    const parsed: unknown = JSON.parse(json);
+    const vars = (parsed as { variables?: unknown })?.variables;
+    if (!vars || typeof vars !== "object") return {};
+    const out: Record<string, string> = {};
+    for (const [name, value] of Object.entries(vars as Record<string, unknown>)) {
+      const unit = (value as { unit?: unknown })?.unit;
+      if (typeof unit === "string" && unit.trim()) out[name] = unit.trim();
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 /** Convert a parsed CSV into time + series, transposing to column arrays. */
 export function csvToResult(
   header: string[],
@@ -305,6 +338,24 @@ export class OmcBackend implements SimulationBackend {
     fs.writeFileSync(mosFile, script, "utf8");
 
     const args = [`-n=${this.jobs}`, ...(this.opts.extraOptions ?? []), mosFile];
+
+    // Remove the previous executable BEFORE building, so that finding one
+    // afterwards means this build produced it.
+    //
+    // The check used to be a bare `existsSync`, which is only equivalent while
+    // the directory is new. On a REBUILD it is not: a build that fails leaves the
+    // last good executable in place, the failure reads as success, and the model
+    // that runs is the previous one. The diagnostics that say so are attached to
+    // a result nobody looks at, because the caller only reads them when the build
+    // is reported as failed. Silent wrong answers are the one outcome this
+    // backend must never produce, and a model that fails to compile is exactly
+    // when the file is most likely to be stale.
+    try {
+      fs.unlinkSync(path.join(workDir, opts.modelName));
+    } catch {
+      /* No previous executable is the normal case on a first build. */
+    }
+
     const { stdout, stderr, code } = await this.run(this.opts.omcPath, args, workDir);
     const compileMs = Date.now() - started;
     const combined = `${stdout}\n${stderr}`;
@@ -317,7 +368,6 @@ export class OmcBackend implements SimulationBackend {
     if (!built) {
       return { ok: false, diagnostics, compileMs };
     }
-
     this.builds.set(opts.modelName, {
       fingerprint,
       workDir,
@@ -421,8 +471,32 @@ export class OmcBackend implements SimulationBackend {
     });
     const unusable = describeUnusableResult(result, opts.solver);
     if (unusable) throw new SimulationError(unusable, []);
+
+    // Units come from the model description the compiler wrote, not from the
+    // result file. Done after the unusable check so a run that produced nothing
+    // fails for the reason that matters rather than for a missing description.
+    const units = this.variableUnits(compiled.workDir!, compiled.stem ?? opts.modelName);
+    for (const series of result.series) {
+      const unit = units[series.name];
+      if (unit) series.unit = unit;
+    }
     return result;
 
+  }
+
+  /**
+   * Read `<stem>_info.json` for the variable units, or nothing.
+   *
+   * The file is written by `buildModel` and describes the model rather than the
+   * run, so it is read per run anyway: a build is cached across runs and the
+   * cached binary's description is the only one that matches it.
+   */
+  private variableUnits(workDir: string, stem: string): Record<string, string> {
+    try {
+      return parseVariableUnits(fs.readFileSync(path.join(workDir, `${stem}_info.json`), "utf8"));
+    } catch {
+      return {};
+    }
   }
 
   /** Serialises runs of one model; see `simulate`. */
