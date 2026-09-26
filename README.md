@@ -21,7 +21,8 @@ numerically against independent calculations, and there are rough edges. See
 [Beta status](#beta-status).
 
 - [Install](#install) · [What it does](#what-it-does) ·
-  [Documentation](#documentation) · [Beta status](#beta-status) · [Licence](#license)
+  [Worked examples](#worked-examples) · [Documentation](#documentation) ·
+  [Beta status](#beta-status) · [Licence](#license)
 
 ---
 
@@ -76,8 +77,10 @@ update is never held back by a version string.
    one in while the app is running does not register it.
 5. Enable **Modelica Studio** in Settings → Community plugins.
 
-To try it without your own vault, `examples/vault/` is a ready-made one — see
-[Testing and verification](docs/verification.md).
+You do not need a vault of your own to see what it does: the
+[worked examples](#worked-examples) are readable on GitHub, and the studio's
+**Examples** menu opens the same thirty inside your own vault. There is also a
+ready-made one in `examples/vault/` if you would rather not use your own.
 
 ### Verify what you installed
 
@@ -408,6 +411,31 @@ feature is your own provider bill.
 
 ---
 
+## Worked examples
+
+Thirty built-in examples, each with a note that derives its physics, embeds the model
+as a live block, and puts the numbers an independent calculation predicts beside the
+numbers the simulation produces. Every one has a **closed-form answer** computed
+without running the simulation; where that was not possible — a chaotic double
+pendulum, a correlation-limited pipe friction — the note says so and checks an
+invariant instead.
+
+Read them here on GitHub, or open the same set in the studio's **Examples** menu. Start
+with [Modelica in ten minutes](showcase/notes/00-modelica-intro.md), then
+[the full index](showcase/notes/README.md) or any of these:
+
+| Domain | Examples |
+|---|---|
+| <span class="modelica-studio-domain" data-domain="electrical">Electrical</span> | [01 · Electrical](showcase/notes/01-Electrical/01-electrical.md) · [02 · RLC](showcase/notes/01-Electrical/02-rlc.md) · [03 · Rectifier](showcase/notes/01-Electrical/03-rectifier.md) · [04 · SineAC](showcase/notes/01-Electrical/04-sine-ac.md) · [05 · BuckConverter](showcase/notes/01-Electrical/05-buck-converter.md) · [06 · BatteryDischarge](showcase/notes/01-Electrical/06-battery-discharge.md) · [07 · DCMotor](showcase/notes/01-Electrical/07-dcmotor.md) · [08 · HalfWaveRectifier](showcase/notes/01-Electrical/08-half-wave-rectifier.md) |
+| <span class="modelica-studio-domain" data-domain="mechanical">Mechanical</span> | [09 · MassSpring](showcase/notes/02-Mechanical/09-mass-spring.md) · [10 · RotationalPendulum](showcase/notes/02-Mechanical/10-rotational-pendulum.md) · [11 · MassSpringDamper](showcase/notes/02-Mechanical/11-mass-spring-damper.md) · [12 · DampedOscillator](showcase/notes/02-Mechanical/12-damped-oscillator.md) · [13 · ForcedOscillator](showcase/notes/02-Mechanical/13-forced-oscillator.md) · [14 · DampedBounce](showcase/notes/02-Mechanical/14-damped-bounce.md) · [15 · GearTrain](showcase/notes/02-Mechanical/15-gear-train.md) |
+| <span class="modelica-studio-domain" data-domain="fluid">Fluid</span> | [16 · FluidPipe](showcase/notes/03-Fluid/16-fluid-pipe.md) · [17 · FluidReservoir](showcase/notes/03-Fluid/17-fluid-reservoir.md) · [18 · FluidLoop](showcase/notes/03-Fluid/18-fluid-loop.md) · [19 · TankOrifice](showcase/notes/03-Fluid/19-tank-orifice.md) · [20 · NonlinearOrifice](showcase/notes/03-Fluid/20-nonlinear-orifice.md) · [21 · PipeFriction](showcase/notes/03-Fluid/21-pipe-friction.md) |
+| <span class="modelica-studio-domain" data-domain="thermal">Thermal</span> | [22 · Thermal](showcase/notes/04-Thermal/22-thermal.md) · [23 · HeatConduction](showcase/notes/04-Thermal/23-heat-conduction.md) · [24 · HeatExchanger](showcase/notes/04-Thermal/24-heat-exchanger.md) |
+| <span class="modelica-studio-domain" data-domain="other">State machine</span> | [25 · StateMachine](showcase/notes/05-State-machine/25-state-machine.md) |
+| <span class="modelica-studio-domain" data-domain="other">Mechanics</span> | [26 · DoublePendulum](showcase/notes/06-Mechanics/26-double-pendulum.md) |
+| <span class="modelica-studio-domain" data-domain="aerospace">Aerospace</span> | [27 · AirfoilLift](showcase/notes/07-Aerospace/27-airfoil-lift.md) · [28 · Phugoid](showcase/notes/07-Aerospace/28-phugoid.md) |
+| <span class="modelica-studio-domain" data-domain="blocks">Control</span> | [29 · ControlLoop](showcase/notes/08-Control/29-control-loop.md) |
+| <span class="modelica-studio-domain" data-domain="multiphysics">Multiphysics</span> | [30 · ResistorSelfHeating](showcase/notes/09-Multiphysics/30-resistor-self-heating.md) |
+
 ## Documentation
 
 The README is the front door: what the plugin is, how to install it, and what it does.
@@ -463,7 +491,8 @@ src/
   view/                schematic editor, studio view, plots, inline blocks
   omc/                 OpenModelica process, build cache, result reading
 test/                  unit and integration tests, and the numerical audit
-showcase/              generator for the example notes (math, explanations)
+showcase/notes/        the 30 worked examples, readable as markdown
+showcase/              the generator behind them (math, explanations)
 examples/vault/        the test vault, with the generated notes
 docs/                  the reference, one page per subject -- see Documentation above
   design.md            why it is built this way, and the measurements behind it

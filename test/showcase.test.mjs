@@ -84,6 +84,34 @@ test("the introduction explains Modelica and links into the examples", () => {
   assert.match(index, /\]\(00-modelica-intro\.md\)/, "the index links to the introduction");
 });
 
+test("the README indexes every worked example, with a link that resolves", () => {
+  // The README carries its own copy of the domain table, because a reader arriving at
+  // the repository should see what the plugin does without following a link first --
+  // and because "download this vault" is not a thing anybody does. A copy drifts, so
+  // this is the test that stops it: add a thirty-first example and the README has to
+  // list it before the suite goes green again.
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+  const table = /^\| Domain \| Examples \|\n\|---\|---\|\n([\s\S]*?)\n\n/m.exec(readme);
+  assert.ok(table, "the README has a worked-examples table");
+
+  for (const ex of EXAMPLES) {
+    const target = `showcase/notes/${P.pathOf(ex.name)}`;
+    assert.ok(
+      table[1].includes(`](${target})`),
+      `${ex.name} is not linked from the README's index (expected ${target})`
+    );
+    assert.ok(
+      fs.existsSync(path.join(repoRoot, target)),
+      `${ex.name}: the README links ${target}, which does not exist`
+    );
+  }
+
+  // And nothing invented: every link in the table is a note that exists.
+  for (const m of table[1].matchAll(/\]\((showcase\/notes\/[^)]+)\)/g)) {
+    assert.ok(fs.existsSync(path.join(repoRoot, m[1])), `the README links ${m[1]}, which does not exist`);
+  }
+});
+
 test("each note embeds the example it documents, unchanged", () => {
   for (const ex of EXAMPLES) {
     const file = path.join(NOTES_DIR, P.pathOf(ex.name));

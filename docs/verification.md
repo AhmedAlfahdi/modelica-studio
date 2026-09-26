@@ -3,17 +3,23 @@ How the claims in this documentation are checked: the numerical audit, the rule 
 
 ## Testing
 
-`examples/vault/` is an Obsidian vault you can open directly: the 30 worked
-examples, cross-linked, each with a live model and its verified numbers, plus an
-introduction to the language and a demonstration of using it to learn a new
-subject.
+The thirty worked examples are markdown, so they can be read here rather than
+downloaded: [the index](../showcase/notes/README.md) lists them by domain, and each
+note derives its physics, embeds the model as a live block, and puts the numbers an
+independent calculation predicts beside the numbers the simulation produces.
+
+To run them rather than read them, the studio's **Examples** menu opens the same set
+inside your own vault — no setup beyond having installed the plugin. There is also a
+ready-made vault in `examples/vault/`, for a machine where you would rather not use
+your own:
 
 1. Copy `main.js`, `manifest.json` and `styles.css` into
    `examples/vault/.obsidian/plugins/modelica-studio/`.
 2. Open `examples/vault/` as a vault in Obsidian.
 3. Enable the plugin, then open `showcase/00-modelica-intro.md`.
 
-Start with the introduction, then any example, and press **Simulate** in a block.
+Either way, start with the introduction, then any example, and press **Simulate** in a
+block.
 
 Reports of what breaks are the most useful contribution at this stage. Include
 the Modelica source, the error, and your OpenModelica version.
