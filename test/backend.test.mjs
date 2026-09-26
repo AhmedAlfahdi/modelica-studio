@@ -217,6 +217,34 @@ test("reports a compile error for invalid Modelica", { skip: !HAS_OMC }, async (
   backend.dispose();
 });
 
+test("a failed REBUILD does not run the previous model", { skip: !HAS_OMC }, async () => {
+  // The build directory is keyed by model name and reused, so a model that fails
+  // to compile still has the last good executable in it. Reporting success on the
+  // strength of "the file exists" therefore runs the PREVIOUS model and returns
+  // its numbers — a wrong answer with nothing to indicate it. The check has to be
+  // that this build produced the file, not that a file is there.
+  const backend = new OmcBackend({ omcPath: OMC.omcPath, cacheDir: simCacheDir("sim-rebuild") });
+  const good = "model Rebuilt\n  Real x(start = 1);\nequation\n  der(x) = -x;\nend Rebuilt;";
+
+  const first = await backend.simulate({ modelName: "Rebuilt", source: good, stopTime: 0.5 });
+  assert.equal(first.reusedBinary, false, "the first build compiles");
+
+  await assert.rejects(
+    () =>
+      backend.simulate({
+        modelName: "Rebuilt",
+        source: "model Rebuilt\n  Real x(start = 1);\nequation\n  der(x) = -undefinedSymbol;\nend Rebuilt;",
+        stopTime: 0.5,
+      }),
+    (err) => {
+      assert.ok(/undefinedSymbol|Undeclared|not found|translation failed/i.test(err.message), err.message);
+      return true;
+    },
+    "a broken edit must fail rather than re-run the last good binary"
+  );
+  backend.dispose();
+});
+
 test("detectSandbox reports a non-sandboxed environment correctly", () => {
   const s = locateMod.detectSandbox();
   assert.equal(typeof s.sandboxed, "boolean");

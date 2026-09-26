@@ -305,6 +305,24 @@ export class OmcBackend implements SimulationBackend {
     fs.writeFileSync(mosFile, script, "utf8");
 
     const args = [`-n=${this.jobs}`, ...(this.opts.extraOptions ?? []), mosFile];
+
+    // Remove the previous executable BEFORE building, so that finding one
+    // afterwards means this build produced it.
+    //
+    // The check used to be a bare `existsSync`, which is only equivalent while
+    // the directory is new. On a REBUILD it is not: a build that fails leaves the
+    // last good executable in place, the failure reads as success, and the model
+    // that runs is the previous one. The diagnostics that say so are attached to
+    // a result nobody looks at, because the caller only reads them when the build
+    // is reported as failed. Silent wrong answers are the one outcome this
+    // backend must never produce, and a model that fails to compile is exactly
+    // when the file is most likely to be stale.
+    try {
+      fs.unlinkSync(path.join(workDir, opts.modelName));
+    } catch {
+      /* No previous executable is the normal case on a first build. */
+    }
+
     const { stdout, stderr, code } = await this.run(this.opts.omcPath, args, workDir);
     const compileMs = Date.now() - started;
     const combined = `${stdout}\n${stderr}`;
@@ -317,7 +335,6 @@ export class OmcBackend implements SimulationBackend {
     if (!built) {
       return { ok: false, diagnostics, compileMs };
     }
-
     this.builds.set(opts.modelName, {
       fingerprint,
       workDir,
@@ -421,6 +438,7 @@ export class OmcBackend implements SimulationBackend {
     });
     const unusable = describeUnusableResult(result, opts.solver);
     if (unusable) throw new SimulationError(unusable, []);
+
     return result;
 
   }

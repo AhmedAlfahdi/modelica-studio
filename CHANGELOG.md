@@ -7,7 +7,19 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **A failed rebuild no longer runs the previous model.** `compile()` decided a build had
+  succeeded by testing that the executable exists, which is only equivalent while the work
+  directory is new. The directory is keyed by model name and reused across edits, so a
+  model that fails to compile left the last good executable in place: the failure read as
+  success, the diagnostics were attached to a result the caller never looks at, and the
+  model that ran was the previous one. The executable is now removed before the build, so
+  finding one afterwards means this build produced it.
+
+  Reachable in the studio — editing a model into something invalid could run what it was
+  before the edit, with the compiler's errors discarded — and found by a solver block whose
+  equations did not compile coming back with the *previous* block's answer.
 
 ## [0.3.27] — 2026-09-25
 
