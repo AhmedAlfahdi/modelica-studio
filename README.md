@@ -47,6 +47,17 @@ After installing, reload Obsidian (Ctrl/Cmd+R): the plugin looks for `omc` when 
 loads. If it cannot find it, the message names the install route for your platform,
 and **OpenModelica path** in the settings takes an explicit path to the binary.
 
+### From the community directory
+
+**Settings → Community plugins → Browse**, search for **Modelica Studio**, install,
+and enable it. That is the whole of it — this is the route that keeps itself up to
+date, and the one to prefer.
+
+Obsidian's own copy-link for this plugin is
+`obsidian://show-plugin?id=modelica-studio`, which opens the same page in the app.
+Paste it into a browser rather than clicking it from a page like this one: GitHub
+strips the `obsidian://` scheme, so a link here would go nowhere.
+
 ### With BRAT, which keeps it updated
 
 [BRAT](https://tfthacker.com/BRAT) installs a plugin straight from its GitHub
@@ -474,7 +485,12 @@ Experimental, and it wants more testing. Specifically:
   than silently.
 - **The audit covers the built-in examples, not your models.** A hand-built model
   may hit a parser or serializer limitation the examples do not.
-- **No plugin-store review.** Nothing has been checked by anyone but its author.
+- **Listed in the community directory, and not manually reviewed.** It is installable
+  from **Browse** like any other community plugin, which means it passed the
+  submission checks the directory runs — the automated ones, over this repository's
+  own linter output, the release build and the manifest. Obsidian's listing says so
+  in as many words: *"This plugin has not been manually reviewed by Obsidian staff."*
+  Nobody has read it end to end but its author.
 
 If something fails, enabling **Write diagnostic log** in settings writes a diagnostic
 log to `.modelica-studio.log` in the vault — the most recent 512 KB of it, trimmed as
