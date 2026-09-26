@@ -233,9 +233,22 @@ answer is recomputed when the note opens:
 
 The unknown does not have to be alone on the left of anything. The block asks
 OpenModelica for the model's **initialisation** — the nonlinear solve it performs
-before every simulation — so nothing is rearranged, by you or by the plugin. Systems of
-equations work, the answer carries the unit the compiler resolved, and the equation is
-typeset above it.
+before every simulation — so nothing is rearranged, by you or by the plugin.
+
+It is not only arithmetic. Each of these has been run against OpenModelica, and the
+answer is the one that came back:
+
+| Write | Get |
+|---|---|
+| `2*x + y = 7` and `x - y = 2` | **`x = 3`**, **`y = 1`** — a system, solved together |
+| `R = v/i`, the quantities declared as `Modelica.Units.SI.*` | **`R = 200 Ohm`** — the unit comes from the compiler, not the note |
+| `Modelica.Math.Nonlinear.quadratureLobatto(Modelica.Math.exp, 0, 1, 1e-8)` | **`1.71828182846`** — a definite integral, by adaptive quadrature |
+| `sum(sin((i - 0.5) * dx) * dx for i in 1:n)`, `n = 2000` over `0 … π` | **`2.00000020562`** — one of your own, as a midpoint sum |
+| `x^2 + 3*x - 10 = 0` | **`x = 2`** — the root nearest the starting value, not the first found |
+
+The equation above each answer is typeset where it can be read as mathematics, and
+kept as source where it cannot — so a comprehension stays legible while everything
+around it is drawn.
 
 [The calculation block](docs/solve-block.md) is the reference, and
 [twelve examples to try](docs/solve-examples.md) have each been run against
