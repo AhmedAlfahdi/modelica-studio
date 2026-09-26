@@ -590,8 +590,15 @@ export function renderMath(source: string, display: boolean): HTMLElement {
   if (globalThis.__MATHS_AVAILABLE__ === false) {
     throw new ReferenceError("MathJax is not defined");
   }
-  const el = document.createElement("span");
-  el.className = display ? "math math-block is-loaded" : "math math-inline is-loaded";
+  // An `<mjx-container>`, because that is what MathJax's `tex2chtml` returns and
+  // therefore what Obsidian's `renderMath` returns. It is NOT the
+  // `<span class="math math-block">` that Obsidian's own markdown renderer wraps
+  // maths in, and returning that here was a lie the tests could not see: the
+  // stylesheet styled `.math`, matched nothing in the real app, and every test
+  // stayed green while the equation was drawn at the wrong size, centred.
+  const el = document.createElement("mjx-container");
+  el.className = "MathJax";
+  if (display) el.setAttribute("display", "true");
   el.setAttribute("data-latex", source);
   el.textContent = source;
   return el;

@@ -801,21 +801,38 @@ body.modelica-studio-resizing .workspace-leaf-content canvas {
  *
  * It leaves the monospace of the line it sits on, because it is no longer source
  * code, and it is left-aligned: display maths centres by default, which in a
- * narrow side panel puts the equation somewhere other than the answer beneath it.
- * Sized in em so it tracks whatever the note's font size is.
+ * narrow panel puts the equation somewhere other than the answer beneath it.
+ *
+ * The size is the NOTE's text size, not the 13px of the source line above it.
+ * `renderMath` returns MathJax's own `<mjx-container>`, and MathJax sizes itself
+ * at 1em of whatever contains it — so inheriting from a line set for monospace
+ * source made every equation noticeably smaller than the prose around it.
+ *
+ * The selectors name `mjx-container`, which is what `renderMath` actually
+ * returns. Obsidian's own markdown renderer wraps maths in `<span class="math">`
+ * instead, and styling THAT is what these rules used to do: they matched nothing,
+ * so the size and the alignment were silently never applied at all. The
+ * attribute selector is spelled out because MathJax's stylesheet centres
+ * `mjx-container[display="true"]` with equal specificity, and this has to win.
  */
 .modelica-studio-solve-typeset {
   font-family: var(--font-interface);
+  font-size: var(--font-text-size, 16px);
   color: var(--text-normal);
   text-align: left;
   overflow-x: auto;
   overflow-y: hidden;
 }
 
-.modelica-studio-solve-typeset .math {
-  font-size: 1.15em;
+.modelica-studio-solve-typeset mjx-container[display="true"],
+.modelica-studio-solve-typeset mjx-container {
   text-align: left;
-  margin: 0;
+  /* MathJax gives display maths 1em above and below, which is more air than the
+     panel wants between an equation and the rule under it. */
+  margin: 0.2em 0;
+  font-size: 1em;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 /* A `parameter` line is context for the equation, so it recedes. */

@@ -41,7 +41,12 @@ export default {
     "declaration-block-no-duplicate-properties": true,
     "selector-pseudo-class-no-unknown": [true, { ignorePseudoClasses: ["global", "local"] }],
     "selector-pseudo-element-no-unknown": true,
-    "selector-type-no-unknown": true,
+    // Custom elements are allowed, because MathJax renders into one. `renderMath`
+    // returns an `<mjx-container>`, and it is the only element the typeset
+    // equation's rules can name — the stylesheet styled `.math` for a while, which
+    // is what Obsidian's own markdown renderer wraps maths in and not what this API
+    // returns, so the rules matched nothing and said nothing.
+    "selector-type-no-unknown": [true, { ignore: ["custom-elements"] }],
     "at-rule-no-unknown": [true, { ignoreAtRules: ["layer", "property", "container"] }],
     "unit-no-unknown": true,
   },

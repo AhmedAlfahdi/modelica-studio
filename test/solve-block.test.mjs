@@ -14,6 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runInDom, DOM_PREAMBLE } from "./helpers/dom-runner.mjs";
+import { PLUGIN_CSS, THEME_CSS } from "./helpers/theme-css.mjs";
 
 const ROOT = "/mnt/data/projects/Modelica-Plugin";
 
@@ -21,6 +22,11 @@ const HEAD = [
   DOM_PREAMBLE,
   `import { SolveBlock } from "${ROOT}/src/view/solve-block.ts";`,
   `import { SimulationError } from "${ROOT}/src/omc/backend.ts";`,
+  "",
+  "/** The plugin's real stylesheet, against the theme variables it competes with. */",
+  "const style = document.createElement('style');",
+  `style.textContent = ${JSON.stringify(THEME_CSS + PLUGIN_CSS)};`,
+  "document.head.appendChild(style);",
   "",
   "/** One macrotask, so the solve's continuation has run. */",
   "const tick = () => new Promise((r) => setTimeout(r, 0));",
@@ -218,12 +224,12 @@ test("the equation is typeset, and the LaTeX is the equation that was written", 
     "const backend = fakeBackend({ series: [{ name: 'x', values: [10.94040092099989] }] });",
     "const { host } = mount('sqrt(x) + x^2 - 56 = 67', { backend, report() {}, setupHelp() {} });",
     "window.test('maths was requested', async () => { await typeset(host, 1);",
-    "  return String(!!host.querySelector('.modelica-studio-solve-typeset .math')); });",
+    "  return String(!!host.querySelector('.modelica-studio-solve-typeset mjx-container')); });",
     "window.test('with the equation as LaTeX', async () => { await typeset(host, 1);",
-    "  return host.querySelector('.math').getAttribute('data-latex'); });",
+    "  return host.querySelector('mjx-container').getAttribute('data-latex'); });",
     "window.test('and the source is not also shown', async () => { await typeset(host, 1);",
     "  const line = host.querySelector('.modelica-studio-solve-typeset');",
-    "  return String(line.textContent === line.querySelector('.math').textContent); });",
+    "  return String(line.textContent === line.querySelector('mjx-container').textContent); });",
     "window.finish();",
   ]);
   if (out.skip) return;
@@ -264,6 +270,32 @@ test("when maths cannot be rendered the source stays, and the reason is reported
   assert.match(d["and the failure is in the log rather than swallowed"], /could not typeset/);
   assert.match(d["and the failure is in the log rather than swallowed"], /MathJax is not defined/);
   assert.equal(d["the answer still arrives"], "2", "failing to draw the question does not fail the solve");
+});
+
+test("the equation is drawn at the note's size and aligned left", async () => {
+  // A stylesheet test, because the failure it guards against is invisible to the
+  // others. The rules used to target `.math`, the wrapper Obsidian's markdown
+  // renderer produces — while `renderMath` returns a bare `<mjx-container>`, so
+  // they matched NOTHING. Every test passed while the equation inherited the 13px
+  // of the monospace source line and was centred by MathJax's own stylesheet.
+  const out = page([
+    "const backend = fakeBackend({ series: [{ name: 'x', values: [2] }] });",
+    "const { host } = mount('sqrt(x) + x^2 - 56 = 67', { backend, report() {}, setupHelp() {} });",
+    "window.test('the stylesheet reaches the element the panel builds', async () => { await typeset(host, 1);",
+    "  return host.querySelector('.modelica-studio-solve-typeset mjx-container') ? 'matched' : 'NO MATCH'; });",
+    "window.test('left aligned, not centred by MathJax', async () => { await typeset(host, 1);",
+    "  return getComputedStyle(host.querySelector('mjx-container')).textAlign; });",
+    "window.test('no smaller than the prose it sits in', async () => { await typeset(host, 1);",
+    "  const equation = parseFloat(getComputedStyle(host.querySelector('mjx-container')).fontSize);",
+    "  const body = parseFloat(getComputedStyle(document.body).fontSize);",
+    "  return (equation >= body ? 'ok' : 'TOO SMALL') + ' ' + equation + ' vs ' + body; });",
+    "window.finish();",
+  ]);
+  if (out.skip) return;
+  const d = passed(out);
+  assert.equal(d["the stylesheet reaches the element the panel builds"], "matched");
+  assert.equal(d["left aligned, not centred by MathJax"], "left");
+  assert.match(d["no smaller than the prose it sits in"], /^ok /, d["no smaller than the prose it sits in"]);
 });
 
 test("an equation that cannot be typeset keeps its source", async () => {
