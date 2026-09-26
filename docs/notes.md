@@ -3,8 +3,8 @@ A note can hold a live model, or a calculation. Both are ordinary fenced code bl
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/embed-light.png" alt="A modelica block in a note, showing the live diagram (light theme)"></td>
-<td width="50%"><img src="docs/images/embed-dark.png" alt="A modelica block in a note, showing the live diagram (dark theme)"></td>
+<td width="50%"><img src="images/embed-light.png" alt="A modelica block in a note, showing the live diagram (light theme)"></td>
+<td width="50%"><img src="images/embed-dark.png" alt="A modelica block in a note, showing the live diagram (dark theme)"></td>
 </tr>
 <tr>
 <td><sub>Light theme</sub></td><td><sub>Dark theme</sub></td>
@@ -15,8 +15,8 @@ A note can hold a live model, or a calculation. Both are ordinary fenced code bl
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/embedPlot-light.png" alt="The same block switched to its plot (light theme)"></td>
-<td width="50%"><img src="docs/images/embedPlot-dark.png" alt="The same block switched to its plot (dark theme)"></td>
+<td width="50%"><img src="images/embedPlot-light.png" alt="The same block switched to its plot (light theme)"></td>
+<td width="50%"><img src="images/embedPlot-dark.png" alt="The same block switched to its plot (dark theme)"></td>
 </tr>
 <tr>
 <td><sub>Light theme</sub></td><td><sub>Dark theme</sub></td>

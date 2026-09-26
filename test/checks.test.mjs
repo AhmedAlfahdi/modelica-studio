@@ -584,37 +584,99 @@ test("the licence and citation metadata agree with each other", () => {
   assert.match(help, /CITATION\.cff/, "with a link to the citation file");
 });
 
+test("every link and anchor in the documentation resolves, from the file that makes it", () => {
+  // Written after two rounds of the same mistake. Splitting the README into `docs/`
+  // left seven links pointing at `docs/...` from inside `docs/`, and then four images
+  // doing the same — each one fine relative to the repository root and broken in the
+  // file that showed it, which is what a reader's browser resolves against. Both were
+  // found by eye, on GitHub, after the change had been pushed.
+  //
+  // So links are resolved the way a renderer resolves them, anchors are checked
+  // against the headings of the page they land on, and fenced blocks are skipped
+  // because a code sample is not a link.
+  const slug = (heading) =>
+    heading
+      .toLowerCase()
+      .replace(/[^a-z0-9 -]/g, "")
+      .trim()
+      .replace(/ +/g, "-");
+  const headingsOf = (text) => new Set([...text.matchAll(/^#+ (.+)$/gm)].map((m) => slug(m[1])));
+
+  const bad = [];
+  for (const rel of documentationFiles()) {
+    const here = path.join(repoRoot, rel);
+    const prose = fs
+      .readFileSync(here, "utf8")
+      .replace(/```[\s\S]*?```/g, "")
+      .replace(/`[^`\n]*`/g, "");
+    for (const m of prose.matchAll(/\]\(([^)]+)\)/g)) {
+      const target = m[1];
+      if (/^(https?:|mailto:)/.test(target)) continue;
+
+      if (target.startsWith("#")) {
+        if (!headingsOf(prose).has(target.slice(1))) {
+          bad.push(`${rel}: ${target} is not a heading on that page`);
+        }
+        continue;
+      }
+
+      const [file, anchor] = target.split("#");
+      const resolved = path.resolve(path.dirname(here), file);
+      if (!fs.existsSync(resolved)) {
+        bad.push(`${rel}: ${target} resolves to ${path.relative(repoRoot, resolved)}, which does not exist`);
+        continue;
+      }
+      if (anchor && resolved.endsWith(".md")) {
+        const there = fs.readFileSync(resolved, "utf8");
+        if (!headingsOf(there).has(anchor)) bad.push(`${rel}: ${target} has no such heading`);
+      }
+    }
+  }
+  assert.deepEqual(bad, [], `${bad.length} links do not resolve`);
+});
+
 test("every image the documentation shows exists, and every image is shown", () => {
   // A page whose screenshots are missing looks broken, and a screenshot nobody
   // references is either dead weight or a picture the text forgot to mention. Both
   // directions are checked, because both are silent: markdown renders a broken image
   // as nothing at all in some viewers.
   //
-  // Every markdown file, not only the README: the split into `docs/` moved four
-  // screenshots into another page, and this test failed the moment it happened --
-  // which is the behaviour wanted. A picture is not less missing for having moved.
+  // Every markdown file, not only the README, and every reference resolved FROM THE
+  // FILE THAT MAKES IT. Resolving from the repository root is what let four broken
+  // images through: the split moved the embed screenshots into `docs/notes.md`, which
+  // kept the root-relative `docs/images/...` they had in the README, so every path
+  // pointed at `docs/docs/images/...` and GitHub drew four alt texts where the
+  // pictures should be. The path existed relative to the root; the FILE it was in
+  // is what GitHub resolves against, and that is what this has to check.
   const referenced = [];
   for (const rel of documentationFiles()) {
     const text = fs.readFileSync(path.join(repoRoot, rel), "utf8");
     // Markdown images AND the HTML <img> tags the side-by-side theme pairs use: a
     // check that only knew about one spelling would wave a broken image through.
-    referenced.push(
-      ...[...text.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((m) => m[1]),
-      ...[...text.matchAll(/<img\s+src="([^"]+)"/g)].map((m) => m[1])
-    );
+    for (const m of [
+      ...text.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g),
+      ...text.matchAll(/<img\s+src="([^"]+)"/g),
+    ]) {
+      referenced.push({ rel, link: m[1] });
+    }
   }
   assert.ok(referenced.length >= 3, `the documentation shows pictures (${referenced.length})`);
 
-  for (const link of referenced) {
+  const resolved = [];
+  for (const { rel, link } of referenced) {
+    // The absolute, existing target — or the nearest thing to it, so the failure
+    // message can say where the path actually went.
+    const target = path.resolve(path.dirname(path.join(repoRoot, rel)), link);
     assert.ok(
-      fs.existsSync(path.join(repoRoot, link)),
-      `${link} is referenced by the documentation and must exist`
+      fs.existsSync(target),
+      `${rel} shows ${link}, which resolves to ${path.relative(repoRoot, target)} and does not exist`
     );
+    resolved.push(target);
   }
 
   const dir = path.join(repoRoot, "docs", "images");
   const available = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(".png")) : [];
-  const shown = new Set(referenced.map((r) => path.basename(r)));
+  const shown = new Set(resolved.map((r) => path.basename(r)));
   assert.deepEqual(
     available.filter((f) => !shown.has(f)),
     [],
@@ -627,9 +689,12 @@ test("every image the documentation shows exists, and every image is shown", () 
     fs.existsSync(path.join(repoRoot, "scripts/readme-images.mjs")),
     "and the script that renders them is in the repository"
   );
-  assert.ok(referenced.every((r) => r.startsWith("docs/images/")), "images live together under docs/images");
+  assert.ok(
+    resolved.every((r) => path.dirname(r) === dir),
+    "images live together under docs/images"
+  );
   // Both themes for every scene, so a reader in either one sees the real thing.
-  const names = referenced.map((r) => path.basename(r));
+  const names = resolved.map((r) => path.basename(r));
   for (const stem of ["studio", "diagram", "plot", "help", "embed", "embedPlot", "hover", "sweep"]) {
     assert.ok(names.includes(`${stem}-light.png`) && names.includes(`${stem}-dark.png`), `${stem} is shown in both themes`);
   }
