@@ -348,6 +348,12 @@ and a model body holds equations rather than classes — so a custom integrand i
 rather than a quadrature rule. The block says so by name instead of leaving you to
 decode a parse error.
 
+**The reference and a page of examples to try** are split out as the section has
+grown: [`docs/solve-block.md`](docs/solve-block.md) is the block itself — the
+directive, the typesetting rule, what it refuses and why — and
+[`docs/solve-examples.md`](docs/solve-examples.md) is twelve blocks that have been
+run against OpenModelica, with the answer each one gives.
+
 **When it cannot answer.** A block with nothing to solve for, two candidate unknowns, or
 an equation with no solution says so in place and leaves the note alone. A solve block
 never writes to your note — the text you typed is the question, and the panel is the

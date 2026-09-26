@@ -1022,12 +1022,29 @@ test("every fence the plugin documents is registered with Obsidian", { skip: !HA
   assert.ok(fences.includes("modelica"), `the diagram fence is registered: ${fences.join(", ")}`);
   assert.ok(fences.includes("modelica-solve"), `the solver fence is registered: ${fences.join(", ")}`);
 
-  const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
-  const documented = new Set([...readme.matchAll(/^```(modelica[a-z-]*)/gm)].map((m) => m[1]));
+  // Every markdown file in the repository, not only the README. The documentation is
+  // split across `docs/` as it grows, and a fence documented there is exactly as
+  // broken when it is unregistered as one documented in the README — but only if this
+  // test looks. A wiki is outside its reach entirely, which is the practical argument
+  // for keeping the reference documentation in the repository.
+  const files = [
+    path.join(ROOT, "README.md"),
+    ...fs
+      .readdirSync(path.join(ROOT, "docs"))
+      .filter((name) => name.endsWith(".md"))
+      .map((name) => path.join(ROOT, "docs", name)),
+  ];
+  const documented = new Set();
+  for (const file of files) {
+    for (const m of fs.readFileSync(file, "utf8").matchAll(/^`{3,4}(modelica[a-z-]*)/gm)) {
+      documented.add(m[1]);
+    }
+  }
+  assert.ok(documented.size >= 2, `the documentation names its fences (${[...documented].join(", ")})`);
   for (const language of documented) {
     assert.ok(
       fences.includes(language),
-      `\`${language}\` is documented in the README and must be registered (registered: ${fences.join(", ")})`
+      `\`${language}\` is documented across ${files.length} files and must be registered (registered: ${fences.join(", ")})`
     );
   }
 });
