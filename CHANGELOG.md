@@ -7,7 +7,63 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **A `modelica-solve` block: an equation in a note, answered by the solver.** Write the
+  relationship as it comes out — `sqrt(x) + x^2 - 56 = 67` — and the block reports
+  `x = 10.940400921` when the note opens. Nothing is rearranged, because nothing needs to
+  be: the block asks for the model's **initialisation**, which is the nonlinear solve
+  OpenModelica already performs before every simulation, so asking for no simulation time
+  is what turns the simulator into a solver. `//@ solve x` names the symbol whose value is
+  reported — inferred when the equations leave exactly one symbol undefined, and asked for
+  when they leave several — `parameter` declarations carry through, several equations are
+  solved together as a system, and the answer carries the unit the compiler resolved for
+  that quantity. The starting value is printed with the answer, because a solver returns
+  the root nearest where it began and `x^2 = 2` has two right answers. Nothing is written
+  back to the note.
+
+  The panel shows the **equation above its answer**, so the block reads on its own
+  rather than leaving a bare number in the prose — the thing it exists to replace. A
+  system reports **every** symbol it solved, not only the one the directive named, and a
+  `parameter` line is shown with the equation it feeds, because `... = target` is not a
+  question anyone can check without knowing what `target` is.
+
+- **The equation above an answer is typeset.** `sqrt(x) + x^2 - 56 = 67` is drawn as
+  mathematics rather than as source, which is what makes a note's calculation read like
+  one. Conversion is all-or-nothing per line: the arithmetic, comparisons, known
+  functions, fractions and subscripted names convert, and anything the converter cannot
+  fully account for — a comprehension, an `if` expression, an array — keeps its source,
+  so nothing is ever *nearly* right. Precedence comes from a parser rather than a
+  substitution, and the compiler was asked rather than guessed at where the language is
+  strict: `x^2^3` and `x^-2` are refused here because OpenModelica refuses them too.
+
+  Definite integrals work both ways: adaptive quadrature through the library's
+  `Modelica.Math.Nonlinear.quadratureLobatto` for an integrand that is already a
+  function (`∫₀¹ eˣ dx = 1.718281828459183`), and a midpoint sum with a comprehension
+  for one of your own (`∫₀^π sin x dx = 2.000000206` at `n = 2000`). A `function`
+  *definition* is refused by name, since the block is a model body and the compiler's
+  answer to one is a parse error about algorithms that mentions neither.
+
+- **Units now come back with a simulation result.** `SimulationBackend.simulate` fills in
+  `SimSeries.unit` — a field that was declared and never populated — from the
+  `<Model>_info.json` the compiler writes beside the model. That file is the only place a
+  unit appears in a form the results can be matched to: the result CSV has bare names in
+  its header, and a unit inherited from a declared type (`Modelica.Units.SI.Resistance R`)
+  is stated nowhere in the model's own text.
+
+### Fixed
+
+- **A failed rebuild no longer runs the previous model.** `compile()` decided a build had
+  succeeded by testing that the executable exists, which is only equivalent while the work
+  directory is new. The directory is keyed by model name and reused across edits, so a
+  model that fails to compile left the last good executable in place: the failure read as
+  success, the diagnostics were attached to a result the caller never looks at, and the
+  model that ran was the previous one. The executable is now removed before the build, so
+  finding one afterwards means this build produced it.
+
+  Reachable in the studio — editing a model into something invalid could run what it was
+  before the edit, with the compiler's errors discarded — and found by a solver block whose
+  equations did not compile coming back with the *previous* block's answer.
 
 ## [0.3.27] — 2026-09-25
 

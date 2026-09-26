@@ -752,6 +752,154 @@ body.modelica-studio-resizing .workspace-leaf-content canvas {
   background: var(--background-primary);
 }
 
+/*
+ * A solver block.
+ *
+ * Sized to its content rather than given a height: the answer is one line, and a
+ * block that reserved more would push the prose it belongs to off the screen for
+ * no reason. The monospace value keeps digits aligned between two blocks in the
+ * same note, which is the only formatting a column of numbers needs.
+ */
+.modelica-studio-solve {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0.75em 0;
+  padding: 10px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: 6px;
+  background: var(--background-primary);
+}
+
+/*
+ * The relationship being solved, above its answer.
+ *
+ * Shown as the user wrote it, in the same monospace as the answer so the two read
+ * as one statement. It is quieter than the answer — this is the question — but
+ * present, because a panel with only a number in it is the thing the block exists
+ * to replace.
+ */
+.modelica-studio-solve-question {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.modelica-studio-solve-line {
+  font-family: var(--font-monospace);
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * A typeset equation.
+ *
+ * It leaves the monospace of the line it sits on, because it is no longer source
+ * code, and it is left-aligned: display maths centres by default, which in a
+ * narrow side panel puts the equation somewhere other than the answer beneath it.
+ * Sized in em so it tracks whatever the note's font size is.
+ */
+.modelica-studio-solve-typeset {
+  font-family: var(--font-interface);
+  color: var(--text-normal);
+  text-align: left;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.modelica-studio-solve-typeset .math {
+  font-size: 1.15em;
+  text-align: left;
+  margin: 0;
+}
+
+/* A `parameter` line is context for the equation, so it recedes. */
+.modelica-studio-solve-given {
+  color: var(--text-faint);
+}
+
+.modelica-studio-solve-outcome {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.modelica-studio-solve-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 15px;
+}
+
+.modelica-studio-solve-name {
+  font-family: var(--font-monospace);
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.modelica-studio-solve-eq {
+  color: var(--text-faint);
+}
+
+.modelica-studio-solve-value {
+  font-family: var(--font-monospace);
+  color: var(--text-accent);
+  /* A long mantissa must not wrap the row and break the alignment. */
+  overflow-wrap: anywhere;
+}
+
+.modelica-studio-solve-pending {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.modelica-studio-solve-unit {
+  font-family: var(--font-monospace);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.modelica-studio-solve-note {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.modelica-studio-solve-problem,
+.modelica-studio-solve-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.modelica-studio-solve-error {
+  color: var(--text-error);
+}
+
+.modelica-studio-solve-icon {
+  display: flex;
+  flex-shrink: 0;
+  /* Aligns the icon with the first line of a message that may wrap. */
+  padding-top: 2px;
+}
+
+.modelica-studio-solve-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.modelica-studio-solve-error-text {
+  font-family: var(--font-monospace);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .modelica-studio-embed-head {
   padding: 6px 10px;
   font-size: 12px;

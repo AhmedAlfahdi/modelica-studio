@@ -994,3 +994,40 @@ test("no command id repeats the plugin id", { skip: !HAS_BUNDLE }, async () => {
     `the view command is named for what it does: ${commands.map((c) => c.id).join(", ")}`
   );
 });
+
+test("every fence the plugin documents is registered with Obsidian", { skip: !HAS_BUNDLE }, async () => {
+  // A fence the plugin never registers is not an error anywhere: Obsidian draws it
+  // as an ordinary code block, which looks exactly like a feature that is working
+  // but has nothing to say. That is how a solver block was reported as "not giving
+  // me an answer" while the code that reads it was tested and passing -- the build
+  // installed in the vault predated the fence, so nothing was registered at all.
+  //
+  // The stub used to discard the registration, so this could not be seen. The list
+  // is captured now, and it is checked against the README's own table of fences,
+  // because a fence that is documented and not registered is the failure, and one
+  // that is registered and not documented is the same mistake the other way round.
+  const mod = loadBundle();
+  const instance = new mod.default();
+  const fences = [];
+  instance.registerMarkdownCodeBlockProcessor = (language) => fences.push(language);
+  instance.app = {
+    vault: { configDir: ".obsidian", adapter: { getBasePath: () => "/" } },
+    workspace: { getLeavesOfType: () => [], on: () => {}, onLayoutReady: (f) => f() },
+  };
+  instance.manifest = { id: "modelica-studio", version: "0.0.0-test" };
+  instance.loadData = async () => null;
+  instance.saveData = async () => {};
+  await instance.onload();
+
+  assert.ok(fences.includes("modelica"), `the diagram fence is registered: ${fences.join(", ")}`);
+  assert.ok(fences.includes("modelica-solve"), `the solver fence is registered: ${fences.join(", ")}`);
+
+  const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
+  const documented = new Set([...readme.matchAll(/^```(modelica[a-z-]*)/gm)].map((m) => m[1]));
+  for (const language of documented) {
+    assert.ok(
+      fences.includes(language),
+      `\`${language}\` is documented in the README and must be registered (registered: ${fences.join(", ")})`
+    );
+  }
+});

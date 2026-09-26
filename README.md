@@ -250,6 +250,110 @@ starts a run. Dragging a component inside the block writes the note back — see
 [Using it in a note](#using-it-in-a-note) for why that does not start a loop, and
 what the directive on the block's first line can set.
 
+### A calculation, solved instead of typed
+
+A fenced `modelica-solve` block holds a relationship rather than a number. Write the
+equation the way it comes out — the unknown does not have to be alone on the left —
+and the answer is computed when the note opens.
+
+````markdown
+```modelica-solve
+//@ solve x
+sqrt(x) + x^2 - 56 = 67
+```
+````
+
+*The block renders the equation above its answer, so the note carries the
+relationship and the number together:*
+
+> `sqrt(x) + x^2 - 56 = 67`
+>
+> **x = 10.940400921**
+>
+> *nearest solution to x = 1*
+
+Nothing was rearranged to get that. `x` appears twice, once inside a square root and
+once squared, and no algebra isolated it: the block asks OpenModelica for the
+**initialisation** of the model it describes, which is the same nonlinear solve the
+compiler performs before every simulation and reports as "the initialization finished
+successfully". Asking for no simulation time at all is what turns it into a solver.
+
+**What the block accepts.** `//@ solve x` names the symbol whose value is reported. With
+one undefined symbol in the equations it can be left out — the block says which one it
+chose — and with more than one it asks, rather than guessing. `parameter` declarations
+are carried through, so a value you expect to change reads as one:
+
+````markdown
+```modelica-solve
+//@ solve x
+parameter Real target = 67;
+sqrt(x) + x^2 - 56 = target
+```
+````
+
+Several equations are solved together as a system, and every undefined symbol becomes a
+variable, so `2*x + y = 7` and `x - y = 2` needs no more than a `//@ solve x` line.
+Every one of them is reported, not only the symbol the directive named — the panel
+shows both equations and both answers, and answering a system with one of its two
+unknowns would leave the reader to finish the job.
+
+**Which answer you get.** An equation can have more than one solution, and a solver
+returns the one nearest where it started. The block starts an undeclared unknown at 1
+and says so under the answer; declare it yourself — `Real x(start = -1)` — and yours is
+the one used. That is the whole reason the starting value is printed: `x^2 = 2` has two
+right answers, and choosing one silently would be a lie of omission.
+
+**Units come with it.** The answer carries the unit of the quantity solved for, taken
+from the model OpenModelica builds rather than from the block: `Modelica.Units.SI.
+Resistance R` never says "Ohm" anywhere in the source, and the compiler is what knows.
+
+**The equation is typeset.** Where it can be read as mathematics, the equation above
+the answer is drawn as mathematics — `sqrt(x) + x^2 - 56 = 67` becomes √x + x² − 56 = 67 —
+while the answer below stays monospace so its digits line up with every other block.
+
+The rule is that a conversion either happens completely or not at all. LaTeX that is
+*nearly* right is worse than source code: `(a + b) * c` drawn without its brackets is a
+different equation, and nothing on screen would say so. So a comprehension, an `if`
+expression or an array keeps its source, line by line, and the rest of the block is
+typeset around it. Nothing is ever half-converted, and the code block above the panel is
+still the source of truth.
+
+What that means in practice: `sqrt`, `sin`, `exp`, `abs`, `der` and the other functions
+with a notation of their own get it; `*` is a dot and `/` is a fraction; `<=`, `>=` and
+`<>` render as ≤, ≥ and ≠; `mass_1.a` becomes a name with subscripts; comparisons and
+`and`/`or`/`not` render as themselves. A chained power is refused because Modelica
+refuses one — `x^2^3` and `x^-2` are both syntax errors, and the compiler was asked
+rather than guessed at.
+
+**Integrals.** Modelica has no integral operator — `der()` is the differential side,
+and integrating over *time* is what the studio does when it simulates. A solve block
+asks for no simulated time at all, so a definite integral in one is an ordinary
+algebraic expression, and there are two ways to write it:
+
+- **Adaptive quadrature**, for an integrand that is already a function. The library's
+  `quadratureLobatto` takes one directly, and every scalar function in `Modelica.Math`
+  qualifies:
+
+  `y = Modelica.Math.Nonlinear.quadratureLobatto(Modelica.Math.exp, 0, 1, 1e-8)`
+  → `y = 1.718281828459183` (the exact value is `e - 1`)
+
+- **A sum**, for an integrand of your own, which is the only way to write one that is
+  not already a function:
+
+  `y = sum(sin((i - 0.5) * dx) * dx for i in 1:n)`
+  → `y = 2.000000205616776` for `n = 2000` over `0 … π`, where the exact answer is 2
+
+A `function` cannot be *defined* inside the block — the block is the body of a model,
+and a model body holds equations rather than classes — so a custom integrand is a sum
+rather than a quadrature rule. The block says so by name instead of leaving you to
+decode a parse error.
+
+**When it cannot answer.** A block with nothing to solve for, two candidate unknowns, or
+an equation with no solution says so in place and leaves the note alone. A solve block
+never writes to your note — the text you typed is the question, and the panel is the
+answer. Like every other run in this plugin it needs OpenModelica installed; without it
+the block offers the same install help as the rest of the plugin.
+
 ### Help that quotes the library
 
 The Help window, in the studio, carries the shortcuts (read from the code that
@@ -341,7 +445,7 @@ directory's own analysis flags five capabilities here; this is what each one is 
 
 | Capability | What it is used for |
 |---|---|
-| **Runs a shell command** | `omc`, the OpenModelica compiler: translate, compile and run a model. Nothing else is executed, and only when you press Simulate, Sweep, Check or Rebuild. |
+| **Runs a shell command** | `omc`, the OpenModelica compiler: translate, compile and run a model. Nothing else is executed, and only when you press Simulate, Sweep, Check or Rebuild, or when a note containing a `modelica-solve` block is opened. |
 | **Reads files outside the vault** | The Modelica Standard Library of your installed OpenModelica (to index classes for the palette), and its own cache, history and logs under your Obsidian configuration folder. No file is scanned for anything but `.mo` source. |
 | **Machine details** | Your home directory, to find OpenModelica's library folder; whether Obsidian runs in a Flatpak or a Snap, to find `omc` inside it; the core count, to default the compiler's parallel jobs. **No hostname, no username, no hardware serial, no network interfaces** — and none of it is ever sent anywhere. |
 | **Lists your vault's files** | **Model list…** and the embed picker: they show the `.mo` files that exist, so you can open one. The list is not stored or sent. |
@@ -602,6 +706,12 @@ To put a block in a note, use the command palette: **Embed a simulation in the
 current note** asks which model — the one open in the studio, a built-in example, or
 a saved `.mo` file — and writes the block at the cursor with its options filled in.
 **Embed the open model in the current note** skips the question.
+
+A note can also hold a **`modelica-solve`** block, which is an equation to be solved
+rather than a model to be run — `sqrt(x) + x^2 - 56 = 67` in, `x = 10.940400921` out.
+**Insert a calculation in the current note** writes one at the cursor. It carries no
+diagram, mounts no editor and never writes back, and it is described in
+[A calculation, solved instead of typed](#a-calculation-solved-instead-of-typed).
 
 The first line is an optional **directive**: `time` sets the simulation span,
 `height` the height of the pane (the plot and the diagram are the same box, shown one

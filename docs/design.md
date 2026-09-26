@@ -173,6 +173,51 @@ disturbing the diagram.
 Several blocks in one note are independent. Edits are written back through the
 block's own line range, so a note with many diagrams is safe.
 
+### Calculations in notes
+
+A second fence solves an equation instead of drawing one:
+
+````
+```modelica-solve
+//@ solve x
+sqrt(x) + x^2 - 56 = 67
+```
+````
+
+The block holds a **relationship**, not a number, and the answer is recomputed
+when the note opens — which is the point of putting a calculation in a note
+rather than typing its result into the prose, where it is wrong as soon as the
+model changes.
+
+There is no expression evaluator behind this and there should not be one.
+OpenModelica must find values for every variable satisfying every equation
+*before* it can take a step, and for a model with no states that initialisation
+**is** the answer: asking for `stopTime = 0` turns the simulator into a solver.
+Everything else follows from that one fact — no root-finding code, no algebra to
+isolate the unknown, and a system of equations solved as a system.
+
+The reading is the part that is ours, in `src/modelica/solve.ts`: the block is a
+dialect smaller than a model (no class wrapper, no `equation` keyword, no
+declaration for the unknown), and the module generates the class that makes it
+legal Modelica. Two rules decide whether it works, and both are about not
+misreading the text:
+
+- **A statement with no `=` at depth zero is a declaration.** That is what keeps
+  a `Modelica.Units.SI.Resistance R` declaration out of the equation list, and
+  depth is what keeps `Real x(start = 1)` out of it too.
+- **An identifier that is dotted or called is not an unknown.** `Modelica.Math.
+  sin(1.0)` is one qualified function, not three symbols of which two are
+  undefined.
+
+Every undefined symbol becomes a variable, so several equations with several
+unknowns work; `//@ solve x` selects which of them is reported. The starting
+value is printed under the answer because it is not neutral — a solver returns
+the root nearest where it began, and `x^2 = 2` has two right answers.
+
+A block never writes to the note. The text is the question and the panel is the
+answer, so there is no write-back path, no editor to mount and no possibility of
+the loop the diagram embeds have to guard against.
+
 ### When selection or wires look wrong
 
 The hardest faults in this editor have been **coordinate mismatches**: the

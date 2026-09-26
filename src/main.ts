@@ -41,6 +41,7 @@ import {
   type FenceRefusal,
 } from "./view/embed";
 import { createBackend, SimulationError, type SimulationBackend } from "./omc/backend";
+import { SolveBlock, starterSolveSource } from "./view/solve-block";
 import { detectOmc, installHint, type OmcInstallation } from "./omc/locate";
 import { appendCappedLine, logLine } from "./log-file";
 import { emptyDiagram, type DiagramModel } from "./modelica/types";
@@ -150,6 +151,15 @@ export default class ModelicaStudioPlugin extends Plugin {
   private readonly embeds = new Map<HTMLElement, EmbeddedDiagram>();
 
   /**
+   * Live solver blocks, kept for the same reason the embeds are.
+   *
+   * A solve takes about half a second, and a block can be gone before it lands.
+   * Holding the instance is what lets a finished solve notice that the note has
+   * already thrown its element away.
+   */
+  private readonly solves = new Map<HTMLElement, SolveBlock>();
+
+  /**
    * True when the restored model was saved by an older schema.
    *
    * The view asks for this once on open: it re-parses the stored source so the
@@ -206,6 +216,31 @@ export default class ModelicaStudioPlugin extends Plugin {
     this.embeds.get(el)?.destroy();
     this.embeds.set(el, embed);
     embed.mount();
+  }
+
+  /**
+   * Render a solver block.
+   *
+   * Nothing is written back and nothing is mounted: the block's text is the
+   * question, the panel is the answer, and an edit to either one arrives as a
+   * fresh call to this method from Obsidian. So the only lifetime concern is the
+   * one this handles — a solve still running when the note re-renders, whose
+   * element no longer exists.
+   */
+  private renderSolve(source: string, el: HTMLElement): void {
+    const body = source.trim() ? source : starterSolveSource();
+    const block = new SolveBlock(
+      {
+        backend: this.backend,
+        report: (message) => this.diag(message),
+        setupHelp: () => this.showSetupHelp(),
+      },
+      el,
+      body
+    );
+    this.solves.get(el)?.destroy();
+    this.solves.set(el, block);
+    block.mount();
   }
 
   /**
@@ -371,6 +406,22 @@ export default class ModelicaStudioPlugin extends Plugin {
     const name = this.model.name;
     insertEmbedBlock(editor, embedBlockText(source, { ...EMBED_DEFAULTS, stopTime: this.stopTime(name) }));
     new Notice(`Modelica: ${name} embedded in the note.`);
+  }
+
+  /**
+   * Put a solver block at the cursor.
+   *
+   * There is no picker, unlike every other way a block gets into a note: a
+   * calculation starts from an equation rather than from a model, an example or a
+   * file, so there is nothing to choose. What it inserts is the README's own
+   * example — an unknown that appears twice and is not isolated by any algebra —
+   * because an empty block showing `1 + 1` would teach the wrong thing about what
+   * the block is for.
+   */
+  insertSolveBlock(editor: Editor): void {
+    const fence = "```";
+    insertEmbedBlock(editor, `${fence}${SOLVE_LANGUAGE}\n${starterSolveSource()}${fence}`);
+    new Notice("Modelica: calculation block inserted. Edit the equation, and name the unknown with //@ solve.");
   }
 
   /** Show a model's diagram in the main view, opening it if necessary. */
@@ -1081,6 +1132,8 @@ export default class ModelicaStudioPlugin extends Plugin {
     this.register(() => {
       for (const embed of this.embeds.values()) embed.destroy();
       this.embeds.clear();
+      for (const solve of this.solves.values()) solve.destroy();
+      this.solves.clear();
     });
 
     this.registerView(VIEW_TYPE_MODELICA, (leaf) => new ModelicaStudioView(leaf, this));
@@ -1100,6 +1153,13 @@ export default class ModelicaStudioPlugin extends Plugin {
         this.renderEmbed(source, el, ctx, language);
       });
     }
+
+    // A calculation in a note, answered by the solver rather than by a plot. A
+    // separate fence rather than a mode of the diagram block: nothing is written
+    // back, no editor is mounted, and the block is the whole document.
+    this.registerMarkdownCodeBlockProcessor(SOLVE_LANGUAGE, (source, el) => {
+      this.renderSolve(source, el);
+    });
 
     this.addRibbonIcon("circuit-board", "Open Modelica Studio", () => {
       void this.activateView();
@@ -1151,6 +1211,19 @@ export default class ModelicaStudioPlugin extends Plugin {
       id: "embed-simulation",
       name: "Embed a simulation in the current note",
       callback: () => this.embedIntoNote(),
+    });
+
+    this.addCommand({
+      id: "insert-calculation",
+      name: "Insert a calculation in the current note",
+      // Offered only where there is somewhere to put it: a command that quietly
+      // does nothing is worse than one that is not in the list.
+      checkCallback: (checking) => {
+        const editor = this.activeEditor();
+        if (!editor) return false;
+        if (!checking) this.insertSolveBlock(editor);
+        return true;
+      },
     });
 
     this.addCommand({
@@ -2378,6 +2451,15 @@ const MODEL_SCHEMA = 2;
  * reads as the plugin's name and makes the intent obvious in a note.
  */
 const EMBED_LANGUAGES = ["modelica", "modelica-studio"];
+
+/**
+ * The fence language that solves an equation instead of drawing a diagram.
+ *
+ * Named for what it does rather than for what it is built on: the block is not a
+ * small model, it is a calculation, and calling it `modelica-model` would promise
+ * a diagram it does not have.
+ */
+const SOLVE_LANGUAGE = "modelica-solve";
 
 /**
  * Report whether the configured secret resolves, WITHOUT revealing it.

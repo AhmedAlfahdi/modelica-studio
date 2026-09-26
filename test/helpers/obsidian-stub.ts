@@ -566,6 +566,23 @@ export function normalizePath(p: string): string {
   return p;
 }
 
+/**
+ * Obsidian's maths renderer, stood in for.
+ *
+ * The real one runs MathJax and returns an element holding the typeset formula.
+ * Nothing here can typeset, so what comes back is the LaTeX itself, in an element
+ * carrying the classes Obsidian uses. That is enough for a test to ask the two
+ * questions worth asking — whether the block asked for maths at all, and whether
+ * it asked for the right LaTeX — without pulling a typesetter into the harness.
+ */
+export function renderMath(source: string, display: boolean): HTMLElement {
+  const el = document.createElement("span");
+  el.className = display ? "math math-block is-loaded" : "math math-inline is-loaded";
+  el.setAttribute("data-latex", source);
+  el.textContent = source;
+  return el;
+}
+
 export function requestUrl(): never {
   throw new Error("requestUrl is not available in tests");
 }
