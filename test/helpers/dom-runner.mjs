@@ -16,7 +16,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -39,6 +39,21 @@ const { app, BrowserWindow } = require("electron");
 const fs = require("node:fs");
 const pagePath = process.argv[2];
 app.disableHardwareAcceleration();
+// The profile and the configuration file go where the harness put them, before
+// anything reads a path. Done here as well as in the environment because these
+// are the two paths Electron resolves for itself, and a profile it cannot write
+// is a modal error box rather than a stack trace.
+if (process.env.MST_PROFILE) {
+  app.setPath("userData", process.env.MST_PROFILE);
+  app.setPath("sessionData", process.env.MST_PROFILE);
+}
+// Nothing this runner does is ever meant to be looked at: results come back
+// through the console as one JSON line. A window that cannot be shown cannot
+// interrupt anyone, whatever else goes wrong.
+app.on("browser-window-created", (_e, win) => {
+  win.setSkipTaskbar(true);
+  win.hide();
+});
 app.whenReady().then(async () => {
   const win = new BrowserWindow({ width: 1200, height: 900, show: false });
   const errors = [];
@@ -110,6 +125,21 @@ export function runInDom(entrySource, opts = {}) {
   const runner = path.join(dir, "runner.cjs");
   writeFileSync(entry, entrySource, "utf8");
   writeFileSync(runner, RUNNER, "utf8");
+
+  // A private HOME for this run, because Electron writes a profile and a
+  // configuration file the moment it starts.
+  //
+  // It used to write them into the real `~/.config`, which is wrong twice over.
+  // A test run has no business leaving state in the user's home; and when that
+  // home cannot be written -- a read-only sandbox, a container, a mounted
+  // profile -- Chromium raises a MODAL error box ("Configuration file
+  // '/home/…/.config/electronrc' not writable"), which appears on screen and
+  // stops the process until somebody clicks it. Every DOM test then piles up
+  // another window and the run hangs until its timeout instead of failing.
+  const home = path.join(dir, "home");
+  const profile = path.join(dir, "profile");
+  mkdirSync(path.join(home, ".config"), { recursive: true });
+  mkdirSync(profile, { recursive: true });
   writeFileSync(
     page,
     `<!doctype html><meta charset="utf-8"><body><script type="module" src="./bundle.js"></script></body>`,
@@ -153,7 +183,19 @@ export function runInDom(entrySource, opts = {}) {
   const run = spawnSync(electron, [runner, page], {
     encoding: "utf8",
     timeout: opts.timeout ?? 300000,
-    env: { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: "1" },
+    env: {
+      ...process.env,
+      ELECTRON_DISABLE_SECURITY_WARNINGS: "1",
+      // Every path Chromium derives from the environment, pointed inside the run's
+      // own directory. `MST_HOME` is read by the runner to place the profile as
+      // well -- see the note above.
+      HOME: home,
+      XDG_CONFIG_HOME: path.join(home, ".config"),
+      XDG_CACHE_HOME: path.join(home, ".cache"),
+      XDG_DATA_HOME: path.join(home, ".local", "share"),
+      MST_HOME: home,
+      MST_PROFILE: profile,
+    },
   });
   const line = (run.stdout ?? "").split("\n").find((l) => l.startsWith("RESULT "));
   if (!line) {
