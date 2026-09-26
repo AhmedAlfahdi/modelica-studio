@@ -574,13 +574,37 @@ export function normalizePath(p: string): string {
  * carrying the classes Obsidian uses. That is enough for a test to ask the two
  * questions worth asking — whether the block asked for maths at all, and whether
  * it asked for the right LaTeX — without pulling a typesetter into the harness.
+ *
+ * Setting `__MATHS_AVAILABLE__` to false makes it fail the way the real one does
+ * before MathJax has been loaded: `renderMath` is a two-line wrapper around a
+ * lazily loaded global, so it throws `MathJax is not defined`. That failure was
+ * once invisible — a `catch` fell back to showing the source and reported nothing
+ * anywhere — so it is made testable rather than hoped for.
  */
+declare global {
+  // eslint-disable-next-line no-var
+  var __MATHS_AVAILABLE__: boolean | undefined;
+}
+
 export function renderMath(source: string, display: boolean): HTMLElement {
+  if (globalThis.__MATHS_AVAILABLE__ === false) {
+    throw new ReferenceError("MathJax is not defined");
+  }
   const el = document.createElement("span");
   el.className = display ? "math math-block is-loaded" : "math math-inline is-loaded";
   el.setAttribute("data-latex", source);
   el.textContent = source;
   return el;
+}
+
+/** Loads the maths engine. The stub can already render, so there is nothing to wait for. */
+export function loadMathJax(): Promise<void> {
+  return Promise.resolve();
+}
+
+/** Flushes the maths stylesheet. Nothing to flush here. */
+export function finishRenderMath(): Promise<void> {
+  return Promise.resolve();
 }
 
 export function requestUrl(): never {

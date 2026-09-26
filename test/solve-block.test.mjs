@@ -42,6 +42,17 @@ const HEAD = [
   "  return { textContent: 'NOTHING APPEARED' };",
   "}",
   "",
+  "/**",
+  " * Wait until every equation that can be typeset has been. The source is written",
+  " * first and replaced once MathJax is ready, so reading too early sees the source.",
+  " */",
+  "async function typeset(host, expected) {",
+  "  for (let i = 0; i < 300; i++) {",
+  "    if (host.querySelectorAll('.modelica-studio-solve-typeset').length >= expected) return;",
+  "    await new Promise((r) => setTimeout(r, 10));",
+  "  }",
+  "}",
+  "",
   "/** The value once the solve has landed, which is not the pending placeholder. */",
   "const answer = (host) => waitFor('.modelica-studio-solve-value:not(.modelica-studio-solve-pending)', host);",
   "",
@@ -86,8 +97,8 @@ test("a solved block shows the value, the unit and the starting point", async ()
     "  return JSON.stringify(backend.calls.map((c) => c.stopTime)); });",
     "window.test('the generated model is what the compiler is given', async () => { await tick();",
     "  return backend.calls[0].source; });",
-    "window.test('the block shows the equation it solved, not only the number', () =>",
-    "  host.querySelector('.modelica-studio-solve-line').textContent);",
+    "window.test('the block shows the equation it solved, not only the number', async () => { await typeset(host, 1);",
+    "  return host.querySelector('.modelica-studio-solve-line').textContent; });",
     "window.finish();",
   ]);
   if (out.skip) return;
@@ -152,8 +163,8 @@ test("a system shows every equation and every answer", async () => {
     "  { name: 'y', values: [1] },",
     "] });",
     "const { host } = mount('//@ solve x\\n2*x + y = 7;\\nx - y = 2', { backend, report() {}, setupHelp() {} });",
-    "window.test('both equations are shown', () =>",
-    "  Array.from(host.querySelectorAll('.modelica-studio-solve-line')).map((l) => l.textContent).join(' ; '));",
+    "window.test('both equations are shown', async () => { await typeset(host, 2);",
+    "  return Array.from(host.querySelectorAll('.modelica-studio-solve-line')).map((l) => l.textContent).join(' ; '); });",
     "window.test('both answers are shown', async () => { await answer(host);",
     "  return Array.from(host.querySelectorAll('.modelica-studio-solve-row'))",
     "    .map((r) => r.querySelector('.modelica-studio-solve-name').textContent + ' = '",
@@ -183,8 +194,8 @@ test("a parameter is shown above the equation it feeds", async () => {
   const out = page([
     "const backend = fakeBackend({ series: [{ name: 'x', values: [11.07573820708798] }] });",
     "const { host } = mount('//@ solve x\\nparameter Real target = 70;\\nsqrt(x) + x^2 - 56 = target', { backend, report() {}, setupHelp() {} });",
-    "window.test('the given and the equation are both shown', () =>",
-    "  Array.from(host.querySelectorAll('.modelica-studio-solve-line')).map((l) => l.textContent).join(' ; '));",
+    "window.test('the given and the equation are both shown', async () => { await typeset(host, 1);",
+    "  return Array.from(host.querySelectorAll('.modelica-studio-solve-line')).map((l) => l.textContent).join(' ; '); });",
     "window.test('the given is marked as context rather than as the relationship', () =>",
     "  String(!!host.querySelector('.modelica-studio-solve-given')));",
     "window.finish();",
@@ -206,11 +217,11 @@ test("the equation is typeset, and the LaTeX is the equation that was written", 
   const out = page([
     "const backend = fakeBackend({ series: [{ name: 'x', values: [10.94040092099989] }] });",
     "const { host } = mount('sqrt(x) + x^2 - 56 = 67', { backend, report() {}, setupHelp() {} });",
-    "window.test('maths was requested', () =>",
-    "  String(!!host.querySelector('.modelica-studio-solve-typeset .math')));",
-    "window.test('with the equation as LaTeX', () =>",
-    "  host.querySelector('.math').getAttribute('data-latex'));",
-    "window.test('and the source is not also shown', () => {",
+    "window.test('maths was requested', async () => { await typeset(host, 1);",
+    "  return String(!!host.querySelector('.modelica-studio-solve-typeset .math')); });",
+    "window.test('with the equation as LaTeX', async () => { await typeset(host, 1);",
+    "  return host.querySelector('.math').getAttribute('data-latex'); });",
+    "window.test('and the source is not also shown', async () => { await typeset(host, 1);",
     "  const line = host.querySelector('.modelica-studio-solve-typeset');",
     "  return String(line.textContent === line.querySelector('.math').textContent); });",
     "window.finish();",
@@ -222,6 +233,39 @@ test("the equation is typeset, and the LaTeX is the equation that was written", 
   assert.equal(d["and the source is not also shown"], "true", "no duplicated equation");
 });
 
+test("when maths cannot be rendered the source stays, and the reason is reported", async () => {
+  // The regression test for a silent failure. `renderMath` is a wrapper around a
+  // global that Obsidian loads on demand, so on a note whose first maths is this
+  // block it throws `MathJax is not defined` — and the original catch swallowed it
+  // and fell back to source without a word, which is a feature that looks like it
+  // simply does not work and says nothing about why.
+  const out = page([
+    "window.__MATHS_AVAILABLE__ = false;",
+    "const reported = [];",
+    "const backend = fakeBackend({ series: [{ name: 'x', values: [2] }] });",
+    "const { host } = mount('sqrt(x) + x^2 - 56 = 67', { backend, report: (m) => reported.push(m), setupHelp() {} });",
+    "window.test('the equation is still readable', async () => {",
+    "  await new Promise((r) => setTimeout(r, 150));",
+    "  return host.querySelector('.modelica-studio-solve-line').textContent; });",
+    "window.test('nothing pretends to be typeset', async () => {",
+    "  await new Promise((r) => setTimeout(r, 150));",
+    "  return String(!!host.querySelector('.modelica-studio-solve-typeset')); });",
+    "window.test('and the failure is in the log rather than swallowed', async () => {",
+    "  await new Promise((r) => setTimeout(r, 150));",
+    "  return reported.join(' | '); });",
+    "window.test('the answer still arrives', async () => {",
+    "  return (await answer(host)).textContent; });",
+    "window.finish();",
+  ]);
+  if (out.skip) return;
+  const d = passed(out);
+  assert.equal(d["the equation is still readable"], "sqrt(x) + x^2 - 56 = 67");
+  assert.equal(d["nothing pretends to be typeset"], "false");
+  assert.match(d["and the failure is in the log rather than swallowed"], /could not typeset/);
+  assert.match(d["and the failure is in the log rather than swallowed"], /MathJax is not defined/);
+  assert.equal(d["the answer still arrives"], "2", "failing to draw the question does not fail the solve");
+});
+
 test("an equation that cannot be typeset keeps its source", async () => {
   // A comprehension is refused by the converter, so it is shown as written —
   // `sum(sin((i - 0.5) * dx) * dx for i in 1:n)` rather than a mangled imitation.
@@ -229,8 +273,9 @@ test("an equation that cannot be typeset keeps its source", async () => {
     "const backend = fakeBackend({ series: [{ name: 'y', values: [2.0000002] }] });",
     "const { host } = mount('//@ solve y\\nparameter Integer n = 2000;\\ny = sum(sin((i - 0.5) * dx) * dx for i in 1:n)',",
     "  { backend, report() {}, setupHelp() {} });",
-    "window.test('no maths was requested for it', () =>",
-    "  String(!!host.querySelector('.modelica-studio-solve-typeset')));",
+    "window.test('no maths was requested for it', async () => {",
+    "  await new Promise((r) => setTimeout(r, 120));",
+    "  return String(!!host.querySelector('.modelica-studio-solve-typeset')); });",
     "window.test('the source is shown instead', () => {",
     "  const line = host.querySelector('.modelica-studio-solve-line:not(.modelica-studio-solve-given)');",
     "  return line.textContent; });",

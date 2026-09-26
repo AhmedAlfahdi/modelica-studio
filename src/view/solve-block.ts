@@ -14,7 +14,7 @@
  * the initialisation instead of a trajectory.
  */
 
-import { renderMath, setIcon } from "obsidian";
+import { finishRenderMath, loadMathJax, renderMath, setIcon } from "obsidian";
 import type { SimSeries, SimulationBackend } from "../omc/backend";
 import { SimulationError } from "../omc/backend";
 import { describeError } from "../errors";
@@ -210,25 +210,45 @@ export class SolveBlock {
    *
    * The fallback is per line and automatic, which is why the converter returns
    * nothing rather than something approximate: a comprehension or an `if`
-   * expression keeps its readable source, and the equation above it is typeset.
-   * `renderMath` is guarded because it is the one Obsidian API here that does not
-   * exist in the test stub or in the build's own type surface — a plugin that
-   * failed to load over a missing renderer would be a worse outcome than plain
-   * text.
+   * expression keeps its readable source, while the equation above it is typeset.
+   *
+   * The source is written FIRST and replaced once the maths is ready, so a block
+   * never shows an empty line while a 1.3 MB bundle loads.
    */
   private addEquation(host: HTMLElement, equation: string): void {
-    const line = host.createDiv({ cls: "modelica-studio-solve-line" });
+    const line = host.createDiv({ cls: "modelica-studio-solve-line", text: equation });
     const latex = modelicaToLatex(equation);
-    if (latex && typeof renderMath === "function") {
-      try {
-        line.appendChild(renderMath(latex, true));
-        line.addClass("modelica-studio-solve-typeset");
-        return;
-      } catch {
-        line.empty();
-      }
+    if (latex) void this.typeset(line, latex);
+  }
+
+  /**
+   * Replace a line's source with typeset mathematics.
+   *
+   * `renderMath` is not self-contained: it is a two-line wrapper around
+   * `MathJax.tex2chtml`, and MathJax is a global that Obsidian loads on demand,
+   * only once something on screen actually needs it. A note whose first maths is a
+   * solver block has never loaded it, so calling `renderMath` alone throws
+   * `MathJax is not defined` — which is what happened, and the `catch` below
+   * swallowed it into a silent fall back to source with nothing anywhere saying
+   * why. Hence `loadMathJax` before, and the report in the catch.
+   *
+   * `finishRenderMath` afterwards is part of the contract as well: it flushes the
+   * MathJax stylesheet, and without it the element is present and unstyled.
+   */
+  private async typeset(line: HTMLElement, latex: string): Promise<void> {
+    try {
+      if (typeof loadMathJax === "function") await loadMathJax();
+      if (this.disposed) return;
+      const math = renderMath(latex, true);
+      line.empty();
+      line.appendChild(math);
+      line.addClass("modelica-studio-solve-typeset");
+      if (typeof finishRenderMath === "function") void finishRenderMath();
+    } catch (err) {
+      // The source is already on screen and stays there, but the reason is now in
+      // the plugin's log rather than in a swallowed exception.
+      this.deps.report(`solve: could not typeset "${latex}", showing the source instead: ${describeError(err)}`);
     }
-    line.setText(equation);
   }
 
   private renderPending(unknown: string): void {
