@@ -15,7 +15,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import fs from "node:fs";
-import { buildLibs, repoRoot } from "./helpers/build.mjs";
+import { buildLibs, documentationFiles, repoRoot } from "./helpers/build.mjs";
 
 const { checkModel } = await import(
   path.join(buildLibs("checks-lib", ["src/modelica/checks.ts"]), "checks.js")
@@ -584,24 +584,31 @@ test("the licence and citation metadata agree with each other", () => {
   assert.match(help, /CITATION\.cff/, "with a link to the citation file");
 });
 
-test("every image the README shows exists, and every image is shown", () => {
-  // A README whose screenshots are missing looks broken, and a screenshot nobody
+test("every image the documentation shows exists, and every image is shown", () => {
+  // A page whose screenshots are missing looks broken, and a screenshot nobody
   // references is either dead weight or a picture the text forgot to mention. Both
   // directions are checked, because both are silent: markdown renders a broken image
   // as nothing at all in some viewers.
-  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
-  // Markdown images AND the HTML <img> tags the side-by-side theme pairs use: a
-  // check that only knew about one spelling would wave a broken image through.
-  const referenced = [
-    ...[...readme.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((m) => m[1]),
-    ...[...readme.matchAll(/<img\s+src="([^"]+)"/g)].map((m) => m[1]),
-  ];
-  assert.ok(referenced.length >= 3, `the README shows pictures (${referenced.length})`);
+  //
+  // Every markdown file, not only the README: the split into `docs/` moved four
+  // screenshots into another page, and this test failed the moment it happened --
+  // which is the behaviour wanted. A picture is not less missing for having moved.
+  const referenced = [];
+  for (const rel of documentationFiles()) {
+    const text = fs.readFileSync(path.join(repoRoot, rel), "utf8");
+    // Markdown images AND the HTML <img> tags the side-by-side theme pairs use: a
+    // check that only knew about one spelling would wave a broken image through.
+    referenced.push(
+      ...[...text.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((m) => m[1]),
+      ...[...text.matchAll(/<img\s+src="([^"]+)"/g)].map((m) => m[1])
+    );
+  }
+  assert.ok(referenced.length >= 3, `the documentation shows pictures (${referenced.length})`);
 
   for (const link of referenced) {
     assert.ok(
       fs.existsSync(path.join(repoRoot, link)),
-      `${link} is referenced by the README and must exist`
+      `${link} is referenced by the documentation and must exist`
     );
   }
 
@@ -611,7 +618,7 @@ test("every image the README shows exists, and every image is shown", () => {
   assert.deepEqual(
     available.filter((f) => !shown.has(f)),
     [],
-    "every rendered image is used somewhere in the README"
+    "every rendered image is used somewhere in the documentation"
   );
 
   // The images are produced by a script, so they can be regenerated rather than
@@ -683,42 +690,48 @@ test("every formula in the README is a display block on its own line", () => {
   // wrong about: a `$$` that never closes (a whole paragraph turns literal), and a
   // macro whose backslash the renderer drops, which prints the punctuation --
   // "\exp\!\left(" reached github.com as "exp!(".
-  const rel = "README.md";
-  const text = fs.readFileSync(path.join(repoRoot, rel), "utf8");
-  // Fenced blocks are code, not prose: a `$` in a shell transcript is a prompt.
-  const prose = text.replace(/```[\s\S]*?```/g, (m) => m.replace(/[^\n]/g, " "));
+  // The rule is about the prose, and the prose now lives in more than one file: the
+  // formulas it governs moved into docs/ with the worked examples, and a README-only
+  // check would have stopped covering them without saying so.
   const bad = [];
-
-  // Blocks first, so what is left over is everything that is NOT a formula. A block
-  // opens and closes on lines of its own, which is what makes it a block: a `$$`
-  // line inside a sentence would be the same mistake as inline maths.
   const blocks = [];
-  for (const m of prose.matchAll(/^\$\$([\s\S]*?)\$\$[ \t]*$/gm)) blocks.push(m);
-  const outside = prose.replace(/^\$\$[\s\S]*?\$\$[ \t]*$/gm, " (a formula) ");
-  outside.split("\n").forEach((line, i) => {
-    if (!line.includes("$")) return;
-    bad.push(
-      `${rel}:${i + 1}: a $ outside a $$ block -- put the formula on its own line: ` +
-        line.trim().slice(0, 70)
-    );
-  });
+  for (const rel of documentationFiles()) {
+    // Fenced blocks are code, not prose: a `$` in a shell transcript is a prompt.
+    const text = fs.readFileSync(path.join(repoRoot, rel), "utf8");
+    const prose = text.replace(/```[\s\S]*?```/g, (m) => m.replace(/[^\n]/g, " "));
 
-  // An odd number of `$$` means at least one block never closed.
-  const fences = (prose.match(/\$\$/g) ?? []).length;
-  if (fences % 2 !== 0) bad.push(`${rel}: ${fences} ` + "$$" + ` markers -- one block is left open`);
+    // Blocks first, so what is left over is everything that is NOT a formula. A block
+    // opens and closes on lines of its own, which is what makes it a block: a `$$`
+    // line inside a sentence would be the same mistake as inline maths.
+    const found = [...prose.matchAll(/^\$\$([\s\S]*?)\$\$[ \t]*$/gm)];
+    blocks.push(...found);
 
-  for (const m of blocks) {
-    const at = `${rel}: line ${prose.slice(0, m.index).split("\n").length + 1}`;
-    if (!m[1].trim()) bad.push(`${at}: an empty display block`);
-    if (m[1].includes("\n\n")) bad.push(`${at}: two paragraphs inside one block`);
-    for (const macro of ["\\!", "\\;", "\\:", "\\hspace", "\\hfill"]) {
-      if (m[1].includes(macro)) {
-        bad.push(`${at}: ${macro} does not survive the renderer -- it prints the punctuation`);
+    const outside = prose.replace(/^\$\$[\s\S]*?\$\$[ \t]*$/gm, " (a formula) ");
+    outside.split("\n").forEach((line, i) => {
+      if (!line.includes("$")) return;
+      bad.push(
+        `${rel}:${i + 1}: a $ outside a $$ block -- put the formula on its own line: ` +
+          line.trim().slice(0, 70)
+      );
+    });
+
+    // An odd number of `$$` means at least one block never closed.
+    const fences = (prose.match(/\$\$/g) ?? []).length;
+    if (fences % 2 !== 0) bad.push(`${rel}: ${fences} ` + "$$" + ` markers -- one block is left open`);
+
+    for (const m of found) {
+      const at = `${rel}: line ${prose.slice(0, m.index).split("\n").length + 1}`;
+      if (!m[1].trim()) bad.push(`${at}: an empty display block`);
+      if (m[1].includes("\n\n")) bad.push(`${at}: two paragraphs inside one block`);
+      for (const macro of ["\\!", "\\;", "\\:", "\\hspace", "\\hfill"]) {
+        if (m[1].includes(macro)) {
+          bad.push(`${at}: ${macro} does not survive the renderer -- it prints the punctuation`);
+        }
       }
     }
   }
-  assert.ok(blocks.length >= 5, `the README shows its formulas as blocks (${blocks.length})`);
-  assert.deepEqual(bad, [], `${bad.length} formulas break the README's maths rules`);
+  assert.ok(blocks.length >= 5, `the documentation shows its formulas as blocks (${blocks.length})`);
+  assert.deepEqual(bad, [], `${bad.length} formulas break the documentation's maths rules`);
 });
 
 test("every icon the plugin asks for is in the vendored picture set", () => {

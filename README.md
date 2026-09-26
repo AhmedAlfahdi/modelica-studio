@@ -21,12 +21,10 @@ numerically against independent calculations, and there are rough edges. See
 [Beta status](#beta-status).
 
 - [Install](#install) · [What it does](#what-it-does) ·
-  [A worked example](#a-worked-example-two-masses-and-a-spring) ·
-  [Two more examples](#two-more-examples) ·
-  [Using it in a note](#using-it-in-a-note) · [AI assistance](#ai-assistance) ·
-  [Testing and verification](#testing) · [Licence](#license)
+  [Documentation](#documentation) · [Beta status](#beta-status) · [Licence](#license)
 
 ---
+
 
 ## Install
 
@@ -79,7 +77,7 @@ update is never held back by a version string.
 5. Enable **Modelica Studio** in Settings → Community plugins.
 
 To try it without your own vault, `examples/vault/` is a ready-made one — see
-[Testing](#testing).
+[Testing and verification](docs/verification.md).
 
 ### Verify what you installed
 
@@ -216,149 +214,32 @@ a structural change recompiles.
 
 ### The same thing, in a note
 
-A fenced `modelica` block renders a live diagram and a plot, and simulates when the
-note opens. The block's text is the model — the one below is the `MassSpringDamper`
-from the worked example — so the diagram lives in the note and the note travels with
-it.
+A fenced `modelica` block renders a live diagram and a plot in the note itself, and
+simulates when the note opens. The block's text is the model, so the diagram travels
+with the note and can be diffed, copied and committed like any other text.
 
-<table>
-<tr>
-<td width="50%"><img src="docs/images/embed-light.png" alt="A modelica block in a note, showing the live diagram (light theme)"></td>
-<td width="50%"><img src="docs/images/embed-dark.png" alt="A modelica block in a note, showing the live diagram (dark theme)"></td>
-</tr>
-<tr>
-<td><sub>Light theme</sub></td><td><sub>Dark theme</sub></td>
-</tr>
-</table>
-
-*A block in a note, opened on its diagram. It carries its own toolbar: **Simulate**, the span it runs over, **Open diagram** to take the model into the studio, **Fit**, and the switch between the two panes. It simulates once when the note opens.*
-
-<table>
-<tr>
-<td width="50%"><img src="docs/images/embedPlot-light.png" alt="The same block switched to its plot (light theme)"></td>
-<td width="50%"><img src="docs/images/embedPlot-dark.png" alt="The same block switched to its plot (dark theme)"></td>
-</tr>
-<tr>
-<td><sub>Light theme</sub></td><td><sub>Dark theme</sub></td>
-</tr>
-</table>
-
-*The same block on its plot — this is what `//@ result` in the block's first line opens on. The diagram is always there underneath, a scroll away: a plot is the result *of* the diagram, and hiding one to show the other loses the thing the reader came for.*
-
-A block runs itself once, when the note opens; after that the **Simulate** button
-starts a run. Dragging a component inside the block writes the note back — see
-[Using it in a note](#using-it-in-a-note) for why that does not start a loop, and
-what the directive on the block's first line can set.
+It carries its own toolbar, takes options from a directive on its first line, and runs
+itself exactly once — [Using it in a note](docs/notes.md) explains why, and what the
+directive can set.
 
 ### A calculation, solved instead of typed
 
-A fenced `modelica-solve` block holds a relationship rather than a number. Write the
-equation the way it comes out — the unknown does not have to be alone on the left —
-and the answer is computed when the note opens.
-
-````markdown
-```modelica-solve
-//@ solve x
-sqrt(x) + x^2 - 56 = 67
-```
-````
-
-*The block renders the equation above its answer, so the note carries the
-relationship and the number together:*
+A fenced `modelica-solve` block holds a relationship rather than a number, and the
+answer is recomputed when the note opens:
 
 > `sqrt(x) + x^2 - 56 = 67`
 >
 > **x = 10.940400921**
->
-> *nearest solution to x = 1*
 
-Nothing was rearranged to get that. `x` appears twice, once inside a square root and
-once squared, and no algebra isolated it: the block asks OpenModelica for the
-**initialisation** of the model it describes, which is the same nonlinear solve the
-compiler performs before every simulation and reports as "the initialization finished
-successfully". Asking for no simulation time at all is what turns it into a solver.
+The unknown does not have to be alone on the left of anything. The block asks
+OpenModelica for the model's **initialisation** — the nonlinear solve it performs
+before every simulation — so nothing is rearranged, by you or by the plugin. Systems of
+equations work, the answer carries the unit the compiler resolved, and the equation is
+typeset above it.
 
-**What the block accepts.** `//@ solve x` names the symbol whose value is reported. With
-one undefined symbol in the equations it can be left out — the block says which one it
-chose — and with more than one it asks, rather than guessing. `parameter` declarations
-are carried through, so a value you expect to change reads as one:
-
-````markdown
-```modelica-solve
-//@ solve x
-parameter Real target = 67;
-sqrt(x) + x^2 - 56 = target
-```
-````
-
-Several equations are solved together as a system, and every undefined symbol becomes a
-variable, so `2*x + y = 7` and `x - y = 2` needs no more than a `//@ solve x` line.
-Every one of them is reported, not only the symbol the directive named — the panel
-shows both equations and both answers, and answering a system with one of its two
-unknowns would leave the reader to finish the job.
-
-**Which answer you get.** An equation can have more than one solution, and a solver
-returns the one nearest where it started. The block starts an undeclared unknown at 1
-and says so under the answer; declare it yourself — `Real x(start = -1)` — and yours is
-the one used. That is the whole reason the starting value is printed: `x^2 = 2` has two
-right answers, and choosing one silently would be a lie of omission.
-
-**Units come with it.** The answer carries the unit of the quantity solved for, taken
-from the model OpenModelica builds rather than from the block: `Modelica.Units.SI.
-Resistance R` never says "Ohm" anywhere in the source, and the compiler is what knows.
-
-**The equation is typeset.** Where it can be read as mathematics, the equation above
-the answer is drawn as mathematics — `sqrt(x) + x^2 - 56 = 67` becomes √x + x² − 56 = 67 —
-while the answer below stays monospace so its digits line up with every other block.
-
-The rule is that a conversion either happens completely or not at all. LaTeX that is
-*nearly* right is worse than source code: `(a + b) * c` drawn without its brackets is a
-different equation, and nothing on screen would say so. So a comprehension, an `if`
-expression or an array keeps its source, line by line, and the rest of the block is
-typeset around it. Nothing is ever half-converted, and the code block above the panel is
-still the source of truth.
-
-What that means in practice: `sqrt`, `sin`, `exp`, `abs`, `der` and the other functions
-with a notation of their own get it; `*` is a dot and `/` is a fraction; `<=`, `>=` and
-`<>` render as ≤, ≥ and ≠; `mass_1.a` becomes a name with subscripts; comparisons and
-`and`/`or`/`not` render as themselves. A chained power is refused because Modelica
-refuses one — `x^2^3` and `x^-2` are both syntax errors, and the compiler was asked
-rather than guessed at.
-
-**Integrals.** Modelica has no integral operator — `der()` is the differential side,
-and integrating over *time* is what the studio does when it simulates. A solve block
-asks for no simulated time at all, so a definite integral in one is an ordinary
-algebraic expression, and there are two ways to write it:
-
-- **Adaptive quadrature**, for an integrand that is already a function. The library's
-  `quadratureLobatto` takes one directly, and every scalar function in `Modelica.Math`
-  qualifies:
-
-  `y = Modelica.Math.Nonlinear.quadratureLobatto(Modelica.Math.exp, 0, 1, 1e-8)`
-  → `y = 1.718281828459183` (the exact value is `e - 1`)
-
-- **A sum**, for an integrand of your own, which is the only way to write one that is
-  not already a function:
-
-  `y = sum(sin((i - 0.5) * dx) * dx for i in 1:n)`
-  → `y = 2.000000205616776` for `n = 2000` over `0 … π`, where the exact answer is 2
-
-A `function` cannot be *defined* inside the block — the block is the body of a model,
-and a model body holds equations rather than classes — so a custom integrand is a sum
-rather than a quadrature rule. The block says so by name instead of leaving you to
-decode a parse error.
-
-**The reference and a page of examples to try** are split out as the section has
-grown: [`docs/solve-block.md`](docs/solve-block.md) is the block itself — the
-directive, the typesetting rule, what it refuses and why — and
-[`docs/solve-examples.md`](docs/solve-examples.md) is twelve blocks that have been
-run against OpenModelica, with the answer each one gives.
-
-**When it cannot answer.** A block with nothing to solve for, two candidate unknowns, or
-an equation with no solution says so in place and leaves the note alone. A solve block
-never writes to your note — the text you typed is the question, and the panel is the
-answer. Like every other run in this plugin it needs OpenModelica installed; without it
-the block offers the same install help as the rest of the plugin.
+[The calculation block](docs/solve-block.md) is the reference, and
+[twelve examples to try](docs/solve-examples.md) have each been run against
+OpenModelica.
 
 ### Help that quotes the library
 
@@ -434,7 +315,7 @@ the cursor, which turns "this valve opens a little later" into a number.
   cannot be wired until the parameter is on.
 - **Optional AI assistance.** With your own API key, describe a model in words and
   have it written into the editor, or ask for a compile error to be fixed. See
-  [AI assistance](#ai-assistance).
+  [AI assistance](docs/ai.md).
 - **30 worked examples** across electrical, mechanical, fluid, thermal, aerospace,
   control and discrete domains, each with a derivation, the live model, and a table
   comparing an independent calculation against the simulation. Every table is re-checked
@@ -502,7 +383,7 @@ What it sends is the prompt, the model source, the compiler's output, the OpenMo
 **version**, the names of the libraries you have indexed, and your run settings. It does
 not send file paths, your vault's contents, or anything identifying the machine.
 
-The **benchmark** (`modelicaStudio.bench()`, documented under [Debugging](#debugging))
+The **benchmark** (`modelicaStudio.bench()`, documented under [Debugging](docs/debugging.md))
 is the one exception, and it is a developer tool: it measures a fixed set of prompts and
 reports the timings, from your console.
 
@@ -514,389 +395,25 @@ feature is your own provider bill.
 
 ---
 
-## A worked example: two masses and a spring
-
-The picture at the top of this page is this model — one of the built-in examples, so
-you can open it from **Examples** in the toolbar and run it yourself:
-
-```modelica
-//@ time=5
-model MassSpringDamper "Two masses coupled by a spring and damper"
-  Modelica.Mechanics.Translational.Sources.Force force
-    annotation(Placement(transformation(extent={{-80,-10},{-60,10}})));
-  Modelica.Mechanics.Translational.Components.Mass mass1(m=1)
-    annotation(Placement(transformation(extent={{-40,-10},{-20,10}})));
-  Modelica.Mechanics.Translational.Components.SpringDamper coupling(c=50, d=1)
-    annotation(Placement(transformation(extent={{-10,-10},{10,10}})));
-  Modelica.Mechanics.Translational.Components.Mass mass2(m=2)
-    annotation(Placement(transformation(extent={{20,-10},{40,10}})));
-  Modelica.Blocks.Sources.Step step(height=1, startTime=0.1)
-    annotation(Placement(transformation(extent={{-80,30},{-60,50}})));
-equation
-  connect(step.y, force.f);
-  connect(force.flange, mass1.flange_a);
-  connect(mass1.flange_b, coupling.flange_a);
-  connect(coupling.flange_b, mass2.flange_a);
-end MassSpringDamper;
-```
-
-A 1 N force is switched on at 0.1 s and pushes `mass1`; `mass2` is joined to it by
-nothing but a spring and damper. **Nothing is bolted down**, which is what makes it
-worth reading: the two masses bob relative to each other *and* drift away together,
-and the gap between them settles somewhere other than the value a bolted-down end
-would give it.
-
-**Reduced mass** — the effective inertia of the relative motion, always smaller than
-either mass alone.
-
-$$\mu = \frac{m_1 m_2}{m_1 + m_2} = \frac{2}{3}\ \text{kg}$$
-
-**Centre of mass** — nothing external holds the pair back, so the whole pair drifts
-while the gap between them settles.
-
-$$\ddot{x}_{\text{cm}} = \frac{F}{m_1 + m_2} = \frac{1}{3}\ \text{m/s}^2$$
-
-**Steady gap** — the trap, if you expect the spring to carry the whole force.
-
-$$\Delta x = \frac{F\,m_2}{c\,(m_1 + m_2)} = \frac{1}{75}\ \text{m}$$
-
-[`showcase/notes/02-Mechanical/11-mass-spring-damper.md`](showcase/notes/02-Mechanical/11-mass-spring-damper.md)
-works the whole thing through, including the equations and a table comparing them
-with what the simulation returns.
-
----
-
-## Two more examples
-
-Every example below is built in — open it from **Examples** in the toolbar and press
-**Simulate** — and every number is re-checked against a real OpenModelica run by
-`npm test`, so a stale figure in this README fails the build rather than misleading a
-reader. The closed forms are derived independently of the simulation.
-
-### A series RLC circuit that rings
-
-```modelica
-//@ time=0.05
-model RLC "Series RLC circuit: underdamped step response"
-  Modelica.Electrical.Analog.Sources.StepVoltage source(V=10, startTime=0.001)
-    annotation(Placement(transformation(extent={{-80,0},{-60,20}}, rotation=-90)));
-  Modelica.Electrical.Analog.Basic.Resistor resistor(R=10)
-    annotation(Placement(transformation(extent={{-40,20},{-20,40}})));
-  Modelica.Electrical.Analog.Basic.Inductor inductor(L=0.1)
-    annotation(Placement(transformation(extent={{0,20},{20,40}})));
-  Modelica.Electrical.Analog.Basic.Capacitor capacitor(C=0.001)
-    annotation(Placement(transformation(extent={{40,20},{60,40}})));
-  Modelica.Electrical.Analog.Basic.Ground ground
-    annotation(Placement(transformation(extent={{50,-40},{70,-20}})));
-equation
-  connect(inductor.n, capacitor.p);
-  connect(source.p, resistor.p);
-  connect(resistor.n, inductor.p);
-  connect(capacitor.n, ground.p);
-  connect(source.n, ground.p);
-end RLC;
-```
-
-A 10 V step is switched on 1 ms into a series loop of a 10 Ω resistor, a 0.1 H
-inductor and a 1 mF capacitor. The damping ratio decides everything, and it is one
-line of algebra:
-
-$$\alpha = \frac{R}{2L} = 50\ \text{s}^{-1}, \qquad
-\omega_0 = \frac{1}{\sqrt{LC}} = 100\ \text{rad/s}, \qquad
-\zeta = \frac{\alpha}{\omega_0} = \frac{R}{2}\sqrt{\frac{C}{L}} = 0.5$$
-
-The damping ratio is below 1, so the step overshoots — by 16.3%, to 11.63 V, one
-quarter of a ringing period after the step — and then rings down:
-
-$$\omega_d = \sqrt{\omega_0^2 - \alpha^2} = 86.6\ \text{rad/s}, \qquad
-\tau = \frac{1}{\alpha} = 20\ \text{ms}, \qquad
-t_{\text{peak}} = \frac{\pi}{\omega_d} = 37\ \text{ms}$$
-
-which is what the plot is checked against, point by point:
-
-$$v_C(t) = V\left[1 - e^{-\alpha t}\left(\cos\omega_d t + \frac{\alpha}{\omega_d}\sin\omega_d t\right)\right]$$
-
-| Quantity | Closed form | OpenModelica |
-|---|---|---|
-| `capacitor.v` at 5 ms | 0.6941 V | 0.694128 V |
-| `capacitor.v` at 20 ms | 8.0618 V | 8.06181 V |
-| `capacitor.v` at 50 ms | 10.8344 V | 10.8344 V |
-| ζ from R, L, C | 0.5 | 0.5 |
-
-### A resistor heating itself
-
-One model, two domains, joined at a single port — the electrical side is
-instantaneous, the thermal side integrates, and the port between them is what makes
-it a system rather than two circuits:
-
-```modelica
-//@ time=200
-model ResistorSelfHeating "A resistor self-heating: electrical loss into a thermal mass"
-  Modelica.Electrical.Analog.Sources.ConstantVoltage supply(V = 10)
-    annotation(Placement(transformation(extent={{-70,10},{-50,30}}, rotation=-90)));
-  Modelica.Electrical.Analog.Basic.Resistor resistor(R = 10, useHeatPort = true)
-    annotation(Placement(transformation(extent={{-30,10},{-10,30}}, rotation=90)));
-  Modelica.Electrical.Analog.Basic.Ground return_path
-    annotation(Placement(transformation(extent={{-50,-10},{-30,10}})));
-  Modelica.Thermal.HeatTransfer.Components.HeatCapacitor body(C = 5, T(start = 293.15, fixed = true))
-    annotation(Placement(transformation(extent={{20,20},{40,40}})));
-  Modelica.Thermal.HeatTransfer.Components.ThermalConductor toAmbient(G = 0.5)
-    annotation(Placement(transformation(extent={{50,10},{70,30}})));
-  Modelica.Thermal.HeatTransfer.Sources.FixedTemperature ambient(T = 293.15)
-    annotation(Placement(transformation(extent={{100,10},{120,30}})));
-equation
-  connect(resistor.heatPort, body.port);
-  connect(body.port, toAmbient.port_a);
-  connect(toAmbient.port_b, ambient.port);
-  connect(resistor.p, supply.n);
-  connect(resistor.n, supply.p);
-  connect(resistor.p, return_path.p);
-end ResistorSelfHeating;
-```
-
-Ten volts across ten ohms is one amp and ten watts, and every watt of it goes into
-the body's thermal mass — 5 joules per kelvin — which can shed heat to still air only
-at half a watt per kelvin:
-
-$$P = \frac{V^2}{R} = 10\ \text{W}, \qquad
-\tau = \frac{C}{G} = 10\ \text{s}, \qquad
-\Delta T_\infty = \frac{P}{G} = 20\ \text{K}, \qquad
-T(t) = T_\infty + \Delta T_\infty\left(1 - e^{-t/\tau}\right)$$
-
-| Quantity | Closed form | OpenModelica |
-|---|---|---|
-| `resistor.LossPower` at t = τ | 10 W | 10.0000 W |
-| `body.T` at t = τ = 10 s | 305.792 K | 305.793 K |
-| `body.T` at t = 2τ | 310.443 K | 310.444 K |
-| `body.T` at t = 20τ (steady) | 313.150 K | 313.150 K |
-| `resistor.LossPower` − `toAmbient.Q_flow` at t = 3τ | 10 W | 10.0000 W |
-
-The last row is the one worth having: it needs no closed form at all — what the
-current makes, less what the body sheds, is what warms it — and it fails if the heat
-port is wired to the wrong thing. The 30 notes under
-[`showcase/notes/`](showcase/notes/) carry the same treatment for every example —
-the algebra, then the numbers the simulation returns.
-
----
-
-## Using it in a note
-
-````markdown
-```modelica
-//@ time=5
-model MassSpringDamper "Two masses coupled by a spring and damper"
-  Modelica.Mechanics.Translational.Sources.Force force
-    annotation(Placement(transformation(extent={{-80,-10},{-60,10}})));
-  Modelica.Mechanics.Translational.Components.Mass mass1(m=1)
-    annotation(Placement(transformation(extent={{-40,-10},{-20,10}})));
-  Modelica.Mechanics.Translational.Components.SpringDamper coupling(c=50, d=1)
-    annotation(Placement(transformation(extent={{-10,-10},{10,10}})));
-  Modelica.Mechanics.Translational.Components.Mass mass2(m=2)
-    annotation(Placement(transformation(extent={{20,-10},{40,10}})));
-  Modelica.Blocks.Sources.Step step(height=1, startTime=0.1)
-    annotation(Placement(transformation(extent={{-80,30},{-60,50}})));
-equation
-  connect(step.y, force.f);
-  connect(force.flange, mass1.flange_a);
-  connect(mass1.flange_b, coupling.flange_a);
-  connect(coupling.flange_b, mass2.flange_a);
-end MassSpringDamper;
-```
-````
-
-That is the model from [the worked example](#a-worked-example-two-masses-and-a-spring)
-— the same file the studio opens from **Examples** — so a block in a note and the
-studio show the same diagram and the same numbers.
-
-To put a block in a note, use the command palette: **Embed a simulation in the
-current note** asks which model — the one open in the studio, a built-in example, or
-a saved `.mo` file — and writes the block at the cursor with its options filled in.
-**Embed the open model in the current note** skips the question.
-
-A note can also hold a **`modelica-solve`** block, which is an equation to be solved
-rather than a model to be run — `sqrt(x) + x^2 - 56 = 67` in, `x = 10.940400921` out.
-**Insert a calculation in the current note** writes one at the cursor. It carries no
-diagram, mounts no editor and never writes back, and it is described in
-[A calculation, solved instead of typed](#a-calculation-solved-instead-of-typed).
-
-The first line is an optional **directive**: `time` sets the simulation span,
-`height` the height of the pane (the plot and the diagram are the same box, shown one
-at a time), `result`/`edit` which of the two starts open, and `noauto`/`manual` to
-keep the block from running itself at all. It lives inside the block because
-Obsidian does not pass a fenced block's info string to a plugin.
-
-**A block runs itself once**, when the note is opened. After that the **Simulate**
-button is what starts a run — the plot has a `t_end` field beside it, and typing a
-span there re-runs the block and records it in the directive. The reason is that an
-edit made in a block's own diagram writes the note back, and a note that re-renders
-rebuilds the block: without the rule, dragging one component ran four simulations.
-A rebuilt block repaints the result it already had; if the model has changed since
-that run, the line above the plot says so rather than the stale curve passing itself
-off as current.
-
-Blocks follow the studio: change the plot scale, the visible traces or the
-simulation span there and the blocks follow, and a block re-simulates when a
-parameter value it ran with changes. A block answers the pointer the way the studio
-does — resting on a component shows its parameters, and moving across the plot reads
-the time and every visible trace's value with a crosshair on it.
-
-## AI assistance
-
-Optional, off until an API key is entered.
-
-1. Settings → Modelica Studio → AI assistance.
-2. **API key** opens Obsidian's keychain: pick an existing secret, or create one.
-   Pick a provider preset, or set the base URL and model directly. Any
-   OpenAI-compatible endpoint works, including a local Ollama or llama.cpp
-   server.
-3. **Test** confirms the provider answers, and says what it said if it does not.
-4. **Refresh model list** asks the provider which models it currently offers.
-   Model names are retired without notice — `deepseek-chat` became
-   `deepseek-flash` — and a retired name fails with an error that reads like a
-   bad key, so the plugin fetches the list rather than shipping a stale one.
-
-In the studio, switch to **Code** and press **AI**. Describe the model you want
-and it is written, compiled and **repaired until it builds** — without further
-input:
-
-1. The request goes to the provider with the brief above attached.
-2. The reply is **compiled** with OpenModelica.
-3. If it fails, the compiler's own output — with its line and column numbers —
-   goes back to the provider as the next request.
-4. Steps 2 and 3 repeat until it compiles.
-
-**You choose the form and the effort.** Two settings under AI assistance:
-
-- **Model style** — *Diagram first* builds from library components, so you get a
-  schematic you can see and rewire. A schematic depends on component paths,
-  parameters and every connection being right, so the ways to fail outnumber the
-  ways to succeed; equations have far less to get wrong. So if the diagram has
-  had two attempts and still will not compile, the run **falls back to equations**
-  automatically and says so. *Equations* skips straight there.
-- **Reasoning effort** — *Off* / *Low* / *High* / *Max*. Providers that default to
-  thinking spend that time on every request, and it silently disables Temperature.
-  Off is fastest and suits code; raise it when attempts keep failing.
-
-The loop stops when the model compiles, when the model returns the same source
-twice, when the same error comes back twice (compared after stripping build
-paths and timings, which differ on every attempt), when a provider error
-occurs, or at five attempts. A model that compiles but has nothing that changes
-with time counts as a **failure**, because OpenModelica builds it and then
-refuses to simulate it.
-
-Each step is reported as it happens — the attempt number, and the fault being
-repaired — and **Stop** ends the run after the current step. Nothing is written
-to the editor until a model compiles, so a run that produces nothing leaves your
-model as it was.
-
-**The Run log** tab keeps every simulation of the session: the model, the
-parameters and run settings used, the timings, and on failure OpenModelica's
-**complete output**. **Send to AI** hands that to the model and asks for a fix,
-so a repair request is built from the compiler's own words rather than a
-paraphrase — the first line of an OpenModelica error is usually a file path or
-`Internal error`, and the line naming the fault comes several lines later.
-**Copy** puts the same text on the clipboard for a bug report.
-
-Every request also carries a standing brief about this installation, so the model
-writes for the machine it is actually on rather than a generic one: the
-OpenModelica version and path, the indexed libraries and how many classes they
-hold, the run settings a simulation will use (span, intervals, tolerance,
-solver), the libraries you have excluded, and the failures already in the log.
-It is told not to add an `experiment` annotation, because the plugin applies the
-run settings itself and an annotation conflicts with them.
-
-The key lives in **Obsidian's keychain**, not in this plugin's `data.json`. Only
-the *name* of the secret is stored with the plugin, so the value stays out of
-vault backups, sync services and version control, and any other plugin can reuse
-the same secret. It is never written to the debug log, never attached to an error
-message, and only ever sent to the endpoint configured here.
-
-This needs **Obsidian 1.11.4 or later**, which is where the keychain API arrived;
-the plugin declares that as its minimum. On an older build the AI section says so
-rather than falling back to storing a key in plain text.
-
-If you configured a key with an earlier version of this plugin, it is still in
-`data.json` and the settings page offers to move it into the keychain and delete
-the plaintext copy.
-
-Generated code is **unverified**: it is a draft to simulate and check, not an
-answer. The request includes the current source and a shortlist of library
-classes relevant to your description, so the model composes real MSL classes
-instead of inventing names.
-
-## Recovering a lost model
-
-A saved model has three places it can still be found after the vault copy is gone:
-
-1. **The plugin's history** — every save keeps the version it replaced, in the
-   plugin's own folder (`.obsidian/plugins/modelica-studio/history/`), one
-   directory per model. Twenty revisions are kept; **Model list…** in the studio
-   shows them with restore.
-2. **OpenModelica's build cache** — `/tmp/modelica-studio/*/<Model>/<Model>.mo`
-   holds the exact source that was last compiled.
-3. **The desktop trash** — `~/.local/share/Trash/files/` on Linux.
-
-Deleting from **Model list…** uses the vault's own trash and snapshots first, so
-that route is reversible twice.
-
-## Debugging
-
-The plugin logs to Obsidian's **developer console** (Ctrl+Shift+I) as well as to
-`.modelica-studio.log` in the vault. It also publishes a handle for inspecting its
-state live:
-
-```js
-modelicaStudio.help()        // what you can inspect
-modelicaStudio.state()       // model, span, save path, toolchain, run count
-modelicaStudio.source()      // the model as Modelica
-modelicaStudio.model         // the parsed diagram
-modelicaStudio.settings      // stored settings
-modelicaStudio.library       // the class index
-modelicaStudio.runLog        // every simulation this session
-modelicaStudio.setVerbose(true)   // print every diagnostic line
-modelicaStudio.trace()            // what the plugin held, step by step
-```
-
-The **run log** (the Run log tab under the results) and the **AI prompt log**
-(Show the AI prompt log in the command palette) each have a **Copy** button, which
-puts exactly what the pane is showing on the clipboard — for a bug report, or for
-pasting into a prompt. A copy that the platform refuses says so rather than
-claiming success.
-
-`trace()` is the one for a suspected loss. The file log records what the plugin
-**did**; the trace records what it **held** at each moment that changed — which
-model, how long its source is, whether that source is still current, and which
-file it will be written to:
-
-```
-      0ms  open    AirplaneDrag   src=2869 current=true comps=8 eqs=0 file=Modelica/AirplaneDrag.mo mode=code
-   4200ms  edit    AirplaneDrag   src=2869 current=false comps=8 eqs=0 file=Modelica/AirplaneDrag.mo mode=diagram
-   5100ms  adopt   AirplaneDrag   src=2874 current=true  comps=8 eqs=0 file=Modelica/AirplaneDrag.mo mode=code
-   9800ms  switch  AirplaneDrag   src=2874 current=true  comps=8 eqs=0 file=Modelica/AirplaneDrag.mo mode=code
-```
-
-A `current=false` with no following `save` is the shape of a loss: the plugin was
-holding an edit it had not written.
-
-The log file is opt-in (**Write diagnostic log** in settings) because it survives
-a reload and can be read from outside the app. The console needs no setting:
-errors and warnings always print there, because a failure nobody can see is the
-one that gets reported as "nothing happened".
-
-## What is known about the AI
-
-One model has been measured, not assumed: see
-[`docs/ai-baseline.md`](docs/ai-baseline.md) for the method, the results, and
-what they do **not** establish. In short, for `deepseek-flash`:
-
-- diagram-first works — 8/8 compiled, 7 as fully wired diagrams across electrical,
-  mechanical, thermal, fluid, multibody and control;
-- the equations fallback earned itself, on one run out of eight;
-- a hard request can take several minutes, because the repair loop is additive.
-
-**No OpenAI model has been tested.** If you run one, `modelicaStudio.bench()` in
-the developer console measures it, and the result belongs in
-`docs/ai-baseline.json` as a new entry.
+## Documentation
+
+The README is the front door: what the plugin is, how to install it, and what it does.
+The reference is in [`docs/`](docs/), one page per subject.
+
+| Page | What is in it |
+|---|---|
+| [A worked example](docs/examples.md) | Two masses and a spring, an RLC circuit that rings, and a resistor heating itself — with the numbers and where they come from |
+| [Using it in a note](docs/notes.md) | The diagram block, its directive, and why it runs itself once |
+| [The calculation block](docs/solve-block.md) | An equation solved in a note: the directive, units, integrals, typesetting, and what it refuses |
+| [Calculation examples](docs/solve-examples.md) | Twelve blocks to paste, with the answer each one gives |
+| [AI assistance](docs/ai.md) | The repair loop, what is sent, and what has actually been measured |
+| [Performance](docs/performance.md) | Timings, what the settings are worth, and the solver table |
+| [Testing and verification](docs/verification.md) | How every number in this documentation is checked |
+| [Debugging](docs/debugging.md) | The logs, the console handle, and recovering a lost model |
+| [Design notes](docs/design.md) | Why it is built this way, and the measurements behind the decisions |
+| [Testing findings](docs/testing-findings.md) | Every failed expectation, and what it turned out to be |
+| [AI baseline](docs/ai-baseline.md) | One model measured, and what the measurement does not establish |
+| [Bug audit](docs/audit-2026-09-24.md) | Every module read, and what the reading turned up |
 
 ## Beta status
 
@@ -922,154 +439,6 @@ If something fails, enabling **Write diagnostic log** in settings writes a diagn
 log to `.modelica-studio.log` in the vault — the most recent 512 KB of it, trimmed as
 it fills — and **Show coordinate diagnostics** overlays the editor's geometry.
 
-## Testing
-
-`examples/vault/` is an Obsidian vault you can open directly: the 30 worked
-examples, cross-linked, each with a live model and its verified numbers, plus an
-introduction to the language and a demonstration of using it to learn a new
-subject.
-
-1. Copy `main.js`, `manifest.json` and `styles.css` into
-   `examples/vault/.obsidian/plugins/modelica-studio/`.
-2. Open `examples/vault/` as a vault in Obsidian.
-3. Enable the plugin, then open `showcase/00-modelica-intro.md`.
-
-Start with the introduction, then any example, and press **Simulate** in a block.
-
-Reports of what breaks are the most useful contribution at this stage. Include
-the Modelica source, the error, and your OpenModelica version.
-
-## Verification
-
-Every built-in example is checked numerically against a value derived
-independently of the plugin — a closed-form solution, an independent integration
-of the same ODE, or the Modelica Standard Library source. The audit runs on every
-`npm test`.
-
-Where a check was not possible it says so rather than asserting a number: the
-double pendulum is chaotic, so its total energy is checked (drift under 1%,
-non-growing) instead of its trajectory; pipe friction depends on an empirical
-correlation, so a mass balance is checked rather than a pressure drop.
-
-Twelve expectations were themselves wrong when first written, and every one was
-corrected only after tracing the discrepancy to the expectation rather than the
-simulation. Not once was the solver at fault. The full account — what was
-expected, what came out, which side was wrong and how it was settled — is in
-[`docs/testing-findings.md`](docs/testing-findings.md), along with the five models
-that were built, found unverifiable, and abandoned.
-
-## Performance
-
-Measured on the development machine — **Ryzen 5 2600X, 12 threads, 15 GB, NVMe,
-OpenModelica 1.27.0, Modelica 4.1.0** — for a small MSL circuit. Every number below
-is a wall-clock measurement, not an estimate.
-
-The one thing worth knowing: **the first launch after installing or upgrading the
-library costs about 1.2 s, and nothing else is slow.** Editing and re-running is
-milliseconds.
-
-### Startup
-
-| Stage | Measured | When |
-|---|---|---|
-| Parse the whole MSL into the class index | **1.2 s** | first launch after install/upgrade |
-| Load the index from its cache | **~0.3 s** | every launch after that |
-| Cache file | 25 MB | written beside the plugin's data |
-
-5984 classes are parsed out of 2424 files — 13 MB of library source. Only the
-newest release of each library is read: OpenModelica keeps every installed
-version side by side, and indexing all of them put three releases of `Modelica`
-into one table keyed by class name, where the definition that won depended on the
-order the filesystem handed the files over. The palette is built while this
-happens rather than before it, so the index cost is not a delay in opening the
-studio — it is why the palette fills in a moment late on a cold start.
-
-### Editing and running
-
-| Action | Measured | Why |
-|---|---|---|
-| Simulate with the binary already built | **18–36 ms** | the compiled model is reused |
-| Change a parameter and re-run | **~30 ms** | applied as a run-time override, not a rebuild |
-| Building the identical source again | **0 ms** | the fingerprint matches and the binary is reused |
-| First build, small equation model | **0.6 s** | translate, generate C, compile, link |
-| First build, 4-component MSL circuit | **1.5–1.8 s** | library classes bring their own equations |
-
-The 30 ms row is why parameters are applied as run-time overrides rather than by
-regenerating code, and why editing a value and re-simulating is immediate. Only a
-structural change — adding a component, rewiring, editing an equation — pays for a
-rebuild. Details in [`docs/design.md`](docs/design.md).
-
-An edit that only changes a value, a start attribute or a run setting stays on the
-fast path. So does switching between models that have both been built once.
-
-### What the settings are worth
-
-**Parallel compile jobs** is the setting that matters, and it is worth measuring
-rather than guessing. Same 4-component circuit, cold cache, on the 12-thread CPU:
-
-| `jobs` | First build | Saving |
-|---|---|---|
-| 1 | 4.07 s | — |
-| 2 | 2.47 s | 39% |
-| 4 | 1.75 s | 57% |
-| 8 | 1.43 s | **65%** |
-
-Each measured with an empty build cache and a freshly constructed backend, and
-reproduced twice — the first attempt at this table compared contaminated figures,
-since a backend remembers what it has already built and answered in 0 ms.
-
-The default is one less than the core count. Raising it past the physical core
-count does little, because code generation is CPU-bound.
-
-**Excluded libraries** does not affect the timings above — the whole library is
-still parsed — but it decides how much the studio has to offer. Excluding four
-sub-libraries that many models never touch:
-
-| | Placeable classes |
-|---|---|
-| Everything indexed | 1365 |
-| After excluding `Magnetic`, `Clocked`, `ComplexBlocks`, `StateGraph` | 1089 |
-
-A shorter palette is easier to search, and a shorter list in the AI's brief is
-less to choose wrongly from.
-
-### Choosing a solver
-
-Leave it on **OpenModelica default** unless you have a reason. The list is what
-this runtime offers, read from the runtime itself:
-
-| Solver | What it is | Use it when |
-|---|---|---|
-| `dassl` | BDF, implicit, adaptive order 1–5 | the default; right for stiff systems |
-| `ida` | SUNDIALS BDF, implicit, sparse | large systems, where the sparse solver scales better |
-| `cvode` | SUNDIALS BDF or Adams–Moulton, order 1–12 | you want accuracy — measured **1e-16** against 8e-8 for `dassl` on a stiff problem |
-| `gbode` | a family of Runge–Kutta methods, order 1–14, implicit or explicit | you want to try a non-BDF method, or multi-rate integration |
-| `euler` | explicit, fixed step, order 1 | teaching, and seeing what a bad solver looks like |
-| `rungekutta` | classical explicit RK, fixed step, order 4 | smooth non-stiff models; unstable on stiff ones |
-| `symSolver`, `qss` | symbolic inline; quantised-state | experimental — `symSolver` needs a compiler flag this plugin does not pass |
-
-**A stiff system** is one where something changes far faster than the interval you
-care about — a fast electrical transient next to a slow thermal one. Explicit
-methods take tiny steps to stay stable there; implicit ones like `dassl` and
-`cvode` do not.
-
-One caution worth knowing: **an unrecognised solver name is not an error to
-OpenModelica.** It warns, exits successfully, and writes a result file full of
-NaN. The name is `rungekutta`, not `rungekutta4` — and this plugin recommended the
-wrong one until it was measured. The plugin now reports an all-NaN result as a
-failure naming the solver, rather than showing an empty plot.
-
-### Measuring it yourself
-
-`modelicaStudio.state()` reports the toolchain, the index size and the settings in
-force. The AI timings in [`docs/ai-baseline.md`](docs/ai-baseline.md) are measured
-the same way: by running the thing and writing down what happened.
-
-A different machine will differ, most in the compile column — that stage is
-CPU-bound and parallel, so core count moves it more than anything else. If a
-simulation feels slow, check `jobs` first, then whether the model is rebuilding
-when it should not be.
-
 ## Repository layout
 
 ```
@@ -1083,7 +452,7 @@ src/
 test/                  unit and integration tests, and the numerical audit
 showcase/              generator for the example notes (math, explanations)
 examples/vault/        the test vault, with the generated notes
-docs/
+docs/                  the reference, one page per subject -- see Documentation above
   design.md            why it is built this way, and the measurements behind it
   testing-findings.md  every failed expectation and what it turned out to be
 research/              background research kept from development

@@ -16,12 +16,43 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+
+/**
+ * Scratch directories to remove when this process ends.
+ *
+ * Every call builds a bundle of the whole plugin into a fresh directory, and none
+ * of them were ever removed. On the machine this was written on that came to
+ * **8,881 directories and 7.6 GB** of a 7.8 GB tmpfs, at which point every write
+ * in the session failed — including the test runner's own, so a full run reported
+ * ninety-six failures across the suite and pointed at nothing. `build.mjs` learned
+ * this about simulated models and cleans up after them; the DOM runner was missed.
+ *
+ * Removed on the way out rather than immediately, so a page that fails can still be
+ * read while the run is going.
+ */
+const scratch = [];
+let sweeping = false;
+
+function keepUntilExit(dir) {
+  scratch.push(dir);
+  if (sweeping) return;
+  sweeping = true;
+  process.on("exit", () => {
+    for (const d of scratch) {
+      try {
+        rmSync(d, { recursive: true, force: true });
+      } catch {
+        /* A directory that will not go is not worth failing a run over. */
+      }
+    }
+  });
+}
 
 /** Where the Electron binary lives, or null when it cannot be found. */
 export function findElectron() {
@@ -120,6 +151,7 @@ export function runInDom(entrySource, opts = {}) {
   if (!electron) return { skip: "no electron binary found" };
 
   const dir = mkdtempSync(path.join(tmpdir(), "mst-dom-"));
+  keepUntilExit(dir);
   const entry = path.join(dir, "entry.js");
   const page = path.join(dir, "index.html");
   const runner = path.join(dir, "runner.cjs");

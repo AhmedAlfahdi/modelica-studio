@@ -126,14 +126,20 @@ test("the documented performance figures are internally consistent", () => {
   // itself can be caught. The jobs table must fall monotonically: more parallel
   // codegen cannot be slower, and if it ever reads that way the measurement is
   // wrong rather than the machine.
-  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
-  const table = /## Performance[\s\S]*?### Measuring it yourself/.exec(readme);
-  assert.ok(table, "there is a performance section");
+  //
+  // The measurements moved into `docs/performance.md` when the documentation was
+  // split, and this test moved with them: a figure that stops being checked because
+  // its page moved is how a table starts contradicting itself unnoticed.
+  const performance = fs.readFileSync(path.join(repoRoot, "docs", "performance.md"), "utf8");
+  const from = performance.indexOf("# Performance");
+  const to = performance.indexOf("## Measuring it yourself");
+  assert.ok(from >= 0 && to > from, "there is a performance page, with a Measuring it yourself section");
+  const table = performance.slice(from, to);
 
   // Cells are read loosely: the first saving is an em dash and the last is bold,
   // so a strict pattern silently matched two rows out of four and the test passed
   // its length check for the wrong reason.
-  const jobs = [...table[0].matchAll(/^\|\s*(\d+)\s*\|\s*([\d.]+)\s*s\s*\|\s*([^|]*)\|/gm)]
+  const jobs = [...table.matchAll(/^\|\s*(\d+)\s*\|\s*([\d.]+)\s*s\s*\|\s*([^|]*)\|/gm)]
     .map((m) => {
       const cell = m[3].replace(/[*\s]/g, "");
       return {
@@ -164,18 +170,21 @@ test("the documented performance figures are internally consistent", () => {
   }
 
   // And the section must state the machine, or the numbers mean nothing.
-  assert.match(table[0], /Ryzen 5 2600X/, "the machine is named");
-  assert.match(table[0], /OpenModelica/, "and the toolchain");
+  assert.match(table, /Ryzen 5 2600X/, "the machine is named");
+  assert.match(table, /OpenModelica/, "and the toolchain");
 });
 
-test("the settings tab and the README quote the same performance figures", () => {
+test("the settings tab and the performance page quote the same figures", () => {
   // These have drifted twice already: the README said 970 ms / 1.9 s / 4.6 s
   // while docs/design.md said the same stale numbers, and the settings tab kept
   // a third copy. A number with two homes ends up with two values, so every
   // figure the settings tab quotes must appear in the README's table.
-  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
-  const perf = readme.slice(readme.indexOf("## Performance"), readme.indexOf("### Measuring it yourself"));
-  assert.ok(perf.length > 500, "the README has a performance section");
+  const performance = fs.readFileSync(path.join(repoRoot, "docs", "performance.md"), "utf8");
+  const perf = performance.slice(
+    performance.indexOf("# Performance"),
+    performance.indexOf("## Measuring it yourself")
+  );
+  assert.ok(perf.length > 500, "the performance page carries the measurements");
 
   const settings = fs.readFileSync(path.join(repoRoot, "src/settings.ts"), "utf8");
   // The heading is built with Obsidian's own `setHeading`, which the plugin directory's
@@ -196,7 +205,7 @@ test("the settings tab and the README quote the same performance figures", () =>
     assert.ok(lead, `${label} quotes a number`);
     assert.ok(
       perf.includes(lead),
-      `the settings tab says "${label}: ${value}" and the README does not mention ${lead}`
+      `the settings tab says "${label}: ${value}" and the performance page does not mention ${lead}`
     );
   }
 });

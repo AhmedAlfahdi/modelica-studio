@@ -78,6 +78,34 @@ export function cleanupSimRoot() {
   }
 }
 
+/**
+ * Every markdown file of the documentation, as paths from the repository root.
+ *
+ * The documentation is split across `docs/` as it grows, and a claim does not stop
+ * being a claim because it moved: a test that reads only `README.md` quietly stops
+ * covering a section the day that section is extracted, which is how the assurance
+ * rots while the suite stays green. Everything that checks a *statement* reads the
+ * whole tree; only a test that parses a particular *section* names a file.
+ */
+export function documentationFiles() {
+  const dir = path.join(repoRoot, "docs");
+  return [
+    "README.md",
+    ...fs
+      .readdirSync(dir)
+      .filter((name) => name.endsWith(".md"))
+      .map((name) => `docs/${name}`)
+      .sort(),
+  ];
+}
+
+/** The whole documentation as one string, for checking that a claim is made somewhere. */
+export function documentationText() {
+  return documentationFiles()
+    .map((rel) => `\n\n<!-- ${rel} -->\n\n${fs.readFileSync(path.join(repoRoot, rel), "utf8")}`)
+    .join("");
+}
+
 /** This process's directory under `simRoot`. */
 const processDir = path.join(simRoot, String(process.pid));
 

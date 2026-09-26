@@ -34,7 +34,7 @@ So the plugin is built to **never recompile when only a parameter value changed*
 - The library index is written to a 28 MB cache, so the 2.4 s parse is paid once
   per library version rather than on every launch.
 
-The current figures live in the [README](../README.md#performance), measured with
+The current figures live in the [README](performance.md), measured with
 the same method — run the thing and write down what happened.
 
 ## Install
