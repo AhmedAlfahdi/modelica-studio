@@ -16,7 +16,9 @@ import { buildLibs, simCacheDir } from "./helpers/build.mjs";
 
 const SOLVE_LIB = buildLibs("solve", ["src/modelica/solve.ts"]);
 const solve = await import(path.join(SOLVE_LIB, "solve.js"));
-const { parseSolveBlock, buildSolveModel, solveModelName, splitStatements, declaredNames, freeSymbols } = solve;
+const { parseSolveBlock, buildSolveModel, solveModelName, splitStatements, declaredNames, freeSymbols } =
+  solve;
+const { hasImplicitMultiplication } = solve;
 
 const OMC_LIB = buildLibs("solve-omc", ["src/omc/backend.ts", "src/omc/locate.ts"]);
 const backendMod = await import(path.join(OMC_LIB, "backend.js"));
@@ -85,6 +87,42 @@ test("a modifier list is not mistaken for the end of a statement", () => {
 test("a semicolon inside an array is not a statement boundary", () => {
   const statements = splitStatements("Real v[3] = {1; 2; 3};\nv[1] = 4");
   assert.deepEqual(statements, ["Real v[3] = {1; 2; 3}", "v[1] = 4"]);
+});
+
+test("multiplying by juxtaposition is named, not left to the compiler", () => {
+  // Mathematics on paper is full of `2x` and `1/2 (a*t)`, and Modelica has none of
+  // it. The compiler says "Missing token: SEMICOLON", which says where the parser
+  // gave up and nothing about the habit — and this is the most natural thing to
+  // write in a block meant for calculations.
+  const shapes = ["y = 2x", "y = 3(x + 1)", "y = (a + b)(c + d)", "y = -1/2 (a * t) + v*t", "y = v[1](2)"];
+  for (const equation of shapes) {
+    assert.equal(hasImplicitMultiplication(equation), true, `should be caught: ${equation}`);
+    const spec = parseSolveBlock(`//@ solve y\n${equation}`);
+    assert.match(spec.problem ?? "", /no implicit multiplication/, equation);
+    assert.match(spec.problem ?? "", /1\/2 \* \(a \* t\)/, "and the message shows the fix");
+  }
+});
+
+test("a call, a subscript and an explicit product are not mistaken for it", () => {
+  // `f(x)` is a function call and `v[1]` is a subscript: both put things side by
+  // side, and neither multiplies.
+  const fine = [
+    "y = 2*x",
+    "y = f(x)",
+    "y = v[1] + v[2]",
+    "y = (a + b) * (c + d)",
+    "y = sin(x) + 3.5",
+    "y = quadratureLobatto(Modelica.Math.exp, 0, 1)",
+    "y = sum(f(i) for i in 1:n)",
+  ];
+  for (const equation of fine) assert.equal(hasImplicitMultiplication(equation), false, equation);
+});
+
+test("a declaration with two names in a row is not a product", () => {
+  // `Real x` is two identifiers side by side, which is why the check is asked
+  // about equations only — the block would refuse every declaration it was given.
+  const spec = parseSolveBlock("//@ solve x\nparameter Real k = 2;\nReal x(start = 1);\nk*x = 10");
+  assert.equal(spec.problem, undefined);
 });
 
 test("a symbol declared as a parameter is refused by name", () => {

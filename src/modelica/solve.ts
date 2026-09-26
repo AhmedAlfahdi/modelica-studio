@@ -165,6 +165,18 @@ export function parseSolveBlock(body: string): SolveSpec {
     return spec;
   }
 
+  // Checked before the unknowns are looked for, because an equation that multiplies
+  // by juxtaposition would also report nonsense unknowns and the real mistake would
+  // be the second thing said rather than the first.
+  const juxtaposed = spec.equations.find(hasImplicitMultiplication);
+  if (juxtaposed) {
+    spec.problem =
+      `\`${juxtaposed}\` multiplies without a \`*\`, and Modelica has no implicit multiplication. ` +
+      `Write \`1/2 * (a * t)\` rather than \`1/2 (a * t)\`, and \`2*x\` rather than \`2x\` — ` +
+      `the same goes for \`(a + b)(c + d)\`.`;
+    return spec;
+  }
+
   const declared = declaredNames(spec.declarations);
   const free = freeSymbols(spec.equations.join("\n;\n"), declared);
   spec.unknowns = free;
@@ -247,6 +259,40 @@ export function splitStatements(src: string): string[] {
 function startsClassDefinition(statement: string): boolean {
   const first = tokenize(statement).find((token) => token.type !== "eof");
   return first?.type === "keyword" && CLASS_KEYWORDS.has(first.value);
+}
+
+/**
+ * Whether an equation multiplies by writing two things side by side.
+ *
+ * Mathematics on paper is full of it — `2x`, `1/2 (a*t)`, `(a+b)(c+d)` — and
+ * Modelica has none of it. The compiler's answer is `Missing token: SEMICOLON`,
+ * which says where the parser gave up and nothing about the habit that caused it,
+ * and this is the single most natural thing to write in a block meant for
+ * calculations.
+ *
+ * Two shapes are recognised, both of which are errors in an equation however they
+ * are read: something that ends a value — a number, `)` or `]` — followed directly
+ * by something that starts one — a name, a number or `(`. An identifier followed
+ * by `(` is NOT one of them, because `f(x)` is a call.
+ *
+ * Equations only. Two names in a row is a declaration (`Real x`), which is why this
+ * is never asked about a declaration.
+ */
+export function hasImplicitMultiplication(equation: string): boolean {
+  const tokens = tokenize(equation).filter((token) => token.type !== "eof");
+  for (let i = 1; i < tokens.length; i++) {
+    const previous = tokens[i - 1];
+    const current = tokens[i];
+    const endsValue =
+      previous.type === "number" ||
+      (previous.type === "punct" && (previous.value === ")" || previous.value === "]"));
+    const startsValue =
+      current.type === "ident" ||
+      current.type === "number" ||
+      (current.type === "punct" && current.value === "(");
+    if (endsValue && startsValue) return true;
+  }
+  return false;
 }
 
 /**
