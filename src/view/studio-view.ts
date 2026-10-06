@@ -3127,7 +3127,10 @@ export class ModelicaStudioView extends ItemView {
     // so both are here: the label is what is drawn, this is what it is.
     el.dataset.name = series.name;
     this.indentTraceRow(el, row.depth);
-    el.setAttribute("title", traceTooltip(series));
+    // `aria-label`, not `title`: Obsidian draws a tooltip from `aria-label` and the browser
+    // draws its own from `title`, so both together are two tooltips over one row — reported
+    // from a photo of this list, where the full name and the short label appeared at once.
+    el.setAttribute("aria-label", traceTooltip(series));
     // A connector is a variable and has members, so one row can be both a thing
     // to plot and a thing to open.
     if (row.node.children.length > 0) this.renderTraceTwisty(el, row);
@@ -3187,10 +3190,11 @@ export class ModelicaStudioView extends ItemView {
       // One dot for `der`, two for `der(der)`; the second is drawn by the stylesheet.
       if (run.dot) span.setAttribute("data-dots", String(run.dot));
     }
-    // The runs carry no separators, so the raw label is restored for a screen reader
-    // ("srel" for `s_rel` would be worse than the plain name this replaced).
-    parent.setAttribute("aria-label", label);
-    if (fullName) parent.setAttribute("title", fullName);
+    // The runs carry no separators, so the raw name is restored for a screen reader ("srel"
+    // for `s_rel` would be worse than the plain name this replaced) — and, since `aria-label`
+    // is also what Obsidian turns into a tooltip, it says the qualified name where there is
+    // one: the same sentence a reader wants on hover, and never a second tooltip beside it.
+    parent.setAttribute("aria-label", fullName ?? label);
   }
 
   /** The triangle that opens and closes a group. */
@@ -3211,7 +3215,7 @@ export class ModelicaStudioView extends ItemView {
       cls: "modelica-studio-series-count",
       text: `${counts.drawn}/${counts.total}`,
     });
-    span.setAttribute("title", `${counts.drawn} of ${counts.total} variables here are drawn`);
+    span.setAttribute("aria-label", `${counts.drawn} of ${counts.total} variables here are drawn`);
   }
 
   /**
@@ -4555,6 +4559,24 @@ export class ModelicaStudioView extends ItemView {
   onLibraryReady(): void {
     setBusy(this.paletteEl, false);
     this.renderPalette();
+    // The inspector reads a declared TYPE's unit out of this index, and until now it was the
+    // empty one: a model restored at startup had its fields built before the library arrived,
+    // so they showed no unit and offered no picker and never looked again. Reported as the unit
+    // dropdown not working without a simulation — the simulation was what supplied units
+    // instead. Not while a field is being typed in: rebuilding takes the text away.
+    //
+    // The cache goes first, and it is the whole fix: it holds `{}` for every type the empty
+    // index was asked about, so re-rendering without dropping it asks the same questions and
+    // gets the same nothing. A test that only counted the rebuild passed while the fields
+    // stayed empty.
+    this.typeUnitsCache = null;
+    if (!this.inspectorHasFocus()) this.renderInspector();
+  }
+
+  /** Whether the caret is in a field that a rebuild would replace. */
+  private inspectorHasFocus(): boolean {
+    const active = document.activeElement;
+    return !!active?.closest?.(".modelica-studio-field");
   }
 
   /**

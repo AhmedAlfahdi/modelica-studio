@@ -7,6 +7,23 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Two tooltips, in two styles, over one row.** Reported from a photo of the trace list: the
+  browser's own tooltip from `title` and Obsidian's from `aria-label`, drawn at the same time.
+  Obsidian draws a tooltip from `aria-label` and never from `title`, so the plugin's own rule —
+  written down beside the toolbar buttons it was learned from — is `aria-label` only. Every
+  `title` in the UI is gone: the trace row and its unit, the group count, the layer label in the
+  settings, and the unit span. The qualified name is now what the name element says, so that one
+  tooltip carries information rather than repeating what is already drawn under the cursor.
+- **The unit picker really does appear without a simulation.** It did not, in the app, for the
+  second time — and the reason was not the type-chain lookup but when it ran: `plugin.library`
+  is an EMPTY index until its scan resolves, and a model restored at startup builds its
+  inspector before that, so the units were read from an empty index and never read again. The
+  inspector is rebuilt when the library arrives, and the memo of type → unit is dropped first,
+  because it holds the `{}` the empty index answered with. A test that only counted the rebuild
+  passed while every field stayed empty; the assertion is on the pickers now.
+
 ### Changed
 
 - **Every unit is a control beside its value, not text in the label.** Reported from a screenshot

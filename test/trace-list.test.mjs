@@ -276,12 +276,27 @@ test("the list box takes the height that is left, not a fixed 190px", async () =
       "    'longNameEllipsised=' + (longName.scrollWidth > longName.clientWidth),",
       "    'longRowX=' + longList.scrollWidth + ':' + longList.clientWidth,",
       "    'longNameWidth=' + Math.round(longName.getBoundingClientRect().width) + ':' + longList.clientWidth,",
-      "    'longTitle=' + (longRow.getAttribute('title') || '').split('\\n')[0].slice(-24),",
+      "    'longTitle=' + (longRow.getAttribute('aria-label') || '').split('\\n')[0].slice(-24),",
       "    'labelEllipsised=' + (longLabelName.scrollWidth > longLabelName.clientWidth),",
       "    'labelListX=' + longLabelList.scrollWidth + ':' + longLabelList.clientWidth,",
       "    'shortHeight=' + Math.round(sl.height),",
       "    'shortRows=' + shortList.querySelectorAll('.modelica-studio-series-row').length,",
       "  ].join(' ');",
+      "});",
+      "window.test('one tooltip per row, and no native one beside it', () => {",
+      "  // Reported from a phone photo of this list: two tooltips at once, in two styles — the",
+      "  // qualified name in the browser's own tooltip and the short label in Obsidian's, because",
+      "  // the name carried `aria-label` AND `title`. Obsidian draws a tooltip from `aria-label`",
+      "  // and the browser draws one from `title`, so the rule here is `aria-label` only.",
+      "  const row = list.querySelector('.modelica-studio-series-row');",
+      "  const name = row.querySelector('.modelica-studio-series-name');",
+      "  const unit = row.querySelector('.modelica-studio-series-unit');",
+      "  // Properties, not a fixture's own names: what matters is that nothing carries a `title`",
+      "  // and that each surface names itself through `aria-label` alone.",
+      "  return 'titles=' + Array.from(list.querySelectorAll('[title]')).length",
+      "    + ' rowNamesItself=' + (row.getAttribute('aria-label') || '').startsWith(row.dataset.name)",
+      "    + ' nameIsQualified=' + (name.getAttribute('aria-label') === row.dataset.name)",
+      "    + ' unitLabelled=' + (unit ? (unit.getAttribute('aria-label') || '').startsWith('Unit: ') : 'none');",
       "});",
       "window.test('the Selection tab is left alone', () => {",
       "  // The fill is scoped to the Traces tab: pinning the Selection tab's body to",
@@ -306,6 +321,15 @@ test("the list box takes the height that is left, not a fixed 190px", async () =
   const num = (key) => Number(new RegExp(key + "=(-?\\d+)").exec(g)?.[1]);
 
   assert.equal(num("paneHeight"), 520, "the pane the test gives it");
+  // By name: the cases in this page are read by position elsewhere (`g` is the first result), and
+  // this one is inserted in the middle of them.
+  const named = (n) => out.results.find((r) => r.name === n)?.detail ?? "";
+  assert.equal(
+    named("one tooltip per row, and no native one beside it"),
+    "titles=0 rowNamesItself=true nameIsQualified=true unitLabelled=true",
+    "one tooltip attribute per surface: `title` beside `aria-label` drew two at once"
+  );
+
   // The box is the leftover height — most of the pane — not a 190px cap.
   assert.ok(num("listHeight") > 280, `the box fills the pane, got ${num("listHeight")}px`);
   // And it ends at the body's padding, not hundreds of pixels above it.
@@ -339,7 +363,7 @@ test("the list box takes the height that is left, not a fixed 190px", async () =
   assert.ok(num("shortRows") > 0, "with rows in it");
 
   assert.equal(
-    out.results[1].detail,
+    out.results.find((r) => r.name === "the Selection tab is left alone")?.detail,
     "traces=flex/auto selection=block/visible",
     "the fill applies to the Traces tab only"
   );
@@ -703,9 +727,12 @@ test("the variables are folded into the components their names describe", async 
     "still=true",
     "forcing it on a component, not on every click on the canvas"
   );
+  // The accessible name — and, since Obsidian draws its tooltip from the same attribute, the
+  // one tooltip — is the QUALIFIED name. It used to be the row's own label, which repeats what
+  // is already drawn under the cursor.
   assert.equal(
     d["a name is drawn as runs: subscripts low, a derivative dotted"],
-    "sub=flow label=Q_flow dots=1 text=phiMechanical",
+    "sub=flow label=motor.internalThermalPort.heatPortPermanentMagnet.Q_flow dots=1 text=phiMechanical",
     "the same tokenizer the legend uses, so the two surfaces agree"
   );
   assert.equal(
@@ -746,7 +773,7 @@ test("a unit is shown with the variable it belongs to, not with the model", asyn
       "  .find((r) => r.dataset.name === name);",
       "const unitOf = (name) => {",
       "  const span = rowFor(name).querySelector('.modelica-studio-series-unit');",
-      "  return span ? span.textContent + ' title=' + span.getAttribute('title') : 'NONE';",
+      "  return span ? span.textContent + ' title=' + span.getAttribute('aria-label') : 'NONE';",
       "};",
       "// A result whose variables carry no unit at all: the description is optional",
       "// and the row must not grow an empty placeholder for it.",
@@ -758,9 +785,9 @@ test("a unit is shown with the variable it belongs to, not with the model", asyn
       "    + ' v=' + unitOf('motor.la.v'));",
       "window.test('a derivative is read as a reader writes it, and kept whole on the row', () =>",
       "  'shown=' + unitOf('der(motor.phiMechanical)')",
-      "    + ' exact=' + (rowFor('der(motor.phiMechanical)').getAttribute('title') || '').split('\\n').pop());",
+      "    + ' exact=' + (rowFor('der(motor.phiMechanical)').getAttribute('aria-label') || '').split('\\n').pop());",
       "window.test('the row also carries what the variable is', () =>",
-      "  'title=' + JSON.stringify(rowFor('motor.friction.heatPort.T').getAttribute('title')));",
+      "  'title=' + JSON.stringify(rowFor('motor.friction.heatPort.T').getAttribute('aria-label')));",
       "window.test('a unit is legible even on a row that is not drawn', () => {",
       "  // Reported from a screenshot: the units were there and unreadable. Two things were",
       "  // multiplying -- the faint colour token, and a row opacity that dimmed the unit along",

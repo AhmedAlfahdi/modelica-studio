@@ -1288,7 +1288,8 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
         box.id = `mst-lib-${row.name.replace(/\W/g, "-")}`;
         const label = line.createEl("label", { text: row.label });
         label.htmlFor = box.id;
-        label.setAttribute("title", row.name);
+        // : the only attribute Obsidian draws a tooltip from, and the accessible name.
+        label.setAttribute("aria-label", row.name);
         if (row.excludedBy) {
           // The case a text area could not show at all: this library is out
           // because something above it is, so ticking it here alone does nothing.

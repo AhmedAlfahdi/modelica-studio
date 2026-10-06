@@ -23,10 +23,13 @@ export function renderUnit(
    * Whether to carry the flat spelling as a tooltip.
    *
    * True where the unit is typeset and the flat form is the copyable one — the trace list.
-   * False in the inspector, where a native tooltip drawn over the field it belongs to was
-   * reported as noise: everything it said is on screen already.
+   * False in the inspector, where a tooltip drawn over the field it belongs to was reported as
+   * noise: everything it said is on screen already. Set through `aria-label`, which is the only
+   * attribute Obsidian draws a tooltip from; a `title` beside it draws the browser's own as
+   * well, and two tooltips over one element is what was reported from a phone photo of the
+   * trace list.
    */
-  withTitle = true
+  withTooltip = true
 ): HTMLElement {
   const span = parent.createSpan({ cls });
   for (const run of unitRuns(unit)) {
@@ -44,7 +47,7 @@ export function renderUnit(
   if (flat) {
     // `data-unit` stays either way: it is what the hover rule matches rows on.
     span.setAttribute("data-unit", flat);
-    if (withTitle) span.setAttribute("title", `Unit: ${flat}`);
+    if (withTooltip) span.setAttribute("aria-label", `Unit: ${flat}`);
   }
   return span;
 }
