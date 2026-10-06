@@ -56,6 +56,14 @@ declare global {
     __sceneHelp: () => unknown;
     __sceneStudio: (data: SceneData) => unknown;
     __SCENES__: SceneData;
+    /**
+     * The 80th-percentile luminance of a grid of regions in an image, and two frames'
+     * worth of waiting. Used by the Node side to CHECK each screenshot rather than
+     * trust it: an image rendered before its theme reached the page is exactly the
+     * failure a fixed sleep cannot see.
+     */
+    __shotGrid: (dataUrl: string, cols: number, rows: number) => Promise<number[][]>;
+    __nextPaint: () => Promise<void>;
   }
 }
 
@@ -597,4 +605,52 @@ window.__sceneStudio = async (data) => {
   } catch (err) {
     return fail(err);
   }
+};
+
+
+/**
+ * Wait until the page has actually painted.
+ *
+ * Two frames: the first ends the frame in which whatever changed was applied, the second is
+ * the one that shows it. A `setTimeout` sleeps for a duration and hopes; this waits for the
+ * event, and the Node side verifies the pixels afterwards because even this cannot promise
+ * that a canvas someone else owns has been redrawn.
+ */
+window.__nextPaint = () =>
+  new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  );
+
+/** The 80th-percentile luminance of each region of an image, as a grid. */
+window.__shotGrid = async (dataUrl: string, cols: number, rows: number) => {
+  const img = new Image();
+  img.src = dataUrl;
+  await img.decode();
+  const canvas = document.createElement("canvas");
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+  ctx.drawImage(img, 0, 0);
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const grid: number[][] = [];
+  for (let ry = 0; ry < rows; ry++) {
+    const row: number[] = [];
+    for (let rx = 0; rx < cols; rx++) {
+      const x0 = Math.floor((rx * canvas.width) / cols);
+      const x1 = Math.floor(((rx + 1) * canvas.width) / cols);
+      const y0 = Math.floor((ry * canvas.height) / rows);
+      const y1 = Math.floor(((ry + 1) * canvas.height) / rows);
+      const values: number[] = [];
+      for (let y = y0; y < y1; y += 3) {
+        for (let x = x0; x < x1; x += 3) {
+          const i = (y * canvas.width + x) * 4;
+          values.push(0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]);
+        }
+      }
+      values.sort((a, b) => a - b);
+      row.push(Math.round(values[Math.floor(values.length * 0.8)] ?? 0));
+    }
+    grid.push(row);
+  }
+  return grid;
 };

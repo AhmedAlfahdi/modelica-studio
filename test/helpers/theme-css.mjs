@@ -120,3 +120,34 @@ input[type='text'] {
   height: var(--input-height);
 }
 `;
+
+/**
+ * The same variables again, with Obsidian's default LIGHT values.
+ *
+ * `THEME_CSS` gives `:root` the dark theme's values, and `:root` applies whatever
+ * class the body carries — so a page that puts `theme-light` on the body still
+ * renders dark. The README's screenshots are rendered in both themes, and the
+ * light pass was therefore dark chrome around light canvases; four images shipped
+ * that way. The values are the app's default light theme, and `--text-muted` and
+ * `--text-faint` are the ones this plugin's contrast work measured against.
+ */
+export const THEME_LIGHT_VARS = `
+body.theme-light {
+  --background-modifier-form-field: #ffffff;
+  --interactive-normal: #f2f3f5;
+  --interactive-hover: #e9e9e9;
+  --interactive-accent: #7b6cd9;
+  --interactive-accent-hover: #8a7ce6;
+  --background-primary: #ffffff;
+  --background-primary-alt: #fafafa;
+  --background-secondary: #f2f3f5;
+  --background-modifier-border: #e0e0e0;
+  --background-modifier-border-hover: #c9c9c9;
+  --background-modifier-hover: rgba(0, 0, 0, 0.04);
+  --input-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.1);
+  --text-normal: #2e3338;
+  --text-muted: #5c5c5c;
+  --text-faint: #999999;
+  --text-on-accent: #ffffff;
+  --text-warning: #b07b1e;
+}`;

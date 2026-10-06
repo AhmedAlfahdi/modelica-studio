@@ -81,7 +81,23 @@ console.log(`  ${data.example.name}: ${data.result.time.length} samples, ${data.
 /* ------------------------------------------------------------------ */
 
 const CSS = fs.readFileSync(path.join(ROOT, "styles.css"), "utf8");
-const APP_CSS = fs.existsSync("/tmp/app.css") ? fs.readFileSync("/tmp/app.css", "utf8") : "";
+/**
+ * The app's theme rules, from the repo.
+ *
+ * They used to be read from `/tmp/app.css` when it happened to exist, and fall back to
+ * EMPTY when it did not — silently. A page with no `--background-*` variables renders every
+ * panel transparent on white, so the "dark" images came out with light chrome and dark
+ * CANVASES (the canvas code carries its own colours and never reads a CSS variable): four
+ * images, half in one theme and half in the other, shipped to the README that way. This is
+ * the same stylesheet `test/helpers/theme-css.mjs` hands the rendered DOM tests, so what
+ * an image shows and what a test measures come from one source.
+ */
+const THEME = await import(path.join(ROOT, "test", "helpers", "theme-css.mjs"));
+const APP_CSS = THEME.THEME_CSS;
+if (!APP_CSS.trim() || !THEME.THEME_VARS.trim()) {
+  console.error("no theme stylesheet to render against: test/helpers/theme-css.mjs is empty");
+  process.exit(1);
+}
 const PLUGIN = bundle("scripts/readme-scenes.ts", path.join(TMP, "page.js"), "browser");
 const THEME_VARS = `
 .theme-light { --color-accent: hsl(254, 80%, 68%); --color-accent-2: hsl(254, 80%, 76%);
@@ -103,7 +119,9 @@ const page = path.join(TMP, "index.html");
 fs.writeFileSync(
   page,
   `<!doctype html><html><meta charset="utf-8">
+<style>${THEME.THEME_VARS}</style>
 <style>${APP_CSS}</style>
+<style>${THEME.THEME_LIGHT_VARS}</style>
 <style>${CSS}</style>
 <style>
   body { margin: 0; background: var(--background-primary); }
@@ -111,7 +129,7 @@ fs.writeFileSync(
   #diagram, #plot, #embed, #embedPlot { width: 900px; background: var(--background-primary); }
   #studio { width: 1040px; background: var(--background-primary); color: var(--text-normal); }
 </style>
-<body class="theme-light">
+<body class="theme-dark">
 <script>window.__ICON_SVGS__ = ${ICONS};</script>
 <div id="diagram" class="shot"></div>
 <div id="plot" class="shot"></div>
@@ -128,7 +146,9 @@ fs.writeFileSync(
 
 fs.writeFileSync(path.join(TMP, "app.css"), APP_CSS);
 fs.writeFileSync(path.join(TMP, "plugin.css"), CSS);
-fs.writeFileSync(path.join(TMP, "theme.css"), THEME_VARS);
+// Both palettes, light last: the dark values are on `:root` and the light ones on
+// `body.theme-light`, so the class decides which apply.
+fs.writeFileSync(path.join(TMP, "theme.css"), THEME.THEME_VARS + THEME.THEME_LIGHT_VARS);
 fs.writeFileSync(
   path.join(TMP, "scenes.json"),
   JSON.stringify({
@@ -199,6 +219,67 @@ app.whenReady().then(async () => {
     ["hover", "window.__sceneHover(" + DATA + ")"],
     ["sweep", "window.__sceneSweep(" + DATA + ")"],
   ];
+  /**
+   * Whether an image was rendered in the theme it is named for.
+   *
+   * The chrome takes its colours from the theme's variables and the canvases carry their own,
+   * so an image can be half one theme and half the other — which four of these were, because a
+   * page with no theme variables renders every panel transparent on white while the canvases
+   * stayed dark. Nothing about a fixed sleep catches that, and neither does an eye on a file
+   * listing: this measures the 80th-percentile luminance of a grid of regions and says which
+   * ones belong to the other theme.
+   */
+  const THEME_FLOOR = 90;
+  const THEME_CEIL = 170;
+  function wrongRegions(grid, theme) {
+    const out = [];
+    grid.forEach((row, ry) =>
+      row.forEach((value, rx) => {
+        if (theme === "light" ? value < THEME_FLOOR : value > THEME_CEIL) out.push(rx + "," + ry + "=" + value);
+      })
+    );
+    return out;
+  }
+  /** The grid for a NativeImage, sampled straight off the bitmap (BGRA). */
+  function bitmapGrid(image, cols, rows) {
+    const size = image.getSize();
+    const buffer = image.toBitmap();
+    const grid = [];
+    for (let ry = 0; ry < rows; ry++) {
+      const row = [];
+      for (let rx = 0; rx < cols; rx++) {
+        const x0 = Math.floor((rx * size.width) / cols), x1 = Math.floor(((rx + 1) * size.width) / cols);
+        const y0 = Math.floor((ry * size.height) / rows), y1 = Math.floor(((ry + 1) * size.height) / rows);
+        const values = [];
+        for (let y = y0; y < y1; y += 3) {
+          for (let x = x0; x < x1; x += 3) {
+            const i = (y * size.width + x) * 4;
+            values.push(0.2126 * buffer[i + 2] + 0.7152 * buffer[i + 1] + 0.0722 * buffer[i]);
+          }
+        }
+        values.sort((a, b) => a - b);
+        row.push(Math.round(values[Math.floor(values.length * 0.8)] ?? 0));
+      }
+      grid.push(row);
+    }
+    return grid;
+  }
+  /** Wait for a paint, then say whether the page is in the theme we asked for. */
+  async function settle() {
+    // The Help panel is a page of its own and does not carry the scenes bundle, so it has its
+    // own two-frame wait inlined. Either way this waits for a paint rather than for a duration.
+    await win.webContents.executeJavaScript(
+      "typeof window.__nextPaint === 'function' ? window.__nextPaint() : new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))"
+    );
+  }
+  let failed = 0;
+  function check(name, theme, wrong) {
+    if (wrong.length === 0) return true;
+    failed++;
+    console.log("WRONG THEME " + name + "-" + theme + ": " + wrong.length + " region(s) look like the other theme: " + wrong.slice(0, 8).join(" "));
+    return false;
+  }
+
   const DOM_SCENES = [
     // The whole studio first: it is the largest scene, and the window is sized to
     // each one before its capture, so the order only matters for what is left on
@@ -212,13 +293,24 @@ app.whenReady().then(async () => {
     await win.webContents.executeJavaScript("document.body.className = 'theme-" + theme + "'");
     await new Promise((r) => setTimeout(r, 200));
     for (const [name, call] of CANVAS) {
-      const out = JSON.parse(await win.webContents.executeJavaScript("(async () => JSON.stringify(await (" + call + ")))()"));
-      if (out.error) { console.log("SCENE FAILED " + name + ": " + out.error); continue; }
-      fs.writeFileSync(
-        path.join(${JSON.stringify(OUT)}, name + "-" + theme + ".png"),
-        Buffer.from(String(out.data).split(",")[1], "base64")
-      );
-      console.log("wrote " + name + "-" + theme + ".png  " + out.width + "x" + out.height);
+      let written = false;
+      for (let attempt = 1; attempt <= 2 && !written; attempt++) {
+        await settle();
+        const out = JSON.parse(await win.webContents.executeJavaScript("(async () => JSON.stringify(await (" + call + ")))()"));
+        if (out.error) { failed++; console.log("SCENE FAILED " + name + ": " + out.error); break; }
+        const grid = JSON.parse(await win.webContents.executeJavaScript(
+          "(async () => JSON.stringify(await window.__shotGrid(" + JSON.stringify(String(out.data)) + ", 6, 4)))()"
+        ));
+        const wrong = wrongRegions(grid, theme);
+        if (wrong.length && attempt === 1) { console.log("  " + name + "-" + theme + ": re-rendering, " + wrong.length + " region(s) in the other theme"); continue; }
+        if (!check(name, theme, wrong)) break;
+        fs.writeFileSync(
+          path.join(${JSON.stringify(OUT)}, name + "-" + theme + ".png"),
+          Buffer.from(String(out.data).split(",")[1], "base64")
+        );
+        console.log("wrote " + name + "-" + theme + ".png  " + out.width + "x" + out.height);
+        written = true;
+      }
     }
   }
 
@@ -241,12 +333,12 @@ app.whenReady().then(async () => {
           "stage.style.background = 'var(--background-primary)';" +
           "return 'ok'; } catch (e) { return String(e); } })()"
       );
-      if (staged !== "ok") { console.log("SCENE STAGE FAILED " + name + ": " + staged); continue; }
+      if (staged !== "ok") { failed++; console.log("SCENE STAGE FAILED " + name + ": " + staged); continue; }
       await new Promise((r) => setTimeout(r, 200));
       const rect = JSON.parse(await win.webContents.executeJavaScript(
         "(async () => { try { return JSON.stringify(await (" + call + ")); } catch (e) { return JSON.stringify({ error: String(e && e.stack || e) }); } })()"
       ));
-      if (rect.error) { console.log("SCENE FAILED " + name + ": " + rect.error); continue; }
+      if (rect.error) { failed++; console.log("SCENE FAILED " + name + ": " + rect.error); continue; }
       await new Promise((r) => setTimeout(r, 400));
       // Inspect the LIVE element rather than calling the scene again, which would
       // rebuild it and measure an empty one.
@@ -266,19 +358,27 @@ app.whenReady().then(async () => {
       let image;
       try {
         win.setContentSize(Math.ceil(rect.width), Math.ceil(rect.height) + 6);
-        await new Promise((r) => setTimeout(r, 350));
+        // A paint, not a duration: the scene has just been rebuilt, and the canvases inside it
+        // were drawn with whatever theme was current when their own code ran.
+        await new Promise((r) => setTimeout(r, 120));
+        await settle();
+        await new Promise((r) => setTimeout(r, 120));
         image = await win.webContents.capturePage();
         // The whole window comes back, so it is cropped to the scene's own box.
         image = await cropToScene(win, image, rect);
       } catch (err) {
+        failed++;
         console.log("SCENE CAPTURE FAILED " + name + "-" + theme + ": " + err);
         continue;
       }
       const png = image.toPNG();
       if (png.length < 12000) {
+        failed++;
         console.log("SCENE BLANK " + name + "-" + theme + ": only " + png.length + " bytes");
         continue;
       }
+      const wrong = wrongRegions(bitmapGrid(image, 6, 4), theme);
+      if (!check(name, theme, wrong)) continue;
       fs.writeFileSync(path.join(${JSON.stringify(OUT)}, name + "-" + theme + ".png"), png);
       console.log("wrote " + name + "-" + theme + ".png  " + image.getSize().width + "x" + image.getSize().height + "  " + Math.round(png.length / 1024) + " KB");
     }
@@ -298,6 +398,7 @@ app.whenReady().then(async () => {
   } catch (err) {
     helpScene = { error: String(err) };
   }
+  if (helpScene.error) { failed++; console.log("SCENE FAILED help: " + helpScene.error); }
   if (helpScene.error) {
     console.log("SCENE FAILED help: " + helpScene.error);
   } else {
@@ -309,7 +410,7 @@ app.whenReady().then(async () => {
         "<style>" + read("app.css") + "</style>" +
         "<style>" + read("plugin.css") + "</style>" +
         "<style>" + read("theme.css") + " body { margin: 0; padding: 16px; width: 620px; background: var(--background-primary); color: var(--text-normal); }</style>" +
-        '<body class="theme-light">' +
+        '<body class="theme-dark">' +
         "<script>window.__ICON_SVGS__ = " + ${JSON.stringify(ICONS)} + ";</script>" +
         helpScene.html +
         "</body></html>"
@@ -330,7 +431,7 @@ app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 300));
     for (const theme of ["light", "dark"]) {
       await win.webContents.executeJavaScript("document.body.className = 'theme-" + theme + "'");
-      await new Promise((r) => setTimeout(r, 300));
+      await settle();
       // Awaited: cropToScene became async when the ratio handling moved into it, and
       // the call here was left without one -- so every run of this script ended with
       // "image.toPNG is not a function" and a non-zero exit, after the Help images had
@@ -339,14 +440,22 @@ app.whenReady().then(async () => {
       const image = await cropToScene(win, await win.webContents.capturePage(), rect);
       const png = image.toPNG();
       if (png.length < 12000) {
+        failed++;
         console.log("SCENE BLANK help-" + theme + ": only " + png.length + " bytes");
         continue;
       }
+      const helpWrong = wrongRegions(bitmapGrid(image, 6, 4), theme);
+      if (!check("help", theme, helpWrong)) continue;
       fs.writeFileSync(path.join(${JSON.stringify(OUT)}, "help-" + theme + ".png"), png);
       console.log("wrote help-" + theme + ".png  " + image.getSize().width + "x" + image.getSize().height + "  " + Math.round(png.length / 1024) + " KB");
     }
   }
 
+  if (failed > 0) {
+    console.log("FAILED: " + failed + " image(s) rendered in the wrong theme and were NOT written");
+    app.exit(1);
+    return;
+  }
   app.exit(0);
 });
 `
