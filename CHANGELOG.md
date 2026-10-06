@@ -9,6 +9,21 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ### Changed
 
+- **Every unit is a control beside its value, not text in the label.** Reported from a screenshot
+  of a HeatCapacitor: `C J/K` printed the unit in the label, while every field whose unit had
+  alternatives put it in a box on the right — so one panel looked like two, and the ones without
+  a dropdown looked like they were missing something. A unit with no alternatives is drawn as the
+  same box now: same border, same padding, exactly as tall as the input beside it, muted, and
+  nothing to open because there is no list. The label carries the name and nothing else.
+- **An initial value shows its unit, and the value in it.** `T (initial)` showed a bare number
+  while the trace list and the cursor drew the same quantity in the type's own unit: the field
+  looked its unit up under its own name, `T.start`, which no compiler reports — the unit belongs
+  to `T`. The lookup uses the variable now, so an initial value reads `20` in `°C` on a
+  `ThermodynamicTemperature` and a display unit chosen there is written as `T.displayUnit`,
+  never `T.start.displayUnit`, which no compiler resolves.
+
+### Changed
+
 - **The unit picker no longer carries a tooltip.** It said "Model unit: Ω", which is the first
   entry of the list the control opens — and a tooltip over an open dropdown covers the field the
   reader is choosing for.

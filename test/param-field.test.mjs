@@ -32,6 +32,9 @@ const HEAD = [
   "    aliasOf: 'Real', aliasModifiers: { unit: Q('V') } },",
   "  'Modelica.Units.SI.Temperature': { qualifiedName: 'Modelica.Units.SI.Temperature',",
   "    aliasOf: 'Real', aliasModifiers: { unit: Q('K'), displayUnit: Q('degC') } },",
+  "  'Modelica.Units.SI.LinearTemperatureCoefficient': {",
+  "    qualifiedName: 'Modelica.Units.SI.LinearTemperatureCoefficient',",
+  "    aliasOf: 'Real', aliasModifiers: { unit: Q('1/K') } },",
   "};",
   "",
   "/** A component with a unit-bearing parameter, mounted at the rail's own width. */",
@@ -42,6 +45,7 @@ const HEAD = [
   "      { name: 'offset', type: 'Modelica.Units.SI.Voltage', defaultValue: '0' },",
   "      { name: 'V', type: 'Modelica.Units.SI.Voltage', defaultValue: '1' },",
   "      { name: 'useSupport', type: 'Boolean', defaultValue: 'false' },",
+  "      { name: 'alpha', type: 'Modelica.Units.SI.LinearTemperatureCoefficient', defaultValue: '0' },",
   "    ],",
   "  };",
   "  const inst = { id: 'source', className: def.name,",
@@ -96,6 +100,26 @@ const HEAD = [
   "    'pickerH=' + Math.round(picker.height),",
   "  ].join(' ');",
   "});",
+  "window.test('a unit with no alternatives is the same box, without a dropdown', () => {",
+  "  // Reported from a screenshot of a HeatCapacitor: `C J/K` printed the unit in the label while",
+  "  // every field whose unit had alternatives put it in a box on the right, so one panel looked",
+  "  // like two. The unit is a control either way; this one just has nothing to open.",
+  "  const width = 380;",
+  "  const own = mount(UNITS, width).host;",
+  "  const field = Array.from(own.querySelectorAll('.modelica-studio-field'))",
+  "    .find((f) => f.querySelector('label').textContent.startsWith('alpha'));",
+  "  const chip = field.querySelector('.modelica-studio-param-unit.is-fixed');",
+  "  const pickerField = Array.from(own.querySelectorAll('.modelica-studio-field'))",
+  "    .find((f) => f.querySelector('label').textContent.startsWith('V'));",
+  "  const picker = pickerField.querySelector('select.modelica-studio-param-unit');",
+  "  const input = field.querySelector('input');",
+  "  return 'inLabel=' + (field.querySelector('label .modelica-studio-field-unit') !== null)",
+  "    + ' chip=' + (chip ? chip.textContent : 'NONE')",
+  "    + ' tag=' + (chip ? chip.tagName : '-')",
+  "    + ' chipH=' + (chip ? Math.round(chip.getBoundingClientRect().height) : 0)",
+  "    + ' pickerH=' + Math.round(picker.getBoundingClientRect().height)",
+  "    + ' inputH=' + Math.round(input.getBoundingClientRect().height);",
+  "});",
   "window.test('with no run yet, the unit still comes from the type chain', () => {",
   "  // The reported complaint: open a component and there is no unit picker, because the unit",
   "  // came from the compiler's model description, which only a BUILD writes, and no run had",
@@ -106,7 +130,7 @@ const HEAD = [
   "    const span = f.querySelector('.modelica-studio-field-unit');",
   "    return f.querySelector('label').textContent + '='",
   "      + (picker ? picker.options[0].value + '/' + picker.value",
-  "                 : (span ? 'label:' + span.textContent : 'nothing'));",
+  "                 : (span ? 'chip:' + span.textContent : 'nothing'));",
   "  }).join(' ');",
   "});",
   "window.test('a field with no alternatives is unchanged', () => {",
@@ -140,8 +164,13 @@ test("a parameter field with a unit picker keeps its shape", async () => {
     "a control height, not the 120px a flex basis becomes in a column, with the picker on the same row"
   );
   assert.equal(
+    d["a unit with no alternatives is the same box, without a dropdown"],
+    "inLabel=false chip=1/K tag=SPAN chipH=30 pickerH=30 inputH=30",
+    "the unit is a box beside the value, the same height as the picker and the input"
+  );
+  assert.equal(
     d["with no run yet, the unit still comes from the type chain"],
-    "Instance name=nothing offset=V/V V=V/V useSupport=nothing",
+    "Instance name=nothing offset=V/V V=V/V useSupport=nothing alpha=chip:1/K",
     "no model description, and the picker is still there from the library's type chain"
   );
   assert.equal(

@@ -2517,6 +2517,10 @@ export class ModelicaStudioView extends ItemView {
     const label = p.isStart
       ? `${p.name.replace(/\.start$/, "")} (initial)`
       : p.name;
+    // `T.start` is the initial value OF `T`: its unit is `T`'s, and so is its display unit.
+    // Looking either up under the field's own name missed both, which is why an initial value
+    // showed no unit while every other field had one.
+    const member = p.isStart ? p.name.replace(/\.start$/, "") : p.name;
     const el = row.createEl("label", { text: label });
     // The unit rides beside the name as runs, so an exponent is a real one: `m·s⁻¹` in a
     // 12px label was the same hairline glyph the trace rows had.
@@ -2530,19 +2534,16 @@ export class ModelicaStudioView extends ItemView {
     // And a third, for the time before the first simulation: the library's own type chain. The
     // description is written by a build, so until one has happened the compiler has said nothing
     // — and a field with no unit and no picker reads as the feature having gone away.
-    const declared = this.result?.declaredUnits?.[`${inst.id}.${p.name}`];
+    const declared = this.result?.declaredUnits?.[`${inst.id}.${member}`];
     const typed = this.unitsOfDeclaredType(p.type);
     const unit = p.unit?.trim() || declared?.trim() || typed.unit?.trim() || "";
     // The alternatives, decided here rather than at the picker below, because whether there IS
-    // a picker decides whether the label needs to carry the unit as well.
+    // a picker decides what the unit is rendered in.
     const allChoices = unitChoices(unit, unit ? formatUnit(unit) : "");
-    // With a picker the unit is ON the picker, and printing it here as well reads `V V` for a
-    // parameter named `V` — which is what `Modelica.Electrical.Analog.Sources.StepVoltage`
-    // declares. Without one, the label is the only place it can appear.
-    if (unit && allChoices.length <= 1) {
-      el.createSpan({ text: " " });
-      renderUnit(el, unit, "modelica-studio-field-unit");
-    }
+    // The unit is a CONTROL beside the value, never text in the label. Reported from a
+    // screenshot of a HeatCapacitor: `C J/K` printed the unit in the label while every field
+    // whose unit had alternatives put it in a box on the right, so one panel looked like two.
+    if (unit) row.classList.add("has-unit-control");
     if (p.comment) el.setAttribute("aria-label", p.comment);
 
     const stored = inst.params[p.name];
@@ -2589,12 +2590,8 @@ export class ModelicaStudioView extends ItemView {
     const choices = allChoices;
     // What the MODEL says, not a preference of ours: `p_ambient.displayUnit` is a modifier in
     // the declaration, so it is already in `inst.params` and comes back with the file.
-    // `T.start` is the initial value OF `T`: its unit, and its display unit, are `T`'s. Looking
-    // the member up under the field's own name would miss both, and — the reason this line
-    // exists — WRITING one would put `T.start.displayUnit` in the declaration, which no
-    // compiler resolves. No start parameter carries a unit today, so the picker never appears
-    // there; this is what keeps that from becoming a wrong modifier the day one does.
-    const member = p.isStart ? p.name.replace(/\.start$/, "") : p.name;
+    // Writing a display unit uses the same member: `T.displayUnit`, never
+    // `T.start.displayUnit`, which no compiler resolves.
     // The description's answer first, then the type's own `displayUnit` — MSL's
     // `ThermodynamicTemperature` carries `displayUnit="degC"`, so a field can open in Celsius
     // before the first run, exactly as it does afterwards.
@@ -2636,6 +2633,13 @@ export class ModelicaStudioView extends ItemView {
       else commit(text);
     };
     input.addEventListener("change", commitTyped);
+    if (unit && !(chosen && choices.length > 1)) {
+      // A unit with nothing to choose, drawn as the same control: same box, same height, muted,
+      // with the unit typeset the same way so an exponent is still a real one. Nothing opens,
+      // because there is no list — it is here so that a panel reads as one panel.
+      const chip = row.createSpan({ cls: "modelica-studio-param-unit is-fixed" });
+      renderUnit(chip, unit, "modelica-studio-field-unit", false);
+    }
     if (chosen && choices.length > 1) {
       // A class rather than `:has()`, which the plugin review rejects: a selector that depends
       // on a descendant invalidates broadly.

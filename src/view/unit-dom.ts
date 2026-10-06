@@ -15,7 +15,19 @@
 import { unitRuns } from "./units";
 
 /** Append `unit` to `parent` as runs, and return the element that holds them. */
-export function renderUnit(parent: HTMLElement, unit: string, cls: string): HTMLElement {
+export function renderUnit(
+  parent: HTMLElement,
+  unit: string,
+  cls: string,
+  /**
+   * Whether to carry the flat spelling as a tooltip.
+   *
+   * True where the unit is typeset and the flat form is the copyable one — the trace list.
+   * False in the inspector, where a native tooltip drawn over the field it belongs to was
+   * reported as noise: everything it said is on screen already.
+   */
+  withTitle = true
+): HTMLElement {
   const span = parent.createSpan({ cls });
   for (const run of unitRuns(unit)) {
     if (run.kind === "sup") {
@@ -30,8 +42,9 @@ export function renderUnit(parent: HTMLElement, unit: string, cls: string): HTML
     .map((r) => r.text)
     .join("");
   if (flat) {
+    // `data-unit` stays either way: it is what the hover rule matches rows on.
     span.setAttribute("data-unit", flat);
-    span.setAttribute("title", `Unit: ${flat}`);
+    if (withTitle) span.setAttribute("title", `Unit: ${flat}`);
   }
   return span;
 }
