@@ -758,6 +758,29 @@ test("a unit is shown with the variable it belongs to, not with the model", asyn
       "    + ' exact=' + (rowFor('der(motor.phiMechanical)').getAttribute('title') || '').split('\\n').pop());",
       "window.test('the row also carries what the variable is', () =>",
       "  'title=' + JSON.stringify(rowFor('motor.friction.heatPort.T').getAttribute('title')));",
+      "window.test('a unit is legible even on a row that is not drawn', () => {",
+      "  // Reported from a screenshot: the units were there and unreadable. Two things were",
+      "  // multiplying -- the faint colour token, and a row opacity that dimmed the unit along",
+      "  // with the name. The dimming is about DRAWNESS, so it belongs to the box, the swatch and",
+      "  // the name; the unit is what a reader scans while deciding what to draw.",
+      "  const style = (el) => getComputedStyle(el);",
+      "  const unit = (row) => row.querySelector('.modelica-studio-series-unit');",
+      "  const name = (row) => row.querySelector('.modelica-studio-series-name');",
+      "  // Draw one, so both states are measured. The list is rebuilt on a tick, so BOTH rows are",
+      "  // looked up afterwards: a held reference is detached, and a detached element has no",
+      "  // computed style at all -- which reported as every value being empty.",
+      "  check(rowFor('motor.la.v'));",
+      "  const drawn = rowFor('motor.la.v');",
+      "  const undrawn = rowFor('motor.friction.phi');",
+      "  return 'drawn=' + drawn.classList.contains('is-shown')",
+      "    + ' undrawnRow=' + style(undrawn).opacity",
+      "    + ' undrawnName=' + style(name(undrawn)).opacity",
+      "    + ' undrawnUnit=' + style(unit(undrawn)).opacity",
+      "    + ' drawnName=' + style(name(drawn)).opacity",
+      "    + ' drawnUnit=' + style(unit(drawn)).opacity",
+      "    + ' sameUnitColour=' + (style(unit(undrawn)).color === style(unit(drawn)).color)",
+      "    + ' unitColour=' + style(unit(undrawn)).color;",
+      "});",
       "window.test('a variable with no unit gets no unit', () =>",
       "  'bare=' + (bareRow.querySelector('.modelica-studio-series-unit') ? 'SHOWN' : 'absent')",
       "    + ' name=' + bareRow.dataset.name);",
@@ -785,6 +808,11 @@ test("a unit is shown with the variable it belongs to, not with the model", asyn
     d["the row also carries what the variable is"],
     'title="motor.friction.heatPort.T\\nTemperature of the winding\\n[K]"',
     "the full name, the library's comment and the unit, for a reader who needs them"
+  );
+  assert.equal(
+    d["a unit is legible even on a row that is not drawn"],
+    "drawn=true undrawnRow=1 undrawnName=0.62 undrawnUnit=1 drawnName=1 drawnUnit=1 sameUnitColour=true unitColour=rgb(170, 170, 170)",
+    "the row dims through its parts, the unit is exempt, and it uses the muted token the theme defines"
   );
   assert.equal(
     d["a variable with no unit gets no unit"],

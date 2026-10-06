@@ -401,6 +401,17 @@
   /* A little more room at the top than the bottom: the derivative dot is drawn above
      the ascender, and a row that clips cannot show it. */
   padding: 3px 5px 2px 0;
+}
+
+/* A row that is not drawn is dimmed — except its UNIT.
+   The dimming says "this variable is not on the plot", which is a statement about the box,
+   the swatch and the name. The unit is the reference a reader scans WHILE deciding what to
+   draw, so it is the one thing that must not fade on the rows not picked yet. It also
+   multiplied: the faint token at 0.62 opacity measured 1.8:1 against the background, which
+   is not "quiet", it is absent.
+   Written as every child EXCEPT the unit, so a column added to a row later dims with the
+   rest rather than needing to be remembered here. */
+.modelica-studio-series-row > :not(.modelica-studio-series-unit) {
   opacity: 0.62;
 }
 
@@ -1355,7 +1366,7 @@ body.modelica-studio-resizing .workspace-leaf-content canvas {
   font-size: 11px;
 }
 
-.modelica-studio-series-row.is-shown {
+.modelica-studio-series-row.is-shown > :not(.modelica-studio-series-unit) {
   opacity: 1;
 }
 
@@ -1505,7 +1516,11 @@ body.modelica-studio-resizing .workspace-leaf-content canvas {
   flex: 0 0 auto;
   max-width: 46%;
   overflow: hidden;
-  color: var(--text-faint);
+  /* `--text-muted`, not `--text-faint`: the faint token measures 2.9:1 against the
+     background on a drawn row, and the units were being read as decoration. This is the
+     token the component headings already use, so a unit still reads as secondary — smaller,
+     quieter, right-aligned — without being a guess. */
+  color: var(--text-muted);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -7,6 +7,17 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A unit is legible on a row that is not drawn.** The unit column said what the numbers were
+  in — `m³/s`, `Pa`, `kg/s` — in the faintest colour the theme has, and the "not drawn" dimming
+  was applied to the whole row, unit included. The two multiplied: 1.8:1 against the
+  background, which is not quiet, it is absent. The unit now uses the muted token (6.7:1 in the
+  light theme, 7.2:1 in dark) and the dimming stops at it, because drawnness is a statement
+  about the box, the swatch and the name. It is the one column that has to stay readable on the
+  rows nobody has picked yet: it is what a reader scans while deciding what to draw. Every
+  child of a row except the unit is dimmed, so a column added later dims with the rest.
+
 ## [0.5.0] — 2026-10-06
 
 ### Added
