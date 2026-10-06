@@ -1930,6 +1930,11 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
     "    ? { time: [], series: [], compileMs: 0, simulateMs: 0, reusedBinary: true, warnings: [], declaredUnits }",
     "    : null;",
     "  const host = document.createElement('div');",
+    "  // In the document, so it has layout: a detached element reports every rect as 0, and the",
+    "  // geometry of a field is one of the things worth asserting. At the rail's own width, which",
+    "  // is where a field is read — an unconstrained host is the width of the window.",
+    "  host.style.width = '380px';",
+    "  document.body.appendChild(host);",
     "  view.renderComponentTab(host, inst, ['r1']);",
     "  return host;",
     "};",
@@ -1952,10 +1957,12 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
     "  return calls.join(',') || 'NOTHING';",
     "});",
     "window.test('a number is still a text field', () => controlFor(host, 'R')?.tagName ?? 'MISSING');",
-    "window.test('and keeps its unit in the label', () => {",
+    "window.test('and its unit is the symbol, on the picker beside it', () => {",
     "  const field = Array.from(host.querySelectorAll('.modelica-studio-field'))",
     "    .find((f) => f.querySelector('label').textContent.startsWith('R'));",
-    "  return field.querySelector('label').textContent;",
+    "  const picker = field.querySelector('select.modelica-studio-param-unit');",
+    "  return 'label=' + field.querySelector('label').textContent",
+    "    + ' unit=' + (picker ? picker.options[0].value : 'NO PICKER');",
     "});",
     // A model may legitimately bind a Boolean to an expression. A select would
     // show that as "default" and drop it on the next change, so it stays typed.
@@ -1964,6 +1971,14 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
     "    .find((f) => f.querySelector('label').textContent.startsWith('p_ambient'));",
     "  const picker = field?.querySelector('select.modelica-studio-param-unit');",
     "  return picker ? Array.from(picker.options).map((o) => o.value).join(',') : 'NO PICKER';",
+    "});",
+    "window.test('and the label does not repeat the unit the picker shows', () => {",
+    "  const field = Array.from(host.querySelectorAll('.modelica-studio-field.has-unit-picker'))[0];",
+    "  const picker = field.querySelector('select');",
+    "  return 'label=' + JSON.stringify(field.querySelector('label').textContent)",
+    "    + ' unitInLabel=' + (field.querySelector('.modelica-studio-field-unit') !== null)",
+    "    + ' first=' + picker.options[0].value",
+    "    + ' title=' + picker.getAttribute('title');",
     "});",
     "window.test('choosing another unit shows the value in it, and stores nothing different', () => {",
     "  calls.length = 0;",
@@ -2020,16 +2035,25 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
   assert.equal(d["a number is still a text field"], "INPUT", "a Real stays a text field");
   // No parentheses since the unit is drawn as runs: it is smaller, muted and its own element,
   // so the styling separates it from the name — and the symbol still replaces `Ohm`.
-  assert.match(d["and keeps its unit in the label"], /R Ω/, "units still shown, as a symbol");
+  assert.equal(
+    d["and its unit is the symbol, on the picker beside it"],
+    "label=R unit=Ω",
+    "`Ohm` reaches the reader as the symbol a reader writes, and the label does not repeat it"
+  );
   assert.match(
     d["a parameter whose unit comes from its type shows it too"],
-    /p_ambient Pa$/,
-    "the unit the compiler resolved for a type-declared parameter, beside its input"
+    /p_ambient$/,
+    "the unit the compiler resolved is on the picker beside the input, not repeated in the label"
   );
   assert.equal(
     d["a field with alternatives offers them, the model unit first"],
     "Pa,bar,mbar,hPa,kPa,MPa",
     "the model's own unit first, then the alternatives a reader switches between"
+  );
+  assert.equal(
+    d["and the label does not repeat the unit the picker shows"],
+    'label="R" unitInLabel=false first=Ω title=Model unit: Ω',
+    "the unit is on the picker as the symbol a reader writes, and the title says what the model uses"
   );
   assert.equal(
     d["choosing another unit shows the value in it, and stores nothing different"],

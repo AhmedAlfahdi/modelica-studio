@@ -62,6 +62,17 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ### Fixed
 
+- **The unit picker's field was a 120px block with the picker underneath it.** A parameter field
+  is a COLUMN flex container, and the picker's first stylesheet set `flex: 1 1 120px` on the
+  input — a width in a row, a *height* in a column — so every field with alternatives became a
+  tall empty box with the unit below it. The field is a row now, the label takes its own line at
+  any width the rail is dragged to, and the picker is boxed like the input it stands beside.
+  The label no longer repeats the unit either, which read `V V` for a parameter named `V` — the
+  unit is on the picker, and the picker's tooltip says what the model itself uses.
+  A layout needs a stylesheet to be a layout: the geometry is now asserted in a harness that
+  loads the plugin's own CSS, because the panel tests that read values back load none and
+  measured an unstyled page.
+
 - **The derivative dot in the cursor readout sat a third of an em too high.** The readout drew
   its rows on a `top` text baseline while the dot is placed relative to the baseline a letter
   actually sits on — measured from the top of a line box instead, it floated above the word

@@ -921,24 +921,39 @@ body.modelica-studio-resizing .workspace-leaf-content canvas {
 .modelica-studio-param-unit {
   flex: 0 0 auto;
   width: auto;
-  min-width: 66px;
-  font-size: 11px;
+  min-width: 62px;
+  /* Boxed like the input it stands beside, at the input's padding: left to the platform's own
+     appearance it stood a few pixels taller than the field and the pair read as two controls
+     rather than one. */
+  padding: 3px 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
   color: var(--text-muted);
+  font-size: 12px;
 }
 
+/* A field with a unit picker: the label on its own line, then the value and its unit side by
+   side. `row` because the field is a COLUMN otherwise, and the flex basis below would then be a
+   height — which is what a first version of this did: an input 120px tall with the picker
+   underneath it. The basis is `auto` and the input grows, so the picker keeps its own width. */
 .modelica-studio-field.has-unit-picker {
-  display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 4px 6px;
 }
 
+/* No shrink: with `flex: 1 1 100%` the label shrank instead of wrapping, so in a wide pane it
+   shared the line with the input and the field looked different from every other field
+   depending on how far the rail had been dragged. Basis 100% and no shrink puts it on its own
+   line at any width. */
 .modelica-studio-field.has-unit-picker label {
-  flex: 1 1 100%;
+  flex: 1 0 100%;
 }
 
 .modelica-studio-field.has-unit-picker input {
-  flex: 1 1 120px;
+  flex: 1 1 auto;
   width: auto;
   min-width: 0;
 }

@@ -2518,7 +2518,13 @@ export class ModelicaStudioView extends ItemView {
     // so the model description is where it is read from, keyed by the instance's own path.
     const declared = this.result?.declaredUnits?.[`${inst.id}.${p.name}`];
     const unit = p.unit?.trim() || declared?.trim() || "";
-    if (unit) {
+    // The alternatives, decided here rather than at the picker below, because whether there IS
+    // a picker decides whether the label needs to carry the unit as well.
+    const allChoices = unitChoices(unit, unit ? formatUnit(unit) : "");
+    // With a picker the unit is ON the picker, and printing it here as well reads `V V` for a
+    // parameter named `V` — which is what `Modelica.Electrical.Analog.Sources.StepVoltage`
+    // declares. Without one, the label is the only place it can appear.
+    if (unit && allChoices.length <= 1) {
       el.createSpan({ text: " " });
       renderUnit(el, unit, "modelica-studio-field-unit");
     }
@@ -2565,7 +2571,7 @@ export class ModelicaStudioView extends ItemView {
     // parameter; what the reader TYPES is converted back on commit.
     // The field's own unit is offered under the pretty spelling (`m³/s`, not `m3/s`), which is
     // what a dropdown label can show: a `<sup>` is not available in an `<option>`.
-    const choices = unitChoices(unit, unit ? formatUnit(unit) : "");
+    const choices = allChoices;
     const chosenKey = `${this.plugin.model.name}::${inst.id}.${p.name}`;
     // `undefined` when the parameter has no unit at all — a Boolean, a `stateSelect`, anything
     // the compiler described with no unit. There is nothing to convert then, and a field that
@@ -2606,6 +2612,10 @@ export class ModelicaStudioView extends ItemView {
       row.addClass("has-unit-picker");
       const picker = row.createEl("select", { cls: "modelica-studio-param-unit" });
       picker.setAttribute("aria-label", `Unit for ${label}`);
+      // The model's own unit, where the picker's own value cannot say it: the reader may be
+      // looking at the field in bar with the model in pascals.
+      // The reader-facing spelling, as the picker's own first option shows it.
+      picker.setAttribute("title", `Model unit: ${unit ? formatUnit(unit) : p.name}`);
       for (const choice of choices) {
         picker.createEl("option", { attr: { value: choice.symbol }, text: choice.symbol });
       }
