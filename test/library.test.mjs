@@ -354,7 +354,15 @@ test("the index cache version reflects the classes the index holds", () => {
   // `"DynamicSelect(...)"` where a graphic's extent belongs, so the tank still drew
   // empty and still labelled itself with the annotation's source. The parser was
   // right and the screen was wrong, which is what this test is for.
-  assert.equal(INDEX_CACHE_VERSION, 7);
+  //
+  // 8 is the same mistake again, in a new field: a short class definition now keeps
+  // its target and its modifiers (`aliasOf`, `aliasModifiers`), which is where a
+  // unit lives — `type Voltage = Real(unit="V")` — and version 7 caches have the
+  // classes without those two fields. The unit resolver then walked nothing, so the
+  // inspector showed no unit and no unit control until a simulation supplied one,
+  // and it looked like the resolver was broken rather than the cache. Measured on a
+  // real version 7 cache: even `Modelica.Units.SI.Time` resolved to no unit.
+  assert.equal(INDEX_CACHE_VERSION, 8);
 });
 
 test("a package named Utilities still contributes components", () => {

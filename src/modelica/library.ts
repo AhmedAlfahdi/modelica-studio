@@ -44,8 +44,17 @@ interface ConnectorInfo {
  *    label, so an index built by the previous parser draws an empty tank and the
  *    annotation's own source on its label. The parser fix alone changed nothing on
  *    screen: the app reads the cache, not the parser.
+ *
+ * 8: a short class definition keeps its target and modifiers (`aliasOf`,
+ *    `aliasModifiers`), which is where a unit lives: `type Voltage = Real(unit="V")`.
+ *    Version 7 caches have the classes but not those two fields, so the unit a
+ *    parameter's TYPE declares resolved to nothing — the panel showed no unit and no
+ *    unit control until a simulation's description supplied one, and nothing about
+ *    the parser or the resolver looked wrong. ANOTHER TIME THIS HAPPENS: any field
+ *    added to `ParsedClass` that a reader depends on needs this number bumped, or
+ *    the fix ships to a cache that does not have it.
  */
-export const INDEX_CACHE_VERSION = 7;
+export const INDEX_CACHE_VERSION = 8;
 
 /**
  * Whether a class belongs to the library's own scaffolding rather than to the

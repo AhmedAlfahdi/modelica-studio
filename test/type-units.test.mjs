@@ -120,6 +120,38 @@ test("a real component's parameter types resolve, import alias and all", { skip:
   assert.equal(damper["w_rel.start"], "rad/s");
 });
 
+test("the units survive the index cache — the round trip the app actually does", { skip: !MSL }, async () => {
+  // The bug this exists for, and it was invisible to every test above: the app does not parse
+  // the library on every launch, it reads a cached index. The cache serialises the whole parsed
+  // class, so a field added to `ParsedClass` reaches a cache written by the OLD parser only if
+  // `INDEX_CACHE_VERSION` is bumped — and the alias fields a unit lives in were added without
+  // it. Every field then showed no unit at all, while a freshly parsed index (which is what
+  // these tests built) resolved everything: measured on the user's own cache, even
+  // `Modelica.Units.SI.Time` came back with no unit.
+  const { LibraryIndex, loadLibraryIndex } = await import(
+    path.join(buildLibs("type-units-cache", ["src/modelica/library.ts"]), "library.js")
+  );
+  const roots = MSL_ROOTS.filter((r) => fs.existsSync(r));
+  const loaded = loadLibraryIndex({ roots, cacheFile: path.join(os.tmpdir(), `type-units-rt-${process.pid}.json`) });
+  const resolve = (n, from) => loaded.index.resolveTypeName(n, from);
+  assert.equal(unitsOfType("SI.Inertia", resolve).unit, "kg.m2", "a fresh index resolves");
+
+  // Through the cache and back, which is what a second launch sees.
+  const restored = LibraryIndex.fromJSON(loaded.index.toJSON());
+  assert.ok(restored, "the cache is accepted at this version");
+  const fromCache = (n, from) => restored.resolveTypeName(n, from);
+  assert.equal(unitsOfType("SI.Inertia", fromCache).unit, "kg.m2", "and so does the cached one");
+  assert.equal(unitsOfType("SI.Angle", fromCache).unit, "rad");
+  assert.equal(unitsOfType("Modelica.Units.SI.Time", fromCache).unit, "s");
+
+  // And a cache from the version that lacked the fields is REJECTED, so the app rebuilds it
+  // rather than resolving nothing for as long as the file survives. This is the mechanism the
+  // bump relies on; if it ever stops working, the units silently disappear on every machine
+  // that has an older cache.
+  const stale = { ...loaded.index.toJSON(), version: 7 };
+  assert.equal(LibraryIndex.fromJSON(stale), null, "an older cache is refused, not trusted");
+});
+
 test("and nothing is claimed for a type that states no unit", { skip: !MSL }, () => {
   const lookup = mslLookup();
   assert.deepEqual(unitsOfType("Real", lookup), {}, "a builtin states no unit");

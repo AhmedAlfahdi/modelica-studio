@@ -9,6 +9,21 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ### Fixed
 
+- **The unit controls now appear at all, on every machine that had opened the plugin before.**
+  The library is not re-parsed on every launch; it is read from a cached index, and that cache is
+  keyed by a version number that has to be bumped whenever the PARSED CLASSES change shape. A
+  short class definition had just begun keeping its target and modifiers — `type Voltage =
+  Real(unit="V")`, which is where a unit lives — and the version was not bumped, so every
+  existing cache held the classes without those fields. The unit resolver then walked nothing:
+  no unit, no unit control, on every parameter, while a freshly parsed index resolved all of
+  them. Measured against a real version 7 cache: even `Modelica.Units.SI.Time` came back with no
+  unit; rebuilt, `Inertia.J` is `kg.m2`, `SpringDamper.c` is `N.m/rad`, `Fixed.phi0` is `rad`.
+  The version guard in `test/library.test.mjs` exists for exactly this and caught it; the cache
+  round trip is now asserted too, so a resolver test can no longer pass while the app reads an
+  index that cannot answer.
+
+### Fixed
+
 - **A parameter's unit is found when the model writes it the way MSL does.** `parameter SI.Inertia
   J` — an import alias, which is how the standard library spells nearly every unit — resolved to
   nothing, so a rotational inertia showed no unit at all while a voltage showed one. Two things
