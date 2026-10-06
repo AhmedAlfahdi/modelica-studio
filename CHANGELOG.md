@@ -7,6 +7,8 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-10-06
+
 ### Fixed
 
 - **A unit picker no longer needs a simulation to appear.** The unit beside a parameter comes
