@@ -1101,3 +1101,46 @@ test("a modifier with both members and a value is read into both", () => {
     p_ambient: "101325",
   });
 });
+
+test("a parameter named like its instance is a modifier, not a binding", () => {
+  // Found by an independent review of this work, with the compiler as the witness. A component
+  // declaration may not carry a binding at all — omc: "Component 'L' may not have a binding
+  // equation due to class specialization 'model'" — so the entry keyed by the instance name is
+  // a member modifier like any other. Taking it for a binding wrote
+  // `Inductor L(...) = 18`: the value moved out of the modifier list, and the file stopped
+  // compiling. It is also the shape the unit picker creates, `Resistor R(R(displayUnit=…)=100)`,
+  // so the feature could not have worked without this.
+  //
+  // Twenty-seven MSL 4.1.0 files have this shape (ChuaCircuit's `Inductor L(L=18)` and
+  // `Conductor G(G=0.565)` among them), and neither the suite nor I had noticed, because every
+  // fixture used a lowercase instance name with an uppercase parameter.
+  const cases = [
+    'Modelica.Electrical.Analog.Basic.Inductor L(L=18, i(start=0, fixed=true));',
+    'Modelica.Electrical.Analog.Basic.Conductor G(G=0.565);',
+    'Modelica.Electrical.Analog.Basic.Resistor R(R(displayUnit="kOhm") = 100);',
+    'Modelica.Electrical.Analog.Basic.Resistor R(R = 100);',
+    'Modelica.Blocks.Sources.Constant k(k=1);',
+    // And a VARIABLE's binding still is a binding: that is what it is for.
+    'Real x(start = 1, fixed = true) = 0;',
+    'Boolean b(fixed = true) = false;',
+  ];
+  for (const declaration of cases) {
+    const source = `model M\n  ${declaration}\nequation\n  der(x) = 1;\nend M;\n`;
+    const model = toDiagramModel(parseModelica(source)[0], () => undefined);
+    const item = [...model.components, ...model.variables][0];
+    assert.ok(item, `the declaration is not dropped: ${declaration}`);
+    const written = serializerMod
+      .serializeComponent(
+        item.className ?? item.type ?? "",
+        item.id,
+        item.placement ?? { extent: [-10, -10, 10, 10], rotation: 0, visible: true },
+        item.params,
+        item.prefixes ?? [],
+        item.suffixDims ?? "",
+        item.condition ?? ""
+      )
+      .replace(/ annotation\(.*$/, ";");
+    const flat = (text) => text.replace(/\s*=\s*/g, "=");
+    assert.equal(flat(written), flat(declaration), `written back: ${declaration}`);
+  }
+});

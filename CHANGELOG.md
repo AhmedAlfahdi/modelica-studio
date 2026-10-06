@@ -42,8 +42,8 @@ version is 0, a minor bump may include changes that are not backward compatible.
   the model's own unit first, so a field starts where the model is. Affine units carry an offset
   as well as a factor (0 °C is 273.15 K, and an implementation that only scaled would report
   0 K), which is also why this is offered for a field read one value at a time rather than as an
-  axis relabelling. The choice is a display preference kept per model and parameter; nothing is
-  written to the model, and the field still accepts an expression exactly as written.
+  axis relabelling. A value with its unit written after it (`2 bar`, `40 degC`) is converted as
+  written, and any other expression is still passed through exactly as typed.
 - **An exponent is drawn, not spelled.** A unit's exponent was a Unicode glyph — `m·s⁻¹` — which
   measures 5px of ink at 11px, and no stylesheet can grow it without growing the unit's own
   letters. The part of the unit that carries its meaning was the smallest thing on the row. It
@@ -72,6 +72,23 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ### Fixed
 
+- **A parameter named like its instance is written as a modifier, and a value alongside a
+  declaration is written as a binding.** `Inductor L(L=18)` — how MSL names an inductor's own
+  inductance, in 27 of its 4.1.0 files — was written as `Inductor L(...) = 18`: the value moved
+  out of the modifier list, and OpenModelica answered "Component 'L' may not have a binding
+  equation due to class specialization 'model'". The two shapes are the same data — a binding
+  and a member modifier both arrive keyed by the name — so the parser now records a binding
+  under `"="` as well, and the serializer reads that instead of guessing from the type name. The
+  guess is what an independent review of this work caught: it turned
+  `parameter Modelica.Units.SI.Density air_density = 1.225` into `air_density(air_density=1.225)`,
+  which is 3640 declarations in the standard library.
+- **The unit picker can no longer write a value in the wrong unit.** A field whose unit comes
+  from the declaration's TYPE — MSL's `ThermodynamicTemperature` carries `displayUnit="degC"` —
+  opens in Celsius with the model's own kelvin as its first option. Switching to K and typing
+  `320` wrote 320 °C, because the unit a commit was read in was captured when the field was
+  rendered; the reader saw `320` in a field marked K and the model held 593.15. Choosing a unit
+  a type already asks for still writes no modifier, but choosing any other now records it,
+  because removing the modifier would only let the type's answer come back.
 - **A parameter with a nested modifier and a value no longer makes its component disappear.**
   `p_ambient(displayUnit="bar") = 101325` — how MSL writes every parameter that carries `min`,
   `max`, `start` or `displayUnit` — left the `=` for the next modifier entry; the parser could

@@ -524,7 +524,6 @@ export interface DrawPlotOptions {
   /** Device pixel ratio. */
   dpr: number;
   /** Map a series name to an axis unit label. */
-  unitOf?: (name: string) => string | undefined;
   /** Surface behind the legend, matched to the plot background. */
   legendBackground?: string;
 }
@@ -698,8 +697,6 @@ export function drawPlot(
   ctx.beginPath();
   ctx.rect(lay.left, lay.top, lay.width, lay.height);
   ctx.clip();
-  const unitLabel = opts.unitOf?.(visible[0]?.name ?? "");
-  void unitLabel;
 
   /**
    * The traces to paint, widest first, so a broad one cannot bury a quiet one.

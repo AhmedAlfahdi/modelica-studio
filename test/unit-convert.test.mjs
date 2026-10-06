@@ -159,6 +159,16 @@ test("a bare number is read in the unit the field is showing", () => {
     "Pa",
     "and a unit written out is still obeyed, whatever the field is showing"
   );
+  // By the name the model uses as well as the symbol: `20 degC` is what a reader writes who has
+  // read the declaration, and verbatim would put `T = 20 degC` in the model, which omc rejects.
+  const kelvin = choicesFor("K", "K");
+  assert.equal(parseValue("20 degC", kelvin).choice.symbol, "°C", "found by the Modelica name");
+  assert.equal(parseValue("20 °C", kelvin).choice.symbol, "°C", "and by the symbol");
+  assert.equal(
+    toBase(parseValue("20 degC", kelvin).value, parseValue("20 degC", kelvin).choice),
+    293.15,
+    "20 °C is 293.15 K"
+  );
   assert.equal(
     toBase(parseValue("2 Pa", choices, bar).value, parseValue("2 Pa", choices, bar).choice),
     2,

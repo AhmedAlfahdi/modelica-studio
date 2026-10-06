@@ -242,7 +242,7 @@ export class EmbeddedDiagram {
   private result: SimResult | null = null;
 
   /** The last conversion, so a resize does not convert every sample again. */
-  private displayedCache: { result: SimResult; key: string; value: SimResult } | null = null;
+  private displayedCache: { result: SimResult; source: string; value: SimResult } | null = null;
 
   /**
    * The result as the model asks for it to be shown.
@@ -254,12 +254,16 @@ export class EmbeddedDiagram {
   private displayed(): SimResult {
     const result = this.result;
     if (!result) return { time: [], series: [], compileMs: 0, simulateMs: 0, reusedBinary: true, warnings: [] };
-    const units = displayUnitsFor(this.parse()?.components ?? [], result.displayUnits);
-    const key = JSON.stringify(units);
+    // The cache is consulted BEFORE the model is parsed. `displayed()` runs on every pointer
+    // move over the plot — the hover readout — and on every resize, so asking "did the display
+    // units change?" by lexing and parsing the whole block first would spend the cost the cache
+    // exists to avoid. The source string is the thing that decides it, and comparing a string
+    // is what a string is for.
     const cached = this.displayedCache;
-    if (cached && cached.result === result && cached.key === key) return cached.value;
+    if (cached && cached.result === result && cached.source === this.source) return cached.value;
+    const units = displayUnitsFor(this.parse()?.components ?? [], result.displayUnits);
     const value = asDisplayed(result, units);
-    this.displayedCache = { result, key, value };
+    this.displayedCache = { result, source: this.source, value };
     return value;
   }
   private styles: Record<string, SeriesStyle> = {};

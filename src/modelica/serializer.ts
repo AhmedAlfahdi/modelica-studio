@@ -331,15 +331,38 @@ export function serializeComponent(
   // This was the whole shape of a reported loss: the serializer wrote the broken
   // form, the AI fixed the TEXT, and the diagram kept the broken parameter -- so
   // the next save and the next restore put the fault back.
-  const binding = typeof params[id] === "string" ? params[id] : "";
+  //
+  // `"="` is the parser's mark for it, and the reason it exists: the id-keyed entry alone
+  // cannot say which of the two shapes it is. `Real x = 0` records `x` as a binding;
+  // `Inductor L(L=18)` records `L` as a modifier of the member `L` — and a component may not
+  // have a binding at all (OpenModelica: "Component 'L' may not have a binding equation due to
+  // class specialization 'model'"), so taking it for one wrote `Inductor L(...) = 18` and the
+  // file stopped building. Guessing by type name is worse: it turns
+  // `SI.Density air_density = 1.225` into `air_density(air_density=1.225)`, which is 3640
+  // declarations in MSL. The parser states which it is, and this reads the statement.
+  // Two signals, the parser's mark first and a declaration prefix second. The prefix is the
+  // fallback for a diagram that was STORED before the mark existed: a snapshot holding
+  // `{air_density: "1.225"}` with `prefixes: ["parameter"]` is a binding, because a parameter is
+  // not a schematic symbol and cannot be one. What remains genuinely ambiguous — a prefix-less
+  // dotted alias with a binding and no mark — can only come from such a snapshot, and the file
+  // itself is re-read on the next open, which marks it.
+  const declarationPrefix = (prefixes ?? []).some((pre) =>
+    ["parameter", "constant", "discrete", "input", "output"].includes(pre)
+  );
+  const writesBinding =
+    typeof params["="] === "string" ||
+    (declarationPrefix && typeof params[id] === "string");
+  const binding =
+    typeof params["="] === "string" ? params["="] : writesBinding ? params[id] : "";
 
   const nested = new Map<string, string[]>();
   const plain: Array<[string, string]> = [];
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === null || v === "") continue;
     if (isRedeclarePackage && (k === "Medium" || k === "redeclare" || k === "package")) continue;
-    // Handled below, as a binding.
-    if (k === id) continue;
+    // The mark itself, and the id-keyed copy of the SAME binding when there is one. With no
+    // mark, an id-keyed entry is a member modifier: that is `Inductor L(L=18)`.
+    if (k === "=" || (writesBinding && k === id)) continue;
     const dot = k.indexOf(".");
     if (dot < 0) {
       plain.push([k, v]);

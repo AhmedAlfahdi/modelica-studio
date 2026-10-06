@@ -167,9 +167,12 @@ export function fromBase(value: number, choice: UnitChoice): number {
 /**
  * A value as an editable field shows it.
  *
- * Ten significant digits and no trailing zeros: enough to round-trip a double through the
- * field without inventing digits the model never had, and short enough to read. `1e-6` is
- * left in exponent form, which Modelica's own syntax accepts.
+ * Ten significant digits and no trailing zeros: short enough to read, and more than any
+ * physical quantity in a model carries. It is a DISPLAY precision, not a faithful one —
+ * seventeen digits would be needed to round-trip a double, and this does not claim to. A model
+ * value with more digits than this is shown rounded; the stored value is untouched, and a
+ * reader who edits that field is editing the rounded text they can see. `1e-6` is left in
+ * exponent form, which Modelica's own syntax accepts.
  */
 export function formatValue(value: number): string {
   if (!Number.isFinite(value)) return "";
@@ -210,8 +213,11 @@ export function parseValue(
   if (!Number.isFinite(value)) return null;
   const written = (match[2] ?? "").trim();
   if (written === "") return { value, choice: shown };
-  // A named unit has to be one of the field's own, so `2 bananas` stays an expression.
-  const choice = choices.find((c) => c.symbol === written);
+  // A named unit has to be one of the field's own, so `2 bananas` stays an expression — and it
+  // is matched by the NAME the model uses as well as the symbol: `20 degC` is how a reader
+  // writes Celsius who has read the model, and committing that text verbatim put
+  // `T = 20 degC` in the declaration, which no compiler parses.
+  const choice = choiceFor(choices, written);
   return choice ? { value, choice } : null;
 }
 

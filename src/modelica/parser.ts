@@ -835,7 +835,19 @@ class Parser {
     if (this.at("=")) {
       this.next();
       binding = this.parseBindingExpression();
-      if (binding) modifiers[name] = binding;
+      if (binding) {
+        // BOTH keys, and the second one is load-bearing.
+        //
+        // The declared name is what `toParameterDef` and the library reader take a default from.
+        // `"="` is what says this is a BINDING rather than a member modifier — because the two
+        // are otherwise the same data: `SI.Density air_density = 1.225` records `air_density`,
+        // and `Inductor L(L=18)` ALSO records `L`, as a modifier of the member `L`. Handed only
+        // that, the serializer has to guess, and guessing by type name wrote
+        // `air_density(air_density=1.225)` — 3640 declarations of this shape in MSL 4.1.0, and a
+        // model that no longer compiles.
+        modifiers[name] = binding;
+        modifiers["="] = binding;
+      }
     }
 
 

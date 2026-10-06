@@ -2583,11 +2583,21 @@ export class ModelicaStudioView extends ItemView {
     const choices = allChoices;
     // What the MODEL says, not a preference of ours: `p_ambient.displayUnit` is a modifier in
     // the declaration, so it is already in `inst.params` and comes back with the file.
-    const inModel = this.displayUnits()[`${inst.id}.${p.name}`] ?? "";
+    // `T.start` is the initial value OF `T`: its unit, and its display unit, are `T`'s. Looking
+    // the member up under the field's own name would miss both, and — the reason this line
+    // exists — WRITING one would put `T.start.displayUnit` in the declaration, which no
+    // compiler resolves. No start parameter carries a unit today, so the picker never appears
+    // there; this is what keeps that from becoming a wrong modifier the day one does.
+    const member = p.isStart ? p.name.replace(/\.start$/, "") : p.name;
+    const inModel = this.displayUnits()[`${inst.id}.${member}`] ?? "";
     // `undefined` when the parameter has no unit at all — a Boolean, a `stateSelect`, anything
     // the compiler described with no unit. There is nothing to convert then, and a field that
     // shows its value as written is the right answer rather than a special case.
-    const chosen = choices.length ? (choiceFor(choices, inModel) ?? choices[0]) : undefined;
+    // `let`, because the picker below changes it: a commit has to be read in the unit the field
+    // is SHOWING, and a `const` captured at render time kept interpreting a bare number in the
+    // unit the field had before the reader changed it. Type `320` into a field you have just
+    // switched from °C to K and 320 K was written as 320 °C.
+    let chosen = choices.length ? (choiceFor(choices, inModel) ?? choices[0]) : undefined;
     const asNumber = stored !== undefined ? Number(stored) : Number(p.defaultValue);
     const known =
       Number.isFinite(asNumber) && (stored !== undefined || p.defaultValue !== undefined);
@@ -2636,11 +2646,27 @@ export class ModelicaStudioView extends ItemView {
         // Modelica parameter is always in its declared unit, whatever it is displayed in — so
         // this writes the modifier and re-renders the field in the new unit.
         // The NAME Modelica resolves, which is not always the symbol shown: `degC`, not `°C`.
+        //
+        // Removing the modifier is only enough when nothing else would then answer: a unit that
+        // the declaration's own TYPE asks for — MSL's `ThermodynamicTemperature` carries
+        // `displayUnit="degC"` — comes back from the model description the moment the modifier
+        // is gone, so a reader who picks kelvin there gets Celsius again a moment later. When
+        // the answer the description would give is not the one chosen, the choice is written
+        // down; when it is, the modifier is noise and is removed.
+        const resolved = this.result?.displayUnits?.[`${inst.id}.${member}`];
+        const resolvedChoice = resolved ? choiceFor(choices, resolved) : undefined;
+        // Removing the modifier leaves whatever the description resolves in force. With a
+        // type-declared unit that is that unit, so choosing it needs no modifier and choosing
+        // anything else does; with no type-declared unit, the declaration's own unit is what
+        // remains, so only that choice is redundant. Asking "is this the declared unit?" instead
+        // wrote a modifier for the unit the type already asked for.
+        const redundant = resolvedChoice ? resolvedChoice.symbol === next.symbol : !next.alternative;
         this.editor?.setParamDisplayUnit(
           inst.id,
-          p.name,
-          next.alternative ? (next.id ?? next.symbol) : ""
+          member,
+          redundant ? "" : (next.id ?? next.symbol)
         );
+        chosen = next;
         if (known) input.value = formatValue(fromBase(asNumber, next));
         input.placeholder =
           p.defaultValue !== undefined && known
@@ -2999,6 +3025,15 @@ export class ModelicaStudioView extends ItemView {
     this.displayedCache = { result, key, value };
     return value;
   }
+
+  /*
+   * On the cost of the conversion, measured rather than assumed: forty series of five hundred
+   * samples convert in 0.57 ms, and only when a `displayUnit` is in force. With no sweep on
+   * screen the memo above answers, because `overlayResults` hands back the very object it was
+   * given; with one, it builds a new result per draw and the conversion runs — beside an
+   * overlay that has already copied and resampled every series, which costs the same order. Not
+   * worth a second cache keyed on an object identity that changes on purpose.
+   */
 
   /** The units the model asks its variables to be shown in. */
   private displayUnits(): Record<string, string> {
