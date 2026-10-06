@@ -7,6 +7,17 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+### Added
+
+- **A parameter's unit is shown beside its input, where the compiler knows it.** Most MSL
+  parameters declare their unit through their TYPE — `AbsolutePressure p_ambient` is pascals
+  through `Pressure` → `Real(unit="Pa")` — so it appears nowhere in the model's source and
+  nowhere for the parser to find, which is why the Selection panel showed nothing beside
+  `p_ambient`, `T_ambient` or `g`. The compiler resolved it, so the run's description is read
+  for it, keyed by the instance's own path, with an inline `(unit="…")` still winning when the
+  declaration has one. Before the first run there is no description and no unit: the field says
+  nothing rather than guessing.
+
 ### Changed
 
 - **An exponent is drawn, not spelled.** A unit's exponent was a Unicode glyph — `m·s⁻¹` — which

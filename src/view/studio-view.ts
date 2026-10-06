@@ -2508,9 +2508,17 @@ export class ModelicaStudioView extends ItemView {
     const el = row.createEl("label", { text: label });
     // The unit rides beside the name as runs, so an exponent is a real one: `m·s⁻¹` in a
     // 12px label was the same hairline glyph the trace rows had.
-    if (p.unit) {
+    //
+    // Two sources, and the second is the one that matters. A declaration may carry the unit
+    // inline (`parameter Real k(unit="N/m")`), which the parser sees; far more often the unit
+    // comes from the TYPE — `AbsolutePressure p_ambient` is pascals through `Pressure` →
+    // `Real(unit="Pa")` — and appears nowhere in the source at all. The compiler resolved it,
+    // so the model description is where it is read from, keyed by the instance's own path.
+    const declared = this.result?.declaredUnits?.[`${inst.id}.${p.name}`];
+    const unit = p.unit?.trim() || declared?.trim() || "";
+    if (unit) {
       el.createSpan({ text: " " });
-      renderUnit(el, p.unit, "modelica-studio-field-unit");
+      renderUnit(el, unit, "modelica-studio-field-unit");
     }
     if (p.comment) el.setAttribute("aria-label", p.comment);
 

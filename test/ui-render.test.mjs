@@ -1905,10 +1905,13 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
     "  parameters: [",
     "    { name: 'useSupport', type: 'Boolean', defaultValue: 'false', comment: 'support' },",
     "    { name: 'R', type: 'Real', defaultValue: '100', unit: 'Ohm' },",
+    "    // No `unit` field: this one is declared by its TYPE, which is how most MSL parameters",
+    "    // are written, and why the panel used to show nothing beside them.",
+    "    { name: 'p_ambient', type: 'Modelica.Units.SI.AbsolutePressure', defaultValue: '101325' },",
     "  ],",
     "};",
     "plugin.library.component = () => def;",
-    "const render = (params) => {",
+    "const render = (params, declaredUnits) => {",
     "  const inst = { id: 'r1', className: def.name,",
     "    placement: { extent: [-10,-10,10,10], rotation: 0, visible: true }, params };",
     "  const drawn = { name: 'M', components: [inst], connections: [], graphics: [] };",
@@ -1920,6 +1923,10 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
     "    selectedIds: ['r1'], currentModel: drawn,",
     "    setParam: (id, name, value) => calls.push(`${id}.${name}=${value}`),",
     "  };",
+    "  // Set before the panel renders: this is what a run leaves behind.",
+    "  view.result = declaredUnits",
+    "    ? { time: [], series: [], compileMs: 0, simulateMs: 0, reusedBinary: true, warnings: [], declaredUnits }",
+    "    : null;",
     "  const host = document.createElement('div');",
     "  view.renderComponentTab(host, inst, ['r1']);",
     "  return host;",
@@ -1929,7 +1936,8 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
     "    .find((f) => f.querySelector('label').textContent.startsWith(labelText));",
     "  return field ? field.querySelector('select, input') : null;",
     "};",
-    "const host = render({});",
+    "// The run's description, which is the only place a type-declared unit is written down.",
+    "const host = render({}, { 'r1.p_ambient': 'Pa' });",
     "window.test('the Boolean is a select', () => controlFor(host, 'useSupport')?.tagName ?? 'MISSING');",
     "window.test('its options are the two literals plus the default', () =>",
     "  Array.from(controlFor(host, 'useSupport').options).map((o) => o.value + ':' + o.textContent).join(' | '));",
@@ -1949,6 +1957,11 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
     "});",
     // A model may legitimately bind a Boolean to an expression. A select would
     // show that as "default" and drop it on the next change, so it stays typed.
+    "window.test('a parameter whose unit comes from its type shows it too', () => {",
+    "  const field = Array.from(host.querySelectorAll('.modelica-studio-field'))",
+    "    .find((f) => f.querySelector('label').textContent.startsWith('p_ambient'));",
+    "  return field ? field.querySelector('label').textContent : 'MISSING';",
+    "});",
     "const expr = render({ useSupport: 'system.allowFlowReversal' });",
     "window.test('an expression binding is not put in a select', () =>",
     "  controlFor(expr, 'useSupport')?.tagName ?? 'MISSING');",
@@ -1971,6 +1984,11 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
   // No parentheses since the unit is drawn as runs: it is smaller, muted and its own element,
   // so the styling separates it from the name — and the symbol still replaces `Ohm`.
   assert.match(d["and keeps its unit in the label"], /R Ω/, "units still shown, as a symbol");
+  assert.match(
+    d["a parameter whose unit comes from its type shows it too"],
+    /p_ambient Pa$/,
+    "the unit the compiler resolved for a type-declared parameter, beside its input"
+  );
   assert.equal(
     d["an expression binding is not put in a select"],
     "INPUT",

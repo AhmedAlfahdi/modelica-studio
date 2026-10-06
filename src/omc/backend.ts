@@ -68,6 +68,20 @@ export interface SimResult {
   /** True when the compiled model was reused (the fast path). */
   reusedBinary: boolean;
   warnings: string[];
+  /**
+   * Every variable AND PARAMETER of the model with its unit, from the description the
+   * compiler wrote.
+   *
+   * The series carry their own units; this is for the things that are not series. A
+   * parameter's unit is declared by its TYPE — `AbsolutePressure p_ambient` is pascals
+   * through `Pressure` → `Real(unit="Pa")` — so it appears nowhere in the model's source
+   * and nowhere for the parser to find. The compiler resolved it, and the description is
+   * the only place it is written down.
+   *
+   * Absent on a result a test built by hand, and on one from a run whose description could
+   * not be read: a panel that needs a unit says nothing rather than guessing.
+   */
+  declaredUnits?: Record<string, string>;
 }
 
 export interface CompileDiagnostic {
@@ -499,12 +513,17 @@ export class OmcBackend implements SimulationBackend {
     // produced nothing fails for the reason that matters rather than for a missing
     // description.
     const described = this.variableInfo(compiled.workDir!, compiled.stem ?? opts.modelName);
+    const declaredUnits: Record<string, string> = {};
+    for (const [name, info] of Object.entries(described)) {
+      if (info.unit) declaredUnits[name] = info.unit;
+    }
     for (const series of result.series) {
       const info = described[series.name];
       if (!info) continue;
       if (info.unit) series.unit = info.unit;
       if (info.comment) series.comment = info.comment;
     }
+    result.declaredUnits = declaredUnits;
     return result;
 
   }
