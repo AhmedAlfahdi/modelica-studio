@@ -36,7 +36,9 @@ const HEAD = [
   "  return {",
   "    app,",
   "    manifest: { id: 'modelica-studio', version: '0.2.0-beta.1' },",
-  "    settings: Object.assign({ modelFolder: 'Modelica', modelFiles: {} }, opts.settings),",
+  "    // `paramDisplayUnits` because the panel reads it per field: the real settings always",
+  "    // carry it, and a fixture that omits it throws where the app cannot.",
+  "    settings: Object.assign({ modelFolder: 'Modelica', modelFiles: {}, paramDisplayUnits: {} }, opts.settings),",
   "    model: { name: 'Tank', components: [], connections: [], equations: [] },",
   "    backend: null,",
   "    library: {",
@@ -1957,6 +1959,41 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
     "});",
     // A model may legitimately bind a Boolean to an expression. A select would
     // show that as "default" and drop it on the next change, so it stays typed.
+    "window.test('a field with alternatives offers them, the model unit first', () => {",
+    "  const field = Array.from(host.querySelectorAll('.modelica-studio-field'))",
+    "    .find((f) => f.querySelector('label').textContent.startsWith('p_ambient'));",
+    "  const picker = field?.querySelector('select.modelica-studio-param-unit');",
+    "  return picker ? Array.from(picker.options).map((o) => o.value).join(',') : 'NO PICKER';",
+    "});",
+    "window.test('choosing another unit shows the value in it, and stores nothing different', () => {",
+    "  calls.length = 0;",
+    "  const field = Array.from(host.querySelectorAll('.modelica-studio-field'))",
+    "    .find((f) => f.querySelector('label').textContent.startsWith('p_ambient'));",
+    "  const picker = field.querySelector('select.modelica-studio-param-unit');",
+    "  const input = field.querySelector('input');",
+    "  picker.value = 'bar';",
+    "  picker.dispatchEvent(new Event('change'));",
+    "  return 'shown=' + input.value + ' committed=' + (calls.join(',') || 'nothing')",
+    "    + ' remembered=' + JSON.stringify(plugin.settings.paramDisplayUnits);",
+    "});",
+    "window.test('a value typed with a unit is converted to the base value', () => {",
+    "  const field = Array.from(host.querySelectorAll('.modelica-studio-field'))",
+    "    .find((f) => f.querySelector('label').textContent.startsWith('p_ambient'));",
+    "  const input = field.querySelector('input');",
+    "  calls.length = 0;",
+    "  input.value = '2 bar';",
+    "  input.dispatchEvent(new Event('change'));",
+    "  return calls.join(',') || 'nothing';",
+    "});",
+    "window.test('and an expression is still committed as written', () => {",
+    "  const field = Array.from(host.querySelectorAll('.modelica-studio-field'))",
+    "    .find((f) => f.querySelector('label').textContent.startsWith('p_ambient'));",
+    "  const input = field.querySelector('input');",
+    "  calls.length = 0;",
+    "  input.value = 'system.p_ambient';",
+    "  input.dispatchEvent(new Event('change'));",
+    "  return calls.join(',') || 'nothing';",
+    "});",
     "window.test('a parameter whose unit comes from its type shows it too', () => {",
     "  const field = Array.from(host.querySelectorAll('.modelica-studio-field'))",
     "    .find((f) => f.querySelector('label').textContent.startsWith('p_ambient'));",
@@ -1988,6 +2025,26 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
     d["a parameter whose unit comes from its type shows it too"],
     /p_ambient Pa$/,
     "the unit the compiler resolved for a type-declared parameter, beside its input"
+  );
+  assert.equal(
+    d["a field with alternatives offers them, the model unit first"],
+    "Pa,bar,mbar,hPa,kPa,MPa",
+    "the model's own unit first, then the alternatives a reader switches between"
+  );
+  assert.equal(
+    d["choosing another unit shows the value in it, and stores nothing different"],
+    'shown=1.01325 committed=nothing remembered={"M::r1.p_ambient":"bar"}',
+    "101325 Pa reads as 1.01325 bar, and nothing is written to the model"
+  );
+  assert.equal(
+    d["a value typed with a unit is converted to the base value"],
+    "r1.p_ambient=200000",
+    "2 bar reaches the model as 200000 Pa: the field converts, the model keeps its own unit"
+  );
+  assert.equal(
+    d["and an expression is still committed as written"],
+    "r1.p_ambient=system.p_ambient",
+    "the fallback that keeps the field usable for anything that is not a number"
   );
   assert.equal(
     d["an expression binding is not put in a select"],

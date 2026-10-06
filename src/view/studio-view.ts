@@ -50,6 +50,8 @@ import {
 } from "./series-tree";
 import { typesetName } from "./typeset";
 import { renderUnit } from "./unit-dom";
+import { formatUnit } from "./units";
+import { choicesFor as unitChoices, formatValue, fromBase, parseValue, toBase } from "../modelica/unit-convert";
 import { describeError } from "../errors";
 import { collectParameters, sweepableParameters } from "./parameters";
 import type { TreeNode as PackageNode } from "../modelica/library";
@@ -2557,12 +2559,71 @@ export class ModelicaStudioView extends ItemView {
       return;
     }
 
+    // The field can show the value in another unit of the same dimension, and the model's
+    // own value never moves: `1.01325 bar` is still 101325 Pa in the model, because that is
+    // what its declared unit means. The choice is a display preference, kept per model and
+    // parameter; what the reader TYPES is converted back on commit.
+    // The field's own unit is offered under the pretty spelling (`m³/s`, not `m3/s`), which is
+    // what a dropdown label can show: a `<sup>` is not available in an `<option>`.
+    const choices = unitChoices(unit, unit ? formatUnit(unit) : "");
+    const chosenKey = `${this.plugin.model.name}::${inst.id}.${p.name}`;
+    // `undefined` when the parameter has no unit at all — a Boolean, a `stateSelect`, anything
+    // the compiler described with no unit. There is nothing to convert then, and a field that
+    // shows its value as written is the right answer rather than a special case.
+    const chosen = choices.length
+      ? (choices.find((c) => c.symbol === this.plugin.settings.paramDisplayUnits[chosenKey]) ??
+        choices[0])
+      : undefined;
+    const asNumber = stored !== undefined ? Number(stored) : Number(p.defaultValue);
+    const known =
+      Number.isFinite(asNumber) && (stored !== undefined || p.defaultValue !== undefined);
+    const shown =
+      known && chosen ? formatValue(fromBase(asNumber, chosen)) : (stored ?? p.defaultValue ?? "");
+
     const input = row.createEl("input", {
       type: "text",
-      value: stored ?? p.defaultValue ?? "",
+      value: shown,
     });
-    if (p.defaultValue !== undefined) input.placeholder = `default ${p.defaultValue}`;
-    input.addEventListener("change", () => commit(input.value.trim()));
+    if (p.defaultValue !== undefined && known) {
+      // The placeholder is in the model's own unit, so it says what an empty field means
+      // rather than repeating the number above it in a different one.
+      input.placeholder = `default ${p.defaultValue}`;
+    } else if (p.defaultValue !== undefined) {
+      input.placeholder = `default ${p.defaultValue}`;
+    }
+    // A value typed with a unit — `1.01325 bar` — is converted on commit; anything else is
+    // committed exactly as written, because these fields accept expressions.
+    const commitTyped = () => {
+      const text = input.value.trim();
+      const parsed = choices.length > 1 ? parseValue(text, choices) : null;
+      if (parsed) commit(formatValue(toBase(parsed.value, parsed.choice)));
+      else commit(text);
+    };
+    input.addEventListener("change", commitTyped);
+    if (chosen && choices.length > 1) {
+      // A class rather than `:has()`, which the plugin review rejects: a selector that depends
+      // on a descendant invalidates broadly.
+      row.addClass("has-unit-picker");
+      const picker = row.createEl("select", { cls: "modelica-studio-param-unit" });
+      picker.setAttribute("aria-label", `Unit for ${label}`);
+      for (const choice of choices) {
+        picker.createEl("option", { attr: { value: choice.symbol }, text: choice.symbol });
+      }
+      picker.value = chosen.symbol;
+      picker.addEventListener("change", () => {
+        const next = choices.find((c) => c.symbol === picker.value) ?? choices[0];
+        // Remembered per model and parameter, and only the DISPLAY changes: the stored value
+        // is re-rendered in the new unit rather than converted in the model.
+        if (next.factor === 1 && !next.offset) delete this.plugin.settings.paramDisplayUnits[chosenKey];
+        else this.plugin.settings.paramDisplayUnits[chosenKey] = next.symbol;
+        void this.plugin.saveSettings();
+        if (known) input.value = formatValue(fromBase(asNumber, next));
+        input.placeholder =
+          p.defaultValue !== undefined && known
+            ? `default ${formatValue(fromBase(Number(p.defaultValue), next))}`
+            : input.placeholder;
+      });
+    }
     input.addEventListener("keydown", (ev) => {
       if (ev.key === "Enter") input.blur();
     });

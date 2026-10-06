@@ -18,6 +18,19 @@ version is 0, a minor bump may include changes that are not backward compatible.
   declaration has one. Before the first run there is no description and no unit: the field says
   nothing rather than guessing.
 
+- **A parameter can be read and typed in another unit.** `101325` is pascals and stays pascals —
+  a Modelica value is always in its declared unit, and no interface can change that without
+  changing what the model means. So the field converts instead: pick `bar` beside `p_ambient` and
+  it reads `1.01325`, and typing `2 bar` reaches the model as `200000`. The alternatives are
+  curated per dimension (`Modelica.Units` holds the conversions, but parsing a library to answer
+  a question about one field is a poor trade): bar and its prefixes beside pascals, °C and °F
+  beside kelvin, mm/cm/km beside metres, km/h beside m/s, L/min beside m³/s, and so on — with
+  the model's own unit first, so a field starts where the model is. Affine units carry an offset
+  as well as a factor (0 °C is 273.15 K, and an implementation that only scaled would report
+  0 K), which is also why this is offered for a field read one value at a time rather than as an
+  axis relabelling. The choice is a display preference kept per model and parameter; nothing is
+  written to the model, and the field still accepts an expression exactly as written.
+
 ### Changed
 
 - **An exponent is drawn, not spelled.** A unit's exponent was a Unicode glyph — `m·s⁻¹` — which
