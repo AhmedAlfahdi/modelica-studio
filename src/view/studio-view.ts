@@ -2522,6 +2522,13 @@ export class ModelicaStudioView extends ItemView {
     // showed no unit while every other field had one.
     const member = p.isStart ? p.name.replace(/\.start$/, "") : p.name;
     const el = row.createEl("label", { text: label });
+    // A real `<label for>` association, and `aria-labelledby` on the unit control, rather than
+    // `aria-label`: Obsidian draws a tooltip from `aria-label` and from nothing else, so an
+    // accessible name given that way appears as a tooltip over the field — reported twice, most
+    // recently as one sitting behind the unit dropdown, saying "Unit for phi0" to a reader who
+    // is already choosing from that control's own list.
+    const fieldId = `modelica-studio-field-${++fieldSeq}`;
+    el.setAttribute("id", `${fieldId}-label`);
     // The unit rides beside the name as runs, so an exponent is a real one: `m·s⁻¹` in a
     // 12px label was the same hairline glyph the trace rows had.
     //
@@ -2615,6 +2622,8 @@ export class ModelicaStudioView extends ItemView {
       type: "text",
       value: shown,
     });
+    input.setAttribute("id", fieldId);
+    el.setAttribute("for", fieldId);
     if (p.defaultValue !== undefined && known) {
       // The placeholder is in the model's own unit, so it says what an empty field means
       // rather than repeating the number above it in a different one.
@@ -2645,7 +2654,9 @@ export class ModelicaStudioView extends ItemView {
       // on a descendant invalidates broadly.
       row.addClass("has-unit-picker");
       const picker = row.createEl("select", { cls: "modelica-studio-param-unit" });
-      picker.setAttribute("aria-label", `Unit for ${label}`);
+      // No `aria-label` and no `title`: the accessible name comes from the field's own label
+      // element, which is on screen and needs no second copy floating over the control.
+      picker.setAttribute("aria-labelledby", `${fieldId}-label`);
       // No `title`. It said "Model unit: Ω", which is the first option of the list this control
       // opens — and a tooltip on a control that is already showing the answer covers the field
       // it belongs to while the reader is choosing from it.
@@ -5514,6 +5525,9 @@ function traceTooltip(series: SimSeries): string {
   if (series.unit?.trim()) lines.push(`[${series.unit.trim()}]`);
   return lines.join("\n");
 }
+
+/** Field ids for label association, unique across a panel's lifetime. */
+let fieldSeq = 0;
 
 /** Palette thumbnail edge, in CSS pixels. */
 const THUMB_SIZE = 56;

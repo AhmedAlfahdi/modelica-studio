@@ -7,6 +7,14 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+### Changed
+
+- **The unit control has no tooltip.** It said "Unit for phi0" and drew over the very list it
+  was asking the reader to choose from. Obsidian builds a tooltip from `aria-label` and from
+  nothing else, so an accessible name written that way becomes one — the name now comes from the
+  field's own `<label>`, associated with `for` on the value and `aria-labelledby` on the unit
+  control, which names both for a screen reader and draws nothing.
+
 ### Fixed
 
 - **The unit controls now appear at all, on every machine that had opened the plugin before.**

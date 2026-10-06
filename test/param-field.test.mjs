@@ -173,6 +173,21 @@ const HEAD = [
   "  const after = late.host.querySelectorAll('select.modelica-studio-param-unit').length;",
   "  return 'before=' + before + ' after=' + after + ' rebuilds=' + rebuilds;",
   "});",
+  "window.test('the unit control carries no tooltip attribute', () => {",
+  "  // Obsidian draws a tooltip from `aria-label` and from nothing else, so an accessible name",
+  "  // given that way becomes a tooltip over the control — reported as one sitting behind the unit",
+  "  // dropdown and covering it. The name comes from the field's own label element instead.",
+  "  const own = mount(UNITS, 380, true).host;",
+  "  const field = Array.from(own.querySelectorAll('.modelica-studio-field'))",
+  "    .find((f) => f.querySelector('label').textContent.startsWith('offset'));",
+  "  const picker = field.querySelector('select.modelica-studio-param-unit');",
+  "  const labelled = picker.getAttribute('aria-labelledby');",
+  "  const labelEl = labelled ? own.querySelector('#' + labelled) : null;",
+  "  return 'ariaLabel=' + JSON.stringify(picker.getAttribute('aria-label'))",
+  "    + ' title=' + JSON.stringify(picker.getAttribute('title'))",
+  "    + ' namedBy=' + (labelEl ? JSON.stringify(labelEl.textContent) : 'NOTHING')",
+  "    + ' inputFor=' + (field.querySelector('input').id === field.querySelector('label').getAttribute('for'));",
+  "});",
   "window.test('a field with no alternatives is unchanged', () => {",
   "  const field = fieldFor('useSupport');",
   "  // The Boolean control is a select too, so this asks for the unit picker by name.",
@@ -207,6 +222,11 @@ test("a parameter field with a unit picker keeps its shape", async () => {
     d["the library arriving late gives the fields their units"],
     "before=0 after=2 rebuilds=1",
     "an inspector built before the library existed gets its pickers when the index arrives"
+  );
+  assert.equal(
+    d["the unit control carries no tooltip attribute"],
+    'ariaLabel=null title=null namedBy="offset" inputFor=true',
+    "no attribute Obsidian turns into a tooltip, and still named by the label beside it"
   );
   assert.equal(
     d["a unit with no alternatives is the same box, without a dropdown"],
