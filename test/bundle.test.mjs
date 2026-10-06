@@ -209,11 +209,14 @@ test("bundle exists and is a valid CommonJS plugin", { skip: !HAS_BUNDLE }, asyn
   const changelog = fs.readFileSync(path.join(ROOT, "CHANGELOG.md"), "utf8");
   const notes = whatsNewFor(changelog, manifest.version);
   assert.ok(notes, `the changelog has a section for ${manifest.version}`);
-  // Prose, not the raw line: the notes are a JSON string in the bundle and esbuild escapes
-  // what a JSON string cannot hold literally, so a probe with a backtick or an em dash in it
-  // compares a string that was never going to be there. A run of plain words is what a
-  // reader would see on screen either way.
-  const prose = (text) => (String(text).match(/[A-Za-z][A-Za-z ,'-]{60,}/g) ?? []).sort((a, b) => b.length - a.length)[0] ?? "";
+  // Prose, not the raw line: the notes are a string literal in the bundle and esbuild escapes
+  // what one cannot hold literally, so a probe containing any of those compares a string that
+  // was never going to be there. Backticks and em dashes (as this comment used to say) — and
+  // the APOSTROPHE, which is what actually failed the 0.6.3 build: the bundle holds
+  // `app\'s` where the changelog holds `app's`, and the longest plain run in those notes ended
+  // on exactly that word. The class below is what survives escaping verbatim: letters, spaces,
+  // commas and hyphens. A run of plain words is what a reader sees on screen either way.
+  const prose = (text) => (String(text).match(/[A-Za-z][A-Za-z ,-]{60,}/g) ?? []).sort((a, b) => b.length - a.length)[0] ?? "";
   const shipped = prose(notes.body);
   assert.ok(shipped.length >= 60, "the notes have a sentence to look for");
   assert.ok(src.includes(shipped), "the notes for this version are bundled, not read from a file at runtime");

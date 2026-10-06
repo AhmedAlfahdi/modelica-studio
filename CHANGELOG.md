@@ -7,6 +7,8 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+## [0.6.3] — 2026-10-06
+
 ### Fixed
 
 - **The flash on an edited line has a background again on Obsidian 1.14.** `--text-highlight-bg`
@@ -19,9 +21,6 @@ version is 0, a minor bump may include changes that are not backward compatible.
   notes: every Obsidian API this plugin calls is still exported, every app class it styles is
   still there (`.is-loading` among them), and 37 theme variables it reads are all still defined
   except this one.
-
-### Fixed
-
 - **A trace group can be collapsed while the list is narrowed.** Reported as "sometimes the
   collapsing of traces does not work", and the sometimes was precise: with a preset or a filter
   on, `traceRows` opened every group with children as soon as a match predicate existed, so the
