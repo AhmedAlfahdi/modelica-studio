@@ -38,6 +38,18 @@ import {
 } from "./plot";
 import { defaultSeriesNames, seriesPreset, SERIES_PRESETS, summarizeSeries } from "./series";
 import type { SeriesPreset, SeriesPresetId } from "./series";
+import {
+  allGroupPaths,
+  buildTraceTree,
+  initialOpenPaths,
+  traceCounts,
+  traceRows,
+  type TraceNode,
+  type TraceRow,
+  type TraceRows,
+} from "./series-tree";
+import { typesetName } from "./typeset";
+import { formatUnit } from "./units";
 import { describeError } from "../errors";
 import { collectParameters, sweepableParameters } from "./parameters";
 import type { TreeNode as PackageNode } from "../modelica/library";
@@ -175,8 +187,10 @@ export class ModelicaStudioView extends ItemView {
   private logText: HTMLElement | null = null;
   private inspectorCol!: HTMLElement;
   private splitterEl!: HTMLElement;
-  /** The whole editable area: palette, canvas and inspector. */
+  /** The diagram band: palette, canvas, and the palette's divider. */
   private bodyEl!: HTMLElement;
+  /** The studio's two columns: the editor with its results, and the inspector rail. */
+  private mainEl!: HTMLElement;
   /** Editing mode. Diagram and code are two views of one model. */
   private mode: "diagram" | "code" = "diagram";
   /** Code-mode pane, created on first use. */
@@ -239,6 +253,29 @@ export class ModelicaStudioView extends ItemView {
   private seriesScroll = 0;
 
   /**
+   * Which component groups the reader has opened, and which they have decided.
+   *
+   * "Decided" is kept apart from "open" because a new result re-seeds the list —
+   * the groups on the way to the traces it draws have to be open — and a
+   * re-seeding that re-opened a group the reader had just collapsed would undo
+   * their work on every run. A path they have touched is theirs; the seeding
+   * leaves it alone.
+   */
+  private expandedGroups = new Set<string>();
+  private decidedGroups = new Set<string>();
+  /**
+   * Whether the groups have been opened for the result on screen.
+   *
+   * Seeded once per result, from the traces that result draws: after that the
+   * list is the reader's arrangement, and re-rendering it (every keystroke in the
+   * filter does) must not rearrange it.
+   */
+  private expansionSeeded = false;
+  /** The full-screen overlay's trace list, when it is open, and its place in it. */
+  private fullTraceList: HTMLElement | null = null;
+  private fullSeriesScroll = 0;
+
+  /**
    * Take a result as the one being shown.
    *
    * The list of traces describes a different set of variables after this, so the
@@ -248,6 +285,10 @@ export class ModelicaStudioView extends ItemView {
   private adoptResult(result: SimResult | null): void {
     this.result = result;
     this.seriesScroll = 0;
+    // A new result is a new list of variables, so the groups are opened for it
+    // again — from the traces it draws, which are not the ones the old result
+    // drew. The reader's own open/closed decisions survive, see `decidedGroups`.
+    this.expansionSeeded = false;
   }
 
   /**
@@ -364,7 +405,23 @@ export class ModelicaStudioView extends ItemView {
     const header = root.createDiv({ cls: "modelica-studio-toolbar" });
     this.buildToolbar(header);
 
-    const body = root.createDiv({ cls: "modelica-studio-body" });
+    /**
+     * Two columns: what is being edited — with its results — and the inspector as
+     * a full-height rail beside it.
+     *
+     * It used to be one row of panes with the results spanning the whole window
+     * underneath all of them, which left the inspector only as tall as that row:
+     * in a 696px window its trace list got 138px, about ten rows of a 37-variable
+     * result, while the plot below took the rest. The rail is what the list is
+     * for — it is the surface you scan, the plot is the surface you read — and it
+     * is how OMEdit docks its variable browser. The plot keeps everything left of
+     * the rail, so the price is its width, and that is the user's to drag.
+     */
+    const main = root.createDiv({ cls: "modelica-studio-main" });
+    this.mainEl = main;
+    const editCol = main.createDiv({ cls: "modelica-studio-edit" });
+
+    const body = editCol.createDiv({ cls: "modelica-studio-body" });
     this.bodyEl = body;
 
     // Palette
@@ -399,26 +456,6 @@ export class ModelicaStudioView extends ItemView {
     // Canvas
     this.canvasHost = body.createDiv({ cls: "modelica-studio-col modelica-studio-canvas-host" });
 
-    // Inspector + results, with a draggable divider so the parameters can be read.
-    const splitter = this.makeDivider(body, "x", "Inspector");
-    this.splitterEl = splitter;
-    const rightCol = body.createDiv({ cls: "modelica-studio-col modelica-studio-inspector" });
-    this.inspectorCol = rightCol;
-    this.inspectorTabsEl = rightCol.createDiv({ cls: "modelica-studio-tabs" });
-    this.inspectorTabsEl.setAttribute("role", "tablist");
-    // Named for a screen reader, but not a tooltip: a tab strip's label would
-    // otherwise appear over every tab in it.
-    noLabelTooltip(this.inspectorTabsEl, "Inspector");
-    this.inspectorEl = rightCol.createDiv({ cls: "modelica-studio-inspector-body" });
-    // The inspector is to the RIGHT of its divider, so dragging left widens it.
-    this.installDivider({
-      el: splitter,
-      axis: "x",
-      side: () => "after",
-      pane: rightCol,
-      apply: (w) => this.applyInspectorWidth(w),
-      reset: () => DEFAULT_INSPECTOR_W,
-    });
     // The palette is to the LEFT of its divider, so dragging right widens it.
     this.installDivider({
       el: paletteDivider,
@@ -440,8 +477,8 @@ export class ModelicaStudioView extends ItemView {
     // at the far end of the window -- nowhere near the diagram it divides, and easy
     // to miss. The editing area is ABOVE the results, so the top edge is the shared
     // boundary and the bottom edge is the window's own.
-    const resultsSplitter = this.makeDivider(root, "y", "Results");
-    const resultsCol = root.createDiv({ cls: "modelica-studio-results" });
+    const resultsSplitter = this.makeDivider(editCol, "y", "Results");
+    const resultsCol = editCol.createDiv({ cls: "modelica-studio-results" });
     // Restore the height the user dragged it to, so the choice survives a
     // reload rather than resetting to the default every time.
     //
@@ -479,7 +516,29 @@ export class ModelicaStudioView extends ItemView {
     // Code mode replaces the whole editing area rather than sitting beside
     // Results. Diagram and code are two views of the same model, so showing both
     // at once would mean two things claiming to be the truth.
-    this.buildCodePane(root);
+    this.buildCodePane(editCol);
+
+    // The inspector rail, last: it stands beside the column above rather than
+    // inside it, which is what gives it the window's full height. The pane is to
+    // the RIGHT of its divider, so dragging left widens it.
+    const splitter = this.makeDivider(main, "x", "Inspector");
+    this.splitterEl = splitter;
+    const rightCol = main.createDiv({ cls: "modelica-studio-col modelica-studio-inspector" });
+    this.inspectorCol = rightCol;
+    this.inspectorTabsEl = rightCol.createDiv({ cls: "modelica-studio-tabs" });
+    this.inspectorTabsEl.setAttribute("role", "tablist");
+    // Named for a screen reader, but not a tooltip: a tab strip's label would
+    // otherwise appear over every tab in it.
+    noLabelTooltip(this.inspectorTabsEl, "Inspector");
+    this.inspectorEl = rightCol.createDiv({ cls: "modelica-studio-inspector-body" });
+    this.installDivider({
+      el: splitter,
+      axis: "x",
+      side: () => "after",
+      pane: rightCol,
+      apply: (w) => this.applyInspectorWidth(w),
+      reset: () => DEFAULT_INSPECTOR_W,
+    });
 
     this.statusEl = root.createDiv({ cls: "modelica-studio-status" });
     this.setStatus("Ready.");
@@ -1024,6 +1083,12 @@ export class ModelicaStudioView extends ItemView {
     // class still applies.
     this.bodyEl?.toggleClass("modelica-studio-hidden", isCode);
     this.codeHost?.toggleClass("modelica-studio-hidden", !isCode);
+    // The rail goes with the diagram. It describes what is selected on the canvas
+    // — a component's parameters, or the traces of the run — and code mode has no
+    // canvas, so it is the same element as before, hidden in the same modes. With
+    // it out of the way the results pane takes the full width again, which is the
+    // code-mode layout this replaced.
+    this.inspectorCol?.toggleClass("modelica-studio-hidden", isCode);
     this.syncToolbarToMode();
     // Before the height is applied: the divider's side is read from the mode, so
     // it has to be on the right boundary first.
@@ -2439,7 +2504,7 @@ export class ModelicaStudioView extends ItemView {
     // `T.start` reads better as "T (initial)".
     const label = p.isStart
       ? `${p.name.replace(/\.start$/, "")} (initial)`
-      : p.name + (p.unit ? ` (${p.unit})` : "");
+      : p.name + (p.unit ? ` (${formatUnit(p.unit)})` : "");
     const el = row.createEl("label", { text: label });
     if (p.comment) el.setAttribute("aria-label", p.comment);
 
@@ -2555,6 +2620,11 @@ export class ModelicaStudioView extends ItemView {
      * the next click landed on a different trace: a list that rearranges itself
      * as you use it is worse than one you have to scroll.
      *
+     * Folding the names into their components (see `series-tree.ts`) does not
+     * change that: a group appears where its first variable appears, and the
+     * variables inside it keep the order the result gave them. What it changes is
+     * that `chopper.` is now said once instead of on forty rows.
+     *
      * The count in the header says how many are drawn, and the filter box finds
      * a variable by name, so neither needs the order to change.
      */
@@ -2562,6 +2632,21 @@ export class ModelicaStudioView extends ItemView {
 
     const head = parent.createDiv({ cls: "modelica-studio-series-head" });
     head.createSpan({ text: `Traces (${selected.length} of ${this.result.series.length})` });
+    // One action, two labels: the reader either wants the whole model in view or
+    // wants it out of the way, and which of the two they want is readable from
+    // the list itself. Without it, a model with five crowded components can only
+    // be opened one heading at a time. Not offered at all when the names have no
+    // components in them — a flat list of `x`, `v`, `i` has nothing to fold, and
+    // a button that does nothing is worse than no button.
+    const groups = allGroupPaths(this.traceTree());
+    if (groups.size > 0) {
+      const everyGroupOpen = this.groupsAllOpen();
+      const expand = head.createEl("button", {
+        cls: "modelica-studio-btn",
+        text: everyGroupOpen ? "Collapse all" : "Expand all",
+      });
+      expand.addEventListener("click", () => this.setAllGroups(!everyGroupOpen));
+    }
     const all = head.createEl("button", { cls: "modelica-studio-btn", text: "Clear traces" });
     all.addEventListener("click", () => {
       for (const s of this.result!.series) {
@@ -2623,40 +2708,14 @@ export class ModelicaStudioView extends ItemView {
       });
     }
 
-    const needle = this.seriesFilter.trim().toLowerCase();
-    const preset = seriesPreset(this.seriesPreset);
-    const varying = this.varyingNames();
-    const matching = (s: SimSeries) =>
-      (!needle || s.name.toLowerCase().includes(needle)) &&
-      preset.keeps(s.name, {
-        visible: this.seriesStyles[s.name]?.visible === true,
-        varies: varying.has(s.name),
-      });
-    // Simulation order, filtered — not checked-first, so a click never moves a row.
-    const ordered = this.result.series.filter(matching);
-
-    // How much of the list is not on screen, ABOVE the list rather than at its
-    // foot: the list is a window onto up to forty rows, and a note at the end of
-    // it can only be read by scrolling to the end — which is the one thing a
-    // reader looking for a variable is not doing.
-    if (ordered.length > SERIES_PAGE) {
-      parent.createDiv({
-        cls: "modelica-studio-muted modelica-studio-series-more",
-        text: `Showing the first ${SERIES_PAGE} of ${ordered.length} — type to narrow the list.`,
-      });
-    }
-
-    const list = parent.createDiv({ cls: "modelica-studio-series" });
-    for (const s of ordered.slice(0, SERIES_PAGE)) this.renderSeriesRow(list, s);
-    if (ordered.length === 0) {
-      list.createDiv({ cls: "modelica-studio-muted", text: emptySeriesMessage(preset, needle) });
-    }
-    // Rebuilt after every check, so the reader's place is put back: clicking the
-    // thirtieth trace used to throw the list back to the top, and every box after
-    // it had to be found again.
-    list.scrollTop = this.seriesScroll;
-    list.addEventListener("scroll", () => {
-      this.seriesScroll = list.scrollTop;
+    // The list itself, which both places that show one build here: the panel and
+    // the full-screen overlay are the same list at two sizes, and giving each its
+    // own renderer is how the overlay kept a flat one after the panel got a tree.
+    this.renderVariableList(parent, SERIES_PAGE, {
+      top: this.seriesScroll,
+      remember: (top) => {
+        this.seriesScroll = top;
+      },
     });
   }
 
@@ -2672,28 +2731,284 @@ export class ModelicaStudioView extends ItemView {
     return this.varyingCache.names;
   }
 
-  /** One trace toggle, with its colour and current value range. */
-  private renderSeriesRow(list: HTMLElement, s: SimSeries): void {
-    const style = (this.seriesStyles[s.name] ??= {
-      color: seriesColor(this.result!.series.indexOf(s), currentTheme().dark),
+  /** The variable tree of the result on screen, in the result's own order. */
+  private traceTree(): TraceNode[] {
+    return buildTraceTree(this.result?.series.map((s) => s.name) ?? []);
+  }
+
+  /** Whether every group in the tree is open, for the one bulk button's label. */
+  private groupsAllOpen(): boolean {
+    const groups = allGroupPaths(this.traceTree());
+    if (groups.size === 0) return false;
+    for (const path of groups) if (!this.expandedGroups.has(path)) return false;
+    return true;
+  }
+
+  /**
+   * The rows to draw: the filter, the presets and the reader's arrangement.
+   *
+   * The filter and the preset are composed into one predicate over result names,
+   * because that is what the reader is asking about — a name — while what nests
+   * under what is the tree's business, not theirs.
+   */
+  private currentTraceRows(budget: number): TraceRows {
+    const result = this.result;
+    if (!result) return { rows: [], matched: 0, shown: 0, truncated: false };
+    const roots = this.traceTree();
+
+    // The first view of a result: the top level, the small groups, and the way
+    // down to each trace it draws. Only once — after that the list is the
+    // reader's, and re-rendering it must not re-open what they closed.
+    if (!this.expansionSeeded) {
+      this.expansionSeeded = true;
+      const drawn = result.series
+        .filter((s) => this.seriesStyles[s.name]?.visible)
+        .map((s) => s.name);
+      for (const path of initialOpenPaths(roots, { drawn })) {
+        if (!this.decidedGroups.has(path)) this.expandedGroups.add(path);
+      }
+    }
+
+    const needle = this.seriesFilter.trim().toLowerCase();
+    const preset = seriesPreset(this.seriesPreset);
+    // A filter is a search: the rows it keeps are the answer, so the groups on
+    // the way to them open. With nothing asked for, the arrangement stands —
+    // passing a predicate that keeps everything would count as a search and
+    // flatten the tree the reader had just folded up.
+    const narrowing = needle.length > 0 || this.seriesPreset !== "all";
+    const varying = narrowing ? this.varyingNames() : new Set<string>();
+    const match = narrowing
+      ? (name: string) =>
+          (!needle || name.toLowerCase().includes(needle)) &&
+          preset.keeps(name, {
+            visible: this.seriesStyles[name]?.visible === true,
+            varies: varying.has(name),
+          })
+      : undefined;
+
+    return traceRows(roots, { expanded: this.expandedGroups, match, budget });
+  }
+
+  /**
+   * The variable list, built the same way wherever it is shown.
+   *
+   * `budget` is how many variables may be listed before the list says it is cut
+   * short: the panel is a 380px column and takes the window it has always taken,
+   * the overlay is the window itself and takes all of them.
+   */
+  private renderVariableList(
+    parent: HTMLElement,
+    budget: number,
+    place: { top: number; remember: (top: number) => void }
+  ): void {
+    const result = this.result;
+    if (!result) return;
+    const { rows, matched, shown, truncated } = this.currentTraceRows(budget);
+
+    // How much of the list is not on screen, ABOVE the list rather than at its
+    // foot: the list is a window onto up to forty variables, and a note at the
+    // end of it can only be read by scrolling to the end — which is the one
+    // thing a reader looking for a variable is not doing. It appears only when
+    // the budget cut something; a group the reader folded away is on screen as a
+    // row with a count, so nothing is missing without a sign.
+    if (truncated) {
+      parent.createDiv({
+        cls: "modelica-studio-muted modelica-studio-series-more",
+        text: `Showing the first ${shown} of ${matched} — type to narrow the list.`,
+      });
+    }
+
+    const list = parent.createDiv({ cls: "modelica-studio-series" });
+    const drawn = new Set(
+      result.series.filter((s) => this.seriesStyles[s.name]?.visible).map((s) => s.name)
+    );
+    const byName = new Map(result.series.map((s) => [s.name, s]));
+    for (const row of rows) {
+      const name = row.node.name;
+      if (name === undefined) {
+        this.renderSeriesGroupRow(list, row, drawn);
+        continue;
+      }
+      const series = byName.get(name);
+      if (series) this.renderSeriesRow(list, row, series, drawn);
+    }
+    if (rows.length === 0) {
+      const needle = this.seriesFilter.trim().toLowerCase();
+      list.createDiv({
+        cls: "modelica-studio-muted",
+        text: emptySeriesMessage(seriesPreset(this.seriesPreset), needle),
+      });
+    }
+    // Rebuilt after every check, so the reader's place is put back: clicking the
+    // thirtieth trace used to throw the list back to the top, and every box after
+    // it had to be found again.
+    list.scrollTop = place.top;
+    list.addEventListener("scroll", () => place.remember(list.scrollTop));
+  }
+
+  /** A group row: what can be opened, and how much is inside it. */
+  private renderSeriesGroupRow(list: HTMLElement, row: TraceRow, drawn: ReadonlySet<string>): void {
+    const counts = traceCounts(row.node, drawn);
+    const el = list.createDiv({
+      cls:
+        `modelica-studio-series-group${row.open ? " is-open" : ""}` +
+        `${counts.drawn > 0 ? " is-drawn" : ""}`,
+    });
+    this.indentTraceRow(el, row.depth);
+    this.renderTraceTwisty(el, row);
+    const label = el.createEl("button", { cls: "modelica-studio-series-group-name" });
+    // A heading is a name segment too: `flange_b` reads as `flange_b`.
+    this.renderNameRuns(label, row.node.label);
+    // The heading is a wider target than the twisty, and clicking it means the
+    // same thing. A button rather than a span with a click handler: it is then
+    // reachable and operable from the keyboard for free.
+    label.addEventListener("click", () => this.toggleGroup(row.node.path, !row.open));
+    this.renderTraceCount(el, row.node, drawn);
+  }
+
+  /** One trace toggle, with its colour, its unit and what it is. */
+  private renderSeriesRow(
+    list: HTMLElement,
+    row: TraceRow,
+    series: SimSeries,
+    drawn: ReadonlySet<string>
+  ): void {
+    const style = (this.seriesStyles[series.name] ??= {
+      color: seriesColor(this.result!.series.indexOf(series), currentTheme().dark),
       visible: false,
     });
-    const row = list.createDiv({
-      cls: `modelica-studio-series-row${style.visible ? " is-shown" : ""}`,
+    const el = list.createDiv({
+      cls: `modelica-studio-series-row${style.visible ? " is-shown" : ""}${row.open ? " is-open" : ""}`,
     });
-    const cb = row.createEl("input", { type: "checkbox" });
+    // The row says `v`; the result says `capacitor.v`. Which one a test, a
+    // screenshot reader or the next piece of code needs depends on the question,
+    // so both are here: the label is what is drawn, this is what it is.
+    el.dataset.name = series.name;
+    this.indentTraceRow(el, row.depth);
+    el.setAttribute("title", traceTooltip(series));
+    // A connector is a variable and has members, so one row can be both a thing
+    // to plot and a thing to open.
+    if (row.node.children.length > 0) this.renderTraceTwisty(el, row);
+    const cb = el.createEl("input", { type: "checkbox" });
     cb.checked = style.visible;
     cb.addEventListener("change", () => {
       style.visible = cb.checked;
-      this.renderInspector();
-      this.drawResults();
-      this.drawFullScreen();
-      this.publishChart();
+      this.afterTraceChange();
     });
-    const swatch = row.createSpan({ cls: "modelica-studio-swatch" });
+    const swatch = el.createSpan({ cls: "modelica-studio-swatch" });
     swatch.style.background = style.color;
     swatch.toggleClass("is-off", !style.visible);
-    row.createSpan({ cls: "modelica-studio-series-name", text: s.name });
+    // The label as runs: `_x` and `[i]` as subscripts, `der(x)` as a dot over the
+    // variable. The same tokenizer the legend uses, so the two surfaces agree — the
+    // list and the legend now spell a variable the same way.
+    const nameEl = el.createSpan({ cls: "modelica-studio-series-name" });
+    this.renderNameRuns(nameEl, row.node.label, series.name);
+    // The unit the numbers are in, as the compiler resolved it — inherited from
+    // the declared type, which is why it is nowhere in the model's source. Read
+    // through `formatUnit`, so `Ohm` is Ω and `m.s-1` is m·s-1; the row's own
+    // tooltip keeps the compiler's exact spelling, which is the one to copy.
+    const unit = series.unit?.trim();
+    if (unit) {
+      const label = formatUnit(unit);
+      const span = el.createSpan({ cls: "modelica-studio-series-unit", text: label });
+      span.setAttribute("title", `Unit: ${label}`);
+    }
+    if (row.node.children.length > 0) this.renderTraceCount(el, row.node, drawn);
+  }
+
+  /**
+   * A variable's label as runs of type.
+   *
+   * `sub` for an underscore suffix or an index, and a dot for a derivative — drawn by
+   * CSS on the run's own box, so it never lands on the subscript (`ṡ_rel`). The runs
+   * carry no separator characters, so the accessible and copyable text is restored
+   * with `aria-label`: a screen reader announcing "srel" for `s_rel` would be worse
+   * than the plain name this replaced.
+   */
+  private renderNameRuns(parent: HTMLElement, label: string, fullName?: string): void {
+    for (const run of typesetName(label)) {
+      if (run.kind === "sub") {
+        parent.createEl("sub", { cls: "modelica-studio-run-sub", text: run.text });
+        continue;
+      }
+      const span = parent.createSpan({
+        cls: `modelica-studio-run${run.kind === "sep" ? " is-sep" : ""}${run.dot ? " is-deriv" : ""}`,
+        text: run.text,
+      });
+      // One dot for `der`, two for `der(der)`; the second is drawn by the stylesheet.
+      if (run.dot) span.setAttribute("data-dots", String(run.dot));
+    }
+    // The runs carry no separators, so the raw label is restored for a screen reader
+    // ("srel" for `s_rel` would be worse than the plain name this replaced).
+    parent.setAttribute("aria-label", label);
+    if (fullName) parent.setAttribute("title", fullName);
+  }
+
+  /** The triangle that opens and closes a group. */
+  private renderTraceTwisty(parent: HTMLElement, row: TraceRow): void {
+    const twisty = parent.createEl("button", {
+      cls: "modelica-studio-series-twisty",
+      text: row.open ? "▾" : "▸",
+    });
+    twisty.setAttribute("aria-expanded", row.open ? "true" : "false");
+    twisty.setAttribute("aria-label", `${row.open ? "Collapse" : "Expand"} ${row.node.path}`);
+    twisty.addEventListener("click", () => this.toggleGroup(row.node.path, !row.open));
+  }
+
+  /** How much of a group is drawn, e.g. `2/41`. */
+  private renderTraceCount(parent: HTMLElement, node: TraceNode, drawn: ReadonlySet<string>): void {
+    const counts = traceCounts(node, drawn);
+    const span = parent.createSpan({
+      cls: "modelica-studio-series-count",
+      text: `${counts.drawn}/${counts.total}`,
+    });
+    span.setAttribute("title", `${counts.drawn} of ${counts.total} variables here are drawn`);
+  }
+
+  /**
+   * How far a row is indented, as a number the stylesheet multiplies.
+   *
+   * A custom property rather than a padding: the row already has padding of its
+   * own, and setting the whole property from here would throw it away.
+   *
+   * The depth is capped. Modelica nests records inside records, and
+   * `motor.internalThermalPort.heatPortPermanentMagnet.Q_flow` is not an unusual
+   * path — one such name, twelve levels deep, spent the whole row width on
+   * indentation and ellipsised the variable's own name to nothing, which is the
+   * one thing the row is for. Past this many levels the headings above it have
+   * already said where the row is.
+   */
+  private indentTraceRow(el: HTMLElement, depth: number): void {
+    el.style.setProperty("--series-depth", String(Math.min(depth, MAX_TRACE_DEPTH)));
+  }
+
+  /** Open or close one group, and remember that the reader decided it. */
+  private toggleGroup(path: string, open: boolean): void {
+    this.decidedGroups.add(path);
+    if (open) this.expandedGroups.add(path);
+    else this.expandedGroups.delete(path);
+    this.renderInspector();
+    this.renderFullTraceList();
+  }
+
+  /** Open or close every group at once, from the one button in the header. */
+  private setAllGroups(open: boolean): void {
+    for (const path of allGroupPaths(this.traceTree())) {
+      this.decidedGroups.add(path);
+      if (open) this.expandedGroups.add(path);
+      else this.expandedGroups.delete(path);
+    }
+    this.renderInspector();
+    this.renderFullTraceList();
+  }
+
+  /** Everything a changed trace implies: both lists, both plots, the note's block. */
+  private afterTraceChange(): void {
+    this.renderInspector();
+    this.renderFullTraceList();
+    this.drawResults();
+    this.drawFullScreen();
+    this.publishChart();
   }
 
   /**
@@ -2927,26 +3242,13 @@ export class ModelicaStudioView extends ItemView {
     });
 
     const row = overlay.createDiv({ cls: "modelica-studio-fullplot-body" });
-    const list = row.createDiv({ cls: "modelica-studio-fullplot-traces" });
-    list.createDiv({ cls: "modelica-studio-section", text: "Variables" });
-    this.result.series.forEach((s) => {
-      const style = (this.seriesStyles[s.name] ??= {
-        color: seriesColor(this.result!.series.indexOf(s), currentTheme().dark),
-        visible: false,
-      });
-      const item = list.createDiv({ cls: "modelica-studio-series-row" });
-      const cb = item.createEl("input", { type: "checkbox" });
-      cb.checked = style.visible;
-      cb.addEventListener("change", () => {
-        style.visible = cb.checked;
-        this.drawFullScreen();
-        this.drawResults();
-        this.publishChart();
-      });
-      const swatch = item.createSpan({ cls: "modelica-studio-swatch" });
-      swatch.style.background = style.color;
-      item.createSpan({ text: s.name });
-    });
+    const panel = row.createDiv({ cls: "modelica-studio-fullplot-traces" });
+    panel.createDiv({ cls: "modelica-studio-section", text: "Variables" });
+    // The same list as the panel's, at the width of the window and with no row
+    // budget: it is the same question — which traces to look at — and two
+    // renderers meant the overlay answered it with a flat list of everything.
+    this.fullTraceList = panel.createDiv({ cls: "modelica-studio-fullplot-list" });
+    this.renderFullTraceList();
 
     const host = row.createDiv({ cls: "modelica-studio-fullplot-plot" });
     this.fullHost = host;
@@ -3152,7 +3454,21 @@ export class ModelicaStudioView extends ItemView {
     this.fullHost?.closest(".modelica-studio-fullplot")?.remove();
     this.fullHost = null;
     this.fullCanvas = null;
+    this.fullTraceList = null;
     this.drawResults();
+  }
+
+  /** Rebuild the overlay's list, if it is open. A no-op while it is closed. */
+  private renderFullTraceList(): void {
+    const host = this.fullTraceList;
+    if (!host) return;
+    host.empty();
+    this.renderVariableList(host, Number.POSITIVE_INFINITY, {
+      top: this.fullSeriesScroll,
+      remember: (top) => {
+        this.fullSeriesScroll = top;
+      },
+    });
   }
 
   private drawFullScreen(): void {
@@ -3807,7 +4123,19 @@ export class ModelicaStudioView extends ItemView {
    * Called on every selection change as well as every model change, so the
    * buttons and the parameter panel always describe what is actually selected.
    */
-  private onSelectionChanged(_ids: string[]): void {
+  private onSelectionChanged(ids: string[]): void {
+    /**
+     * A click on a component brings the panel that is about it.
+     *
+     * The two tabs answer different questions — what is selected, and what the run
+     * produced — and a reader who clicks a component has asked the first one. Leaving
+     * the Traces tab up meant the click looked like it had done nothing on the right,
+     * which is where the component's parameters are. Forced rather than remembered:
+     * the click is the instruction, and switching back to Traces is a click of its own.
+     */
+    // A wire is a selection as well, and the tab shows the wire's own parameters.
+    const wired = (this.editor?.selectedWireIds ?? []).length > 0;
+    if (ids.length > 0 || wired) this.inspectorTab = "component";
     this.renderInspector();
     this.updateToolbarState();
   }
@@ -4724,6 +5052,8 @@ export class ModelicaStudioView extends ItemView {
         (this.resultsEl?.style.height || "(none)") +
         " | content=" + box(this.contentEl) +
         " root=" + box(q(".modelica-studio-root")) +
+        " main=" + box(q(".modelica-studio-main")) +
+        " edit=" + box(q(".modelica-studio-edit")) +
         " body=" + box(q(".modelica-studio-body")) +
         " canvasHost=" + box(q(".modelica-studio-canvas-host")) +
         " canvas=" + box(q(".modelica-studio-canvas")) +
@@ -4841,6 +5171,15 @@ const SEARCH_LIMIT = 200;
 const SERIES_PAGE = 40;
 
 /**
+ * The deepest indentation a row shows, in levels.
+ *
+ * Six levels is 78px of a 380px panel; past that the indentation costs more than
+ * it says, because the headings the row sits under are already on screen telling
+ * the reader where they are.
+ */
+const MAX_TRACE_DEPTH = 6;
+
+/**
  * What an empty trace list says.
  *
  * "No variable matches that filter" was the only answer, and it is the wrong one
@@ -4859,6 +5198,25 @@ function emptySeriesMessage(preset: SeriesPreset, needle: string): string {
     default:
       return "The result holds no variables.";
   }
+}
+
+/**
+ * What a trace row says on hover: the result's own name for the variable, what
+ * the library says it is, and the unit its numbers are in.
+ *
+ * The row itself shows the last segment of the name — `v`, under `capacitor` —
+ * so the full name has to be somewhere for the reader who needs to type it into
+ * a filter or match it against a log, and this is where the plugin already puts
+ * what does not fit.
+ */
+function traceTooltip(series: SimSeries): string {
+  const lines = [series.name];
+  if (series.comment) lines.push(series.comment);
+  // The compiler's own spelling here, not the readable one the row shows: this is
+  // where a reader looks to copy the exact string into a filter or a model, and
+  // the row is where they read it.
+  if (series.unit?.trim()) lines.push(`[${series.unit.trim()}]`);
+  return lines.join("\n");
 }
 
 /** Palette thumbnail edge, in CSS pixels. */

@@ -14,11 +14,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { buildLibs, repoRoot } from "./helpers/build.mjs";
 
-const LIB = buildLibs("series-lib", ["src/view/series.ts", "src/view/plot.ts", "src/view/axes.ts", "src/view/family.ts"]);
+const LIB = buildLibs("series-lib", ["src/view/series.ts", "src/view/plot.ts", "src/view/axes.ts", "src/view/family.ts", "src/view/typeset.ts", "src/view/units.ts"]);
 const plotMod = await import(path.join(LIB, "plot.js"));
 const axes = await import(path.join(LIB, "axes.js"));
 const family = await import(path.join(LIB, "family.js"));
 const { defaultSeriesNames, summarizeSeries } = await import(path.join(LIB, "series.js"));
+const typesetMod = await import(path.join(LIB, "typeset.js"));
 
 /** Build a SimResult-shaped object from name -> values. */
 function resultOf(entries, times = [0, 1, 2]) {
@@ -500,6 +501,180 @@ test("a dashed series is dashed in the legend too", () => {
   assert.ok(dashes.includes("5,4"), `a dashed series gets a dashed swatch, got ${JSON.stringify(dashes)}`);
 });
 
+test("a trace wide enough to fill the plot is drawn under the quiet ones", () => {
+  // Reported from a screenshot of the buck converter. `der(inductor.i)` swings
+  // between -10828 and +12000 A/s (the model's real numbers) while `capacitor.v`
+  // moves between 0 and 21.7 V, and sampled every 10 µs that 20 kHz derivative has
+  // no curve left in it: it is a dense zigzag that fills the frame. Painted in
+  // result order it came last, over the two traces it is derived from, so the
+  // picture was one yellow block with `capacitor.v` visible only in the arcs that
+  // poked out above it.
+  const strokes = [];
+  const legendNames = [];
+  let segments = 0;
+  let font = "11px sans-serif";
+  const ctx = new Proxy(
+    {
+      canvas: { width: 900, height: 400 },
+      font,
+      fillStyle: "",
+      strokeStyle: "",
+      globalAlpha: 1,
+      textAlign: "",
+      textBaseline: "",
+    },
+    {
+      get(t, k) {
+        if (k in t) return t[k];
+        if (k === "measureText") {
+          const size = Number(/([0-9.]+)px/.exec(font)?.[1] ?? 11);
+          return (s2) => ({ width: String(s2).length * size * 0.55 });
+        }
+        if (k === "beginPath") return () => { segments = 0; };
+        if (k === "moveTo" || k === "lineTo") return () => { segments++; };
+        if (k === "stroke") return () => { strokes.push({ color: t.strokeStyle, segments, width: t.lineWidth }); };
+        // The legend writes the name beside its swatch, in the order it draws them.
+        if (k === "fillText") return (label) => { legendNames.push(String(label)); };
+        return () => {};
+      },
+      set(t, k, v) {
+        if (k === "font") font = String(v);
+        t[k] = v;
+        return true;
+      },
+    }
+  );
+
+  const time = Array.from({ length: 10 }, (_, i) => i / 9);
+  const result = {
+    time,
+    // The order a result writes them in: the derived, enormous one last — which is
+    // the order that buried everything.
+    series: [
+      { name: "capacitor.v", values: time.map((t) => 21 * t), unit: "V" },
+      { name: "inductor.i", values: time.map((t) => 3 * t), unit: "A" },
+      { name: "der(inductor.i)", values: time.map((t, i) => (i % 2 ? 12000 : -10828)), unit: "A/s" },
+    ],
+    compileMs: 1,
+    simulateMs: 1,
+    reusedBinary: true,
+    warnings: [],
+  };
+  const colours = { "capacitor.v": "#a00", "inductor.i": "#0a0", "der(inductor.i)": "#aa0" };
+  plotMod.drawPlot(ctx, 900, 400, result, {
+    styles: Object.fromEntries(Object.entries(colours).map(([n, color]) => [n, { color, visible: true }])),
+    view: { xMin: 0, xMax: 1 },
+    dpr: 1,
+    theme: plotMod.plotThemeFrom(false),
+  });
+
+  // Only the traces: the frame, the grid and the legend swatches are stroked too,
+  // and a swatch is a two-point line.
+  const painted = strokes.filter((s) => s.segments >= 5).map((s) => s.color);
+  assert.deepEqual(
+    painted,
+    ["#aa0", "#a00", "#0a0"],
+    "the widest trace is painted first, the rest keep the result's order"
+  );
+  // The legend is where a reader looks up which colour is which, so it keeps the
+  // result's order — the paint order is not a reading order. Read off the swatches:
+  // a name is drawn in runs now (`capacitor` `.` `v`), so the row's identity in this
+  // recording is the colour of the swatch that precedes it.
+  const seriesColours = Object.values(colours);
+  const swatches = strokes
+    .filter((s) => s.width === 2.4 && seriesColours.includes(s.color))
+    .map((s) => s.color);
+  assert.deepEqual(swatches, ["#a00", "#0a0", "#aa0"], "and the legend keeps the result's order");
+});
+
+test("the legend typesets a name: subscripts low, the derivative dot above", () => {
+  // The legend is where a curve is READ, so it says `damper.s_rel` as a subscript and
+  // `der(damper.s_rel)` as a dotted `s`. The trace LIST keeps plain names — it is an
+  // identifier surface — so this is the one place the two spellings differ, on purpose.
+  const texts = [];
+  const arcs = [];
+  let font = "11px sans-serif";
+  const ctx = new Proxy(
+    {
+      canvas: { width: 900, height: 400 },
+      font,
+      fillStyle: "",
+      strokeStyle: "",
+      globalAlpha: 1,
+      textAlign: "",
+      textBaseline: "",
+    },
+    {
+      get(t, k) {
+        if (k in t) return t[k];
+        if (k === "measureText") {
+          const size = Number(/([0-9.]+)px/.exec(font)?.[1] ?? 11);
+          return (s2) => ({ width: String(s2).length * size * 0.55 });
+        }
+        if (k === "fillText") return (label, x, y) => texts.push({ label: String(label), x, y, font });
+        if (k === "arc") return (x, y, r) => arcs.push({ x, y, r });
+        return () => {};
+      },
+      set(t, k, v) {
+        if (k === "font") font = String(v);
+        t[k] = v;
+        return true;
+      },
+    }
+  );
+  const time = [0, 1, 2, 3];
+  const result = {
+    time,
+    series: [
+      // Comparable magnitudes, so both curves share ONE axis and the legend keeps a
+      // full strip: two axes take the width the names and units are drawn in.
+      { name: "damper.s_rel", values: [0, 1, 2, 3], unit: "m" },
+      { name: "der(damper.v_rel)", values: [0, 1, 2, 3], unit: "m.s-1" },
+    ],
+    compileMs: 1, simulateMs: 1, reusedBinary: true, warnings: [],
+  };
+  // Wide enough for the name AND its unit: in a narrow strip the unit is the part
+  // that gives way, so that is a different case (tested by the axis-collision one).
+  plotMod.drawPlot(ctx, 1200, 400, result, {
+    styles: {
+      "damper.s_rel": { color: "#a00", visible: true },
+      "der(damper.v_rel)": { color: "#0a0", visible: true },
+    },
+    view: { xMin: 0, xMax: 3 },
+    dpr: 1,
+    theme: plotMod.plotThemeFrom(false),
+  });
+
+  const rows = texts.filter((t) => /^(damper|s|rel|\.)$/.test(t.label));
+  const sub = rows.find((t) => t.label === "rel");
+  const base = rows.find((t) => t.label === "s");
+  assert.ok(base && sub, `the name is drawn in runs, got ${JSON.stringify(rows)}`);
+  assert.ok(sub.y > base.y, `the subscript sits lower than its variable, ${sub?.y} > ${base?.y}`);
+  assert.ok(Number(/([0-9.]+)px/.exec(sub.font)?.[1]) < 12, "and is drawn smaller");
+  assert.ok(arcs.length >= 1, "the derivative's dot is a filled circle above the variable");
+  assert.ok(
+    arcs.every((a) => a.r < 3),
+    "a dot, not a blob"
+  );
+  // The unit rides after the name, and the raised exponent is a character rather than
+  // a second font size — so the same string works in the tooltip and the list too.
+  const unit = texts.find((t) => t.label === "m·s⁻¹");
+  assert.ok(
+    unit,
+    `the unit is drawn as characters, not as a second font size: ${JSON.stringify(texts.map((t) => t.label))}`
+  );
+  assert.ok(unit.x > sub.x, "and after the name it belongs to");
+  assert.ok(
+    !texts.some((t) => /^[⁰¹²³⁴⁵⁶⁷⁸⁹⁻]+$/.test(t.label)),
+    "the exponent is never a run of its own: one string works in the list, the tooltip and here"
+  );
+  assert.equal(
+    typesetMod.typesetName("der(damper.v_rel)").filter((r) => r.dot).length,
+    1,
+    "one dot for one derivative"
+  );
+});
+
 test("the legend is placed clear of a second axis's values", () => {
   // Reported from a screenshot: the right-hand axis values (1.1e+5) were painted
   // over by the legend's surface, because both live in the margin to the right of
@@ -567,17 +742,17 @@ test("the legend is placed clear of a second axis's values", () => {
   const frameRight = layout.left + layout.width;
   // The axis values: numbers drawn to the right of the frame.
   const axis = text.filter((t) => t.x > frameRight && /[0-9]/.test(t.label) && t.label.length <= 8);
-  // The legend: its swatch labels are drawn further right again, or, when there
-  // is no room for both, not at all.
-  // The legend's rows are the only text shortened this way; `fitLabel` marks them
-  // with a leading ellipsis.
-  const legendNames = text.filter((t) => t.label.startsWith("…"));
+  // The legend's rows start past the axis's tick labels, which are drawn from the
+  // frame outwards. Found by position rather than by a leading ellipsis: with the
+  // room the legend now reserves, these names FIT, which is the better outcome and
+  // not something to assert a truncation about.
+  const legendNames = text.filter((t) => t.x > frameRight + 8);
   assert.ok(axis.length > 0, `the second axis is labelled (${text.map((t) => t.label).join(" | ")})`);
 
   const axisRight = Math.max(...axis.map((t) => t.x + t.label.length * 11 * 0.55));
 
-  // The pane in the report: narrow enough that the strip beside the axis is only
-  // about 70px, which is a truncated legend — not none, and not a collision.
+  // The pane in the report: a second axis's tick labels and the legend share the
+  // right margin, so the legend has to start past them — and be drawn at all.
   assert.ok(
     legendNames.length > 0,
     `the legend is still drawn beside the axis (${text.map((t) => t.label).join(" | ")})`
@@ -788,13 +963,17 @@ test("the legend and the axis values never collide, at any width", () => {
 test("a legend names the run on screen as well as the family", () => {
   // Reported from a screenshot: two curves, and no way to tell 10 V from 15 V.
   const rows = [];
+  const recorded = [];
   const ctx = new Proxy(
     { canvas: { width: 900, height: 400 }, font: "", fillStyle: "", strokeStyle: "", globalAlpha: 1, textAlign: "", textBaseline: "" },
     {
       get(t, k) {
         if (k in t) return t[k];
         if (k === "measureText") return (s2) => ({ width: String(s2).length * 6 });
-        if (k === "fillText") return (text) => rows.push(String(text));
+        // A name is drawn in RUNS now, so what a row SAYS is its runs joined; the
+        // swatch stroke is what separates one row from the next.
+        if (k === "fillText") return (text) => recorded.push({ text: String(text) });
+        if (k === "stroke") return () => recorded.push({ text: null });
         return () => {};
       },
       set(t, k, v) { t[k] = v; return true; },
@@ -816,10 +995,20 @@ test("a legend names the run on screen as well as the family", () => {
     dpr: 1,
     theme: plotMod.plotThemeFrom(false),
   });
+  let row = "";
+  for (const part of recorded) {
+    if (part.text === null) {
+      if (row !== "") rows.push(row);
+      row = "";
+      continue;
+    }
+    row += part.text;
+  }
+  if (row !== "") rows.push(row);
   const legend = rows.filter((r) => r.includes("source.V="));
   assert.equal(legend.length, 2, `both curves are named in the legend, got ${JSON.stringify(rows)}`);
-  assert.ok(legend.some((r) => r.endsWith("source.V=15")), "including the one on screen");
-  assert.ok(legend.some((r) => r.endsWith("source.V=10")), "and the one behind it");
+  assert.ok(legend.some((r) => r.includes("source.V=15")), "including the one on screen");
+  assert.ok(legend.some((r) => r.includes("source.V=10")), "and the one behind it");
 });
 
 test("deltas are measured against the named run on screen", () => {

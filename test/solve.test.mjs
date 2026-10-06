@@ -360,3 +360,27 @@ test("a missing or malformed description costs the units and nothing else", () =
   assert.deepEqual(backendMod.parseVariableUnits("{}"), {});
   assert.deepEqual(backendMod.parseVariableUnits('{"variables": null}'), {});
 });
+
+test("the description also carries the comment, which is what the quantity is", () => {
+  // `Modelica.Units.SI.Voltage v` says neither "V" nor what the variable means;
+  // the library's comment says the second, and it is written down only here.
+  const json = JSON.stringify({
+    variables: {
+      i: { unit: " A ", comment: " Current flowing from pin p to pin n " },
+      onlyComment: { comment: "A blank unit is a unit: dimensionless" },
+      onlyUnit: { unit: "W" },
+      empty: { unit: "", comment: "" },
+      notStrings: { unit: 7, comment: null },
+    },
+  });
+  assert.deepEqual(backendMod.parseVariableInfo(json), {
+    i: { unit: "A", comment: "Current flowing from pin p to pin n" },
+    onlyComment: { comment: "A blank unit is a unit: dimensionless" },
+    onlyUnit: { unit: "W" },
+  });
+});
+
+test("a description with no per-variable facts describes nothing", () => {
+  assert.deepEqual(backendMod.parseVariableInfo("not json"), {});
+  assert.deepEqual(backendMod.parseVariableInfo('{"variables": []}'), {});
+});

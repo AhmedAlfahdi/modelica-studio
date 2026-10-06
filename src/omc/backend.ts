@@ -54,6 +54,8 @@ export interface SimSeries {
   /** Flat [t0, v0, t1, v1, ...] to avoid allocating an object per sample. */
   values: number[];
   unit?: string;
+  /** The variable's comment from the model, e.g. "Current flowing from pin p to pin n". */
+  comment?: string;
 }
 
 export interface SimResult {
@@ -151,37 +153,57 @@ export function parseOmcCsv(text: string): { header: string[]; rows: number[][] 
   return { header, rows };
 }
 
+/** What the model description says about one variable. */
+export interface VariableInfo {
+  unit?: string;
+  /** The declaration's comment: what the quantity is, in the library's words. */
+  comment?: string;
+}
+
 /**
- * Units for the variables in a result, read from the model description.
+ * The model description's per-variable facts, read from `<Model>_info.json`.
  *
- * `buildModel` writes `<Model>_info.json` beside the compiled model, and it is
- * the only place a unit is stated in a form a reader of the results can use: the
- * result CSV has bare names in its header, and the units that appear in
+ * `buildModel` writes that file beside the compiled model, and it is the only
+ * place a unit is stated in a form a reader of the results can use: the result
+ * CSV has bare names in its header, and the units that appear in
  * `<Model>_init.xml` are attribute soup. The description is keyed by variable
  * name, which is the same string the CSV header carries, so matching the two is a
  * lookup rather than a parse.
  *
  * The unit is usually inherited from the declared type — `Modelica.Units.SI.
  * Voltage v` never says "V" anywhere in the source — which is exactly why this
- * comes from the compiler instead of from the plugin's own parser.
+ * comes from the compiler instead of from the plugin's own parser. The comment is
+ * the same story: it is written next to the declaration and never reaches the
+ * result file.
  *
  * Never throws. A model description that is missing, truncated or reshaped by a
- * different OpenModelica version costs the units and nothing else.
+ * different OpenModelica version costs the units and the comments, nothing else.
  */
-export function parseVariableUnits(json: string): Record<string, string> {
+export function parseVariableInfo(json: string): Record<string, VariableInfo> {
   try {
     const parsed: unknown = JSON.parse(json);
     const vars = (parsed as { variables?: unknown })?.variables;
     if (!vars || typeof vars !== "object") return {};
-    const out: Record<string, string> = {};
+    const out: Record<string, VariableInfo> = {};
     for (const [name, value] of Object.entries(vars as Record<string, unknown>)) {
-      const unit = (value as { unit?: unknown })?.unit;
-      if (typeof unit === "string" && unit.trim()) out[name] = unit.trim();
+      const info = value as { unit?: unknown; comment?: unknown };
+      const unit = typeof info?.unit === "string" ? info.unit.trim() : "";
+      const comment = typeof info?.comment === "string" ? info.comment.trim() : "";
+      if (unit || comment) out[name] = { ...(unit ? { unit } : {}), ...(comment ? { comment } : {}) };
     }
     return out;
   } catch {
     return {};
   }
+}
+
+/** Just the units, which is all most callers want. */
+export function parseVariableUnits(json: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, info] of Object.entries(parseVariableInfo(json))) {
+    if (info.unit) out[name] = info.unit;
+  }
+  return out;
 }
 
 /** Convert a parsed CSV into time + series, transposing to column arrays. */
@@ -472,28 +494,31 @@ export class OmcBackend implements SimulationBackend {
     const unusable = describeUnusableResult(result, opts.solver);
     if (unusable) throw new SimulationError(unusable, []);
 
-    // Units come from the model description the compiler wrote, not from the
-    // result file. Done after the unusable check so a run that produced nothing
-    // fails for the reason that matters rather than for a missing description.
-    const units = this.variableUnits(compiled.workDir!, compiled.stem ?? opts.modelName);
+    // The units and the comments come from the model description the compiler
+    // wrote, not from the result file. Done after the unusable check so a run that
+    // produced nothing fails for the reason that matters rather than for a missing
+    // description.
+    const described = this.variableInfo(compiled.workDir!, compiled.stem ?? opts.modelName);
     for (const series of result.series) {
-      const unit = units[series.name];
-      if (unit) series.unit = unit;
+      const info = described[series.name];
+      if (!info) continue;
+      if (info.unit) series.unit = info.unit;
+      if (info.comment) series.comment = info.comment;
     }
     return result;
 
   }
 
   /**
-   * Read `<stem>_info.json` for the variable units, or nothing.
+   * Read `<stem>_info.json` for what the model says about each variable, or nothing.
    *
    * The file is written by `buildModel` and describes the model rather than the
    * run, so it is read per run anyway: a build is cached across runs and the
    * cached binary's description is the only one that matches it.
    */
-  private variableUnits(workDir: string, stem: string): Record<string, string> {
+  private variableInfo(workDir: string, stem: string): Record<string, VariableInfo> {
     try {
-      return parseVariableUnits(fs.readFileSync(path.join(workDir, `${stem}_info.json`), "utf8"));
+      return parseVariableInfo(fs.readFileSync(path.join(workDir, `${stem}_info.json`), "utf8"));
     } catch {
       return {};
     }

@@ -395,6 +395,68 @@ export class SecretComponent {
 }
 
 /** A modal that renders into a detached element a test can inspect. */
+/**
+ * The lifetime a rendered markdown block is registered against.
+ *
+ * Real, because a modal that renders notes has to load and unload it: a stub that did
+ * nothing would let a modal leak its registrations and still pass.
+ */
+export class Component {
+  loaded = false;
+  private children: Component[] = [];
+  load(): void {
+    if (this.loaded) return;
+    this.loaded = true;
+    for (const child of this.children) child.load();
+  }
+  unload(): void {
+    if (!this.loaded) return;
+    this.loaded = false;
+    for (const child of this.children) child.unload();
+  }
+  onload(): void {}
+  onunload(): void {}
+  addChild<T extends Component>(child: T): T {
+    this.children.push(child);
+    if (this.loaded) child.load();
+    return child;
+  }
+  removeChild<T extends Component>(child: T): T {
+    this.children = this.children.filter((c) => c !== child);
+    return child;
+  }
+  register(): void {}
+  registerEvent(): void {}
+  registerDomEvent(): void {}
+  registerInterval(): number {
+    return 0;
+  }
+}
+
+/**
+ * Markdown rendering, recorded rather than performed.
+ *
+ * The plugin's contract is that the notes go THROUGH this, as markdown, against a
+ * component it can unload -- not that they are turned into any particular DOM. A test
+ * reads what was handed over; a stub that re-implemented markdown would be testing the
+ * stub.
+ */
+export const MarkdownRenderer = {
+  rendered: [] as Array<{ markdown: string; el: HTMLElement; component: unknown }>,
+  render(
+    _app: unknown,
+    markdown: string,
+    el: HTMLElement,
+    _sourcePath: string,
+    component: unknown
+  ): Promise<void> {
+    MarkdownRenderer.rendered.push({ markdown, el, component });
+    // Enough of a body that a test can see something was rendered where the notes go.
+    el.createDiv({ cls: "stub-markdown", text: markdown });
+    return Promise.resolve();
+  },
+};
+
 export class Modal {
   titleEl: HTMLElement;
   contentEl: HTMLElement;

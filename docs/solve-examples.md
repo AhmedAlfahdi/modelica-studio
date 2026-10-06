@@ -182,7 +182,7 @@ R = v/i
 ```
 ````
 
-→ `R = 200 Ohm`
+→ `R = 200 Ω`
 
 ## What it says when something is off
 

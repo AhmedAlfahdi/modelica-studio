@@ -18,6 +18,7 @@ import { finishRenderMath, loadMathJax, renderMath, setIcon } from "obsidian";
 import type { SimSeries, SimulationBackend } from "../omc/backend";
 import { SimulationError } from "../omc/backend";
 import { describeError } from "../errors";
+import { formatUnit } from "./units";
 import {
   DEFAULT_START,
   buildSolveModel,
@@ -266,7 +267,9 @@ export class SolveBlock {
       row.createSpan({ cls: "modelica-studio-solve-name", text: answer.name });
       row.createSpan({ cls: "modelica-studio-solve-eq", text: "=" });
       row.createSpan({ cls: "modelica-studio-solve-value", text: answer.text });
-      if (answer.unit) row.createSpan({ cls: "modelica-studio-solve-unit", text: answer.unit });
+      // The unit as a reader writes it (`Ohm` is Ω, `m.s-1` is m·s-1); the value
+      // beside it is typeset by MathJax, and a unit is not mathematics — it is a label.
+      if (answer.unit) row.createSpan({ cls: "modelica-studio-solve-unit", text: formatUnit(answer.unit) });
     }
 
     // Two facts are worth stating, and only when they were the plugin's choice

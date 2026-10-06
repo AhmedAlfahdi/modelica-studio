@@ -10,6 +10,8 @@
 
 import type { SimResult, SimSeries } from "../omc/backend";
 import { planAxes, type AxisPlan } from "./axes";
+import { typesetName, type Run } from "./typeset";
+import { formatUnit } from "./units";
 
 export interface SeriesStyle {
   color: string;
@@ -156,7 +158,12 @@ export function plotLayout(
   const bottom = 30;
 
   // Reserve legend space only when the plot keeps a usable width either way.
-  const legendW = 118;
+  //
+  // 160 rather than 118 since a row carries a unit as well as a name: a qualified
+  // name at 12px is about 90px, its unit about 30, and the swatch and the gaps take
+  // the rest. At 118 the name and the unit could not both fit, so the unit gave way
+  // on exactly the rows whose names are long enough to need it.
+  const legendW = 160;
   const minPlotW = 220;
   const withLegend = showLegend && w - left - legendW - 14 >= minPlotW;
   // The second axis labels its ticks in this margin, so its column is reserved
@@ -307,7 +314,7 @@ export function legendPlan(
   // names and a sliver of them says nothing.
   const minW = axisLabelW > 0 ? MIN_LEGEND_BESIDE_AXIS_W : 100;
   const show = w - lay.left - lay.width - 14 - axisLabelW >= minW;
-  const rows = show ? Math.max(0, Math.floor((lay.height - 10) / 15)) : 0;
+  const rows = show ? Math.max(0, Math.floor((lay.height - 10) / LEGEND_ROW_H)) : 0;
   return { show, rows };
 }
 
@@ -315,21 +322,94 @@ export function legendPlan(
 const MIN_LEGEND_BESIDE_AXIS_W = 56;
 
 /**
- * A series name shortened to fit the space the legend has.
+ * The legend's type, in one place: the row height the plan counts with, the size of
+ * a name, its subscript, and the unit beside it.
  *
- * The TAIL is kept — `pipe.port_a.m_flow` against `pipe.port_a.p` differ at the
- * end — and the width is measured rather than counted in characters, because the
- * strip left over beside a second axis is narrow and a character count that fits
- * one font overflows another.
+ * Larger than it was (15px rows at 11px), because the legend now says more per row:
+ * a subscript is only legible at the size it is drawn if the base is not also
+ * small, and a raised exponent needs the same. The cost is rows — 14 where 17 fit
+ * before — which is why it is not larger still.
  */
-function fitLabel(ctx: CanvasRenderingContext2D, name: string, maxW: number): string {
-  if (maxW <= 0) return "";
-  if (ctx.measureText(name).width <= maxW) return name;
-  let tail = name;
-  while (tail.length > 2 && ctx.measureText("…" + tail).width > maxW) {
-    tail = tail.slice(1);
+const LEGEND_ROW_H = 18;
+const LEGEND_FONT = 12;
+const LEGEND_UNIT_FONT = 11;
+/** A subscript, and how far below the baseline it sits. */
+const LEGEND_SUB_SCALE = 0.72;
+const LEGEND_SUB_DROP = 0.28;
+/** Between a run of the name and the next: subscripts sit close, components apart. */
+const RUN_GAP = 0;
+
+/** How wide the runs measure, drawn at `base` px. */
+function runsWidth(ctx: CanvasRenderingContext2D, runs: Run[], base: number): number {
+  let width = 0;
+  for (const run of runs) {
+    ctx.font = `${run.kind === "sub" ? Math.round(base * LEGEND_SUB_SCALE) : base}px sans-serif`;
+    width += ctx.measureText(run.text).width + RUN_GAP;
   }
-  return "…" + tail;
+  return width;
+}
+
+/**
+ * The runs, cut to a width — the TAIL kept, because that is what distinguishes
+ * `pipe.port_a.m_flow` from `pipe.port_a.p`.
+ *
+ * The tail is what distinguishes `pipe.port_a.m_flow` from `pipe.port_a.p`, and it
+ * is measured rather than counted for the same reason as before: the strip beside a
+ * second axis is narrow, and a character count that fits one font overflows
+ * another. Runs are dropped from the front until the rest fits, and a run that
+ * still does not fit keeps only its own tail.
+ */
+function fitRuns(ctx: CanvasRenderingContext2D, runs: Run[], base: number, maxW: number): Run[] {
+  if (maxW <= 0) return [];
+  let out = runs;
+  let dropped = false;
+  while (out.length > 0 && runsWidth(ctx, out, base) > maxW) {
+    if (out.length === 1) {
+      const run = out[0];
+      let tail = run.text;
+      while (tail.length > 1) {
+        const cut = { ...run, text: "…" + tail.slice(1) };
+        if (runsWidth(ctx, [cut], base) <= maxW) return [cut];
+        tail = tail.slice(1);
+      }
+      return [{ ...run, text: "…" }];
+    }
+    out = out.slice(1);
+    dropped = true;
+  }
+  // A row that starts mid-name has to SAY so, or `m_flow` reads as the whole name.
+  if (dropped && out.length > 0) out = [{ ...out[0], text: "…" + out[0].text }, ...out.slice(1)];
+  return out;
+}
+
+/** Draw the runs at (x, y), with a derivative dot over the variable run. */
+function drawRuns(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  runs: Run[],
+  base: number,
+  colour: string
+): number {
+  let cx = x;
+  for (const run of runs) {
+    const size = run.kind === "sub" ? Math.round(base * LEGEND_SUB_SCALE) : base;
+    ctx.font = `${size}px sans-serif`;
+    ctx.fillStyle = colour;
+    ctx.fillText(run.text, cx, run.kind === "sub" ? y + base * LEGEND_SUB_DROP : y);
+    const width = ctx.measureText(run.text).width;
+    if (run.dot) {
+      // Over the middle of the variable it differentiates — never over the
+      // subscript, which is what `s_rel` with a dot on the `rel` looked like.
+      for (let d = 0; d < run.dot; d++) {
+        ctx.beginPath();
+        ctx.arc(cx + width / 2, y - base * 0.5 - d * 2.6, 1.15, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    cx += width + RUN_GAP;
+  }
+  return cx;
 }
 
 /** Min/max of a series over an inclusive x-range. */
@@ -585,7 +665,30 @@ export function drawPlot(
   const unitLabel = opts.unitOf?.(visible[0]?.name ?? "");
   void unitLabel;
 
-  visible.forEach((s, i) => {
+  /**
+   * The traces to paint, widest first, so a broad one cannot bury a quiet one.
+   *
+   * Reported from a screenshot of the buck converter: `der(inductor.i)` swings
+   * between -10828 and +12000 A/s while `capacitor.v` moves between 0 and 21.7 V.
+   * Sampled every 10 µs, that 20 kHz derivative has no curve left in it — it is a
+   * dense zigzag that fills the frame — and painted in result order it came LAST,
+   * over the two traces it is derived from. `capacitor.v` was left visible only in
+   * the arcs that happened to poke out above it, which reads as a plot with one
+   * yellow block and two broken lines in it. Painting the widest extent first is
+   * the only order in which all of them can be read.
+   *
+   * The viewport's extents, not the whole run's: after zooming into a calm
+   * stretch, what is wide on screen is what needs to go behind. Colours are
+   * unaffected — a series is coloured by its place in the result, not by the
+   * order it is drawn in — and ties keep the result's order.
+   */
+  const spanOf = (s: SimSeries): number => {
+    const [a, b] = extents.get(s.name) ?? [0, 0];
+    return Number.isFinite(a) && Number.isFinite(b) ? b - a : 0;
+  };
+  const paintOrder = [...visible].sort((a, b) => spanOf(b) - spanOf(a));
+
+  paintOrder.forEach((s) => {
     const style = opts.styles[s.name];
     ctx.strokeStyle = style?.color ?? seriesColor(result.series.indexOf(s));
     ctx.lineWidth = 1.6;
@@ -621,7 +724,6 @@ export function drawPlot(
       }
     }
     ctx.stroke();
-    void i;
   });
   ctx.restore();
 
@@ -640,14 +742,13 @@ export function drawPlot(
   if (visible.length > 0 && plan.show && plan.rows > 0) {
     const lx = lay.left + lay.width + 10 + axisLabelW;
     const stripW = Math.max(0, cssWidth - lx - 4);
-    let ly = lay.top + 8;
-    ctx.font = "11px sans-serif";
+    let ly = lay.top + LEGEND_ROW_H / 2 + 2;
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
 
     const shown = visible.slice(0, plan.rows);
     const overflow = visible.length - shown.length;
-    const boxH = (shown.length + (overflow > 0 ? 1 : 0)) * 15 + 8;
+    const boxH = (shown.length + (overflow > 0 ? 1 : 0)) * LEGEND_ROW_H + 8;
     ctx.fillStyle = theme.background;
     ctx.globalAlpha = 0.92;
     // From the legend's own left edge to the edge of the canvas: it used to be
@@ -671,9 +772,41 @@ export function drawPlot(
       ctx.lineTo(lx + 14, ly);
       ctx.stroke();
       ctx.setLineDash([]);
+      // The unit first, because it is the part that must not be cut: the name gives
+      // way to it. Measured at its own size, since a raised exponent is a different
+      // string, not a smaller font.
+      const unit = s.unit?.trim() ? formatUnit(s.unit) : "";
+      let unitW = 0;
+      if (unit !== "") {
+        ctx.font = `${LEGEND_UNIT_FONT}px sans-serif`;
+        unitW = ctx.measureText(unit).width;
+      }
+      const full = typesetName(s.name);
+      const nameMax = stripW - 19 - 4 - (unitW > 0 ? unitW + 7 : 0);
+      let nameRuns = fitRuns(ctx, full, LEGEND_FONT, nameMax);
+      let showUnit = unit !== "";
+      if (showUnit && nameRuns.length < full.length) {
+        // The unit is the part that gives way. Beside a second axis the strip is
+        // narrow, and a row whose NAME is cut cannot be matched to a curve at all,
+        // while a row without its unit still can.
+        const withoutUnit = fitRuns(ctx, full, LEGEND_FONT, stripW - 19 - 4);
+        if (withoutUnit.length > nameRuns.length) {
+          nameRuns = withoutUnit;
+          showUnit = false;
+        }
+      }
       ctx.fillStyle = theme.foreground;
-      ctx.fillText(fitLabel(ctx, s.name, stripW - 19 - 4), lx + 19, ly);
-      ly += 15;
+      const after = drawRuns(ctx, lx + 19, ly, nameRuns, LEGEND_FONT, theme.foreground);
+      if (showUnit) {
+        ctx.font = `${LEGEND_UNIT_FONT}px sans-serif`;
+        // Muted, and after the name: the unit qualifies the value, it is not part of
+        // the variable's name.
+        // The theme's quiet tone: `axis` is the colour its own labels use, so the unit
+        // recedes the same way the tick values do.
+        ctx.fillStyle = theme.axis;
+        ctx.fillText(unit, after + 7, ly + 1);
+      }
+      ly += LEGEND_ROW_H;
     }
     if (overflow > 0) {
       ctx.fillStyle = theme.foreground;

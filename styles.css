@@ -84,6 +84,30 @@
   overflow: hidden;
 }
 
+/* The studio's two columns: the editor with its results, and the inspector rail.
+
+   The rail is full height because the trace list is a surface you scan while the
+   plot is one you read, and it was getting 138px of a 696px window — about ten
+   rows of a 37-variable result — while the results pane below it took the rest.
+   The plot keeps everything to the left of the rail, so the rail's width is what
+   this costs, and that is the user's to drag. */
+.modelica-studio-main {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.modelica-studio-edit {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .modelica-studio-col {
   min-height: 0;
   min-width: 0;
@@ -370,8 +394,13 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
-  padding: 1px 0;
+  /* 12px, and a couple of px of padding: a subscript or a raised exponent is only
+     legible at the size it is drawn if the base is not also small, and the padding
+     on the right is what keeps the exponent from being the first thing cut. */
+  font-size: 12px;
+  /* A little more room at the top than the bottom: the derivative dot is drawn above
+     the ascender, and a row that clips cannot show it. */
+  padding: 3px 5px 2px 0;
   opacity: 0.62;
 }
 
@@ -1344,11 +1373,154 @@ body.modelica-studio-resizing .workspace-leaf-content canvas {
   white-space: nowrap;
 }
 
+/* A subscript in a variable's name: `_rel`, `[i]`. The browser's own `<sub>` sizing is
+   kept — it is a shade larger than the legend's, because the list is where a name is
+   matched rather than skimmed. */
+.modelica-studio-run-sub {
+  font-size: 0.76em;
+}
+
+/* The derivative dot, drawn on the run's own box so it sits over the VARIABLE and
+   never over its subscript. Two dots for `der(der(x))`, the second by shadow: one
+   pseudo-element cannot draw two. */
+.modelica-studio-run.is-deriv {
+  position: relative;
+}
+
+.modelica-studio-run.is-deriv::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 2.4px;
+  height: 2.4px;
+  margin-left: -1.2px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.modelica-studio-run.is-deriv[data-dots="2"]::after {
+  box-shadow: 0 -3px 0 0 currentColor;
+}
+
+/* A dotted separator (`.`) sits close to the runs on either side of it. */
+.modelica-studio-run.is-sep {
+  opacity: 0.85;
+}
+
 /* Nothing in a row may spill sideways: the list is a vertical window, and a
    horizontal scrollbar inside it costs a line of rows. */
 .modelica-studio-series-row {
   overflow: hidden;
 }
+
+/* How deep a row sits in the tree. The depth is a custom property rather than a
+   padding because the row already has padding of its own — a padding set from
+   the script would throw that away, and the vertical rhythm with it. */
+.modelica-studio-series-row,
+.modelica-studio-series-group {
+  padding-left: calc(1px + var(--series-depth, 0) * 13px);
+}
+
+/* A component: a heading the reader can open, in the place a variable row would
+   be. Its own line rather than a folder icon on every variable, because the
+   point of the tree is that the prefix is said once. */
+.modelica-studio-series-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* A group holding a drawn trace is not scenery: it is where the reader's traces
+   are, and after a run it is what they look for. */
+.modelica-studio-series-group.is-drawn {
+  color: var(--text-normal);
+}
+
+.modelica-studio-series-twisty {
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+  min-height: 12px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 12px;
+  cursor: pointer;
+}
+
+.modelica-studio-series-twisty:hover {
+  color: var(--text-normal);
+}
+
+/* The heading is a button so the keyboard can work it; it is styled as text
+   because it is a label, and a column of buttons in a 380px panel is not a list
+   of variables. */
+.modelica-studio-series-group-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: auto;
+  overflow: hidden;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.modelica-studio-series-count {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.modelica-studio-series-group.is-drawn .modelica-studio-series-count {
+  color: var(--text-accent);
+}
+
+/* The unit the numbers are in, muted and after the name: it qualifies the value,
+   it is not part of the variable's name. Long compound units are ellipsised and
+   read in full on the tooltip. */
+.modelica-studio-series-unit {
+  /* Keeps its own width: it used to shrink and ellipsise, which cut the raised
+     exponent first — `m·s⁻¹` came out as `m·s⁻` — and the exponent is the part a
+     reader most needs. The cap still applies to a long compound unit
+     (`km2·s⁻⁴·A⁻¹·g`), where the name has already given all the room it can. */
+  flex: 0 0 auto;
+  max-width: 46%;
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The overlay's list is the same list at the width of the window: the panel's
+   190px window and its border would make a box of it inside a box. */
+.modelica-studio-fullplot-list .modelica-studio-series {
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
 
 .modelica-studio-swatch.is-off {
   opacity: 0.3;
@@ -1821,6 +1993,33 @@ body.modelica-studio-resizing .workspace-leaf-content canvas {
 .modelica-studio-prompt-input {
   width: 100%;
   margin-bottom: 8px;
+}
+
+/* The release notes, in the update popup. Rendered markdown, so it arrives with the
+   theme's own spacing: only the parts that are wrong inside a modal are corrected. */
+.modelica-studio-whats-new > :first-child {
+  margin-top: 0;
+}
+
+.modelica-studio-whats-new h3 {
+  margin: 12px 0 4px;
+  font-size: 1em;
+  color: var(--text-accent);
+}
+
+.modelica-studio-whats-new ul {
+  margin: 4px 0;
+  padding-inline-start: 20px;
+}
+
+.modelica-studio-whats-new li {
+  margin-bottom: 6px;
+  line-height: 1.45;
+}
+
+.modelica-studio-whats-new-date {
+  margin-top: 14px;
+  font-size: 0.85em;
 }
 
 .modelica-studio-prompt-buttons {

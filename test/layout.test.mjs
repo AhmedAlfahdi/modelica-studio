@@ -111,11 +111,13 @@ test("there is exactly one handle between the results and the code pane", () => 
   assert.match(css, /\.modelica-studio-divider\.is-row/, "and the row variant");
 
   const src = fs.readFileSync(path.join(repoRoot, "src/view/studio-view.ts"), "utf8");
-  // Three panes, three dividers, all built by the one helper.
+  // Three panes, three dividers, all built by the one helper, each inside the box
+  // whose shape it divides: the palette's sits in the diagram band, the results'
+  // in the editing column, and the inspector's between the two columns.
   const made = [...src.matchAll(/this\.makeDivider\((\w+), "([xy])", "([^"]+)"\)/g)].map((m) => m[1]);
   assert.deepEqual(
     made.sort(),
-    ["body", "body", "root"],
+    ["body", "editCol", "main"],
     `one divider per resizable pane, got ${JSON.stringify(made)}`
   );
   // The handle renders on the pane's TOP edge, which is the boundary between the
@@ -126,17 +128,25 @@ test("there is exactly one handle between the results and the code pane", () => 
   // still attached to the pane, but it sits against the status bar at the far end
   // of the window: nowhere near the diagram it divides, and reported as "there is
   // no handle for the plot section" by someone looking straight at it.
-  const splitIdx = src.indexOf('const resultsSplitter = this.makeDivider(root, "y", "Results")');
-  const resultsIdx = src.indexOf("const resultsCol = root.createDiv");
-  const bodyIdx = src.indexOf('const body = root.createDiv({ cls: "modelica-studio-body" })');
+  const splitIdx = src.indexOf('const resultsSplitter = this.makeDivider(editCol, "y", "Results")');
+  const resultsIdx = src.indexOf("const resultsCol = editCol.createDiv");
+  const bodyIdx = src.indexOf('const body = editCol.createDiv({ cls: "modelica-studio-body" })');
+  // The inspector is the rail BESIDE that column, not a pane inside it: that is
+  // what gives the trace list the window's full height instead of the height the
+  // plot leaves it. It is therefore built last, as a child of the row.
+  const railIdx = src.indexOf(
+    'const rightCol = main.createDiv({ cls: "modelica-studio-col modelica-studio-inspector" })'
+  );
   // Each anchor must EXIST before it is compared: `indexOf` answers -1 for a
   // rename, and -1 is less than everything, so a missing anchor would make the
   // ordering assertion pass while proving nothing. That happened here.
   assert.ok(bodyIdx >= 0, "the editing area anchor was found");
   assert.ok(splitIdx >= 0, "the handle anchor was found");
   assert.ok(resultsIdx >= 0, "the results pane anchor was found");
+  assert.ok(railIdx >= 0, "the inspector rail anchor was found");
   assert.ok(splitIdx < resultsIdx, "the handle draws the pane's top edge, so it precedes it");
   assert.ok(bodyIdx < splitIdx, "and follows the editing area it divides from");
+  assert.ok(railIdx > resultsIdx, "the rail is built after the column it stands beside");
 });
 
 test("the grip follows the pointer", () => {

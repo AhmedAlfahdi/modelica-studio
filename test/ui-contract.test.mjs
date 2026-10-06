@@ -185,18 +185,39 @@ test("checking a trace does not move it", () => {
   // under the pointer at the moment of the click, so the next click landed on a
   // different trace. A list that rearranges itself as you use it is worse than
   // one you have to scroll.
-  const src = view;
-  // From the filter to the end of the list's build, which is the whole of how the
-  // rows are chosen and placed.
-  const list = /const needle = this\.seriesFilter[\s\S]*?list\.addEventListener\("scroll"/.exec(src);
+  //
+  // The rows come from a tree of the variable names now (see `series-tree.ts`),
+  // so the order is asserted where it is decided: the tree is built from the
+  // result's own list in one pass, the filter and the preset are the only things
+  // that drop rows, and the renderer draws the rows it is handed.
+  const list = /private renderVariableList\([\s\S]*?\n  \}/.exec(view);
   assert.ok(list, "the trace list is found");
-  assert.match(
-    list[0],
-    /const ordered = this\.result\.series\.filter\(matching\)/,
-    "the order is the simulation's"
-  );
+  assert.match(list[0], /for \(const row of rows\)/, "the rows are drawn in the order they were given");
+  assert.ok(!/rows\.sort\(/.test(list[0]), "and are not sorted");
   assert.ok(!/\bselected\b/.test(list[0]), "checked traces are not consulted for the order");
-  assert.ok(!/\.\.\.rest\.filter/.test(list[0]), "and there is no second, reordered list");
+
+  const choose = /private currentTraceRows\([\s\S]*?\n  \}/.exec(view);
+  assert.ok(choose, "the rows are chosen in one place");
+  assert.match(choose[0], /const roots = this\.traceTree\(\)/, "the rows are the tree's, in its order");
+  assert.match(
+    choose[0],
+    /return traceRows\(roots, \{ expanded: this\.expandedGroups, match, budget \}\)/,
+    "and are handed straight to the renderer"
+  );
+  assert.ok(!/\.sort\(/.test(choose[0]), "nothing reorders them on the way out");
+
+  const treeOf = /private traceTree\(\): TraceNode\[\] \{[\s\S]*?\n  \}/.exec(view);
+  assert.ok(treeOf, "one place builds the tree");
+  assert.match(
+    treeOf[0],
+    /buildTraceTree\(this\.result\?\.series\.map/,
+    "from the result's own list, in the order it was written"
+  );
+
+  const tree = fs.readFileSync(path.join(repoRoot, "src/view/series-tree.ts"), "utf8");
+  assert.match(tree, /for \(const name of names\)/, "the tree is built in one pass over the names");
+  assert.ok(!/\.sort\(/.test(tree), "and never sorts: a group appears where its first variable does");
+  assert.ok(!/visible/.test(tree), "the tree knows nothing about which traces are drawn");
 });
 
 test("a routine run reports no warnings", () => {
@@ -670,6 +691,51 @@ test("a check and a run share the busy pane without clearing each other", () => 
   // A second Check is refused rather than overlapping the first.
   assert.match(view, /if \(this\.checking\) \{/, "a check cannot start while one is running");
   assert.match(view, /this\.checking = false;/, "and the flag is cleared when it ends");
+});
+
+test("the release-notes popup is wired to a version, a switch and a button", () => {
+  // The popup itself is tested where it can be seen (its window in ui-render, its rules
+  // in whats-new.test.mjs). What is checked here is the wiring, which is the part a
+  // rename breaks silently: a settings row whose switch writes a field nothing reads, or
+  // a load hook that never fires, looks exactly like a release with no notes.
+  const settings = fs.readFileSync(path.join(repoRoot, "src/settings.ts"), "utf8");
+  const main = fs.readFileSync(path.join(repoRoot, "src/main.ts"), "utf8");
+
+  assert.match(
+    settings,
+    /setName\("Show what's new"\)/,
+    "the row is named for what it does"
+  );
+  assert.match(
+    settings,
+    /settings\.showWhatsNew = v;/,
+    "the switch writes the setting the announcement reads"
+  );
+  assert.match(
+    settings,
+    /this\.plugin\.showWhatsNew\(\);/,
+    "the button asks the plugin rather than importing the notes: nothing that bundles the settings module should need the bundler's virtual module"
+  );
+  assert.match(
+    main,
+    /announcementFor\(\s*this\.settings\.lastSeenVersion,\s*this\.manifest\.version,\s*this\.settings\.showWhatsNew\s*\)/,
+    "the announcement is decided from the last version seen, the running version and the setting"
+  );
+  assert.match(
+    main,
+    /this\.settings\.lastSeenVersion = decision\.seen;/,
+    "and the version is recorded whether or not the popup opens"
+  );
+  assert.match(
+    main,
+    /onLayoutReady\(\(\) => this\.announceVersion\(\)\)/,
+    "opened when the workspace is up, not during onload behind the splash"
+  );
+  assert.match(
+    main,
+    /import \{ whatsNew \} from "virtual:whats-new";/,
+    "the notes come from the bundle, because Obsidian's installer downloads exactly three files"
+  );
 });
 
 test("every class the stylesheet matches for a tab or a row is one the code sets", () => {

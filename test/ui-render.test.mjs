@@ -1147,6 +1147,106 @@ test("rebuilding the tab does not throw the reader back to the top", async () =>
   );
 });
 
+test("picking a model from the suggestions does not rebuild the tab at all", async () => {
+  // Reported: "when changing the AI model from the settings, it jumps up". The row
+  // called `display()` after storing the choice, and a rebuild is what moves the pane;
+  // nothing about choosing a model needs one — the field above shows the name and the
+  // dropdown already shows the choice.
+  const out = await page(
+    `import { AI_PROVIDERS } from "${ROOT}/src/ai/prompts";`,
+    `import { ModelicaStudioSettingTab } from "${ROOT}/src/settings";`,
+    "const vault = new StubVault();",
+    "const plugin = makePlugin(vault, { settings: {",
+    "  solver: 'cvode', excludedLibraries: '', debugLog: false, omcPath: '', libraryPaths: '', jobs: 1,",
+    "  showInstanceLabels: true, labelScale: 1, dynamicLabels: true, hoverParameters: true,",
+    "  wireScale: 0.9, symbolStrokeScale: 1.9, syncStrokeScale: false, plotSnapCrossings: true,",
+    "  plotSnapTolerance: 14, plotDeltas: false, aiModels: ['deepseek-chat', 'deepseek-reasoner'],",
+    "  modelFolder: 'Modelica',",
+    "  ai: { secretName: '', baseUrl: 'https://api.deepseek.com', model: '', temperature: 0.2,",
+    "    systemPrompt: '', thinking: 'off', style: 'visual', timeoutSeconds: 300 },",
+    "} });",
+    "plugin.library = { size: 0, packages: () => [], hasPlaceableClass: () => false, isExcluded: () => false };",
+    "plugin.toolchainSummary = () => 'omc';",
+    "plugin.hasSecretStorage = () => false;",
+    "plugin.applyExclusions = () => {};",
+    "plugin.setStopTime = () => {};",
+    "plugin.stopTime = () => 1;",
+    "plugin.getView = () => null;",
+    "plugin.refreshEmbeds = () => {};",
+    "plugin.saveSettings = async () => { window.__saves = (window.__saves || 0) + 1; };",
+    "const tab = new ModelicaStudioSettingTab(plugin);",
+    "tab.display();",
+    "const scroller = document.createElement('div');",
+    "scroller.className = 'vertical-tab-content-container';",
+    "scroller.style.overflowY = 'auto';",
+    "scroller.style.height = '200px';",
+    "document.body.appendChild(scroller);",
+    "scroller.appendChild(tab.containerEl);",
+    "// Every rebuild the tab does goes through `empty`, so counting them is how this test",
+    "// tells 'updated in place' from 'thrown away and drawn again'.",
+    "const empty = tab.containerEl.empty.bind(tab.containerEl);",
+    "tab.containerEl.empty = () => { empty(); window.__empties = (window.__empties || 0) + 1; };",
+    "const row = (n) => Array.from(tab.containerEl.querySelectorAll('.setting-item')).find((i) => {",
+    "  const el = i.querySelector('.setting-item-name'); return el && el.textContent === n; });",
+    "const suggestions = () => row('Model').components.find((c) => c.inputEl.getAttribute('data-control') === 'dropdown');",
+    "const modelField = () => row('Model').components.find((c) => c.inputEl.getAttribute('data-control') === 'text');",
+    "window.test('the dropdown is there when the provider has offered models', () =>",
+    "  'dropdown=' + !!suggestions() + ' options=' + (suggestions() ? suggestions().options.length : 0));",
+    "window.test('changing the provider redraws its rows, and rebuilds NOTHING', async () => {",
+    "  scroller.scrollTop = 160;",
+    "  window.__empties = 0;",
+    "  const p = AI_PROVIDERS[1] || AI_PROVIDERS[0];",
+    "  const preset = row('Provider preset').components.find((c) => c.inputEl.getAttribute('data-control') === 'dropdown');",
+    "  preset.value = String(AI_PROVIDERS.indexOf(p));",
+    "  preset.inputEl.dispatchEvent(new Event('change'));",
+    "  await new Promise((r) => setTimeout(r, 30));",
+    "  const urlField = row('Base URL').components.find((c) => c.inputEl.getAttribute('data-control') === 'text');",
+    "  const list = suggestions();",
+    "  // The field must agree with the settings AFTER the redraw. Not `=== p.model`: the",
+    "  // cases on this page interleave at their awaits, so the exact name depends on which",
+    "  // one the runner is in — what has to hold is that the row shows what is stored.",
+    "  return 'url=' + (urlField.inputEl.value === p.baseUrl)",
+    "    + ' agrees=' + (modelField().inputEl.value === plugin.settings.ai.model)",
+    "    + ' options=' + (list ? list.options.length : 0)",
+    "    + ' expected=' + (1 + Math.min(200, (p.models || []).length))",
+    "    + ' scroll=' + scroller.scrollTop + ' rebuilds=' + window.__empties;",
+    "});",
+    "window.test('choosing one stores it, shows it in the field, and rebuilds NOTHING', async () => {",
+    "  scroller.scrollTop = 160;",
+    "  window.__empties = 0;",
+    "  window.__saves = 0;",
+    "  const before = modelField().inputEl.value;",
+    "  const d = suggestions();",
+    "  d.value = 'deepseek-reasoner';",
+    "  d.inputEl.dispatchEvent(new Event('change'));",
+    "  await new Promise((r) => setTimeout(r, 30));",
+    "  return 'stored=' + plugin.settings.ai.model + ' field=' + modelField().inputEl.value +",
+    "    ' was=' + before + ' saves=' + (window.__saves || 0) + ' scroll=' + scroller.scrollTop +",
+    "    ' rebuilds=' + window.__empties;",
+    "});",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  const d = passed(out);
+
+  assert.equal(
+    d["the dropdown is there when the provider has offered models"],
+    "dropdown=true options=3",
+    "the placeholder row plus the two the provider reported"
+  );
+  assert.equal(
+    d["changing the provider redraws its rows, and rebuilds NOTHING"],
+    "url=true agrees=true options=3 expected=3 scroll=160 rebuilds=0",
+    "the two rows the provider changes are redrawn where they stand: the tab is never emptied"
+  );
+  assert.equal(
+    d["choosing one stores it, shows it in the field, and rebuilds NOTHING"],
+    "stored=deepseek-reasoner field=deepseek-reasoner was= saves=1 scroll=160 rebuilds=0",
+    "no rebuild, so there is nothing to jump: the pane never had its content taken away"
+  );
+});
+
 test("a rebuild that is laid out a frame later still keeps the reader's place", async () => {
   // The jump came BACK after the first fix, and the reason is timing: a browser clamps
   // a scroll offset while it lays out a container that momentarily had no height, and
@@ -1868,7 +1968,7 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
   assert.equal(d["and it shows that nothing is overridden yet"], '""', "default selected when unset");
   assert.equal(d["choosing a value is committed"], "r1.useSupport=true", "the choice reaches the editor");
   assert.equal(d["a number is still a text field"], "INPUT", "a Real stays a text field");
-  assert.match(d["and keeps its unit in the label"], /R \(Ohm\)/, "units still shown");
+  assert.match(d["and keeps its unit in the label"], /R \(Ω\)/, "units still shown, as a symbol");
   assert.equal(
     d["an expression binding is not put in a select"],
     "INPUT",
@@ -2500,6 +2600,106 @@ test("the embed picker finds a model, follows its span, and places the block", a
     "the button says why it cannot be used"
   );
   assert.equal(d["and Enter there places nothing"], "null", "and nothing is silently dropped");
+});
+
+test("the update popup shows the release notes it was handed", async () => {
+  // The popup is driven by the notes the BUNDLER extracted from CHANGELOG.md, and it is
+  // handed them rather than importing them, so this test can show a section without
+  // depending on what the current release happens to say. What it checks is the contract:
+  // the version in the title, the notes rendered AS MARKDOWN through the app's renderer,
+  // the date, and a lifetime that ends when the window closes.
+  const out = await page(
+    `import { WhatsNewModal, openWhatsNew } from "${ROOT}/src/view/whats-new-modal";`,
+    `import { MarkdownRenderer } from "${ROOT}/test/helpers/obsidian-stub";`,
+    "const NOTES = {",
+    "  version: '9.9.9',",
+    "  date: '2026-10-06',",
+    "  body: '### Added\\n\\n- **A thing.** It does something.',",
+    "};",
+    "MarkdownRenderer.rendered.length = 0;",
+    "// Reported: the window opened showing the BOTTOM of the notes. Focusing the Close button",
+    "// at the end of a scrolling window is what scrolled them, so the options it is focused",
+    "// with are part of the contract.",
+    "const realFocus = HTMLElement.prototype.focus;",
+    "HTMLElement.prototype.focus = function (options) {",
+    "  window.__focusOptions = options || {};",
+    "  return realFocus.call(this, options);",
+    "};",
+    "const modal = new WhatsNewModal({}, NOTES);",
+    "modal.open();",
+    "const buttons = () => Array.from(modal.contentEl.querySelectorAll('button'));",
+    "const close = () => buttons().find((b) => b.textContent === 'Close');",
+    "window.__modal = modal;",
+    "",
+    "window.test('the title names the version', () => modal.titleEl.textContent);",
+    "window.test('the notes go through the MarkdownRenderer the app provides', () => {",
+    "  const last = MarkdownRenderer.rendered[MarkdownRenderer.rendered.length - 1];",
+    "  return 'same=' + (last.markdown === NOTES.body) + ' into=' + (last.el.className) +",
+    "    ' loaded=' + Boolean(last.component && last.component.loaded);",
+    "});",
+    "window.test('the rendered notes are in the window', () =>",
+    "  String(modal.contentEl.querySelector('.modelica-studio-whats-new .stub-markdown') !== null));",
+    "window.test('and the date is shown, quietly', () => {",
+    "  const date = modal.contentEl.querySelector('.modelica-studio-whats-new-date');",
+    "  return date ? date.textContent + '|' + date.className : 'MISSING';",
+    "});",
+    "window.test('Close is the focused button, so Escape and Enter both land', () =>",
+    "  String(document.activeElement === close()) + '|preventScroll=' + window.__focusOptions.preventScroll);",
+    "window.test('and focusing it does not scroll the notes to their end', () =>",
+    "  'modal=' + modal.modalEl.scrollTop + ' content=' + modal.contentEl.scrollTop);",
+    "window.test('closing unloads what the notes registered', () => {",
+    "  const component = MarkdownRenderer.rendered[0].component;",
+    "  close().click();",
+    "  return 'opened=' + modal.opened + ' loaded=' + component.loaded + ' body=' + modal.contentEl.childElementCount;",
+    "});",
+    "window.test('and nothing is shown for a version with no notes', () => {",
+    "  const before = document.querySelectorAll('.modal').length;",
+    "  openWhatsNew({}, null);",
+    "  openWhatsNew({}, { version: '1.0.0', date: '', body: '   ' });",
+    "  return 'modals=' + (document.querySelectorAll('.modal').length - before);",
+    "});",
+    "window.finish();"
+  );
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  const d = passed(out);
+
+  assert.equal(
+    d["the title names the version"],
+    "What's new in Modelica Studio 9.9.9",
+    "a popup that does not say which version it is about is not about anything"
+  );
+  assert.equal(
+    d["the notes go through the MarkdownRenderer the app provides"],
+    "same=true into=modelica-studio-whats-new loaded=true",
+    "rendered as markdown, against a component that can be unloaded"
+  );
+  assert.equal(d["the rendered notes are in the window"], "true", "and they are on screen");
+  assert.equal(
+    d["and the date is shown, quietly"],
+    "2026-10-06|modelica-studio-muted modelica-studio-whats-new-date",
+    "the release date, in the muted style"
+  );
+  assert.equal(
+    d["Close is the focused button, so Escape and Enter both land"],
+    "true|preventScroll=true",
+    "one key to dismiss, and focusing it must not move the notes"
+  );
+  assert.equal(
+    d["and focusing it does not scroll the notes to their end"],
+    "modal=0 content=0",
+    "the notes open at their beginning"
+  );
+  assert.equal(
+    d["closing unloads what the notes registered"],
+    "opened=false loaded=false body=0",
+    "the window is emptied and the renderer is torn down with it"
+  );
+  assert.equal(
+    d["and nothing is shown for a version with no notes"],
+    "modals=0",
+    "no popup rather than an empty one"
+  );
 });
 
 test("a read-only log can be copied, and says so either way", async () => {

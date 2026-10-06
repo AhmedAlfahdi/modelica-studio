@@ -198,9 +198,28 @@ const notices = [];
 
 /* ------------------------------------------------------------------ */
 
-test("bundle exists and is a valid CommonJS plugin", { skip: !HAS_BUNDLE }, () => {
+test("bundle exists and is a valid CommonJS plugin", { skip: !HAS_BUNDLE }, async () => {
   const src = fs.readFileSync(MAIN, "utf8");
   assert.ok(src.length > 1000, "bundle is non-trivial");
+  // The release notes have to be IN the artifact: Obsidian's installer downloads exactly
+  // manifest.json, main.js and styles.css, so a popup that read CHANGELOG.md from the
+  // plugin folder would work in a checkout and show nothing for everyone else.
+  const { changelogSection, whatsNewFor } = await import("../scripts/whats-new.mjs");
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.json"), "utf8"));
+  const changelog = fs.readFileSync(path.join(ROOT, "CHANGELOG.md"), "utf8");
+  const notes = whatsNewFor(changelog, manifest.version);
+  assert.ok(notes, `the changelog has a section for ${manifest.version}`);
+  // Prose, not the raw line: the notes are a JSON string in the bundle and esbuild escapes
+  // what a JSON string cannot hold literally, so a probe with a backtick or an em dash in it
+  // compares a string that was never going to be there. A run of plain words is what a
+  // reader would see on screen either way.
+  const prose = (text) => (String(text).match(/[A-Za-z][A-Za-z ,'-]{60,}/g) ?? []).sort((a, b) => b.length - a.length)[0] ?? "";
+  const shipped = prose(notes.body);
+  assert.ok(shipped.length >= 60, "the notes have a sentence to look for");
+  assert.ok(src.includes(shipped), "the notes for this version are bundled, not read from a file at runtime");
+  const older = prose(changelogSection(changelog, "0.3.25")?.body ?? "");
+  assert.ok(older.length >= 60, "and an older section has one too");
+  assert.ok(!src.includes(older), "while an older release's notes are not: 170KB would ride in every download");
   const mod = loadBundle();
   assert.ok(mod.default, "has a default export");
   assert.equal(typeof mod.default, "function", "default export is the Plugin subclass");
@@ -210,6 +229,13 @@ test("bundle instantiates and its lifecycle runs", { skip: !HAS_BUNDLE }, async 
   const mod = loadBundle();
   const PluginClass = mod.default;
   const instance = new PluginClass();
+
+  // Obsidian sets this before `onload`; the release-notes check reads the running version
+  // from it. Taken from the manifest rather than spelled here, so a release does not need
+  // this test edited -- and it is a version the changelog knows, because the notes are
+  // extracted from the changelog at build time.
+  const manifestVersion = JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.json"), "utf8")).version;
+  instance.manifest = { version: manifestVersion };
 
   // Give it a minimal app stub matching what onload touches.
   instance.app = {
@@ -240,7 +266,39 @@ test("bundle instantiates and its lifecycle runs", { skip: !HAS_BUNDLE }, async 
   instance.loadData = async () => null;
   instance.saveData = async () => {};
 
+  // The release notes are decided during `onload`, and this is the built artifact: the
+  // notes really in the bundle and the version really compared. The POPUP cannot be opened
+  // here -- there is no DOM in this test -- so it is driven where one exists (ui-render),
+  // and what is asserted here is the state it leaves behind: the version it records.
+  const saved = [];
+  instance.saveData = async (data) => void saved.push(data);
   await instance.onload();
+  assert.equal(
+    saved.length > 0 && saved[saved.length - 1].lastSeenVersion,
+    manifestVersion,
+    "a first install announces nothing and records the version it is running"
+  );
+
+  // Now as an update from the release before this one, with the popup switched off: the
+  // setting is the last word, and the version is recorded anyway so that switching it back
+  // on does not announce an update that has already been installed.
+  const updated = new PluginClass();
+  updated.manifest = { version: manifestVersion };
+  updated.app = instance.app;
+  updated.addCommand = () => {};
+  updated.addRibbonIcon = () => {};
+  updated.addSettingTab = () => {};
+  updated.registerView = () => {};
+  updated.registerEvent = () => ({});
+  const savedAgain = [];
+  updated.loadData = async () => ({ lastSeenVersion: "0.3.27", showWhatsNew: false });
+  updated.saveData = async (data) => void savedAgain.push(data);
+  await updated.onload();
+  assert.equal(
+    savedAgain.length > 0 && savedAgain[savedAgain.length - 1].lastSeenVersion,
+    manifestVersion,
+    "an update with the popup off still records the version"
+  );
 
   assert.equal(views.length, 1, "registered exactly one view");
   assert.equal(views[0].type, "modelica-studio-view");
@@ -269,6 +327,9 @@ test("each model keeps its own simulation span", { skip: !HAS_BUNDLE }, async ()
   // the built bundle, since the fault was in how the two paths interacted.
   const mod = loadBundle();
   const instance = new mod.default();
+  // Obsidian sets the manifest before `onload`; the release-notes check reads the running
+  // version from it.
+  instance.manifest = { version: JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.json"), "utf8")).version };
   instance.app = {
     workspace: {
       getLeavesOfType: () => [],

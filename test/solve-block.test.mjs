@@ -139,7 +139,9 @@ test("a unit reported by the compiler is displayed beside the value", async () =
   ]);
   if (out.skip) return;
   const d = passed(out);
-  assert.equal(d["the unit is shown"], "Ohm");
+  // The symbol map turns the compiler's `Ohm` into Ω for display; the value
+  // beside it is untouched.
+  assert.equal(d["the unit is shown"], "Ω");
   assert.equal(d["and the value is not converted to it"], "200");
 });
 

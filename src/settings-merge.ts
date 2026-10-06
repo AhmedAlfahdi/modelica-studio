@@ -34,6 +34,17 @@ export interface ChartState {
  */
 
 export interface ModelicaStudioSettings {
+  /**
+   * The plugin version whose notes have been shown, so they are shown once.
+   *
+   * A record rather than a preference: it is written on every load where it changes and
+   * never edited by hand. Empty means the plugin has not run before — a fresh install
+   * announces nothing (see `whats-new.ts`).
+   */
+  lastSeenVersion: string;
+  /** Open the release notes after an update. */
+  showWhatsNew: boolean;
+
   /** Explicit path to `omc`; empty means auto-detect. */
   omcPath: string;
   /** Extra library search paths, one per line. */
@@ -294,6 +305,8 @@ export const STROKE_SCALE_MIN = 0.5;
 export const STROKE_SCALE_MAX = 4;
 
 export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
+  lastSeenVersion: "",
+  showWhatsNew: true,
   omcPath: "",
   libraryPaths: "",
   // A browser global, guarded so this module can be loaded where there is no

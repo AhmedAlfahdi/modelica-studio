@@ -141,7 +141,7 @@ The whole studio — palette, diagram, inspector, result — looks like this:
 
 <img src="docs/images/studio-light.png" alt="The whole Modelica Studio: palette, diagram canvas, inspector and result pane (light theme)">
 
-*Light theme. The palette on the left, the diagram in the middle, the inspector on the right — here on the **Traces** tab, listing the result's 37 variables with two of them plotted — and the result below, with the sweep controls beside it. The names under the components are placed by the plugin: a name that would land on another symbol or on a wire is moved aside, which is the **Move names out of the way** setting.*
+*Light theme. The palette on the left, the diagram in the middle, and the inspector as a full-height rail on the right — here on the **Traces** tab, where the result's 37 variables are folded under the components they belong to, every row carrying the unit the compiler resolved for it (`m`, `m/s`, `m·s⁻¹`) and its name typeset in the model's own notation (`s_rel` as a subscript, `der(v_rel)` as a dotted `v`) and every component saying how many of its variables are drawn — and the result below the diagram, with the sweep controls beside it. The names under the components are placed by the plugin: a name that would land on another symbol or on a wire is moved aside, which is the **Move names out of the way** setting.*
 
 <img src="docs/images/studio-dark.png" alt="The whole Modelica Studio: palette, diagram canvas, inspector and result pane (dark theme)">
 
@@ -255,7 +255,7 @@ answer is the one that came back:
 | Write | Get |
 |---|---|
 | `2*x + y = 7` and `x - y = 2` | **`x = 3`**, **`y = 1`** — a system, solved together |
-| `R = v/i`, the quantities declared as `Modelica.Units.SI.*` | **`R = 200 Ohm`** — the unit comes from the compiler, not the note |
+| `R = v/i`, the quantities declared as `Modelica.Units.SI.*` | **`R = 200 Ω`** — the unit comes from the compiler, not the note |
 | `Modelica.Math.Nonlinear.quadratureLobatto(Modelica.Math.exp, 0, 1, 1e-8)` | **`1.71828182846`** — a definite integral, by adaptive quadrature |
 | `sum(sin((i - 0.5) * dx) * dx for i in 1:n)`, `n = 2000` over `0 … π` | **`2.00000020562`** — one of your own, as a midpoint sum |
 | `x^2 + 3*x - 10 = 0` | **`x = 2`** — the root nearest the starting value, not the first found |
@@ -340,6 +340,10 @@ the cursor, which turns "this valve opens a little later" into a number.
   are set to, with the ones this instance overrides first. A connector a class only
   declares conditionally — a heat port before `useHeatPort` is true — is dimmed and
   cannot be wired until the parameter is on.
+- **The release notes, once per update.** A plugin update opens a short window with
+  what changed in that version, taken from the changelog itself rather than a second
+  summary written for the popup. It is shown once and the version is recorded, so it
+  cannot come back; the switch is in Settings, along with a button to read it again.
 - **Optional AI assistance.** With your own API key, describe a model in words and
   have it written into the editor, or ask for a compile error to be fixed. See
   [AI assistance](docs/ai.md).

@@ -92,6 +92,9 @@ import {
 } from "./modelica/revisions";
 import { ModelicaStudioView, VIEW_TYPE_MODELICA } from "./view/studio-view";
 import { ModelicaStudioSettingTab, DEFAULT_SETTINGS, type ModelicaStudioSettings , mergeSettings, migrateSettings } from "./settings";
+import { announcementFor } from "./whats-new";
+import { openWhatsNew } from "./view/whats-new-modal";
+import { whatsNew } from "virtual:whats-new";
 
 /** How a model is loaded over the one that is open. */
 export interface LoadOptions {
@@ -651,6 +654,37 @@ export default class ModelicaStudioPlugin extends Plugin {
     if (!this.pendingSourceAdoption) return false;
     this.pendingSourceAdoption = false;
     return this.adoptSourceFromFile();
+  }
+
+  /**
+   * Show the release notes for a version the user has just started running.
+   *
+   * The record is written whether or not the popup opens, so a reader who closes it — or
+   * who has the popup switched off — is not asked again. See `announcementFor` for the
+   * rules, which are a pure function because the cases worth getting right (a first
+   * install, a downgrade) are the ones nobody reproduces by hand.
+   */
+  private announceVersion(): void {
+    const decision = announcementFor(
+      this.settings.lastSeenVersion,
+      this.manifest.version,
+      this.settings.showWhatsNew
+    );
+    if (decision.seen && decision.seen !== this.settings.lastSeenVersion) {
+      this.settings.lastSeenVersion = decision.seen;
+      void this.saveSettings();
+    }
+    if (decision.announce) openWhatsNew(this.app, whatsNew);
+  }
+
+  /**
+   * The release notes on demand, for the settings tab's own button.
+   *
+   * The tab calls this rather than importing the notes, so nothing that bundles the
+   * settings module has to know about the bundler's virtual module.
+   */
+  showWhatsNew(): void {
+    openWhatsNew(this.app, whatsNew);
   }
 
   /** True when the file's text was taken. */
@@ -1323,6 +1357,11 @@ export default class ModelicaStudioPlugin extends Plugin {
     // The model's file is the authority, but the vault cannot be read until the
     // layout is ready. This replaces the snapshot's source with the file's, which
     // is what makes a save survive a restart.
+    // The release notes, once per version. Not during `onload`: a modal opened while the
+    // workspace is still coming up lands behind the splash, and `onLayoutReady` is also
+    // where the version gets recorded in a session whose window is closed early.
+    this.app.workspace.onLayoutReady(() => this.announceVersion());
+
     this.app.workspace.onLayoutReady(() => {
       if (!this.pendingSourceAdoption) return;
       // Whether the DIAGRAM in the snapshot is newer than the source beside it:

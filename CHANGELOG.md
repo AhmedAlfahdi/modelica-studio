@@ -5,6 +5,123 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor bump may include changes that are not backward compatible.
 
+## [Unreleased]
+
+## [0.5.0] — 2026-10-06
+
+### Added
+
+- **The release notes, once per update.** Updating the plugin now opens a window with what
+  changed in that version, rendered from the changelog — the notes are the changelog's own
+  section for the version being built, extracted at build time, because Obsidian's installer
+  downloads exactly `manifest.json`, `main.js` and `styles.css` and the repository's
+  CHANGELOG.md is not among them. Only that one section is bundled — a few kilobytes, where
+  the file is 170 — and it is read every time the bundle is built, so a release whose version
+  has no section is a warning at build time rather than an empty popup. The notes are
+  re-flowed on the way in: the changelog is wrapped for a terminal, and the renderer treats a
+  single newline as a line break, so the first version of this window showed a paragraph
+  chopped into ragged 95-column pieces. Shown once: the version seen is recorded whether or
+  not the window opens, a first install announces nothing (there is no "new" for someone who
+  has never run it), and a downgrade is not news either. It opens at the top of the notes —
+  focusing the Close button used to scroll them to the end — and the switch is in Settings,
+  with a button to read them on demand.
+
+### Changed
+
+- **The trace list is a tree of the model's components, and every variable says its unit.**
+  A result names each variable by its path — `chopper.diode.i` — so the flat list said
+  `chopper.` on forty rows and the quantity was what you read past. The names are now folded
+  into the components they describe: a heading per component, with how many variables are
+  inside it and how many of them are drawn, `der(x)` sitting with the state it belongs to,
+  array elements under their array. A crowded component opens closed — opening those is what
+  made the list a wall — a small one opens on sight, and the components holding the traces
+  you picked are open so you can see what is drawn; one button expands or collapses the whole
+  tree. Filtering is still a search over the full name, and now shows each match in place with
+  the groups on the way to it opened, whatever was folded. The full-screen overlay lists the
+  same tree without the panel's 40-row window, and a row's tooltip carries the full variable
+  name and the comment the library wrote for it.
+
+  Each row also carries the unit its numbers are in, resolved from the declared type, since
+  `Modelica.Units.SI.Voltage v` never writes "V" anywhere in the source; how it is written is
+  the entry below. `displayUnit` is deliberately not shown: the plotted numbers are in the
+  base unit, and labelling Kelvin values `degC` is a lie until the values themselves are
+  converted.
+
+- **The inspector is a full-height rail, so the trace list gets the window.** It was a pane in
+  the top row, which made it exactly as tall as that row: in a 696px window the list had 138px
+  — about ten rows of a 37-variable result — while the results pane below it took the rest. The
+  studio is two columns now: what is being edited, with its results, on the left, and the
+  inspector beside it running the full height (about thirty rows of list instead of ten). The
+  plot keeps everything left of the rail, so the cost is its width and the rail's width is the
+  user's to drag; code mode hides the rail and the plot takes the full width again.
+
+- **A click on a component shows its parameters.** The panel on the right has two tabs, and a
+  click on a component now brings the Selection tab back instead of leaving whatever was up —
+  the click asks what that component is, and Traces answers a different question. Forced on a
+  component rather than on every canvas click: clicking empty space leaves the tab alone.
+
+- **Changing the model no longer jumps the settings pane.** Choosing from the AI model
+  suggestions rebuilt the whole tab, and the rebuild is what moves the reader: the picked model
+  now fills the field in place and nothing is thrown away — and so does changing the provider,
+  which redraws the two rows that depend on it (the Base URL field, and the model row with its
+  suggestion list) by the same code that drew them, and a refreshed model list redraws that one
+  row rather than the tab. The rebuilds that remain (the
+  provider preset, a refreshed model list, the library index arriving) are covered by the
+  place-keeping, which no longer waits for an offset to be clamped to exactly zero — a rebuild
+  that leaves the pane briefly shorter clamps it to *some* value, and that value was being kept
+  — and which stands down the moment the reader scrolls, clicks or types.
+- **Units read as symbols, and the legend is typeset.** The compiler states a unit the way
+  the Modelica grammar spells it — `Ohm`, `degC`, `m.s-1`, `J/(kg.K)` — which is exact and not
+  what anyone writes. Units now read as a reader writes them: `Ω`, `°C`, `m·s⁻¹`, `J/(kg·K)`,
+  with a leading `u` as `µ`. The exponents are characters rather than markup, and that is what
+  lets one string serve all four places a unit appears: the trace row, its tooltip, the solver
+  block, and the plot legend — which is drawn on a canvas. The trace list is a size up (12px
+  names, 11px units, ~17px rows: about four fewer rows of the rail's thirty, with every unit
+  legible), and names are typeset in runs — `s_rel` with a real subscript, `der(v_rel)` as
+  `v̇_rel`, indices as subscripts — in the trace list, in the component headings and in the
+  legend, which draws the unit beside each name and now reserves 160px instead of 118 so a
+  name and its unit both fit. The filter still matches the raw name (`s.name`), and a row's
+  tooltip still carries the exact `der(...)` spelling the compiler uses, because the typeset
+  form is a rendering: a run boundary drops the characters that were the separators, so the
+  raw label is kept on the element for a screen reader and for anything that reads the list
+  programmatically.
+
+- **The inspector is a full-height rail, so the trace list gets the window.** It was a pane in
+  the top row, which made it exactly as tall as that row: in a 696px window the list had 138px
+  — about ten rows of a 37-variable result — while the results pane below it took the rest. The
+  studio is two columns now: what is being edited, with its results, on the left, and the
+  inspector beside it running the full height (about thirty rows of list instead of ten). The
+  plot keeps everything left of the rail, so the cost is its width and the rail's width is the
+  user's to drag; code mode hides the rail and the plot takes the full width again.
+
+- **Units read as symbols.** The compiler states a unit the way the Modelica grammar spells
+  it — `Ohm`, `degC`, `m.s-1`, `J/(kg.K)` — which is exact and not what anyone writes. Units
+  are now shown with the symbols a reader knows: `Ω`, `°C`, `m·s-1`, `J/(kg·K)`, and a leading
+  `u` as `µ` (`uF` → `µF`). It is deliberately not typesetting: `m·s⁻¹` loses at the 10px the
+  trace list uses, where a superscript is about 6px, and MathJax is the wrong tool for a label
+  that is rebuilt on every keystroke. The transform is all-or-nothing per string — anything
+  that is not unit grammar (`kg^2`, `some unit`) comes back exactly as it was — and a trace
+  row's tooltip still carries the compiler's own spelling, which is the one to copy.
+
+- **A DOM test that throws before its first `await` now fails instead of hanging.** The
+  harness recorded a case as unsettled and then registered it, so a synchronous error — a
+  typo, a name shadowing itself — removed a name that had not been added yet. The page then
+  never finished and the run sat until the electron timeout with no message. The case is
+  registered before it runs, so the same mistake is now an ordinary failure with its error
+  attached.
+
+### Fixed
+
+- **A trace broad enough to fill the plot no longer buries the quiet ones.** Traces were
+  painted in the result's order, so whichever came last owned the pixels it crossed. For the
+  buck converter that is `der(inductor.i)` — between -10828 and +12000 A/s at 20 kHz, sampled
+  every 10 µs, so there is no curve left in it, only a dense zigzag that fills the frame.
+  Painted last it hid the two traces it is derived from, and `capacitor.v` survived only in
+  the arcs that poked out above it. The widest extent now goes first (measured over the
+  visible window), leaving the fine traces on top; the legend keeps the result's order, and
+  colours are unchanged, since a series is coloured by its place in the result rather than by
+  the order it is drawn in.
+
 ## [0.4.0] — 2026-09-26
 
 ### Added

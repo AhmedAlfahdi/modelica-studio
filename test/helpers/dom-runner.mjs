@@ -250,6 +250,14 @@ window.__done = false;
 window.__pending = [];
 window.__unsettled = [];
 window.test = function (name, fn) {
+  // Registered BEFORE the case runs, because a case that throws SYNCHRONOUSLY --
+  // a typo, a name shadowing itself -- never reaches the await, so its finally
+  // has already removed the name by the time the push below would have added it.
+  // The name then stayed in __unsettled for good, finish never settled, and the
+  // page hung until the electron timeout: five minutes of nothing for a one-line
+  // mistake, with no message. Pushed here, the same throw is an ordinary failed
+  // case with its error attached.
+  window.__unsettled.push(name);
   // Started when registered, and NOT waited for -- the behaviour every page here was
   // written against. What is new is that a case which has not settled by the time the page
   // says it is finished is RECORDED in window.__unsettled, reported by the runner.
@@ -275,7 +283,6 @@ window.test = function (name, fn) {
     }
   })();
   window.__pending.push(run);
-  window.__unsettled.push(name);
   void settled;
   return run;
 };

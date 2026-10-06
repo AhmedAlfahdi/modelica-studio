@@ -91,8 +91,9 @@ R = v/i
 ```
 ````
 
-→ `R = 200 Ohm`. The word "Ohm" appears nowhere in the block: the unit is inherited from
-the declared type, and only the compiler knows it.
+→ `R = 200 Ω`. The unit appears nowhere in the block: it is inherited from the declared
+type (`Modelica.Units.SI.Resistance`), and only the compiler knows it. The symbol is the
+compiler's `Ohm` read as a reader writes it — see `src/view/units.ts`.
 
 ## Integrals
 

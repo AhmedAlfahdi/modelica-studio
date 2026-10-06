@@ -31,27 +31,63 @@ const HEAD = [
   "document.body.classList.add('theme-dark');",
   "",
   "/** A result with `n` variables, named as a real motor model names them. */",
+  "const UNITS = {",
+  "  'motor.friction.heatPort.T': 'K',",
+  "  'motor.friction.phi': 'Wb',",
+  "  'motor.friction.tau': 'N.m',",
+  "  'motor.friction.w': 'rad/s',",
+  "  'motor.ie.v': 'V',",
+  "  'motor.inertiaStator.a': 'rad/s2',",
+  "  'motor.inertiaStator.w': 'rad/s',",
+  "  'motor.internalThermalPort.heatPortPermanentMagnet.Q_flow': 'W',",
+  "  'motor.la.v': 'V',",
+  "  'motor.phiMechanical': 'rad',",
+  "  'motor.R_s': 'Ohm',",
+  "  // What OpenModelica's unit inference produces for a derivative: shown as it",
+  "  // is, because it is what the numbers are in.",
+  "  'der(motor.phiMechanical)': 'km2.s-4.A-1.g',",
+  "};",
+  "const COMMENTS = { 'motor.friction.heatPort.T': 'Temperature of the winding' };",
   "function makeResult(n, longName, extras) {",
   "  const names = ['motor.friction.heatPort.T', 'motor.friction.phi', 'motor.friction.tau',",
   "    'motor.friction.w', 'motor.ie.v', 'motor.inertiaStator.a', 'motor.inertiaStator.w',",
   "    'motor.internalThermalPort.heatPortPermanentMagnet.Q_flow', 'motor.la.v', 'motor.phiMechanical'];",
   "  const series = [];",
   "  for (let i = 0; i < n; i++) {",
-  "    const name = i === 0 && longName ? longName : names[i % names.length] + (i >= names.length ? '_' + i : '');",
-  "    series.push({ name, values: [0, 1, 2, 3, 4], unit: '' });",
+  "    const base = names[i % names.length];",
+  "    // A test can name the first variable itself, for a name that cannot fit or",
+  "    // one whose own shape matters. Such a name has no unit: the unit map is",
+  "    // keyed by the fixture's names, and inventing one would be the fixture",
+  "    // claiming something the compiler did not say.",
+  "    const named = i === 0 && longName;",
+  "    const name = named ? longName : base + (i >= names.length ? '_' + i : '');",
+  "    series.push({ name, values: [0, 1, 2, 3, 4],",
+  "      unit: named ? '' : UNITS[name] || UNITS[base] || '',",
+  "      comment: named ? undefined : COMMENTS[name] || COMMENTS[base] });",
   "  }",
   "  // A constant and a derivative, so the Varying and Derivatives presets have",
   "  // something to exclude and something to keep. Left out when a test needs a",
   "  // result with neither.",
   "  if (extras !== false) {",
-  "    series.push({ name: 'motor.R_s', values: [287, 287, 287, 287, 287], unit: '' });",
-  "    series.push({ name: 'der(motor.phiMechanical)', values: [0, 1, 2, 3, 4], unit: '' });",
+  "    series.push({ name: 'motor.R_s', values: [287, 287, 287, 287, 287], unit: UNITS['motor.R_s'] });",
+  "    series.push({ name: 'der(motor.phiMechanical)', values: [0, 1, 2, 3, 4],",
+  "      unit: UNITS['der(motor.phiMechanical)'] });",
   "  }",
   "  return { time: [0, 5, 10, 15, 20], series, warnings: [], compileMs: 0, simulateMs: 81, reusedBinary: true };",
   "}",
   "",
+  "/** The full result names of the trace rows on screen, in the order drawn.",
+  " *",
+  " * The row shows the last segment of the name (`v`, under `capacitor`), so the",
+  " * name it stands for is read from the row rather than from its text: that is",
+  " * what the label is for, and what every assertion about a variable means. */",
+  "function rowNames(body) {",
+  "  return Array.from(body.querySelectorAll('.modelica-studio-series-row'))",
+  "    .map((r) => r.dataset.name);",
+  "}",
+  "",
   "/** The Traces tab as the view builds it: tabs, body, and the real renderer. */",
-  "function mount(n, height, longName, extras) {",
+  "function mount(n, height, longName, extras, expand) {",
   "  const pane = document.createElement('div');",
   "  pane.className = 'modelica-studio-col modelica-studio-inspector';",
   "  pane.style.width = '380px';",
@@ -63,7 +99,9 @@ const HEAD = [
   "  const view = Object.create(ModelicaStudioView.prototype);",
   "  view.plugin = {",
   "    model: { name: 'Motor', components: [], connections: [], graphics: [] },",
-  "    settings: { labelScale: 1, hoverParameters: true, charts: {} },",
+  "    // The maps the editor keeps per model name are read by the toolbar too, and a",
+  "    // fixture that omits them throws where the app cannot.",
+  "    settings: { labelScale: 1, hoverParameters: true, charts: {}, modelFiles: {}, modelStopTimes: {} },",
   "    library: { component: () => undefined },",
   "  };",
   "  view.editor = null;",
@@ -79,9 +117,22 @@ const HEAD = [
   "  // Fields are initialised in the class body, which `Object.create` skips.",
   "  view.seriesPreset = 'all';",
   "  view.varyingCache = { result: null, names: new Set() };",
+  "  view.expandedGroups = new Set();",
+  "  view.decidedGroups = new Set();",
+  "  view.expansionSeeded = false;",
+  "  view.fullTraceList = null;",
+  "  view.fullSeriesScroll = 0;",
   "  view.publishChart = () => {};",
   "  view.adoptResult(makeResult(n, longName, extras));",
   "  view.renderInspector();",
+  "  // The whole list in view, through the button that does it: a fresh result",
+  "  // opens the top level and the small groups only, so a test about anything",
+  "  // else has to ask for the rest the way the reader would.",
+  "  if (expand) {",
+  "    const button = Array.from(body.querySelectorAll('button'))",
+  "      .find((b) => b.textContent === 'Expand all');",
+  "    if (button) button.click();",
+  "  }",
   "  return { view, pane, body };",
   "}",
   "",
@@ -121,7 +172,7 @@ test("the trace list is its own surface, separated from the filter above it", as
   const out = await runInDom(
     [
       HEAD,
-      "const { pane, body } = mount(173);",
+      "const { pane, body } = mount(173, 520, undefined, true, true);",
       "const filter = body.querySelector('.modelica-studio-search');",
       "const list = body.querySelector('.modelica-studio-series');",
       "const s = getComputedStyle(list);",
@@ -183,15 +234,23 @@ test("the list box takes the height that is left, not a fixed 190px", async () =
   const out = await runInDom(
     [
       HEAD,
-      "const { pane, body } = mount(173);",
+      "const { pane, body } = mount(173, 520, undefined, true, true);",
       "const list = body.querySelector('.modelica-studio-series');",
-      "const short = mount(173, 200);",
+      "const short = mount(173, 200, undefined, true, true);",
       "const shortList = short.body.querySelector('.modelica-studio-series');",
-      "// One name long enough that it cannot fit, as a derivative of a deeply",
-      "// nested variable is: it must be ellipsised, not left to stretch the row.",
+      "// One name long enough that it cannot fit, as a deeply nested variable is: it",
+      "// must be ellipsised, not left to stretch the row. Under the tree the row",
+      "// shows its last segment, so the long name is carried by the row's title and",
+      "// the ellipsis is exercised by a variable whose own name is long.",
       "const long = mount(20, 520, 'der(' + Array(12).fill('motor.internalThermalPort').join('.') + '.Q_flow)');",
       "const longList = long.body.querySelector('.modelica-studio-series');",
-      "const longName = longList.querySelector('.modelica-studio-series-name');",
+      "const longRow = longList.querySelector('.modelica-studio-series-row');",
+      "const longName = longRow.querySelector('.modelica-studio-series-name');",
+      // No underscores: a subscript run shrinks the name, so the ellipsis is tested with
+      // a name typesetting cannot shorten (a camelCase identifier, as a library writes).
+      "const longLabel = mount(6, 520, 'temperatureOfTheStatorWindingMeasuredAtTheSensorInTheHousing');",
+      "const longLabelList = longLabel.body.querySelector('.modelica-studio-series');",
+      "const longLabelName = longLabelList.querySelector('.modelica-studio-series-name');",
       "",
       "window.test('geometry', () => {",
       "  const l = list.getBoundingClientRect();",
@@ -212,8 +271,11 @@ test("the list box takes the height that is left, not a fixed 190px", async () =
       "    'widestRow=' + Math.round(widest) + ':' + Math.round(list.clientWidth),",
       "    'nameEllipsised=' + (name.scrollWidth > name.clientWidth),",
       "    'longNameEllipsised=' + (longName.scrollWidth > longName.clientWidth),",
-      "    'longListX=' + longList.scrollWidth + ':' + longList.clientWidth,",
+      "    'longRowX=' + longList.scrollWidth + ':' + longList.clientWidth,",
       "    'longNameWidth=' + Math.round(longName.getBoundingClientRect().width) + ':' + longList.clientWidth,",
+      "    'longTitle=' + (longRow.getAttribute('title') || '').split('\\n')[0].slice(-24),",
+      "    'labelEllipsised=' + (longLabelName.scrollWidth > longLabelName.clientWidth),",
+      "    'labelListX=' + longLabelList.scrollWidth + ':' + longLabelList.clientWidth,",
       "    'shortHeight=' + Math.round(sl.height),",
       "    'shortRows=' + shortList.querySelectorAll('.modelica-studio-series-row').length,",
       "  ].join(' ');",
@@ -255,11 +317,20 @@ test("the list box takes the height that is left, not a fixed 190px", async () =
     "sanity"
   );
   // A name too long for the column is ellipsised rather than stretching the row
-  // and giving the list a sideways scrollbar.
-  assert.match(g, /longNameEllipsised=true/, "an over-long name is ellipsised, not cut off");
-  assert.match(g, /longListX=(\d+):\1/, "and it does not widen the list");
+  // and giving the list a sideways scrollbar. Under the tree the row carries its
+  // last segment, so the two halves are checked where each one lives: the long
+  // path is in the row's title, and a long name of its own is ellipsised.
+  assert.match(g, /longNameEllipsised=false/, "the row shows the short last segment");
+  assert.match(g, /longRowX=(\d+):\1/, "and it does not widen the list");
   const [nameW, listW] = g.match(/longNameWidth=(\d+):(\d+)/).slice(1).map(Number);
   assert.ok(nameW < listW, `the name fits the column: ${nameW} < ${listW}`);
+  assert.match(
+    g,
+    /longTitle=[^ ]*Q_flow\)/,
+    "the full name the row stands for is on the row, for a filter or a log"
+  );
+  assert.match(g, /labelEllipsised=true/, "a name too long for the column is ellipsised");
+  assert.match(g, /labelListX=(\d+):\1/, "and it does not widen the list either");
   // A pane too short for the content keeps the box usable.
   assert.ok(num("shortHeight") >= 100, `a floor of about six rows, got ${num("shortHeight")}`);
   assert.ok(num("shortRows") > 0, "with rows in it");
@@ -279,14 +350,16 @@ test("the list can be narrowed by preset, not only by typing", async () => {
   const out = await runInDom(
     [
       HEAD,
-      "const { body } = mount(173);",
-      "// Two traces drawn, the way a reader picks them.",
-      "const rows = body.querySelectorAll('.modelica-studio-series-row');",
-      "check(rows[1]);",
-      "check(rows[2]);",
+      "const { body } = mount(173, 520, undefined, true, true);",
+      "// Two traces drawn, the way a reader picks them. By name rather than by",
+      "// position: the tree groups the rows, so which row is third is a fact about",
+      "// the fixture's layout, not about what the preset keeps.",
+      "const rowFor = (name) => Array.from(body.querySelectorAll('.modelica-studio-series-row')).find((r) => r.dataset.name === name);",
+      "check(rowFor('motor.friction.phi'));",
+      "check(rowFor('motor.friction.tau'));",
       "",
       "const pills = () => Array.from(body.querySelectorAll('.modelica-studio-preset'));",
-      "const names = () => Array.from(body.querySelectorAll('.modelica-studio-series-name')).map((n) => n.textContent);",
+      "const names = () => rowNames(body);",
       "const pick = (label) => {",
       "  const b = pills().find((p) => p.textContent === label);",
       "  if (!b) throw new Error('no pill ' + label);",
@@ -409,7 +482,7 @@ test("how much of the list is off screen is stated where it can be read", async 
   const out = await runInDom(
     [
       HEAD,
-      "const { body } = mount(173);",
+      "const { body } = mount(173, 520, undefined, true, true);",
       "const list = body.querySelector('.modelica-studio-series');",
       "const note = body.querySelector('.modelica-studio-series-more');",
       "",
@@ -448,7 +521,7 @@ test("the reader's place in the list survives checking a trace", async () => {
   const out = await runInDom(
     [
       HEAD,
-      "const { body } = mount(173);",
+      "const { body } = mount(173, 520, undefined, true, true);",
       "",
       "window.test('a check keeps the offset', () => {",
       "  const before = body.querySelector('.modelica-studio-series');",
@@ -465,7 +538,7 @@ test("the reader's place in the list survives checking a trace", async () => {
       "  filter.value = 'friction';",
       "  filter.dispatchEvent(new Event('input', { bubbles: true }));",
       "  const next = body.querySelector('.modelica-studio-series');",
-      "  const names = Array.from(next.querySelectorAll('.modelica-studio-series-name')).map((n) => n.textContent);",
+      "  const names = rowNames(body);",
       "  return 'after=' + next.scrollTop + ' rows=' + names.length + ' first=' + names[0];",
       "});",
       "window.finish();",
@@ -485,6 +558,303 @@ test("the reader's place in the list survives checking a trace", async () => {
   );
   assert.match(d["and typing in the filter starts again at the top"], /^after=0/, "a new filter, a new list");
   assert.match(d["and typing in the filter starts again at the top"], /first=motor\.friction\.heatPort\.T$/);
+});
+
+test("the variables are folded into the components their names describe", async () => {
+  // The list is every variable the model has, and a flat list said `motor.` on
+  // every row of it. Folding the names into a tree is what turns the prefix into
+  // a heading — and a heading that can be closed, which is the only way a hundred
+  // and seventy variables fit in a 380px column.
+  const out = await runInDom(
+    [
+      HEAD,
+      "const { view, body } = mount(40);",
+      "const groups = () => Array.from(body.querySelectorAll('.modelica-studio-series-group'));",
+      "const groupNamed = (name) => groups().find((g) => g.querySelector('.modelica-studio-series-group-name').textContent === name);",
+      "const labels = () => Array.from(body.querySelectorAll('.modelica-studio-series-name')).map((n) => n.textContent);",
+      "",
+      "window.test('the first screen is the model, not forty rows of one prefix', () => {",
+      "  const shown = labels();",
+      "  return 'groups=' + groups().map((g) => g.querySelector('.modelica-studio-series-group-name').textContent).join(',')",
+      "    + ' rows=' + rowNames(body).length",
+      "    + ' dotted=' + shown.some((l) => l.includes('.'));",
+      "});",
+      "window.test('a name is drawn as runs: subscripts low, a derivative dotted', () => {",
+      "  const rowFor = (n) => Array.from(body.querySelectorAll('.modelica-studio-series-row')).find((r) => r.dataset.name === n);",
+      "  const q = rowFor('motor.internalThermalPort.heatPortPermanentMagnet.Q_flow');",
+      "  const d = rowFor('der(motor.phiMechanical)');",
+      "  const sub = q.querySelector('.modelica-studio-series-name .modelica-studio-run-sub');",
+      "  const dot = d.querySelector('.modelica-studio-series-name .modelica-studio-run.is-deriv');",
+      "  return 'sub=' + (sub ? sub.textContent : 'NONE')",
+      "    + ' label=' + q.querySelector('.modelica-studio-series-name').getAttribute('aria-label')",
+      "    + ' dots=' + (dot ? dot.getAttribute('data-dots') : 'NONE')",
+      "    + ' text=' + d.querySelector('.modelica-studio-series-name').textContent;",
+      "});",
+      "window.test('clicking a component brings the Selection panel back', () => {",
+      "  const tabFor = (name) => Array.from(view.inspectorTabsEl.querySelectorAll('.modelica-studio-tab')).find((b) => b.textContent === name);",
+      "  const before = view.inspectorCol.classList.contains('is-results-tab');",
+      "  view.onSelectionChanged(['motor.friction.phi']);",
+      "  return 'before=' + before",
+      "    + ' after=' + view.inspectorCol.classList.contains('is-results-tab')",
+      "    + ' frame=' + body.classList.contains('is-results')",
+      "    + ' active=' + (tabFor('Selection').classList.contains('is-active') ? 'Selection' : 'other');",
+      "});",
+      "window.test('and clicking a wire does too', () => {",
+      "  view.inspectorTab = 'results';",
+      "  view.renderInspector();",
+      "  // An editor always has these; the toolbar reads them, and a fixture that omits",
+      "  // them throws where the app cannot.",
+      "  view.editor = { selectedIds: [], selectedWireIds: ['conn-1'], currentModel: view.plugin.model,",
+      "    history: { canUndo: false, canRedo: false }, canPaste: false };",
+      "  view.onSelectionChanged([]);",
+      "  view.editor = null;",
+      "  return 'wire=' + !view.inspectorCol.classList.contains('is-results-tab');",
+      "});",
+      "window.test('a click on empty canvas leaves the tab where it was', () => {",
+      "  view.inspectorTab = 'results';",
+      "  view.renderInspector();",
+      "  view.onSelectionChanged([]);",
+      "  return 'still=' + view.inspectorCol.classList.contains('is-results-tab');",
+      "});",
+      "window.test('a crowded component is closed and says how much is in it', () => {",
+      "  const friction = groupNamed('friction');",
+      "  const count = friction.querySelector('.modelica-studio-series-count');",
+      "  return 'open=' + friction.classList.contains('is-open')",
+      "    + ' count=' + count.textContent + ' shown=' + rowNames(body).some((n) => n.startsWith('motor.friction.phi'));",
+      "});",
+      "window.test('a small component is open, so nothing is hidden behind a click', () => {",
+      "  const ie = groupNamed('ie');",
+      "  return 'open=' + ie.classList.contains('is-open')",
+      "    + ' shown=' + rowNames(body).includes('motor.ie.v');",
+      "});",
+      "window.test('the triangle opens a component and closes it again', () => {",
+      "  const twisty = groupNamed('friction').querySelector('.modelica-studio-series-twisty');",
+      "  const aria = twisty.getAttribute('aria-expanded');",
+      "  twisty.click();",
+      "  const opened = rowNames(body).filter((n) => n.startsWith('motor.friction')).length;",
+      "  groupNamed('friction').querySelector('.modelica-studio-series-twisty').click();",
+      "  const closed = rowNames(body).filter((n) => n.startsWith('motor.friction')).length;",
+      "  return 'aria=' + aria + ' opened=' + opened + ' closed=' + closed;",
+      "});",
+      "window.test('the heading itself opens the group too', () => {",
+      "  groupNamed('friction').querySelector('.modelica-studio-series-group-name').click();",
+      "  const opened = rowNames(body).filter((n) => n.startsWith('motor.friction')).length;",
+      "  return 'opened=' + opened;",
+      "});",
+      "window.test('one button opens the whole tree, and says so', () => {",
+      "  const button = () => Array.from(body.querySelectorAll('.modelica-studio-series-head button')).map((b) => b.textContent).join('|');",
+      "  const before = button();",
+      "  const expand = Array.from(body.querySelectorAll('button')).find((b) => b.textContent === 'Expand all');",
+      "  expand.click();",
+      "  const openGroups = groups().filter((g) => g.classList.contains('is-open')).length;",
+      "  const after = button();",
+      "  // Every group open is more variables than the panel lists, so the count",
+      "  // line is back — the list is a window, and a window says what it is showing.",
+      "  const note = body.querySelector('.modelica-studio-series-more');",
+      "  return 'before=' + before + ' after=' + after + ' openGroups=' + openGroups",
+      "    + ' note=' + (note ? note.textContent : 'none') + ' rows=' + rowNames(body).length;",
+      "});",
+      "window.test('a filter shows the matches in place, opened, whatever was folded', () => {",
+      "  const twisty = groupNamed('friction').querySelector('.modelica-studio-series-twisty');",
+      "  if (twisty.getAttribute('aria-expanded') === 'true') twisty.click();",
+      "  const filter = body.querySelector('.modelica-studio-search');",
+      "  filter.value = 'phi';",
+      "  filter.dispatchEvent(new Event('input', { bubbles: true }));",
+      "  const names = rowNames(body);",
+      "  return 'rows=' + names.length + ' all=' + names.every((n) => n.toLowerCase().includes('phi'))",
+      "    + ' opened=' + groupNamed('friction').classList.contains('is-open');",
+      "});",
+      "window.finish();",
+    ].join("\n")
+  );
+
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const d = Object.fromEntries(out.results.map((r) => [r.name, r.detail]));
+
+  assert.equal(
+    d["the first screen is the model, not forty rows of one prefix"],
+    "groups=motor,friction,ie,inertiaStator,internalThermalPort," +
+      "heatPortPermanentMagnet,la rows=18 dotted=false",
+    "the components as headings, the crowded ones closed, and no full path left in a label"
+  );
+  assert.equal(
+    d["a crowded component is closed and says how much is in it"],
+    "open=false count=0/16 shown=false",
+    "sixteen variables stay behind one row that says so"
+  );
+  assert.equal(
+    d["clicking a component brings the Selection panel back"],
+    "before=true after=false frame=false active=Selection",
+    "the panel showing what is selected, on the click that selected it"
+  );
+  assert.equal(
+    d["and clicking a wire does too"],
+    "wire=true",
+    "a wire is a selection, and its parameters live on the same tab"
+  );
+  assert.equal(
+    d["a click on empty canvas leaves the tab where it was"],
+    "still=true",
+    "forcing it on a component, not on every click on the canvas"
+  );
+  assert.equal(
+    d["a name is drawn as runs: subscripts low, a derivative dotted"],
+    "sub=flow label=Q_flow dots=1 text=phiMechanical",
+    "the same tokenizer the legend uses, so the two surfaces agree"
+  );
+  assert.equal(
+    d["a small component is open, so nothing is hidden behind a click"],
+    "open=true shown=true",
+    "a group of four costs four rows and saves a click"
+  );
+  assert.equal(
+    d["the triangle opens a component and closes it again"],
+    "aria=false opened=16 closed=0",
+    "the control opens what it points at, and only that"
+  );
+  assert.equal(d["the heading itself opens the group too"], "opened=16", "a wide target for a small triangle");
+  assert.equal(
+    d["one button opens the whole tree, and says so"],
+    "before=Expand all|Clear traces after=Collapse all|Clear traces openGroups=8 " +
+      "note=Showing the first 40 of 42 — type to narrow the list. rows=40",
+    "every group open is more rows than the panel lists, and the button turns around"
+  );
+  assert.equal(
+    d["a filter shows the matches in place, opened, whatever was folded"],
+    "rows=9 all=true opened=true",
+    "phi is in two components and in the derivative of one of them, and all nine are shown"
+  );
+});
+
+test("a unit is shown with the variable it belongs to, not with the model", async () => {
+  // The unit is the one fact about a variable that the model's own source does
+  // not state — `Modelica.Units.SI.Voltage v` never writes "V" — and a plot of a
+  // voltage against a current is unreadable without it. It is the compiler's
+  // string, shown as it stands: OpenModelica writes `s-1.A` for a derivative, and
+  // a prettier rendering would be a different claim about the numbers.
+  const out = await runInDom(
+    [
+      HEAD,
+      "const { body } = mount(20, 520, undefined, true, true);",
+      "const rowFor = (name) => Array.from(body.querySelectorAll('.modelica-studio-series-row'))",
+      "  .find((r) => r.dataset.name === name);",
+      "const unitOf = (name) => {",
+      "  const span = rowFor(name).querySelector('.modelica-studio-series-unit');",
+      "  return span ? span.textContent + ' title=' + span.getAttribute('title') : 'NONE';",
+      "};",
+      "// A result whose variables carry no unit at all: the description is optional",
+      "// and the row must not grow an empty placeholder for it.",
+      "const bare = mount(6, 520, 'temperatureOfTheStatorWinding');",
+      "const bareRow = bare.body.querySelector('.modelica-studio-series-row');",
+      "",
+      "window.test('every row says what its numbers are in', () =>",
+      "  'T=' + unitOf('motor.friction.heatPort.T') + ' phi=' + unitOf('motor.friction.phi')",
+      "    + ' v=' + unitOf('motor.la.v'));",
+      "window.test('a derivative is read as a reader writes it, and kept whole on the row', () =>",
+      "  'shown=' + unitOf('der(motor.phiMechanical)')",
+      "    + ' exact=' + (rowFor('der(motor.phiMechanical)').getAttribute('title') || '').split('\\n').pop());",
+      "window.test('the row also carries what the variable is', () =>",
+      "  'title=' + JSON.stringify(rowFor('motor.friction.heatPort.T').getAttribute('title')));",
+      "window.test('a variable with no unit gets no unit', () =>",
+      "  'bare=' + (bareRow.querySelector('.modelica-studio-series-unit') ? 'SHOWN' : 'absent')",
+      "    + ' name=' + bareRow.dataset.name);",
+      "window.finish();",
+    ].join("\n")
+  );
+
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const d = Object.fromEntries(out.results.map((r) => [r.name, r.detail]));
+
+  assert.equal(
+    d["every row says what its numbers are in"],
+    "T=K title=Unit: K phi=Wb title=Unit: Wb v=V title=Unit: V",
+    "the unit sits on the row, where the variable is, not in a legend"
+  );
+  assert.equal(
+    d["a derivative is read as a reader writes it, and kept whole on the row"],
+    "shown=km²·s⁻⁴·A⁻¹·g title=Unit: km²·s⁻⁴·A⁻¹·g exact=[km2.s-4.A-1.g]",
+    "the row is readable and the tooltip still carries the compiler's own string"
+  );
+  assert.equal(
+    d["the row also carries what the variable is"],
+    'title="motor.friction.heatPort.T\\nTemperature of the winding\\n[K]"',
+    "the full name, the library's comment and the unit, for a reader who needs them"
+  );
+  assert.equal(
+    d["a variable with no unit gets no unit"],
+    "bare=absent name=temperatureOfTheStatorWinding",
+    "no empty bracket"
+  );
+});
+
+test("the overlay lists the same traces as the panel, without the panel's window", async () => {
+  // Reported as the two lists drifting apart: the overlay had its own flat
+  // renderer, so the tree stopped at the panel. They are one list at two sizes —
+  // the overlay is the window, so it takes all the rows rather than forty.
+  const out = await runInDom(
+    [
+      HEAD,
+      "const { view, body } = mount(40, 520, undefined, false);",
+      "const host = document.createElement('div');",
+      "document.body.appendChild(host);",
+      "view.fullTraceList = host;",
+      "view.renderFullTraceList();",
+      "const count = (el, sel) => el.querySelectorAll(sel).length;",
+      "const allGroups = ['motor', 'motor.friction', 'motor.friction.heatPort',", 
+      "  'motor.ie', 'motor.inertiaStator', 'motor.internalThermalPort',",
+      "  'motor.internalThermalPort.heatPortPermanentMagnet', 'motor.la'];",
+      "",
+      "window.test('the overlay is the same tree', () => {",
+      "  return 'groups=' + count(host, '.modelica-studio-series-group')",
+      "    + ' rows=' + count(host, '.modelica-studio-series-row')",
+      "    + ' panelRows=' + count(body, '.modelica-studio-series-row');",
+      "});",
+      "window.test('and it is not capped at the panel\\'s forty', () => {",
+      "  view.expandedGroups = new Set(allGroups);",
+      "  view.renderFullTraceList();",
+      "  return 'rows=' + count(host, '.modelica-studio-series-row')",
+      "    + ' note=' + (host.querySelector('.modelica-studio-series-more') ? 'SHOWN' : 'absent');",
+      "});",
+      "window.test('opening a group in the panel opens it in the overlay', () => {",
+      "  view.expandedGroups = new Set(['motor']);",
+      "  view.renderFullTraceList();",
+      "  const before = count(host, '.modelica-studio-series-row');",
+      "  view.toggleGroup('motor.friction', true);",
+      "  const after = count(host, '.modelica-studio-series-row');",
+      "  const panel = count(body, '.modelica-studio-series-row');",
+      "  return 'before=' + before + ' after=' + after + ' panel=' + panel + ' same=' + (after === panel);",
+      "});",
+      "window.finish();",
+    ].join("\n")
+  );
+
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  assert.deepEqual(out.errors, [], "no page errors");
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const d = Object.fromEntries(out.results.map((r) => [r.name, r.detail]));
+
+  assert.equal(
+    d["the overlay is the same tree"],
+    "groups=7 rows=16 panelRows=16",
+    "the same rows in both, because it is the same renderer"
+  );
+  assert.equal(
+    d["and it is not capped at the panel's forty"],
+    "rows=40 note=absent",
+    "forty rows with no line about a window: the overlay has the room"
+  );
+  assert.equal(
+    d["opening a group in the panel opens it in the overlay"],
+    "before=4 after=16 panel=16 same=true",
+    "one state, so the two lists cannot disagree"
+  );
 });
 
 test("clearing the traces reaches the note's copy of the chart", async () => {

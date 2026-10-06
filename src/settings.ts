@@ -6,7 +6,7 @@
  * unusual setup rather than to require tuning.
  */
 
-import { Notice, PluginSettingTab, SecretComponent, Setting } from "obsidian";
+import { Notice, PluginSettingTab, SecretComponent, Setting, type TextComponent } from "obsidian";
 import type ModelicaStudioPlugin from "./main";
 import { FolderSuggest } from "./view/folder-suggest";
 // The snap distance is defined by the plot, which has to clamp whatever it is
@@ -131,8 +131,34 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
    */
   private keepPlaceAfterLayout(places: Array<[HTMLElement, number]>): void {
     if (places.length === 0) return;
+    // Until the reader does something. Judging this by scroll events does not work: a
+    // browser CLAMP is a scroll too, and it is the very thing being undone. A wheel, a
+    // pointer or a key is unambiguously the reader, so they own the pane from then on.
+    let taken = false;
+    const release = () => {
+      taken = true;
+    };
+    const events = ["wheel", "pointerdown", "keydown", "touchstart"];
+    for (const type of events) window.addEventListener(type, release, { capture: true, passive: true });
+    const done = () => {
+      for (const type of events) window.removeEventListener(type, release, { capture: true });
+    };
+
+    /**
+     * Put the offsets back, whatever the browser did to them.
+     *
+     * This used to act only on an offset that had been clamped to EXACTLY zero, which
+     * missed the other half of the same fault: a rebuild that leaves the pane SHORTER
+     * for a frame clamps the offset to whatever the short content allows — 120 rather
+     * than 0 — and the reader is left somewhere they never chose. Restoring the captured
+     * value is right in both cases, and the reader's own first gesture cancels it.
+     */
     const again = () => {
-      for (const [el, top] of places) if (top > 0 && el.scrollTop === 0) el.scrollTop = top;
+      if (taken) {
+        done();
+        return;
+      }
+      for (const [el, top] of places) if (top > 0 && el.scrollTop !== top) el.scrollTop = top;
     };
     if (typeof window.requestAnimationFrame === "function") {
       // Called on `window` rather than through an alias: the method has to keep its
@@ -144,9 +170,15 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
     }
     // And on a timer as well, not instead: frames do not arrive in a hidden or
     // occluded window — Obsidian minimised, or a pane that is not on screen — and a
-    // reader who comes back to a jumped pane is the same bug however it happened.
+    // reader who comes back to a jumped pane is the same bug however it happened. 250ms
+    // as well as 0 and 60, because a rebuild that fetches (the model list) or indexes
+    // (the library) settles later than a frame, and it is the settle that clamps.
     window.setTimeout(again, 0);
     window.setTimeout(again, 60);
+    window.setTimeout(() => {
+      again();
+      done();
+    }, 250);
   }
 
   /**
@@ -179,6 +211,66 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
     };
     input.addEventListener("blur", done);
     input.addEventListener("keydown", onKey);
+  }
+
+  /**
+   * The "Model" row: the name field, and whatever list the provider has offered.
+   *
+   * A method rather than a block in `buildSettings`, because three things draw this row —
+   * the first build, a provider preset, and a refreshed list — and a row drawn three times
+   * has to be the same row each time. It reads the settings it shows, so there is nothing
+   * to keep in step by hand; the alternative, a rebuild of the tab, is what moved the pane.
+   */
+  private renderModelRow(host: HTMLElement): void {
+    host.empty();
+    // Models on offer: whatever the provider last reported, else the built-in
+    // suggestions for the chosen provider, else nothing. A curated list baked
+    // into the plugin is what went stale when `deepseek-chat` was retired, so the
+    // fetched list always wins.
+    const fetched = this.plugin.settings.aiModels;
+    const preset = AI_PROVIDERS.find((p) => p.baseUrl === this.plugin.settings.ai.baseUrl);
+    const suggested = fetched.length
+      ? fetched
+      : (preset?.models ?? (preset ? [preset.model] : []));
+    const source = fetched.length ? "fetched from the provider" : "built in";
+
+    /** The "Model" text field, so a suggestion can fill it without a rebuild. */
+    let modelText: TextComponent | null = null;
+    const modelSetting = new Setting(host)
+      .setName("Model")
+      .setDesc(
+        suggested.length
+          ? `Choose one of ${suggested.length} models (${source}), or type any name the provider accepts.`
+          : "The model name the provider expects."
+      )
+      .addText((t) => {
+        modelText = t;
+        t.setPlaceholder(AI_DEFAULTS.model)
+          .setValue(this.plugin.settings.ai.model)
+          .onChange(async (v) => {
+            this.plugin.settings.ai.model = v.trim();
+            await this.plugin.saveSettings();
+          });
+        t.inputEl.addClass("modelica-studio-path-input");
+      });
+
+    if (suggested.length) {
+      modelSetting.addDropdown((d) => {
+        d.addOption("", "Suggestions...");
+        for (const m of suggested.slice(0, 200)) d.addOption(m, m);
+        d.setValue(suggested.includes(this.plugin.settings.ai.model) ? this.plugin.settings.ai.model : "");
+        d.onChange(async (v) => {
+          if (!v) return;
+          this.plugin.settings.ai.model = v;
+          await this.plugin.saveSettings();
+          // In place, not `display()`. Rebuilding the tab threw the reader to the top of
+          // the settings pane — reported as "when changing the AI model from the settings,
+          // it jumps up" — and nothing here needs a rebuild: the field above shows the
+          // chosen name and the dropdown already shows the choice.
+          modelText?.setValue(v);
+        });
+      });
+    }
   }
 
   /** What each field should do when the reader leaves it. */
@@ -302,6 +394,24 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
             this.plugin.applySettingsToBackend();
           })
+      );
+
+    new Setting(containerEl)
+      .setName("Show what's new")
+      .setDesc(
+        "Opens the release notes once after the plugin updates. The full history is in " +
+          "the plugin's CHANGELOG."
+      )
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.showWhatsNew).onChange(async (v) => {
+          this.plugin.settings.showWhatsNew = v;
+          await this.plugin.saveSettings();
+        })
+      )
+      .addButton((b) =>
+        b.setButtonText("Show now").onClick(() => {
+          this.plugin.showWhatsNew();
+        })
       );
 
     new Setting(containerEl).setName("Simulation defaults").setHeading();
@@ -877,6 +987,15 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
       });
     }
 
+    /**
+     * The rows the provider preset changes, so it can redraw them where they stand.
+     *
+     * Assigned below (the fields come after this row) and only read when the reader picks
+     * something, which is after the whole tab has been built.
+     */
+    let baseUrlText: TextComponent | null = null;
+    let modelRowHost: HTMLElement | null = null;
+
     new Setting(containerEl)
       .setName("Provider preset")
       .setDesc(
@@ -900,7 +1019,13 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           // A list fetched from one provider says nothing about another.
           this.plugin.settings.aiModels = [];
           await this.plugin.saveSettings();
-          this.display();
+          // In place, not `display()`. This row rebuilt the whole tab, and a rebuild is what
+          // throws the reader to the top of the pane — reported for the model list first and
+          // then for the provider, which is the same fault in the same shape. Only two rows
+          // depend on the provider: the Base URL field, and the model row, which is redrawn
+          // by the same code that drew it.
+          baseUrlText?.setValue(p.baseUrl);
+          if (modelRowHost) this.renderModelRow(modelRowHost);
           })();
         });
       });
@@ -908,57 +1033,21 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Base URL")
       .setDesc("Without the trailing /chat/completions.")
-      .addText((t) =>
-        t
-          .setPlaceholder(AI_DEFAULTS.baseUrl)
+      .addText((t) => {
+        baseUrlText = t;
+        t.setPlaceholder(AI_DEFAULTS.baseUrl)
           .setValue(this.plugin.settings.ai.baseUrl)
           .onChange(async (v) => {
             this.plugin.settings.ai.baseUrl = v.trim();
             await this.plugin.saveSettings();
-          })
-      );
-
-    // Models on offer: whatever the provider last reported, else the built-in
-    // suggestions for the chosen provider, else nothing. A curated list baked
-    // into the plugin is what went stale when `deepseek-chat` was retired, so the
-    // fetched list always wins.
-    const fetched = this.plugin.settings.aiModels;
-    const preset = AI_PROVIDERS.find((p) => p.baseUrl === this.plugin.settings.ai.baseUrl);
-    const suggested = fetched.length
-      ? fetched
-      : (preset?.models ?? (preset ? [preset.model] : []));
-    const source = fetched.length ? "fetched from the provider" : "built in";
-
-    const modelSetting = new Setting(containerEl)
-      .setName("Model")
-      .setDesc(
-        suggested.length
-          ? `Choose one of ${suggested.length} models (${source}), or type any name the provider accepts.`
-          : "The model name the provider expects."
-      )
-      .addText((t) => {
-        t.setPlaceholder(AI_DEFAULTS.model)
-          .setValue(this.plugin.settings.ai.model)
-          .onChange(async (v) => {
-            this.plugin.settings.ai.model = v.trim();
-            await this.plugin.saveSettings();
           });
-        t.inputEl.addClass("modelica-studio-path-input");
       });
 
-    if (suggested.length) {
-      modelSetting.addDropdown((d) => {
-        d.addOption("", "Suggestions...");
-        for (const m of suggested.slice(0, 200)) d.addOption(m, m);
-        d.setValue(suggested.includes(this.plugin.settings.ai.model) ? this.plugin.settings.ai.model : "");
-        d.onChange(async (v) => {
-          if (!v) return;
-          this.plugin.settings.ai.model = v;
-          await this.plugin.saveSettings();
-          this.display();
-        });
-      });
-    }
+    // The model row lives in a host element of its own, so the two things that change it
+    // (the provider preset, a refreshed list) can redraw THIS ROW and leave the tab — and
+    // the reader's place in it — alone.
+    modelRowHost = containerEl.createDiv({ cls: "modelica-studio-model-row" });
+    this.renderModelRow(modelRowHost);
 
     const modelStatus = containerEl.createDiv({
       cls: "modelica-studio-setting-status modelica-studio-hidden",
@@ -982,7 +1071,8 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
           modelStatus.setText(result.text);
           modelStatus.toggleClass("is-ok", result.ok);
           modelStatus.toggleClass("is-bad", !result.ok);
-          if (result.ok) this.display();
+          // The row, not the tab: what arrived is a list of models.
+          if (result.ok && modelRowHost) this.renderModelRow(modelRowHost);
         })
       );
 

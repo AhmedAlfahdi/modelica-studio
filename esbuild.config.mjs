@@ -1,5 +1,8 @@
 import esbuild from "esbuild";
+import fs from "node:fs";
+import path from "node:path";
 import process from "process";
+import { whatsNewFor } from "./scripts/whats-new.mjs";
 // Node's own list, rather than the `builtin-modules` package. The list is already here,
 // and that package is one the plugin directory asks plugins to replace.
 import { builtinModules } from "node:module";
@@ -12,6 +15,40 @@ if you want to view the source, visit the plugin's GitHub repository
 `;
 
 const prod = process.argv[2] === "production";
+const ROOT = import.meta.dirname;
+
+/**
+ * The release notes, folded into the bundle.
+ *
+ * A virtual module rather than a generated file: the notes ARE the changelog's newest
+ * section, so extracting them at build time keeps the two from drifting, and a generated
+ * `.ts` in the tree would be build output sitting in a source directory (which
+ * `check-repo.mjs` exists to prevent). Only `src/main.ts` imports it, so nothing else —
+ * including every test bundle — has to know it exists.
+ */
+const whatsNewPlugin = {
+  name: "whats-new",
+  setup(build) {
+    build.onResolve({ filter: /^virtual:whats-new$/ }, () => ({
+      path: "whats-new",
+      namespace: "whats-new",
+    }));
+    build.onLoad({ filter: /.*/, namespace: "whats-new" }, () => {
+      const changelog = fs.readFileSync(path.join(ROOT, "CHANGELOG.md"), "utf8");
+      const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.json"), "utf8"));
+      const notes = whatsNewFor(changelog, manifest.version);
+      if (!notes) {
+        // Loud, not silent: an empty popup is worse than no popup, and the cause is
+        // always a release whose version has no changelog section.
+        console.warn(`whats-new: no changelog section for ${manifest.version}`);
+      }
+      return {
+        contents: `export const whatsNew = ${JSON.stringify(notes)};`,
+        loader: "js",
+      };
+    });
+  },
+};
 
 const ctx = await esbuild.context({
   banner: { js: banner },
@@ -45,6 +82,7 @@ const ctx = await esbuild.context({
   logLevel: "info",
   sourcemap: prod ? false : "inline",
   treeShaking: true,
+  plugins: [whatsNewPlugin],
   outfile: "main.js",
   minify: prod,
   define: {
