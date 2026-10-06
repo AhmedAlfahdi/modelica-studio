@@ -2642,10 +2642,9 @@ export class ModelicaStudioView extends ItemView {
       row.addClass("has-unit-picker");
       const picker = row.createEl("select", { cls: "modelica-studio-param-unit" });
       picker.setAttribute("aria-label", `Unit for ${label}`);
-      // The model's own unit, where the picker's own value cannot say it: the reader may be
-      // looking at the field in bar with the model in pascals.
-      // The reader-facing spelling, as the picker's own first option shows it.
-      picker.setAttribute("title", `Model unit: ${unit ? formatUnit(unit) : p.name}`);
+      // No `title`. It said "Model unit: Ω", which is the first option of the list this control
+      // opens — and a tooltip on a control that is already showing the answer covers the field
+      // it belongs to while the reader is choosing from it.
       for (const choice of choices) {
         picker.createEl("option", { attr: { value: choice.symbol }, text: choice.symbol });
       }

@@ -1985,7 +1985,7 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
     "  return 'label=' + JSON.stringify(field.querySelector('label').textContent)",
     "    + ' unitInLabel=' + (field.querySelector('.modelica-studio-field-unit') !== null)",
     "    + ' first=' + picker.options[0].value",
-    "    + ' title=' + picker.getAttribute('title');",
+    "    + ' title=' + JSON.stringify(picker.getAttribute('title'));",
     "});",
     "window.test('choosing another unit shows the value in it, and stores nothing different', () => {",
     "  calls.length = 0;",
@@ -2120,8 +2120,8 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
   );
   assert.equal(
     d["and the label does not repeat the unit the picker shows"],
-    'label="R" unitInLabel=false first=Ω title=Model unit: Ω',
-    "the unit is on the picker as the symbol a reader writes, and the title says what the model uses"
+    'label="R" unitInLabel=false first=Ω title=null',
+    "the unit is on the picker as the symbol a reader writes, and the control carries no tooltip"
   );
   assert.equal(
     d["choosing another unit shows the value in it, and stores nothing different"],

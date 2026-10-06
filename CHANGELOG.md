@@ -7,6 +7,12 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+### Changed
+
+- **The unit picker no longer carries a tooltip.** It said "Model unit: Ω", which is the first
+  entry of the list the control opens — and a tooltip over an open dropdown covers the field the
+  reader is choosing for.
+
 ## [0.6.1] — 2026-10-06
 
 ### Fixed
