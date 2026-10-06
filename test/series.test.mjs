@@ -1022,6 +1022,26 @@ test("deltas are measured against the named run on screen", () => {
     { base: "capacitor.v", label: "resistor.R=12", value: 7.07 },
     { base: "capacitor.v", label: "resistor.R=15", value: 7.902 },
   ];
+  // The same lines as runs, which is what the readout draws: a delta names two series, and
+  // the plot spells a series the same way wherever it names one.
+  const runs = plotMod.deltaRunLines(rows, "resistor.R=20");
+  // Quoted, because the spaces ARE the runs: `Δ ` and ` vs ` carry their own separators, and
+  // a joined string makes a doubled space invisible.
+  const kinds = (list) => list.map((r) => `${r.kind}:${JSON.stringify(r.text)}`).join(" · ");
+  const flow = plotMod.deltaRunLines(
+    [
+      { base: "orifice.m_flow", label: "R=12", value: 1 },
+      { base: "orifice.m_flow", label: "R=20", value: 3 },
+    ],
+    "R=20"
+  );
+  assert.equal(flow.length, 1, "one delta for the other run");
+  assert.equal(
+    kinds(flow[0]),
+    'base:"Δ " · base:"orifice" · sep:"." · base:"m" · sub:"flow" · base:" vs " · base:"R=12" · base:" = +2"',
+    "with the variable typeset inside it, exactly as the legend spells it"
+  );
+
   const lines = plotMod.deltaLines(rows, "resistor.R=20");
   assert.equal(lines.length, 2, `one line per other run, got ${JSON.stringify(lines)}`);
   assert.match(lines[0], /^Δ capacitor\.v vs resistor\.R=12 = \+1\.796$/, "signed, and against the run on screen");
@@ -1150,8 +1170,10 @@ test("the cursor readout is sized by its own setting, box and all", () => {
       theme: plotMod.plotThemeFrom(false),
       readoutScale,
     });
-    // The readout's own row: the one that names the trace.
-    const row = rects.filter(([text]) => text.startsWith("h = ")).pop();
+    // The readout's own row: the one that names the trace. Found by its NAME run, because
+    // the row is drawn in parts now — the name typeset, the unit, and the value in its own
+    // column — so there is no single string left to look for.
+    const row = rects.filter(([text]) => text === "h").pop();
     const box = boxes[boxes.length - 1];
     return { font: row ? row[3] : "NONE", row, box };
   };
@@ -1174,6 +1196,123 @@ test("the cursor readout is sized by its own setting, box and all", () => {
   // cursor line is unchanged — that is spacing on the plot, not room for the text.
   assert.equal(standard.row[1] - standard.box[0], 6, "6px of padding at the standard size");
   assert.equal(bigger.row[1] - bigger.box[0], 12, "and 12px at twice it");
+});
+
+test("the readout says a variable the way the legend does, with its unit", () => {
+  // Reported from a screenshot of the two side by side: the legend had learned to typeset
+  // names and carry units, and the box over the plot had not. One said
+  // `orifice.m_flow  kg/s` and the other said `orifice.m_flow = 0.9844`.
+  const texts = [];
+  const rects = [];
+  let font = "";
+  const ctx = new Proxy(
+    {
+      canvas: { width: 900, height: 400 },
+      font,
+      fillStyle: "",
+      strokeStyle: "",
+      globalAlpha: 1,
+      textAlign: "",
+      textBaseline: "",
+    },
+    {
+      get(t, k) {
+        if (k in t) return t[k];
+        if (k === "measureText") {
+          const size = Number(/([0-9.]+)px/.exec(font)?.[1] ?? 11);
+          return (s2) => ({ width: String(s2).length * size * 0.5 });
+        }
+        if (k === "fillText") {
+          return (label, x, y) => texts.push({ label: String(label), x, y, font, align: t.textAlign });
+        }
+        if (k === "fillRect") return (x, y, w, h) => rects.push([x, y, w, h]);
+        return () => {};
+      },
+      set(t, k, v) {
+        if (k === "font") font = String(v);
+        t[k] = v;
+        return true;
+      },
+    }
+  );
+  const time = [0, 1, 2];
+  const result = {
+    time,
+    series: [
+      { name: "orifice.m_flow", values: [0, 1, 2], unit: "kg/s" },
+      { name: "supply.flowModel.Is[1]", values: [0, 3, 6], unit: "kg/s" },
+      { name: "no.unit.here", values: [0, 1, 2], unit: "" },
+    ],
+    compileMs: 1, simulateMs: 1, reusedBinary: true, warnings: [],
+  };
+  plotMod.drawPlot(ctx, 900, 400, result, {
+    styles: {
+      "orifice.m_flow": { color: "#a00", visible: true },
+      "supply.flowModel.Is[1]": { color: "#0a0", visible: true },
+      "no.unit.here": { color: "#00a", visible: true },
+    },
+    view: { xMin: 0, xMax: 2 },
+    dpr: 1,
+    cursorX: 1.5,
+    theme: plotMod.plotThemeFrom(false),
+  });
+
+  const at = (label) => texts.filter((t) => t.label === label);
+  const box = rects[rects.length - 1];
+  // The readout's own texts, found by the box they are drawn in: the axis labels are
+  // right-aligned too, and the legend names the same series with the same units a few
+  // hundred pixels to the right.
+  const inBox = texts.filter(
+    (t) =>
+      t.x >= box[0] && t.x <= box[0] + box[2] && t.y >= box[1] && t.y <= box[1] + box[3]
+  );
+
+  const base = at("m")[0];
+  const suffix = at("flow")[0];
+  assert.ok(base && suffix, `the name is drawn in runs, got ${JSON.stringify(inBox.map((t) => t.label))}`);
+  assert.ok(
+    suffix.y > base.y && suffix.x > base.x,
+    "`m_flow` is an m with a subscript that sits lower and to its right"
+  );
+  assert.ok(
+    Number(/([0-9.]+)px/.exec(suffix.font)?.[1]) < Number(/([0-9.]+)px/.exec(base.font)?.[1]),
+    "and smaller"
+  );
+  const is = at("Is")[0];
+  const index = at("1").find((t) => is && t.y > is.y);
+  assert.ok(is && index, "`Is[1]` is Is with an index, not a bracket pair");
+
+  assert.equal(
+    inBox.filter((t) => t.label === "kg/s").length,
+    2,
+    "the unit is drawn once for each row that has one"
+  );
+  // The unit-less series still gets its row: its name is drawn in runs too, so the check is
+  // for one of them rather than for the whole string, which is never drawn as one.
+  assert.ok(
+    inBox.some((t) => t.label === "here"),
+    `a variable with no unit still gets its row (${JSON.stringify(inBox.map((t) => t.label))})`
+  );
+
+  // The table: every value right-aligned at ONE x, so two magnitudes can be compared down
+  // the box. That is the part a reader gets wrong by eye when the numbers are ragged.
+  const values = inBox.filter((t) => t.align === "right");
+  assert.equal(values.length, 3, `one value per row, got ${JSON.stringify(values.map((t) => t.label))}`);
+  assert.equal(
+    new Set(values.map((t) => Math.round(t.x))).size,
+    1,
+    `the values share a right edge (${values.map((t) => t.x).join(", ")})`
+  );
+  assert.equal(
+    inBox.filter((t) => t.label === "= ").length,
+    3,
+    "and the `=` sits in a column of its own, at one x for every row"
+  );
+  assert.equal(
+    new Set(inBox.filter((t) => t.label === "= ").map((t) => Math.round(t.x))).size,
+    1,
+    "which is what stops `= 9863` and `= 0.9844` from staggering"
+  );
 });
 
 test("the crossing snap can be switched off, and its reach is a pixel distance", () => {

@@ -339,6 +339,19 @@ const LEGEND_SUB_DROP = 0.28;
 /** Between a run of the name and the next: subscripts sit close, components apart. */
 const RUN_GAP = 0;
 
+/**
+ * The cursor readout's type: a name, the unit beside it, and the value in a column.
+ *
+ * The same vocabulary as the legend, one size down — the readout is a box over the plot
+ * rather than a list beside it — so a variable is spelled the same way wherever the plot
+ * names it. `readoutScale` multiplies all of it, which is why these are numbers and not
+ * strings: the box, the leading and the padding scale with the text.
+ */
+const READOUT_FONT = 11;
+const READOUT_UNIT_FONT = 10;
+/** Between the name and its unit, and between the unit and the `=`. */
+const READOUT_GAP = 6;
+
 /** How wide the runs measure, drawn at `base` px. */
 function runsWidth(ctx: CanvasRenderingContext2D, runs: Run[], base: number): number {
   let width = 0;
@@ -848,14 +861,33 @@ export function drawPlot(
     ctx.setLineDash([]);
 
     // Nearest sample values, shown in a compact box.
-    const lines: string[] = [
-      `t = ${formatTick(cursorAt)}${snappedToCrossing ? "  (crossing)" : ""}`,
+    //
+    // A table, and the same vocabulary the legend uses: the name is typeset in the model's
+    // own notation, its unit sits beside it, and the values line up in a column of their
+    // own. Reported from a screenshot of this box beside that legend: one said
+    // `orifice.m_flow` and the other `orifice.m_flow`, and only one of them said `kg/s`.
+    const lines: ReadoutLine[] = [
+      {
+        shape: "text",
+        runs: [
+          {
+            kind: "base",
+            text: `t = ${formatTick(cursorAt)}${snappedToCrossing ? "  (crossing)" : ""}`,
+          },
+        ],
+      },
     ];
     const readoff: Array<{ base: string; label: string; value: number }> = [];
     for (const s of visible.slice(0, opts.cursorRows ?? 6)) {
       const v = sampleAt(result.time, s.values, cursorAt);
       if (v === undefined) continue;
-      lines.push(`${s.name} = ${formatTick(v)}`);
+      const unit = s.unit?.trim() ?? "";
+      lines.push({
+        shape: "pair",
+        name: typesetName(s.name),
+        unit: unit ? formatUnit(unit) : "",
+        value: formatTick(v),
+      });
       const split = splitFamilyName(s.name);
       readoff.push({ base: split.base, label: split.label ?? "", value: v });
     }
@@ -863,7 +895,11 @@ export function drawPlot(
     // on screen. This is the question a sweep is asked -- "how much does it
     // differ?" -- and reading it off two rows and subtracting in your head is
     // exactly what a plot should do for you.
-    if (opts.showDeltas) lines.push(...deltaLines(readoff, opts.currentLabel ?? ""));
+    if (opts.showDeltas) {
+      for (const runs of deltaRunLines(readoff, opts.currentLabel ?? "")) {
+        lines.push({ shape: "text", runs });
+      }
+    }
     if (lines.length > 1) {
       // The readout's own scale, from the settings. The box is measured from the
       // text, so every part of it uses the same scale: font, leading and padding.
@@ -873,9 +909,40 @@ export function drawPlot(
       const lineH = 14 * scale;
       const padX = 6 * scale;
       const padY = 5 * scale;
-      ctx.font = `${11 * scale}px sans-serif`;
-      const wBox = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 2 * padX;
-      const hBox = lines.length * lineH + 2 * padY;
+      const font = Math.round(READOUT_FONT * scale);
+      const unitFont = Math.round(READOUT_UNIT_FONT * scale);
+      const gap = READOUT_GAP * scale;
+      const measure = (text: string, size: number) => {
+        ctx.font = `${size}px sans-serif`;
+        return ctx.measureText(text).width;
+      };
+      // The three columns: pairs share a value column, so the numbers line up and a
+      // magnitude can be compared down the box rather than read.
+      const pairs = lines.filter((l): l is Extract<ReadoutLine, { shape: "pair" }> => l.shape === "pair");
+      const valueW = pairs.length > 0 ? Math.max(...pairs.map((l) => measure(l.value, font))) : 0;
+      const eqW = pairs.length > 0 ? measure("= ", font) : 0;
+      const width = (line: ReadoutLine) => {
+        if (line.shape === "text") return measure(runsText(line.runs), font);
+        const unitW = line.unit ? measure(line.unit, unitFont) + gap : 0;
+        return runsWidth(ctx, line.name, font) + unitW + gap + eqW + valueW;
+      };
+      // A long qualified name would otherwise push the box across the plot: the NAME gives
+      // way, because the value and its unit are what the box is for.
+      const boxMax = Math.max(80, lay.width - 16);
+      const widest = Math.max(...lines.map(width));
+      const nameBudget = (line: ReadoutLine) => {
+        if (line.shape === "text") return 0;
+        const unitW = line.unit ? measure(line.unit, unitFont) + gap : 0;
+        const fixed = unitW + gap + eqW + valueW + 2 * padX;
+        return Math.max(24, boxMax - fixed);
+      };
+      const fitted = lines.map((line) =>
+        line.shape === "pair" && widest > boxMax
+          ? { ...line, name: fitRuns(ctx, line.name, font, nameBudget(line)) }
+          : line
+      );
+      const wBox = Math.max(...fitted.map(width)) + 2 * padX;
+      const hBox = fitted.length * lineH + 2 * padY;
       let bx = x + 10;
       if (bx + wBox > lay.left + lay.width) bx = x - wBox - 10;
       const by = lay.top + 8;
@@ -884,14 +951,56 @@ export function drawPlot(
       ctx.lineWidth = 1;
       ctx.fillRect(bx, by, wBox, hBox);
       ctx.strokeRect(bx + 0.5, by + 0.5, wBox, hBox);
-      ctx.fillStyle = theme.foreground;
-      ctx.textAlign = "left";
       ctx.textBaseline = "top";
-      lines.forEach((l, i) => ctx.fillText(l, bx + padX, by + padY + i * lineH));
+      const valueX = bx + wBox - padX;
+      const eqX = valueX - valueW - eqW;
+      fitted.forEach((line, i) => {
+        const y = by + padY + i * lineH;
+        if (line.shape === "text") {
+          ctx.fillStyle = theme.foreground;
+          ctx.textAlign = "left";
+          ctx.font = `${font}px sans-serif`;
+          ctx.fillText(runsText(line.runs), bx + padX, y);
+          return;
+        }
+        ctx.textAlign = "left";
+        const after = drawRuns(ctx, bx + padX, y, line.name, font, theme.foreground);
+        if (line.unit) {
+          ctx.font = `${unitFont}px sans-serif`;
+          // The theme's own quiet tone, as in the legend: a unit qualifies the value, it is
+          // not part of the variable's name.
+          ctx.fillStyle = theme.axis;
+          ctx.fillText(line.unit, after + gap, y + 1);
+        }
+        ctx.font = `${font}px sans-serif`;
+        ctx.fillStyle = theme.foreground;
+        if (eqX > bx + padX) ctx.fillText("= ", eqX, y);
+        ctx.textAlign = "right";
+        ctx.fillText(line.value, valueX, y);
+      });
+      // Back to the default, because the rest of the drawing shares this context: a
+      // `textAlign` left as "right" moved the axis labels off their own ticks.
+      ctx.textAlign = "left";
     }
   }
 
   ctx.restore();
+}
+
+/**
+ * One line of the cursor readout.
+ *
+ * `pair` is a series: a typeset name, the unit it is in, and the value — the three are
+ * drawn in three places, so they cannot be one string. `text` is a line that is only
+ * words (the time, the deltas below the table).
+ */
+type ReadoutLine =
+  | { shape: "pair"; name: Run[]; unit: string; value: string }
+  | { shape: "text"; runs: Run[] };
+
+/** The runs as the one string they read as, for a line that is drawn as text. */
+function runsText(runs: Run[]): string {
+  return runs.map((r) => r.text).join("");
 }
 
 /**
@@ -919,13 +1028,26 @@ export function deltaLines(
   values: Array<{ base: string; label: string; value: number }>,
   currentLabel = ""
 ): string[] {
+  return deltaRunLines(values, currentLabel).map(runsText);
+}
+
+/**
+ * The same lines as runs, for the readout that draws them.
+ *
+ * The names are typeset here as everywhere else the plot names a series; `deltaLines` is
+ * this, joined back into strings, so there is one implementation of what a delta says.
+ */
+export function deltaRunLines(
+  values: Array<{ base: string; label: string; value: number }>,
+  currentLabel = ""
+): Run[][] {
   const groups = new Map<string, Array<{ label: string; value: number }>>();
   for (const v of values) {
     const list = groups.get(v.base) ?? [];
     list.push({ label: v.label, value: v.value });
     groups.set(v.base, list);
   }
-  const out: string[] = [];
+  const out: Run[][] = [];
   for (const [base, list] of groups) {
     const current = list.find((v) => v.label === currentLabel);
     // No run on screen to measure against: nothing to say. This is the state a
@@ -936,7 +1058,13 @@ export function deltaLines(
       if (other.label === currentLabel) continue;
       const delta = current.value - other.value;
       const sign = delta > 0 ? "+" : delta < 0 ? "−" : "";
-      out.push(`Δ ${base} vs ${other.label} = ${sign}${formatTick(Math.abs(delta))}`);
+      out.push([
+        { kind: "base", text: "Δ " },
+        ...typesetName(base),
+        { kind: "base", text: " vs " },
+        ...typesetName(other.label),
+        { kind: "base", text: ` = ${sign}${formatTick(Math.abs(delta))}` },
+      ]);
     }
   }
   return out;

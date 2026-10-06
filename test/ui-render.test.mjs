@@ -2184,7 +2184,10 @@ test("a block's diagram and its plot both answer the pointer", async () => {
   );
   const readout = d["hovering the plot reads the values off the crosshair"];
   assert.match(readout, /t = 2\.5/, `the crosshair reports its time: ${readout}`);
-  assert.match(readout, /r1\.v = 2\.5/, "and the trace value at that time");
+  // The row is drawn in parts now -- the name typeset, the unit, the `=`, and the value
+  // right-aligned in its own column -- so the pieces are what is checked, not one string
+  // that is never drawn. `r1 . v` is the name, `V` its unit, and `2.5` the value.
+  assert.match(readout, /r1 \| \. \| v \| V \| =  \| 2\.5/, `the trace, its unit and its value: ${readout}`);
   assert.equal(
     d["a pointer in the margin reports nothing"],
     "false",

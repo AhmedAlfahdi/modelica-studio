@@ -7,6 +7,18 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+### Changed
+
+- **The cursor readout speaks the same language as the legend.** The legend learned to typeset
+  a name and carry its unit; the box over the plot still said `orifice.m_flow = 0.9844` while
+  the legend beside it said `orifice.m_flow  kg/s`. It is a table now — the name typeset in the
+  model's own notation, the unit beside it in the same quiet tone, and the values in a column
+  of their own with the `=` at a fixed offset, so two magnitudes can be compared down the box
+  rather than read one at a time. The delta lines under it are typeset the same way, from one
+  implementation: `deltaLines` is now `deltaRunLines` joined back into strings. A name too long
+  for the plot is shortened rather than pushing the box across it, and the name is what gives
+  way, because the value and its unit are what the box is for.
+
 ### Fixed
 
 - **A unit is legible on a row that is not drawn.** The unit column said what the numbers were
