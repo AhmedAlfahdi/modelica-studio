@@ -433,9 +433,13 @@ function drawRuns(
     if (run.dot) {
       // Over the middle of the variable it differentiates — never over the
       // subscript, which is what `s_rel` with a dot on the `rel` looked like.
+      //
+      // The radius and the gap between two dots follow the text: at 12px this is the 1.15px
+      // dot the legend was tuned with, and at the readout's own scale it stays a dot over the
+      // letter rather than a speck beside it.
       for (let d = 0; d < run.dot; d++) {
         ctx.beginPath();
-        ctx.arc(cx + width / 2, y - base * 0.5 - d * 2.6, 1.15, 0, Math.PI * 2);
+        ctx.arc(cx + width / 2, y - base * 0.5 - d * base * 0.22, base * 0.1, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -963,11 +967,15 @@ export function drawPlot(
       ctx.lineWidth = 1;
       ctx.fillRect(bx, by, wBox, hBox);
       ctx.strokeRect(bx + 0.5, by + 0.5, wBox, hBox);
-      ctx.textBaseline = "top";
+      // `middle`, and each row centred in its line — the same baseline the legend draws runs
+      // on. It was `top`, and the derivative dot is placed relative to the baseline a letter
+      // sits on: measured from the top of a line box instead, the dot floated a third of an em
+      // too high. Reported from a screenshot of exactly that.
+      ctx.textBaseline = "middle";
       const valueX = bx + wBox - padX;
       const eqX = valueX - valueW - eqW;
       fitted.forEach((line, i) => {
-        const y = by + padY + i * lineH;
+        const y = by + padY + i * lineH + lineH / 2;
         if (line.shape === "text") {
           ctx.fillStyle = theme.foreground;
           ctx.textAlign = "left";

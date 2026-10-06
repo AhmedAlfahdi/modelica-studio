@@ -62,6 +62,14 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ### Fixed
 
+- **The derivative dot in the cursor readout sat a third of an em too high.** The readout drew
+  its rows on a `top` text baseline while the dot is placed relative to the baseline a letter
+  actually sits on — measured from the top of a line box instead, it floated above the word
+  rather than over the letter it differentiates. It is the same baseline the legend uses now, so
+  the two surfaces place it identically. The dot's radius and the gap between the two dots of
+  `der(der(x))` also follow the text size, where a readout scaled to 150% was drawing a fixed
+  1.15px speck beside 16px letters.
+
 - **A unit is legible on a row that is not drawn.** The unit column said what the numbers were
   in — `m³/s`, `Pa`, `kg/s` — in the faintest colour the theme has, and the "not drawn" dimming
   was applied to the whole row, unit included. The two multiplied: 1.8:1 against the

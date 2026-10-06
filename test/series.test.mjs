@@ -1217,6 +1217,7 @@ test("the readout says a variable the way the legend does, with its unit", () =>
   // `orifice.m_flow  kg/s` and the other said `orifice.m_flow = 0.9844`.
   const texts = [];
   const rects = [];
+  const dots = [];
   let font = "";
   const ctx = new Proxy(
     {
@@ -1238,6 +1239,7 @@ test("the readout says a variable the way the legend does, with its unit", () =>
         if (k === "fillText") {
           return (label, x, y) => texts.push({ label: String(label), x, y, font, align: t.textAlign });
         }
+        if (k === "arc") return (x, y, r) => dots.push({ x, y, r, font });
         if (k === "fillRect") return (x, y, w, h) => rects.push([x, y, w, h]);
         return () => {};
       },
@@ -1254,6 +1256,7 @@ test("the readout says a variable the way the legend does, with its unit", () =>
     series: [
       { name: "orifice.m_flow", values: [0, 1, 2], unit: "kg/s" },
       { name: "supply.flowModel.Is[1]", values: [0, 3, 6], unit: "kg/s" },
+      { name: "der(orifice.m_flow)", values: [0, 1, 2], unit: "kg/s" },
       { name: "no.unit.here", values: [0, 1, 2], unit: "" },
     ],
     compileMs: 1, simulateMs: 1, reusedBinary: true, warnings: [],
@@ -1262,6 +1265,7 @@ test("the readout says a variable the way the legend does, with its unit", () =>
     styles: {
       "orifice.m_flow": { color: "#a00", visible: true },
       "supply.flowModel.Is[1]": { color: "#0a0", visible: true },
+      "der(orifice.m_flow)": { color: "#a0a", visible: true },
       "no.unit.here": { color: "#00a", visible: true },
     },
     view: { xMin: 0, xMax: 2 },
@@ -1297,7 +1301,7 @@ test("the readout says a variable the way the legend does, with its unit", () =>
 
   assert.equal(
     inBox.filter((t) => t.label === "kg/s").length,
-    2,
+    3,
     "the unit is drawn once for each row that has one"
   );
   // The unit-less series still gets its row: its name is drawn in runs too, so the check is
@@ -1310,7 +1314,7 @@ test("the readout says a variable the way the legend does, with its unit", () =>
   // The table: every value right-aligned at ONE x, so two magnitudes can be compared down
   // the box. That is the part a reader gets wrong by eye when the numbers are ragged.
   const values = inBox.filter((t) => t.align === "right");
-  assert.equal(values.length, 3, `one value per row, got ${JSON.stringify(values.map((t) => t.label))}`);
+  assert.equal(values.length, 4, `one value per row, got ${JSON.stringify(values.map((t) => t.label))}`);
   assert.equal(
     new Set(values.map((t) => Math.round(t.x))).size,
     1,
@@ -1318,13 +1322,42 @@ test("the readout says a variable the way the legend does, with its unit", () =>
   );
   assert.equal(
     inBox.filter((t) => t.label === "= ").length,
-    3,
+    4,
     "and the `=` sits in a column of its own, at one x for every row"
   );
   assert.equal(
     new Set(inBox.filter((t) => t.label === "= ").map((t) => Math.round(t.x))).size,
     1,
     "which is what stops `= 9863` and `= 0.9844` from staggering"
+  );
+
+  // The derivative dot: over the letter it differentiates, and placed the way the LEGEND
+  // places it. The readout used to draw its text on a `top` baseline while the dot was
+  // measured from the baseline a letter sits on, so it floated a third of an em too high —
+  // reported from a screenshot of exactly that.
+  // One derivative, so one dot in the readout — and the legend draws the same trace, so its
+  // dot is there as well. They are told apart by the box the readout occupies.
+  const mine = dots.filter((d) => d.x >= box[0] && d.x <= box[0] + box[2]);
+  assert.equal(mine.length, 1, `the readout draws one dot (${mine.length} of ${dots.length} in its box)`);
+  const dot = mine[0];
+  // The letter the dot belongs to: in the box, and on the dot's own row. There are two `m`s in
+  // there — `orifice.m_flow` and the derivative of it — and the dot is over the second.
+  const letter = inBox
+    .filter((t) => t.label === "m" && t.align === "left")
+    .sort((a, b) => Math.abs(a.y - (dot.y + 5.5)) - Math.abs(b.y - (dot.y + 5.5)))[0];
+  assert.ok(letter, "the letter the dot belongs to");
+  const rise = letter.y - dot.y;
+  assert.ok(
+    rise > 0,
+    `the dot is above the letter's own baseline (dot=${JSON.stringify(dot)}, letter=${JSON.stringify(letter)})`
+  );
+  assert.ok(
+    Math.abs(rise / 11 - 0.5) < 0.1,
+    `by half an em, as the legend does it (${rise.toFixed(1)}px at 11px)`
+  );
+  assert.ok(
+    Math.abs(dot.r - 1.1) < 0.3,
+    `and it scales with the text rather than being a fixed speck (r=${dot.r.toFixed(2)})`
   );
 });
 
