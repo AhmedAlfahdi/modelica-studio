@@ -61,6 +61,7 @@ import {
   parseValue,
   toBase,
 } from "../modelica/unit-convert";
+import { unitsOfType, type TypeUnits } from "../modelica/type-units";
 import { describeError } from "../errors";
 import { collectParameters, sweepableParameters } from "./parameters";
 import type { TreeNode as PackageNode } from "../modelica/library";
@@ -2525,8 +2526,13 @@ export class ModelicaStudioView extends ItemView {
     // comes from the TYPE — `AbsolutePressure p_ambient` is pascals through `Pressure` →
     // `Real(unit="Pa")` — and appears nowhere in the source at all. The compiler resolved it,
     // so the model description is where it is read from, keyed by the instance's own path.
+    //
+    // And a third, for the time before the first simulation: the library's own type chain. The
+    // description is written by a build, so until one has happened the compiler has said nothing
+    // — and a field with no unit and no picker reads as the feature having gone away.
     const declared = this.result?.declaredUnits?.[`${inst.id}.${p.name}`];
-    const unit = p.unit?.trim() || declared?.trim() || "";
+    const typed = this.unitsOfDeclaredType(p.type);
+    const unit = p.unit?.trim() || declared?.trim() || typed.unit?.trim() || "";
     // The alternatives, decided here rather than at the picker below, because whether there IS
     // a picker decides whether the label needs to carry the unit as well.
     const allChoices = unitChoices(unit, unit ? formatUnit(unit) : "");
@@ -2589,7 +2595,11 @@ export class ModelicaStudioView extends ItemView {
     // compiler resolves. No start parameter carries a unit today, so the picker never appears
     // there; this is what keeps that from becoming a wrong modifier the day one does.
     const member = p.isStart ? p.name.replace(/\.start$/, "") : p.name;
-    const inModel = this.displayUnits()[`${inst.id}.${member}`] ?? "";
+    // The description's answer first, then the type's own `displayUnit` — MSL's
+    // `ThermodynamicTemperature` carries `displayUnit="degC"`, so a field can open in Celsius
+    // before the first run, exactly as it does afterwards.
+    const inModel =
+      this.displayUnits()[`${inst.id}.${member}`] ?? typed.displayUnit ?? "";
     // `undefined` when the parameter has no unit at all — a Boolean, a `stateSelect`, anything
     // the compiler described with no unit. There is nothing to convert then, and a field that
     // shows its value as written is the right answer rather than a special case.
@@ -2653,7 +2663,12 @@ export class ModelicaStudioView extends ItemView {
         // is gone, so a reader who picks kelvin there gets Celsius again a moment later. When
         // the answer the description would give is not the one chosen, the choice is written
         // down; when it is, the modifier is noise and is removed.
-        const resolved = this.result?.displayUnits?.[`${inst.id}.${member}`];
+        // What would answer if the modifier were removed, in the order it would answer: the
+        // run's description first, then the declaration's own type — `SI.ThermodynamicTemperature`
+        // carries `displayUnit="degC"`, so kelvin has to be written down wherever the request came
+        // from — and finally the declared unit, which needs no modifier at all.
+        const resolved =
+          this.result?.displayUnits?.[`${inst.id}.${member}`] ?? typed.displayUnit ?? "";
         const resolvedChoice = resolved ? choiceFor(choices, resolved) : undefined;
         // Removing the modifier leaves whatever the description resolves in force. With a
         // type-declared unit that is that unit, so choosing it needs no modifier and choosing
@@ -3006,6 +3021,33 @@ export class ModelicaStudioView extends ItemView {
     list.addEventListener("focusin", (ev) => mark(rowOf(ev.target)));
     list.addEventListener("focusout", () => mark(null));
   }
+
+  /**
+   * The unit a declared TYPE carries, from the library on disk.
+   *
+   * Memoised per type name: the panel renders a field at a time and the same handful of types
+   * (`SI.Voltage`, `SI.Time`, `SI.Temperature`) appear on every component, so the walk happens
+   * once per type rather than once per field. A library reload is a new view, which is a new
+   * cache.
+   */
+  private unitsOfDeclaredType(type: string | undefined): TypeUnits {
+    const name = (type ?? "").trim();
+    if (!name) return {};
+    this.typeUnitsCache ??= new Map();
+    const cached = this.typeUnitsCache.get(name);
+    if (cached) return cached;
+    const library = this.plugin.library as
+      | { lookup?: (name: string, fromPackage?: string) => unknown }
+      | undefined;
+    const found = library?.lookup
+      ? unitsOfType(name, (n, from) => library.lookup?.(n, from) as never)
+      : {};
+    this.typeUnitsCache.set(name, found);
+    return found;
+  }
+
+  /** Type-name → its units, so the walk is not repeated per field. */
+  private typeUnitsCache: Map<string, TypeUnits> | null = null;
 
   /**
    * The display units in force, from the description and the model together.

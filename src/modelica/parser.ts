@@ -36,6 +36,18 @@ export interface ParsedClass {
   /** Fully qualified name including enclosing packages. */
   qualifiedName: string;
   extendsTypes: string[];
+  /**
+   * A short class definition's target: `type Voltage = Real` gives `Real`.
+   *
+   * Kept for the UNIT. `Modelica.Units.SI.Voltage` says nothing about volts anywhere except in
+   * this clause — `type Voltage = Real(unit="V")` — and the unit beside a parameter field has to
+   * come from somewhere before the first simulation has produced a model description. Without
+   * it the field showed no unit and offered no alternatives until a run had happened, which
+   * reads as the feature having disappeared.
+   */
+  aliasOf?: string;
+  /** The modifiers on a short class definition: `Real(unit="V", displayUnit="mV")`. */
+  aliasModifiers?: Record<string, string>;
   /** Component declarations found inside the class body. */
   components: ParsedComponent[];
   connections: Connection[];
@@ -304,6 +316,23 @@ class Parser {
 
     // Optional specialisation / constraining clause, e.g. `type X = Real;`
     if (this.at("=")) {
+      this.next();
+      // Read the alias BEFORE skipping to the `;`: the base type and its modifiers are the only
+      // place a unit type states its unit.
+      while (
+        this.at("input") ||
+        this.at("output") ||
+        this.at("flow") ||
+        this.at("parameter") ||
+        this.at("constant")
+      ) {
+        this.next();
+      }
+      const alias = this.parseTypeName();
+      if (alias) {
+        cls.aliasOf = alias;
+        if (this.at("(")) cls.aliasModifiers = this.parseModifierAssignments();
+      }
       // A SHORT class definition may still carry an annotation, and for a connector
       // that annotation is where the library says how a connection to it is drawn.
       // `Modelica.Blocks.Interfaces.RealInput` is exactly this form --

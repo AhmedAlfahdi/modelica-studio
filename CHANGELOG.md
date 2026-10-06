@@ -7,6 +7,21 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A unit picker no longer needs a simulation to appear.** The unit beside a parameter comes
+  from the compiler's model description, which a BUILD writes — so before the first run the
+  inspector showed no unit and offered no alternatives, and a reader who opened a component
+  first saw a feature that was not there. The library states the same thing three short class
+  definitions down — `SI.Voltage` is `ElectricPotential`, which is `Real(unit="V")`, and
+  `SI.ThermodynamicTemperature` carries `displayUnit="degC"` — so the declaration's own type
+  chain is read from the library on disk, memoised per type. The description still wins wherever
+  it speaks, because the compiler knows about `replaceable` and conditional declarations that
+  this deliberately does not; it only answers before there is a description to prefer. Reading
+  it needed one parser change: a short class definition's target and modifiers were being thrown
+  away (`type Voltage = Real(unit="V")` kept neither), which is why nothing could resolve a unit
+  from the source before.
+
 ## [0.6.0] — 2026-10-06
 
 ### Added
