@@ -274,17 +274,6 @@ export interface ModelicaStudioSettings {
    */
   charts: Record<string, ChartState>;
 
-  /**
-   * The unit a parameter field shows its value in, when it is not the model's own.
-   *
-   * Keyed by `Model::instance.parameter`, because the same instance name means different
-   * things in different models. A display preference and nothing more: the model keeps its
-   * value in its declared unit, and clearing this changes how a field reads, never what the
-   * simulation gets. That is also why it is kept here rather than written into the model as
-   * `displayUnit` — that is the standard way to record it, and it is a change to the source
-   * that a reader should make deliberately.
-   */
-  paramDisplayUnits: Record<string, string>;
 
   /**
    * AI assistance configuration.
@@ -367,7 +356,6 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   codePlotHeight: 0,
   modelStopTimes: {},
   charts: {},
-  paramDisplayUnits: {},
   ai: { ...AI_DEFAULTS },
   aiModels: [],
 };
@@ -447,8 +435,7 @@ function isMapLike(key: string): boolean {
   return (
     key === "modelFiles" ||
     key === "modelStopTimes" ||
-    key === "charts" ||
-    key === "paramDisplayUnits"
+    key === "charts"
   );
 }
 

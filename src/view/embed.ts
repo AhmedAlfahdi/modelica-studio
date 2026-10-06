@@ -25,6 +25,7 @@ import {
   timeAtPlotX,
   type SeriesStyle,
 } from "./plot";
+import { asDisplayed, displayUnitsFor } from "../modelica/unit-convert";
 import { currentTheme } from "../render/theme";
 import { parseModelica, toDiagramModel } from "../modelica/parser";
 import type { ComponentInstance } from "../modelica/types";
@@ -239,6 +240,28 @@ export class EmbeddedDiagram {
   private editor: SchematicEditor | null = null;
   private plotCanvas: HTMLCanvasElement | null = null;
   private result: SimResult | null = null;
+
+  /** The last conversion, so a resize does not convert every sample again. */
+  private displayedCache: { result: SimResult; key: string; value: SimResult } | null = null;
+
+  /**
+   * The result as the model asks for it to be shown.
+   *
+   * The components of the model this block draws, plus whatever the last run resolved — the
+   * same two sources the studio uses, through the same helper, so the two surfaces cannot
+   * disagree about what `mbar` means.
+   */
+  private displayed(): SimResult {
+    const result = this.result;
+    if (!result) return { time: [], series: [], compileMs: 0, simulateMs: 0, reusedBinary: true, warnings: [] };
+    const units = displayUnitsFor(this.parse()?.components ?? [], result.displayUnits);
+    const key = JSON.stringify(units);
+    const cached = this.displayedCache;
+    if (cached && cached.result === result && cached.key === key) return cached.value;
+    const value = asDisplayed(result, units);
+    this.displayedCache = { result, key, value };
+    return value;
+  }
   private styles: Record<string, SeriesStyle> = {};
   private busy = false;
   private destroyed = false;
@@ -862,8 +885,11 @@ export class EmbeddedDiagram {
     const theme = currentTheme();
     // The layout the renderer is about to paint with, so the readout is sized to
     // the box that exists rather than to a guess.
-    const lay = layoutForResult(width, height, this.result, this.styles);
-    drawPlot(ctx, width, height, this.result, {
+    // The model's `displayUnit`, the same as the studio's plot: a note that showed pascals
+    // where the model asks for millibar would disagree with the studio about one result.
+    const shown = this.displayed();
+    const lay = layoutForResult(width, height, shown, this.styles);
+    drawPlot(ctx, width, height, shown, {
       theme: plotThemeFrom(theme),
       legendBackground: theme.plotLegendBackground,
       styles: this.styles,

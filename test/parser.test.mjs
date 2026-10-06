@@ -1030,3 +1030,74 @@ end PositionalBad;`;
     `and it is recorded like any other, got ${JSON.stringify(bad.unparsedGraphics)}`
   );
 });
+
+test("a parameter's nested modifier survives the round trip, and does not eat its component", () => {
+  // Reported while adding `displayUnit` to the parameter panel. Three faults in a row, all of
+  // them silent:
+  //
+  //  1. `p_ambient(displayUnit="bar") = 101325` — a nested modifier WITH a binding, which is
+  //     how MSL writes every parameter that carries `min`, `max`, `start` or `displayUnit` —
+  //     left the `=` for the next modifier entry. That entry could not start with `=`, so the
+  //     parser bailed out past the closing paren and the whole COMPONENT was dropped from the
+  //     diagram. A model with one such declaration lost that component, with no diagnostic.
+  //  2. The sentinel that carries a nested set was not stripped of its own prefix when it was
+  //     expanded, so the members came out keyed `R.@modifier:(displayUnit`.
+  //  3. The serializer emitted the value and the members as two modifiers — `p_ambient=101325,
+  //     p_ambient(displayUnit="bar")` — which is not the declaration that was read.
+  //
+  // What the round trip has to be is IDENTICAL, which is the assertion below.
+  const cases = [
+    'Modelica.Fluid.System system(p_ambient(displayUnit="bar") = 101325);',
+    'Modelica.Electrical.Analog.Basic.Resistor r(R(displayUnit="kOhm", min=0, max=1e6) = 100);',
+    'Modelica.Electrical.Analog.Basic.Capacitor c(C(displayUnit="mF") = 0.001, v(start=0));',
+    'Modelica.Electrical.Analog.Basic.Inductor l(L(displayUnit="mH") = 0.001);',
+    'Modelica.Blocks.Sources.Constant k2(k = 5, y(start = 1)) if useK;',
+    'Real x(unit="m", min=0) = 1;',
+    'Real w(start = 1, fixed = true) = 0;',
+    // Quotes are where a comma-splitter loses its place. A modifier value may contain the
+    // separators the splitter looks for — and an escaped quote, which is two characters that
+    // look like the end of the string and are not.
+    'M.C c(s(unit="a,b") = 1);',
+    'M.C c(s(unit="a=b") = 1);',
+    'M.C c(s(unit="x, y") = 1, t(displayUnit="degC") = 2);',
+    'M.C c(s(comment="he said \\"hi\\", then left") = 1);',
+  ];
+  for (const declaration of cases) {
+    const source = `model M\n  ${declaration}\nequation\n  der(x) = 1;\nend M;\n`;
+    const model = toDiagramModel(parseModelica(source)[0], () => undefined);
+    const declared = [...model.components, ...model.variables];
+    assert.equal(declared.length, 1, `the declaration is not dropped: ${declaration}`);
+
+    const item = declared[0];
+    const written = serializerMod
+      .serializeComponent(
+        item.className ?? item.type ?? "",
+        item.id,
+        item.placement ?? { extent: [-10, -10, 10, 10], rotation: 0, visible: true },
+        item.params,
+        item.prefixes ?? [],
+        item.suffixDims ?? "",
+        item.condition ?? ""
+      )
+      .replace(/ annotation\(.*$/, ";");
+    // The serializer canonicalises the spacing around `=` (`k = 5` becomes `k=5`), which is a
+    // normalisation rather than a loss, so both sides are compared that way.
+    const flat = (text) => text.replace(/\s*=\s*/g, "=");
+    assert.equal(flat(written), flat(declaration), `written back: ${declaration}`);
+  }
+});
+
+test("a modifier with both members and a value is read into both", () => {
+  const source =
+    'model M\n  Modelica.Fluid.System system(p_ambient(displayUnit="bar", min=0) = 101325);\n' +
+    "equation\n  der(x) = 1;\nend M;\n";
+  const model = toDiagramModel(parseModelica(source)[0], () => undefined);
+  const params = model.components[0].params;
+  // The dotted form is what the panel edits and the serializer writes; the bare name is the
+  // binding, so both the value and its members are addressable.
+  assert.deepEqual(params, {
+    "p_ambient.displayUnit": '"bar"',
+    "p_ambient.min": "0",
+    p_ambient: "101325",
+  });
+});

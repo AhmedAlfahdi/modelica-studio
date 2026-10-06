@@ -39,18 +39,22 @@ test("the source's hard wrapping is not what the reader sees", () => {
   // Reported: the popup showed a paragraph chopped into ragged 95-column pieces, because
   // the changelog is wrapped for a terminal and Obsidian renders a single newline as a
   // line break. The notes are re-flowed at build time; a paragraph is one line of markdown.
+  // Asserted as a PROPERTY of whatever version is being shipped, not against a sentence from
+  // one release: the first version of this test quoted 0.5.0's prose, and bumping the manifest
+  // to 0.6.0 — which is the moment this test exists for — made it fail.
   const notes = whatsNewFor(CHANGELOG, MANIFEST.version);
-  const wrapped = [
-    // A sentence that the changelog breaks across two lines must read as one.
-    /opens a window with what changed in that version/,
-    // Two sentences the source breaks between a possessive and its noun, and between a
-    // subject and its verb: the sort of place a hard wrap is invisible until it is rendered.
-    /the repository's CHANGELOG\.md is not among them/,
-    /Only that one section is bundled/,
-  ];
-  for (const pattern of wrapped) {
-    assert.match(notes.body, pattern, `re-flowed: ${pattern}`);
-  }
+  const raw = changelogSection(CHANGELOG, MANIFEST.version).body;
+  const rawLines = raw.split("\n").length;
+  assert.ok(
+    notes.body.split("\n").length * 2 < rawLines,
+    `the notes are re-flowed: ${notes.body.split("\n").length} lines against ${rawLines} in the source`
+  );
+  // A paragraph longer than the source's own wrapping is proof the joins happened, and every
+  // such line is one a terminal-wrapped file would not have.
+  assert.ok(
+    notes.body.split("\n").some((line) => line.length > 120),
+    "at least one paragraph runs past the column the changelog is wrapped at"
+  );
   // A wrapped continuation sits under a line that is not blank; an indented line under a
   // BLANK one is a second paragraph of the same item, which is structure and stays.
   const lines = notes.body.split("\n");

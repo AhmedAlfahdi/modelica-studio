@@ -23,6 +23,15 @@
 export interface UnitChoice {
   /** The symbol as it is shown and typed: `bar`, `°C`, `km/h`. */
   symbol: string;
+  /**
+   * The name Modelica calls it, when that is not the symbol.
+   *
+   * A `displayUnit` in a model is a unit NAME — MSL writes `displayUnit="degC"`, never `"°C"` —
+   * and the compiler reports back exactly what the model said. So the lookup has to answer to
+   * `degC` while the field shows `°C`, and the picker has to WRITE `degC` or the declaration it
+   * produces is not a unit the compiler can resolve. Missing means the two are the same.
+   */
+  id?: string;
   /** `value_in_base = value * factor + offset`, with the offset absent when it is 0. */
   factor: number;
   offset?: number;
@@ -45,8 +54,8 @@ const TABLE: Record<string, UnitChoice[]> = {
     { symbol: "MPa", factor: 1e6, alternative: true },
   ],
   K: [
-    { symbol: "°C", factor: 1, offset: 273.15, alternative: true },
-    { symbol: "°F", factor: 5 / 9, offset: 459.67 * (5 / 9), alternative: true },
+    { symbol: "°C", id: "degC", factor: 1, offset: 273.15, alternative: true },
+    { symbol: "°F", id: "degF", factor: 5 / 9, offset: 459.67 * (5 / 9), alternative: true },
   ],
   m: [
     { symbol: "mm", factor: 1e-3, alternative: true },
@@ -74,9 +83,9 @@ const TABLE: Record<string, UnitChoice[]> = {
     { symbol: "kV", factor: 1e3, alternative: true },
   ],
   Ohm: [
-    { symbol: "mΩ", factor: 1e-3, alternative: true },
-    { symbol: "kΩ", factor: 1e3, alternative: true },
-    { symbol: "MΩ", factor: 1e6, alternative: true },
+    { symbol: "mΩ", id: "mOhm", factor: 1e-3, alternative: true },
+    { symbol: "kΩ", id: "kOhm", factor: 1e3, alternative: true },
+    { symbol: "MΩ", id: "MOhm", factor: 1e6, alternative: true },
   ],
   N: [{ symbol: "kN", factor: 1e3, alternative: true }],
   "N/m": [{ symbol: "kN/m", factor: 1e3, alternative: true }],
@@ -95,17 +104,17 @@ const TABLE: Record<string, UnitChoice[]> = {
     { symbol: "MHz", factor: 1e6, alternative: true },
   ],
   F: [
-    { symbol: "µF", factor: 1e-6, alternative: true },
+    { symbol: "µF", id: "uF", factor: 1e-6, alternative: true },
     { symbol: "nF", factor: 1e-9, alternative: true },
     { symbol: "pF", factor: 1e-12, alternative: true },
   ],
   H: [
     { symbol: "mH", factor: 1e-3, alternative: true },
-    { symbol: "µH", factor: 1e-6, alternative: true },
+    { symbol: "µH", id: "uH", factor: 1e-6, alternative: true },
   ],
   S: [
     { symbol: "mS", factor: 1e-3, alternative: true },
-    { symbol: "µS", factor: 1e-6, alternative: true },
+    { symbol: "µS", id: "uS", factor: 1e-6, alternative: true },
   ],
   m3: [{ symbol: "L", factor: 1e-3, alternative: true }],
   m2: [{ symbol: "cm2", factor: 1e-4, alternative: true }],
@@ -130,6 +139,19 @@ export function choicesFor(base: string, symbol: string): UnitChoice[] {
   const own = TABLE[base.trim()];
   if (!own || own.length === 0) return [];
   return [{ symbol: symbol || base.trim(), factor: 1 }, ...own];
+}
+
+/**
+ * The choice a model's `displayUnit` names, by its Modelica name or its symbol.
+ *
+ * `displayUnit="degC"` names the unit; the field shows `°C`. Both spellings have to find the
+ * same entry, and the panel and the plot have to agree about which one that is — a lookup that
+ * answered only to the symbol left a temperature in kelvin while the model asked for Celsius.
+ */
+export function choiceFor(choices: UnitChoice[], wanted: string): UnitChoice | undefined {
+  const name = wanted.trim();
+  if (!name) return undefined;
+  return choices.find((c) => c.symbol === name || c.id === name);
 }
 
 /** The value in its own unit, from a value in the chosen one. */
@@ -170,14 +192,91 @@ export interface ParsedValue {
  * fields accept expressions (`system.allowFlowReversal`), and a parser that rejected what it
  * did not recognise would take that away.
  */
-export function parseValue(text: string, choices: UnitChoice[]): ParsedValue | null {
+export function parseValue(
+  text: string,
+  choices: UnitChoice[],
+  /**
+   * The unit a bare number is written in.
+   *
+   * The field's CURRENT unit, not the model's: a reader looking at `1.01325 bar` who types
+   * `2` means two bar. Reading it as the model's own unit wrote 2 Pa — a wrong number in the
+   * model, silently, from the one field where the units on screen are not the model's.
+   */
+  shown: UnitChoice = choices[0]
+): ParsedValue | null {
   const match = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*([^\s\d].*)?$/.exec(text);
   if (!match) return null;
   const value = Number(match[1]);
   if (!Number.isFinite(value)) return null;
   const written = (match[2] ?? "").trim();
-  if (written === "") return { value, choice: choices[0] };
+  if (written === "") return { value, choice: shown };
   // A named unit has to be one of the field's own, so `2 bananas` stays an expression.
   const choice = choices.find((c) => c.symbol === written);
   return choice ? { value, choice } : null;
+}
+
+/**
+ * A result with each series converted into the unit the model asks it to be shown in.
+ *
+ * The alternative — labelling a series `mbar` and leaving its values in pascals — is a lie
+ * that reads as authoritative, which is why the display unit was left out of the plot until
+ * this existed. Values are always converted from the DECLARED unit, which the series carries,
+ * so converting twice is impossible: a display unit that is not in the table is left alone,
+ * with the model's own unit and the model's own numbers.
+ *
+ * Pure, and used at the drawing boundary only: the result the plugin holds stays in the units
+ * the compiler produced, so a reader who removes a `displayUnit` gets the numbers back
+ * unchanged.
+ */
+export function asDisplayed<T extends { series: Array<{ name: string; values: number[]; unit?: string }> }>(
+  result: T,
+  displayUnits: Record<string, string> | undefined
+): T {
+  if (!displayUnits) return result;
+  let changed = false;
+  const series = result.series.map((s) => {
+    const wanted = displayUnits[s.name];
+    const base = s.unit?.trim();
+    if (!wanted || !base || wanted === base) return s;
+    const choice = choiceFor(choicesFor(base, base), wanted);
+    if (!choice || (choice.factor === 1 && !choice.offset)) return s;
+    changed = true;
+    return {
+      ...s,
+      values: s.values.map((v) => (Number.isFinite(v) ? fromBase(v, choice) : v)),
+      // The SYMBOL, not the name the model used: the model says `degC`, a reader reads `°C`.
+      unit: choice.symbol,
+    };
+  });
+  return changed ? { ...result, series } : result;
+}
+
+/**
+ * The display units in force, from the two places that can state one.
+ *
+ * The run's description is the only place a unit inherited from a TYPE appears —
+ * `AbsolutePressure p_ambient` is pascals through `Pressure` → `Real(unit="Pa")`, and its
+ * `displayUnit` can be inherited the same way — and the model's own modifiers are the only
+ * place a choice made a moment ago appears, because the description is written by a run.
+ *
+ * The MODEL wins where both speak: a `v(displayUnit="mV")` the reader has just written is
+ * fresher than anything a previous run resolved, and an empty value removes the entry rather
+ * than naming a unit called "".
+ */
+export function displayUnitsFor(
+  components: Array<{ id: string; params?: Record<string, string> }>,
+  resolved: Record<string, string> | undefined
+): Record<string, string> {
+  const out: Record<string, string> = { ...(resolved ?? {}) };
+  for (const inst of components) {
+    for (const [key, value] of Object.entries(inst.params ?? {})) {
+      const at = key.lastIndexOf(".");
+      if (at <= 0 || key.slice(at + 1) !== "displayUnit") continue;
+      const name = `${inst.id}.${key.slice(0, at)}`;
+      const symbol = String(value).replace(/^"|"$/g, "").trim();
+      if (symbol) out[name] = symbol;
+      else delete out[name];
+    }
+  }
+  return out;
 }

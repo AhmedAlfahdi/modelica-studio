@@ -2040,6 +2040,29 @@ export class SchematicEditor {
     this.commitEdit();
   }
 
+  /**
+   * Record the unit a parameter is shown in, as `p_ambient(displayUnit="bar") = 101325`.
+   *
+   * Written into the MODEL rather than kept beside it, because that is what `displayUnit`
+   * means in Modelica: it travels with the file, any other tool reads it, and the compiler
+   * reports it back in the model description. A choice kept in the plugin's settings would be
+   * invisible to everyone else and lost with the settings.
+   *
+   * The nested-modifier form the serializer emits is `name.displayUnit` in the flat map, with
+   * the value quoted exactly as Modelica wants it. Passing `""` removes the member and leaves
+   * the value alone, which is how a reader goes back to the model's own unit.
+   */
+  setParamDisplayUnit(id: string, name: string, unit: string): void {
+    const inst = this.instanceOf(id);
+    if (!inst) return;
+    const key = `${name}.displayUnit`;
+    if ((inst.params[key] ?? "") === (unit ? `"${unit}"` : "")) return;
+    this.beginEdit(`display unit for ${id}.${name}`);
+    if (unit === "") delete inst.params[key];
+    else inst.params[key] = `"${unit}"`;
+    this.commitEdit();
+  }
+
   renameInstance(oldId: string, newId: string): { ok: boolean; error?: string } {
     if (!newId || newId === oldId) return { ok: true };
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(newId)) {

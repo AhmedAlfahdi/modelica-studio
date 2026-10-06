@@ -344,6 +344,13 @@ the cursor, which turns "this valve opens a little later" into a number.
   what changed in that version, taken from the changelog itself rather than a second
   summary written for the popup. It is shown once and the version is recorded, so it
   cannot come back; the switch is in Settings, along with a button to read it again.
+- **Units you can choose, and units the model chooses.** A parameter whose unit has
+  alternatives — pascals, kelvin, metres, farads — gets a picker beside its field, and a value
+  can be typed with its unit (`2 bar`, `40 degC`). The choice is written into the model as
+  Modelica's own `displayUnit`, so it travels with the file rather than living in a setting, and
+  the plot honours it by **converting the values**, not by relabelling them: a capacitance
+  declared in microfarads is plotted in microfarads, axis, legend, trace list and cursor readout
+  alike. A unit the plugin does not know is left exactly as the compiler reported it.
 - **Optional AI assistance.** With your own API key, describe a model in words and
   have it written into the editor, or ask for a compile error to be fixed. See
   [AI assistance](docs/ai.md).

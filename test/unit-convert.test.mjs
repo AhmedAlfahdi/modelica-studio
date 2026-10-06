@@ -14,9 +14,8 @@ import path from "node:path";
 import { buildLibs } from "./helpers/build.mjs";
 
 const LIB = buildLibs("unit-convert-lib", ["src/modelica/unit-convert.ts"]);
-const { choicesFor, formatValue, fromBase, parseValue, toBase } = await import(
-  path.join(LIB, "unit-convert.js")
-);
+const convert = await import(path.join(LIB, "unit-convert.js"));
+const { asDisplayed, choicesFor, formatValue, fromBase, parseValue, toBase } = convert;
 
 /** The choice a field would offer for `symbol`, or a failure that names it. */
 const pick = (base, symbol, own = base) => {
@@ -101,4 +100,98 @@ test("a value is shown with the digits it has, and no more", () => {
   assert.equal(formatValue(1 / 3), "0.3333333333", "ten significant digits, so a double survives a round trip");
   assert.equal(formatValue(1e-7), "1e-7", "and a small number stays readable in exponent form");
   assert.equal(formatValue(Number.NaN), "", "nothing to show for a value that is not a number");
+});
+
+test("a result is shown in the unit the model asks for, values and labels together", () => {
+  // The point of the conversion: a series labelled `mbar` whose numbers are still in pascals
+  // reads as authoritative and is wrong. Values and unit move together, and only from the
+  // DECLARED unit, which the series carries — so converting twice cannot happen.
+  const result = {
+    time: [0, 1],
+    series: [
+      { name: "system.p_ambient", values: [101325, 90000], unit: "Pa" },
+      { name: "heater.T", values: [293.15, 373.15], unit: "K" },
+      { name: "motor.w", values: [1, 2], unit: "rad/s" },
+      { name: "odd.thing", values: [1, 2], unit: "furlong" },
+    ],
+    compileMs: 0,
+    simulateMs: 0,
+    reusedBinary: true,
+    warnings: [],
+  };
+  const shown = asDisplayed(result, {
+    "system.p_ambient": "mbar",
+    "heater.T": "°C",
+    "motor.w": "deg/s",
+    "odd.thing": "furlong",
+  });
+
+  assert.deepEqual(shown.series[0].values, [1013.25, 900], "pascals to millibar");
+  assert.equal(shown.series[0].unit, "mbar");
+  assert.deepEqual(shown.series[1].values, [20, 100], "kelvin to celsius, offset and all");
+  assert.equal(shown.series[1].unit, "°C");
+  assert.deepEqual(shown.series[2].values, result.series[2].values, "a unit not in the table is left alone");
+  assert.equal(shown.series[2].unit, "rad/s", "with its own label, not the one asked for");
+  assert.deepEqual(shown.series[3].values, [1, 2], "and so is a unit the table has never heard of");
+
+  // The model's result is untouched, so removing a `displayUnit` brings the numbers back.
+  assert.deepEqual(result.series[0].values, [101325, 90000], "the stored result stays as it was");
+  assert.equal(result.series[0].unit, "Pa");
+  assert.equal(asDisplayed(result, undefined), result, "and no units at all is the same object");
+  assert.equal(
+    asDisplayed(result, { "system.p_ambient": "Pa" }),
+    result,
+    "a display unit equal to the declared one changes nothing"
+  );
+});
+
+test("a bare number is read in the unit the field is showing", () => {
+  // The bug this exists for: a field displaying `1.01325 bar` (101325 Pa) accepts an edit of
+  // `2` — meaning two bar — and a parser that assumed the model's own unit wrote 2 Pa. Both
+  // are plausible numbers, so nothing downstream could tell it had gone wrong.
+  const choices = choicesFor("Pa", "Pa");
+  const bar = choices.find((c) => c.symbol === "bar");
+  assert.equal(parseValue("2", choices).value, 2, "with nothing shown, the model's unit");
+  assert.equal(parseValue("2", choices, bar).choice.symbol, "bar", "with bar shown, bar");
+  assert.equal(toBase(2, parseValue("2", choices, bar).choice), 200000, "two bar is 200000 Pa");
+  assert.equal(
+    parseValue("2 Pa", choices, bar).choice.symbol,
+    "Pa",
+    "and a unit written out is still obeyed, whatever the field is showing"
+  );
+  assert.equal(
+    toBase(parseValue("2 Pa", choices, bar).value, parseValue("2 Pa", choices, bar).choice),
+    2,
+    "so an explicit unit is not converted twice"
+  );
+});
+
+test("a display unit is found by its Modelica name as well as its symbol", () => {
+  // The bug the real-OMC probe caught: a model says `displayUnit="degC"` — the NAME, because
+  // `°C` is not a unit the compiler resolves — and a lookup that answered only to the symbol
+  // left the temperature in kelvin with the model asking for Celsius.
+  const { choiceFor } = convert;
+  const choices = choicesFor("K", "K");
+  assert.equal(choiceFor(choices, "degC").symbol, "°C", "found by the name the model writes");
+  assert.equal(choiceFor(choices, "°C").symbol, "°C", "and by the symbol the field shows");
+  assert.equal(choiceFor(choices, "degF").symbol, "°F");
+  assert.equal(
+    choiceFor(choicesFor("Pa", "Pa"), "bar").symbol,
+    "bar",
+    "a unit whose two spellings agree needs no second name"
+  );
+  assert.equal(choiceFor(choices, "furlong"), undefined, "and nothing for a unit it does not have");
+
+  const shown = asDisplayed(
+    { series: [{ name: "heater.T", values: [293.15], unit: "K" }] },
+    { "heater.T": "degC" }
+  );
+  assert.deepEqual(shown.series[0].values, [20], "293.15 K is 20 °C");
+  assert.equal(shown.series[0].unit, "°C", "labelled with the symbol a reader reads");
+
+  // The panel writes the NAME back, or the declaration is not a unit the compiler resolves.
+  assert.equal(choicesFor("K", "K").find((c) => c.symbol === "°C").id, "degC");
+  assert.equal(choicesFor("F", "F").find((c) => c.symbol === "µF").id, "uF");
+  assert.equal(choicesFor("Ohm", "Ω")[0].symbol, "Ω", "the model's own unit keeps its symbol");
+  assert.equal(choicesFor("Ohm", "Ω")[0].id, undefined, "and needs no separate name");
 });

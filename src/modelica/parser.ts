@@ -926,7 +926,19 @@ class Parser {
         // Value is a nested modifier set — capture raw text.
         const startOff = this.peek().start;
         this.skipBalancedParens();
-        out[keyPath] = "@modifier:" + this.rawText(startOff, this.peek().start);
+        let raw = "@modifier:" + this.rawText(startOff, this.peek().start);
+        // A nested set may ALSO carry a binding: `T(start=293.15) = 293.15`. That form is
+        // everywhere in MSL — `p_ambient(displayUnit="bar") = 101325`, `R(min=0, max=1e6) = 100`
+        // — and leaving the `=` for the next iteration made the loop see a token it could not
+        // start an entry with, bail out past the closing paren, and leave the declaration
+        // half-parsed. The whole COMPONENT was then dropped from the diagram, silently.
+        if (this.at("=")) {
+          this.next();
+          const bindOff = this.peek().start;
+          this.skipExpression();
+          raw = `${raw.trimEnd()} = ${this.rawText(bindOff, this.peek().start).trim()}`;
+        }
+        out[keyPath] = raw;
         continue;
       }
       if (this.at("=")) {
@@ -2048,6 +2060,33 @@ function splitModifierBody(text: string): string[] {
   return parts.map((p) => p.trim()).filter(Boolean);
 }
 
+/**
+ * A nested-modifier sentinel split into its body and its binding.
+ *
+ * `@modifier:(displayUnit="bar") = 101325` is both. The ` = ` that separates them is found
+ * OUTSIDE the parentheses: a body is full of ` = ` of its own (`(start = 293.15)`), and
+ * splitting on the first or the last one would cut a member in half.
+ */
+function splitSentinel(raw: string): { body: string; binding?: string } {
+  let depth = 0;
+  let inString = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (inString) {
+      if (ch === "\\") i++;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    else if (depth === 0 && ch === "=" && raw[i - 1] === " " && raw[i + 1] === " ") {
+      return { body: raw.slice(0, i).trim(), binding: raw.slice(i + 1).trim() };
+    }
+  }
+  return { body: raw };
+}
+
 /** The `start=1, fixed=true` inside `@modifier:(start=1, fixed=true)`. */
 function modifierBody(raw: string): string {
   const open = raw.indexOf("(");
@@ -2087,11 +2126,17 @@ function extractParams(modifiers: Record<string, string>): Record<string, string
     if (k.startsWith("__")) continue;
     if (k === "placement") continue;
     if (v.startsWith("@modifier:")) {
-      for (const part of splitModifierBody(modifierBody(v))) {
+      const { body, binding } = splitSentinel(v);
+      // `modifierBody` strips the `@modifier:(` and the closing paren; `splitSentinel` only
+      // separates the binding, so its body still carries the prefix.
+      for (const part of splitModifierBody(modifierBody(body))) {
         const eq = part.indexOf("=");
         if (eq < 0) continue;
         out[`${k}.${part.slice(0, eq).trim()}`] = part.slice(eq + 1).trim();
       }
+      // The value the declaration binds, if it binds one: `T(start=1) = 293.15` is a modifier
+      // AND a binding, and the serializer needs both to write the declaration back.
+      if (binding !== undefined) out[k] = binding;
       continue;
     }
     out[k] = v;

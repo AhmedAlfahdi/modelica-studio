@@ -38,7 +38,7 @@ const HEAD = [
   "  const inst = { id: 'source', className: def.name,",
   "    placement: { extent: [-10, -10, 10, 10], rotation: 0, visible: true }, params: {} };",
   "  const plugin = {",
-  "    settings: { paramDisplayUnits: {} },",
+  "    settings: {},",
   "    saveSettings: async () => {},",
   "    library: { component: () => def },",
   "    libraryRootNames: () => ['Modelica 4.1.0'],",

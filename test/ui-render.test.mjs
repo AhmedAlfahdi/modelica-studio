@@ -1924,6 +1924,13 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
     "  view.editor = {",
     "    selectedIds: ['r1'], currentModel: drawn,",
     "    setParam: (id, name, value) => calls.push(`${id}.${name}=${value}`),",
+    "    // The editor writes the display unit into the INSTANCE, as `name.displayUnit`, which is",
+    "    // what the serializer turns into `name(displayUnit=\"bar\") = value`.",
+    "    setParamDisplayUnit: (id, name, unit) => {",
+    "      calls.push(`${id}.${name}.displayUnit=${unit || '(none)'}`);",
+    "      if (unit) inst.params[`${name}.displayUnit`] = `\"${unit}\"`;",
+    "      else delete inst.params[`${name}.displayUnit`];",
+    "    },",
     "  };",
     "  // Set before the panel renders: this is what a run leaves behind.",
     "  view.result = declaredUnits",
@@ -1935,6 +1942,7 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
     "  // is where a field is read — an unconstrained host is the width of the window.",
     "  host.style.width = '380px';",
     "  document.body.appendChild(host);",
+    "  host.__inst = inst;",
     "  view.renderComponentTab(host, inst, ['r1']);",
     "  return host;",
     "};",
@@ -1988,8 +1996,31 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
     "  const input = field.querySelector('input');",
     "  picker.value = 'bar';",
     "  picker.dispatchEvent(new Event('change'));",
-    "  return 'shown=' + input.value + ' committed=' + (calls.join(',') || 'nothing')",
-    "    + ' remembered=' + JSON.stringify(plugin.settings.paramDisplayUnits);",
+    "  return 'shown=' + input.value + ' written=' + JSON.stringify(calls)",
+    "    + ' params=' + JSON.stringify(host.__inst.params);",
+    "});",
+    "window.test('and the choice comes back from the model, not from a setting', () => {",
+    "  // The point of writing `displayUnit` into the declaration: it is read back from there, so",
+    "  // it travels with the file and another tool sees the same thing.",
+    "  // `JSON.stringify` builds the quoted modifier value: the page's own string literals are",
+    "  // nested inside the test's, and three levels of quoting is how a test gets a syntax error.",
+    "  const reopened = render({ 'p_ambient.displayUnit': JSON.stringify('bar') }, { 'r1.p_ambient': 'Pa' });",
+    "  const field = Array.from(reopened.querySelectorAll('.modelica-studio-field'))",
+    "    .find((f) => f.querySelector('label').textContent.startsWith('p_ambient'));",
+    "  return 'shown=' + field.querySelector('input').value",
+    "    + ' picker=' + field.querySelector('select.modelica-studio-param-unit').value",
+    "    + ' options=' + field.querySelector('select.modelica-studio-param-unit').options.length;",
+    "});",
+    "window.test('going back to the model unit removes the modifier', () => {",
+    "  const field = Array.from(host.querySelectorAll('.modelica-studio-field'))",
+    "    .find((f) => f.querySelector('label').textContent.startsWith('p_ambient'));",
+    "  const picker = field.querySelector('select.modelica-studio-param-unit');",
+    "  const input = field.querySelector('input');",
+    "  calls.length = 0;",
+    "  picker.value = 'Pa';",
+    "  picker.dispatchEvent(new Event('change'));",
+    "  return 'written=' + JSON.stringify(calls) + ' params=' + JSON.stringify(host.__inst.params)",
+    "    + ' shown=' + input.value;",
     "});",
     "window.test('a value typed with a unit is converted to the base value', () => {",
     "  const field = Array.from(host.querySelectorAll('.modelica-studio-field'))",
@@ -2057,8 +2088,18 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
   );
   assert.equal(
     d["choosing another unit shows the value in it, and stores nothing different"],
-    'shown=1.01325 committed=nothing remembered={"M::r1.p_ambient":"bar"}',
-    "101325 Pa reads as 1.01325 bar, and nothing is written to the model"
+    'shown=1.01325 written=["r1.p_ambient.displayUnit=bar"] params={"p_ambient.displayUnit":"\\"bar\\""}',
+    "101325 Pa reads as 1.01325 bar, and the model records `p_ambient(displayUnit=\"bar\")`"
+  );
+  assert.equal(
+    d["and the choice comes back from the model, not from a setting"],
+    "shown=1.01325 picker=bar options=6",
+    "a declaration that carries displayUnit opens in that unit, with no preference of ours involved"
+  );
+  assert.equal(
+    d["going back to the model unit removes the modifier"],
+    'written=["r1.p_ambient.displayUnit=(none)"] params={} shown=101325',
+    "the model's own unit is the absence of the modifier, not a modifier naming it"
   );
   assert.equal(
     d["a value typed with a unit is converted to the base value"],

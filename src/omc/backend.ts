@@ -82,6 +82,15 @@ export interface SimResult {
    * not be read: a panel that needs a unit says nothing rather than guessing.
    */
   declaredUnits?: Record<string, string>;
+  /**
+   * The unit the model asks each variable to be shown in, from the same description.
+   *
+   * Separate from `declaredUnits` because the two answer different questions: the declared
+   * unit is what the NUMBER is in, and this is what the model would like it displayed in. A
+   * plot that labelled a series `mbar` without converting its values would be lying, so the
+   * two travel together.
+   */
+  displayUnits?: Record<string, string>;
 }
 
 export interface CompileDiagnostic {
@@ -170,6 +179,15 @@ export function parseOmcCsv(text: string): { header: string[]; rows: number[][] 
 /** What the model description says about one variable. */
 export interface VariableInfo {
   unit?: string;
+  /**
+   * The unit the model asks for this variable to be SHOWN in, when it asks.
+   *
+   * Modelica's `displayUnit`: the value stays in `unit`, and this says which unit a reader
+   * would rather see it in. `Real v(displayUnit="mV")`, or a type that carries one, or a
+   * member modifier from the component declaration — the compiler resolves all three and this
+   * is the answer, which is why the plugin does not try to work it out from the source.
+   */
+  displayUnit?: string;
   /** The declaration's comment: what the quantity is, in the library's words. */
   comment?: string;
 }
@@ -200,10 +218,18 @@ export function parseVariableInfo(json: string): Record<string, VariableInfo> {
     if (!vars || typeof vars !== "object") return {};
     const out: Record<string, VariableInfo> = {};
     for (const [name, value] of Object.entries(vars as Record<string, unknown>)) {
-      const info = value as { unit?: unknown; comment?: unknown };
+      const info = value as { unit?: unknown; comment?: unknown; displayUnit?: unknown };
       const unit = typeof info?.unit === "string" ? info.unit.trim() : "";
       const comment = typeof info?.comment === "string" ? info.comment.trim() : "";
-      if (unit || comment) out[name] = { ...(unit ? { unit } : {}), ...(comment ? { comment } : {}) };
+      const displayUnit =
+        typeof info?.displayUnit === "string" ? info.displayUnit.trim() : "";
+      if (unit || comment || displayUnit) {
+        out[name] = {
+          ...(unit ? { unit } : {}),
+          ...(displayUnit ? { displayUnit } : {}),
+          ...(comment ? { comment } : {}),
+        };
+      }
     }
     return out;
   } catch {
@@ -514,8 +540,10 @@ export class OmcBackend implements SimulationBackend {
     // description.
     const described = this.variableInfo(compiled.workDir!, compiled.stem ?? opts.modelName);
     const declaredUnits: Record<string, string> = {};
+    const displayUnits: Record<string, string> = {};
     for (const [name, info] of Object.entries(described)) {
       if (info.unit) declaredUnits[name] = info.unit;
+      if (info.displayUnit) displayUnits[name] = info.displayUnit;
     }
     for (const series of result.series) {
       const info = described[series.name];
@@ -524,6 +552,7 @@ export class OmcBackend implements SimulationBackend {
       if (info.comment) series.comment = info.comment;
     }
     result.declaredUnits = declaredUnits;
+    result.displayUnits = displayUnits;
     return result;
 
   }

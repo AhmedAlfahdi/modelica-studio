@@ -51,7 +51,16 @@ import {
 import { typesetName } from "./typeset";
 import { renderUnit } from "./unit-dom";
 import { formatUnit } from "./units";
-import { choicesFor as unitChoices, formatValue, fromBase, parseValue, toBase } from "../modelica/unit-convert";
+import {
+  asDisplayed,
+  choiceFor,
+  displayUnitsFor,
+  choicesFor as unitChoices,
+  formatValue,
+  fromBase,
+  parseValue,
+  toBase,
+} from "../modelica/unit-convert";
 import { describeError } from "../errors";
 import { collectParameters, sweepableParameters } from "./parameters";
 import type { TreeNode as PackageNode } from "../modelica/library";
@@ -2572,14 +2581,13 @@ export class ModelicaStudioView extends ItemView {
     // The field's own unit is offered under the pretty spelling (`m³/s`, not `m3/s`), which is
     // what a dropdown label can show: a `<sup>` is not available in an `<option>`.
     const choices = allChoices;
-    const chosenKey = `${this.plugin.model.name}::${inst.id}.${p.name}`;
+    // What the MODEL says, not a preference of ours: `p_ambient.displayUnit` is a modifier in
+    // the declaration, so it is already in `inst.params` and comes back with the file.
+    const inModel = this.displayUnits()[`${inst.id}.${p.name}`] ?? "";
     // `undefined` when the parameter has no unit at all — a Boolean, a `stateSelect`, anything
     // the compiler described with no unit. There is nothing to convert then, and a field that
     // shows its value as written is the right answer rather than a special case.
-    const chosen = choices.length
-      ? (choices.find((c) => c.symbol === this.plugin.settings.paramDisplayUnits[chosenKey]) ??
-        choices[0])
-      : undefined;
+    const chosen = choices.length ? (choiceFor(choices, inModel) ?? choices[0]) : undefined;
     const asNumber = stored !== undefined ? Number(stored) : Number(p.defaultValue);
     const known =
       Number.isFinite(asNumber) && (stored !== undefined || p.defaultValue !== undefined);
@@ -2601,7 +2609,9 @@ export class ModelicaStudioView extends ItemView {
     // committed exactly as written, because these fields accept expressions.
     const commitTyped = () => {
       const text = input.value.trim();
-      const parsed = choices.length > 1 ? parseValue(text, choices) : null;
+      // Interpreted in the unit on screen: a reader looking at `1.01325 bar` who types `2`
+      // means two bar, and reading it as the model's own unit would write 2 Pa.
+      const parsed = choices.length > 1 ? parseValue(text, choices, chosen) : null;
       if (parsed) commit(formatValue(toBase(parsed.value, parsed.choice)));
       else commit(text);
     };
@@ -2622,11 +2632,15 @@ export class ModelicaStudioView extends ItemView {
       picker.value = chosen.symbol;
       picker.addEventListener("change", () => {
         const next = choices.find((c) => c.symbol === picker.value) ?? choices[0];
-        // Remembered per model and parameter, and only the DISPLAY changes: the stored value
-        // is re-rendered in the new unit rather than converted in the model.
-        if (next.factor === 1 && !next.offset) delete this.plugin.settings.paramDisplayUnits[chosenKey];
-        else this.plugin.settings.paramDisplayUnits[chosenKey] = next.symbol;
-        void this.plugin.saveSettings();
+        // Into the MODEL: `p_ambient(displayUnit="bar")`. The value itself does not move — a
+        // Modelica parameter is always in its declared unit, whatever it is displayed in — so
+        // this writes the modifier and re-renders the field in the new unit.
+        // The NAME Modelica resolves, which is not always the symbol shown: `degC`, not `°C`.
+        this.editor?.setParamDisplayUnit(
+          inst.id,
+          p.name,
+          next.alternative ? (next.id ?? next.symbol) : ""
+        );
         if (known) input.value = formatValue(fromBase(asNumber, next));
         input.placeholder =
           p.defaultValue !== undefined && known
@@ -2967,6 +2981,33 @@ export class ModelicaStudioView extends ItemView {
     list.addEventListener("focusout", () => mark(null));
   }
 
+  /**
+   * The display units in force, from the description and the model together.
+   *
+   * Memoised on the result and the units, because the plot redraws on every pointer move: the
+   * conversion copies every sample of every converted series, and doing that per frame while
+   * dragging a cursor is work nobody asked for. When nothing is converted — the usual case, no
+   * `displayUnit` anywhere — `asDisplayed` hands back the same object and this is one pass over
+   * a small map.
+   */
+  private displayed(result: SimResult): SimResult {
+    const units = this.displayUnits();
+    const key = JSON.stringify(units);
+    const cached = this.displayedCache;
+    if (cached && cached.result === result && cached.key === key) return cached.value;
+    const value = asDisplayed(result, units);
+    this.displayedCache = { result, key, value };
+    return value;
+  }
+
+  /** The units the model asks its variables to be shown in. */
+  private displayUnits(): Record<string, string> {
+    return displayUnitsFor(this.plugin.model.components, this.result?.displayUnits);
+  }
+
+  /** The last conversion, so a redraw does not convert again. */
+  private displayedCache: { result: SimResult; key: string; value: SimResult } | null = null;
+
   /** A group row: what can be opened, and how much is inside it. */
   private renderSeriesGroupRow(list: HTMLElement, row: TraceRow, drawn: ReadonlySet<string>): void {
     const counts = traceCounts(row.node, drawn);
@@ -3028,7 +3069,16 @@ export class ModelicaStudioView extends ItemView {
     // the declared type, which is why it is nowhere in the model's source. Read
     // through `formatUnit`, so `Ohm` is Ω and `m.s-1` is m·s-1; the row's own
     // tooltip keeps the compiler's exact spelling, which is the one to copy.
-    const unit = series.unit?.trim();
+    //
+    // The model's `displayUnit` wins where the plot could honour it — the same conversion the
+    // drawing uses — because a column that said `mbar` over a curve plotted in pascals would be
+    // the lie this whole mechanism exists to avoid. Where the model asks for a unit the
+    // conversion table does not have, the compiler's own string stands.
+    const declaredUnit = series.unit?.trim();
+    const wanted = this.displayUnits()[series.name];
+    const convertible =
+      wanted && declaredUnit ? choiceFor(unitChoices(declaredUnit, declaredUnit), wanted) : undefined;
+    const unit = convertible ? convertible.symbol : declaredUnit;
     if (unit) {
       renderUnit(el, unit, "modelica-studio-series-unit");
     }
@@ -3663,7 +3713,10 @@ export class ModelicaStudioView extends ItemView {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const theme = currentTheme();
-    drawPlot(ctx, w, h, result, {
+    // The model's `displayUnit`, applied to the values and the labels together: `mbar` beside
+    // numbers still in pascals is worse than no display unit at all. The stored result is
+    // untouched, so removing a `displayUnit` brings the numbers back as they were.
+    drawPlot(ctx, w, h, this.displayed(result), {
       theme: plotThemeFrom(theme),
       legendBackground: theme.plotLegendBackground,
       styles: styled,

@@ -355,3 +355,61 @@ test("two runs of one model do not share a result file", async () => {
     "so neither read the other's result"
   );
 });
+
+test("the description carries displayUnit, and the conversion is honest", { skip: !HAS_OMC }, async () => {
+  // The integration the unit picker rests on, run against the real compiler. It caught two
+  // things a unit test could not:
+  //
+  //  - OpenModelica reports `displayUnit` for a PARAMETER as well as a variable, and reports it
+  //    from an inline modifier AND from the type chain. It is the only place that resolution
+  //    exists: the plugin's own parser sees `Modelica.Units.SI.Pressure p` and nothing else.
+  //  - It reports the unit's NAME, not its symbol: `degC`, never `°C`. A conversion table keyed
+  //    on symbols matched nothing, so a temperature stayed in kelvin with the model asking for
+  //    Celsius — a plot labelled correctly and scaled wrongly, which is the failure mode this
+  //    whole area exists to prevent.
+  const source = `model DisplayUnitProbe
+  parameter Modelica.Units.SI.Pressure p_ambient(displayUnit="bar") = 101325;
+  parameter Modelica.Units.SI.Temperature T_ambient(displayUnit="degC") = 293.15;
+  Modelica.Units.SI.Pressure p(start = 101325, fixed = true, displayUnit="mbar");
+  Modelica.Units.SI.Temperature T(start = 293.15, fixed = true, displayUnit="degC");
+equation
+  der(p) = 0;
+  der(T) = 0;
+end DisplayUnitProbe;`;
+  const backend = new OmcBackend({ omcPath: OMC.omcPath, cacheDir: simCacheDir("display-unit") });
+  const result = await backend.simulate({
+    modelName: "DisplayUnitProbe",
+    source,
+    stopTime: 1,
+    numberOfIntervals: 4,
+  });
+
+  assert.equal(result.declaredUnits.p, "Pa", "a variable's declared unit, resolved by the compiler");
+  assert.equal(result.declaredUnits.p_ambient, "Pa", "and a parameter's");
+  assert.equal(result.displayUnits.p, "mbar", "the display unit, as the model wrote it");
+  assert.equal(result.displayUnits.T_ambient, "degC", "the NAME, not the symbol");
+  assert.equal(result.displayUnits.T, "degC");
+
+  const convert = await import(
+    path.join(buildLibs("conv-lib", ["src/modelica/unit-convert.ts"]), "unit-convert.js")
+  );
+  const shown = convert.asDisplayed(result, result.displayUnits);
+  const value = (r, name) => r.series.find((s) => s.name === name).values[0];
+  const unit = (r, name) => r.series.find((s) => s.name === name).unit;
+
+  assert.ok(Math.abs(value(shown, "p") - 1013.25) < 1e-6, `101325 Pa is 1013.25 mbar, got ${value(shown, "p")}`);
+  assert.equal(unit(shown, "p"), "mbar");
+  assert.ok(Math.abs(value(shown, "T") - 20) < 1e-9, `293.15 K is 20 °C, got ${value(shown, "T")}`);
+  assert.equal(unit(shown, "T"), "°C", "labelled with the symbol a reader reads");
+
+  // The series with no display unit of their own — the derivatives — are left in the units the
+  // compiler resolved, and their values are untouched.
+  const derivative = shown.series.find((s) => s.name.startsWith("der("));
+  const original = result.series.find((s) => s.name === derivative.name);
+  assert.equal(derivative.unit, original.unit, "a derivative keeps the compiler's unit");
+  assert.deepEqual(derivative.values, original.values, "and its values, to the last digit");
+
+  // And the result the plugin holds is canonical: removing a display unit gives the numbers back.
+  assert.equal(value(result, "p"), 101325, "the stored result is still in pascals");
+  assert.equal(unit(result, "p"), "Pa");
+});

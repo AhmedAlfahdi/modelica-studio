@@ -7,7 +7,22 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-10-06
+
 ### Added
+
+- **A parameter's unit choice is written into the model, as `displayUnit`.** Picking `bar` beside
+  `p_ambient` records `p_ambient(displayUnit="bar") = 101325` in the declaration — the standard
+  Modelica way to say it. It travels with the file, another tool reads the same thing, and it
+  comes back when the model is reopened, which a preference of the plugin's would not.
+  The units the compiler resolves from the whole model — a `displayUnit` on a type, on the
+  component's member, or written inline — are then used by the plot as well: the values are
+  converted, not merely relabelled, so `capacitor.v` declared in millivolts is plotted in
+  millivolts, with the axis, the legend, the trace list and the cursor readout all in the same
+  unit. Anything the table does not know is left exactly as the compiler reported it, and the
+  stored result stays canonical, so removing a `displayUnit` gives the numbers back unchanged.
+
+### Changed
 
 - **A parameter's unit is shown beside its input, where the compiler knows it.** Most MSL
   parameters declare their unit through their TYPE — `AbsolutePressure p_ambient` is pascals
@@ -17,7 +32,6 @@ version is 0, a minor bump may include changes that are not backward compatible.
   for it, keyed by the instance's own path, with an inline `(unit="…")` still winning when the
   declaration has one. Before the first run there is no description and no unit: the field says
   nothing rather than guessing.
-
 - **A parameter can be read and typed in another unit.** `101325` is pascals and stays pascals —
   a Modelica value is always in its declared unit, and no interface can change that without
   changing what the model means. So the field converts instead: pick `bar` beside `p_ambient` and
@@ -30,9 +44,6 @@ version is 0, a minor bump may include changes that are not backward compatible.
   0 K), which is also why this is offered for a field read one value at a time rather than as an
   axis relabelling. The choice is a display preference kept per model and parameter; nothing is
   written to the model, and the field still accepts an expression exactly as written.
-
-### Changed
-
 - **An exponent is drawn, not spelled.** A unit's exponent was a Unicode glyph — `m·s⁻¹` — which
   measures 5px of ink at 11px, and no stylesheet can grow it without growing the unit's own
   letters. The part of the unit that carries its meaning was the smallest thing on the row. It
@@ -49,7 +60,6 @@ version is 0, a minor bump may include changes that are not backward compatible.
   that already spends colour on which curve is which. It is an interaction instead: point at a
   row, or tab to one, and every row whose unit matches takes the accent colour on the unit text.
   Colour rather than opacity, because the row's dimming already means "not drawn".
-
 - **The cursor readout speaks the same language as the legend.** The legend learned to typeset
   a name and carry its unit; the box over the plot still said `orifice.m_flow = 0.9844` while
   the legend beside it said `orifice.m_flow  kg/s`. It is a table now — the name typeset in the
@@ -62,6 +72,25 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ### Fixed
 
+- **A parameter with a nested modifier and a value no longer makes its component disappear.**
+  `p_ambient(displayUnit="bar") = 101325` — how MSL writes every parameter that carries `min`,
+  `max`, `start` or `displayUnit` — left the `=` for the next modifier entry; the parser could
+  not start an entry with it, bailed out of the declaration, and the whole COMPONENT vanished
+  from the diagram with no diagnostic. Two more faults sat behind it: the nested-modifier
+  sentinel kept its own prefix when expanded, so members came out keyed
+  `R.@modifier:(displayUnit`; and the serializer wrote a parameter's value and its members as
+  two separate modifiers, so the round trip lost the value. All three are pinned by a test that
+  parses, writes and re-parses seven declaration shapes and requires them identical.
+- **A value typed into a field showing another unit was read as the model's unit.** A reader
+  looking at `1.01325 bar` who typed `2` meant two bar; the field wrote 2 Pa — a wrong number in
+  the model, silently, from the one control where the units on screen are not the model's. A
+  number typed with its unit written out (`2 bar`, `40 degC`) is obeyed as written.
+- **`displayUnit` is found by the name the model writes, not only by the symbol.** The compiler
+  reports `degC` — `°C` is not a unit it resolves — and a table keyed on symbols matched
+  nothing, so a temperature stayed in kelvin with the model asking for Celsius: a plot labelled
+  correctly and scaled wrongly. Both spellings find the same entry now, the field shows the
+  symbol, and the model is written with the name it can resolve. Caught by a test that runs the
+  real compiler; the unit cannot be tested without it.
 - **The unit picker's field was a 120px block with the picker underneath it.** A parameter field
   is a COLUMN flex container, and the picker's first stylesheet set `flex: 1 1 120px` on the
   input — a width in a row, a *height* in a column — so every field with alternatives became a
@@ -72,7 +101,6 @@ version is 0, a minor bump may include changes that are not backward compatible.
   A layout needs a stylesheet to be a layout: the geometry is now asserted in a harness that
   loads the plugin's own CSS, because the panel tests that read values back load none and
   measured an unstyled page.
-
 - **The derivative dot in the cursor readout sat a third of an em too high.** The readout drew
   its rows on a `top` text baseline while the dot is placed relative to the baseline a letter
   actually sits on — measured from the top of a line box instead, it floated above the word
@@ -80,7 +108,6 @@ version is 0, a minor bump may include changes that are not backward compatible.
   the two surfaces place it identically. The dot's radius and the gap between the two dots of
   `der(der(x))` also follow the text size, where a readout scaled to 150% was drawing a fixed
   1.15px speck beside 16px letters.
-
 - **A unit is legible on a row that is not drawn.** The unit column said what the numbers were
   in — `m³/s`, `Pa`, `kg/s` — in the faintest colour the theme has, and the "not drawn" dimming
   was applied to the whole row, unit included. The two multiplied: 1.8:1 against the

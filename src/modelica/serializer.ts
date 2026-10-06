@@ -334,6 +334,7 @@ export function serializeComponent(
   const binding = typeof params[id] === "string" ? params[id] : "";
 
   const nested = new Map<string, string[]>();
+  const plain: Array<[string, string]> = [];
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === null || v === "") continue;
     if (isRedeclarePackage && (k === "Medium" || k === "redeclare" || k === "package")) continue;
@@ -341,7 +342,7 @@ export function serializeComponent(
     if (k === id) continue;
     const dot = k.indexOf(".");
     if (dot < 0) {
-      mods.push(`${k}=${v}`);
+      plain.push([k, v]);
       continue;
     }
     const head = k.slice(0, dot);
@@ -349,6 +350,21 @@ export function serializeComponent(
     const list = nested.get(head) ?? [];
     list.push(`${rest}=${v}`);
     nested.set(head, list);
+  }
+  // A key that is BOTH a value and the head of nested members is ONE declaration with a
+  // binding: `p_ambient(displayUnit="bar") = 101325`. Emitted separately they read as two
+  // modifiers — `p_ambient=101325, p_ambient(displayUnit="bar")` — which is not the same
+  // declaration, and the round trip lost the value. Every parameter in the inspector is this
+  // shape as soon as it carries a member modifier, so `displayUnit` could not be recorded
+  // without it.
+  for (const [k, v] of plain) {
+    const members = nested.get(k);
+    if (members) {
+      mods.push(`${k}(${members.join(", ")}) = ${v}`);
+      nested.delete(k);
+      continue;
+    }
+    mods.push(`${k}=${v}`);
   }
   for (const [head, parts] of nested) mods.push(`${head}(${parts.join(", ")})`);
   const modStr = mods.length ? `(${mods.join(", ")})` : "";
