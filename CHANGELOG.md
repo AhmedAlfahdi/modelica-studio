@@ -9,6 +9,21 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ### Fixed
 
+- **A parameter's unit is found when the model writes it the way MSL does.** `parameter SI.Inertia
+  J` — an import alias, which is how the standard library spells nearly every unit — resolved to
+  nothing, so a rotational inertia showed no unit at all while a voltage showed one. Two things
+  had to be true to lose it: the type name is not qualified, and the short name behind it
+  (`Inertia`) is also the name of the component class that declares the parameter, so the
+  library's unique-short-name fallback found two candidates and gave up. A name is now resolved
+  by its dotted suffix against the index as well — `SI.Inertia` → `Modelica.Units.SI.Inertia`,
+  among `type` declarations, and only when exactly one matches. The previous round's test passed
+  because its fixture used a fully qualified name, which no MSL class writes; the test now reads
+  real components (`Inertia`, `Resistor`, `Capacitor`, `Mass`, `SpringDamper`) and asserts both
+  the spelling and the unit, so a fixture that drifts from the library fails instead of agreeing
+  with itself.
+
+### Fixed
+
 - **Two tooltips, in two styles, over one row.** Reported from a photo of the trace list: the
   browser's own tooltip from `title` and Obsidian's from `aria-label`, drawn at the same time.
   Obsidian draws a tooltip from `aria-label` and never from `title`, so the plugin's own rule —

@@ -555,6 +555,40 @@ export class LibraryIndex {
   }
 
   /**
+   * Resolve a name MSL writes with an import alias, by its dotted suffix.
+   *
+   * `lookup` handles a fully qualified name, a name relative to an enclosing package, and a
+   * unique SHORT name. The spelling MSL actually writes for a unit is none of those:
+   * `parameter SI.Inertia J` names an alias imported by the enclosing package, and the short
+   * name behind it — `Inertia` — is also the name of the component class that declares the
+   * parameter. So the short-name fallback found two candidates, gave up, and the unit was lost:
+   * a rotational `Inertia` showed no unit at all until a simulation supplied one.
+   *
+   * A suffix is unambiguous where a short name is not. Only `type` declarations are considered,
+   * because a unit lives on a `type` and a component class is never a parameter's type, and
+   * nothing is returned when several types match rather than picking one.
+   */
+  resolveBySuffix(name: string): ParsedClass | undefined {
+    const wanted = name.trim();
+    if (!wanted) return undefined;
+    const suffix = `.${wanted}`;
+    let found: ParsedClass | undefined;
+    for (const [qualified, cls] of this.classes) {
+      if (!qualified.endsWith(suffix)) continue;
+      if (this.kinds.get(qualified) !== "type") continue;
+      // Two types with the same suffix are a different question than this can answer.
+      if (found) return undefined;
+      found = cls;
+    }
+    return found;
+  }
+
+  /** Look a name up the way a unit needs: qualified, relative, then by suffix. */
+  resolveTypeName(name: string, fromPackage?: string): ParsedClass | undefined {
+    return this.lookup(name, fromPackage) ?? (name.includes(".") ? this.resolveBySuffix(name) : undefined);
+  }
+
+  /**
    * Resolved, palette/render-ready view of a class.
    *
    * Prefer this over `get()` anywhere the UI needs ports, parameters or icons:

@@ -9,6 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { buildLibs } from "./helpers/build.mjs";
 
@@ -25,6 +26,10 @@ const MSL_CANDIDATES = [
   "/home/para/.openmodelica/libraries/Modelica 3.2.3+maint.om/Units.mo",
 ];
 const MSL = MSL_CANDIDATES.find((p) => fs.existsSync(p));
+const MSL_ROOTS = [
+  "/home/para/.openmodelica/libraries/Modelica 4.1.0+maint.om",
+  "/home/para/.openmodelica/libraries/Complex 4.1.0+maint.om",
+];
 
 /** Every class in MSL's Units.mo, keyed as the library index keys them. */
 function mslLookup() {
@@ -66,6 +71,53 @@ test("a type's unit is found through the chain of short class definitions", { sk
     unit: "K",
     displayUnit: "degC",
   });
+});
+
+test("a real component's parameter types resolve, import alias and all", { skip: !MSL }, async () => {
+  // The case that was reported, and the reason this test exists in this form. MSL writes a
+  // parameter's type with an IMPORT ALIAS — `parameter SI.Inertia J` — and the short name behind
+  // it is also the name of the component class that declares it. A lookup that fell back to a
+  // unique short name found two candidates, gave up, and the rotational inertia showed no unit
+  // at all; the first version of this test used a fully qualified name from a fixture, which no
+  // MSL class writes, so it passed while the app did not.
+  const { loadLibraryIndex } = await import(
+    path.join(buildLibs("type-units-index", ["src/modelica/library.ts"]), "library.js")
+  );
+  const loaded = loadLibraryIndex({
+    roots: MSL_ROOTS.filter((r) => fs.existsSync(r)),
+    cacheFile: path.join(os.tmpdir(), `type-units-index-${process.pid}.json`),
+  });
+  assert.ok(loaded.index.size > 1000, `the library is loaded, ${loaded.index.size} classes`);
+
+  const unitsOf = (className) => {
+    const cls = loaded.index.component(className);
+    assert.ok(cls, `${className} is in the library`);
+    return Object.fromEntries(
+      cls.parameters.map((p) => [p.name, unitsOfType(p.type, (n, from) => loaded.index.resolveTypeName(n, from)).unit])
+    );
+  };
+
+  // The reported one, with its type asserted verbatim: if MSL ever spells it differently, this
+  // test says so instead of quietly resolving nothing.
+  const inertia = loaded.index.component("Modelica.Mechanics.Rotational.Components.Inertia");
+  assert.equal(
+    inertia.parameters.find((p) => p.name === "J").type,
+    "SI.Inertia",
+    "the type as the source writes it: an alias, not a qualified name"
+  );
+  assert.equal(unitsOf("Modelica.Mechanics.Rotational.Components.Inertia").J, "kg.m2");
+
+  const resistor = unitsOf("Modelica.Electrical.Analog.Basic.Resistor");
+  assert.equal(resistor.R, "Ohm");
+  assert.equal(resistor.T, "K");
+  assert.equal(resistor["T_ref"], "K");
+  assert.equal(resistor.alpha, "1/K");
+  assert.equal(unitsOf("Modelica.Electrical.Analog.Basic.Capacitor").C, "F");
+  assert.equal(unitsOf("Modelica.Mechanics.Translational.Components.Mass").m, "kg");
+  assert.equal(unitsOf("Modelica.Mechanics.Translational.Components.Mass")["v.start"], "m/s");
+  const damper = unitsOf("Modelica.Mechanics.Rotational.Components.SpringDamper");
+  assert.equal(damper["phi_rel.start"], "rad");
+  assert.equal(damper["w_rel.start"], "rad/s");
 });
 
 test("and nothing is claimed for a type that states no unit", { skip: !MSL }, () => {

@@ -3040,11 +3040,21 @@ export class ModelicaStudioView extends ItemView {
     const cached = this.typeUnitsCache.get(name);
     if (cached) return cached;
     const library = this.plugin.library as
-      | { lookup?: (name: string, fromPackage?: string) => unknown }
+      | {
+          lookup?: (name: string, fromPackage?: string) => unknown;
+          resolveTypeName?: (name: string, fromPackage?: string) => unknown;
+        }
       | undefined;
-    const found = library?.lookup
-      ? unitsOfType(name, (n, from) => library.lookup?.(n, from) as never)
-      : {};
+    // `resolveTypeName` and not `lookup`: the type a parameter is declared with is written with
+    // an import alias — `SI.Inertia` — and the short name behind it is also the name of the
+    // component class, so the plain lookup gives up. That is why a rotational inertia showed no
+    // unit while a voltage did.
+    const resolve = library?.resolveTypeName
+      ? (n: string, from?: string) => library.resolveTypeName?.(n, from)
+      : library?.lookup
+        ? (n: string, from?: string) => library.lookup?.(n, from)
+        : null;
+    const found = resolve ? unitsOfType(name, (n, from) => resolve(n, from) as never) : {};
     this.typeUnitsCache.set(name, found);
     return found;
   }
