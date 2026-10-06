@@ -369,6 +369,113 @@ test("the list box takes the height that is left, not a fixed 190px", async () =
   );
 });
 
+test("a group can still be collapsed while the list is narrowed", async () => {
+  // Reported as "sometimes the collapsing of traces does not work". It does not, whenever a
+  // preset or a filter is on: `traceRows` opened every group with children as soon as a match
+  // predicate existed, so the reader's own arrangement was ignored — the twisty still drew a
+  // chevron, still answered a click, and still said "Collapse pipe" to a screen reader, and
+  // nothing moved. The control lied, and only while narrowing, which is exactly "sometimes".
+  const out = await runInDom(
+    [
+      HEAD,
+      "const { body } = mount(173, 520, undefined, true, true);",
+      "const pills = () => Array.from(body.querySelectorAll('.modelica-studio-preset'));",
+      "const pick = (label) => {",
+      "  const b = pills().find((p) => p.textContent === label);",
+      "  if (!b) throw new Error('no pill ' + label);",
+      "  b.dispatchEvent(new MouseEvent('click', { bubbles: true }));",
+      "};",
+      "const groupNamed = (n) => Array.from(body.querySelectorAll('.modelica-studio-series-group'))",
+      "  .find((g) => g.querySelector('.modelica-studio-series-group-name').textContent === n);",
+      "const clickTwisty = (n) => {",
+      "  const g = groupNamed(n);",
+      "  if (!g) throw new Error('no group ' + n);",
+      "  g.querySelector('.modelica-studio-series-twisty').dispatchEvent(new MouseEvent('click', { bubbles: true }));",
+      "};",
+      "const openOf = (n) => { const g = groupNamed(n); return g ? g.classList.contains('is-open') : 'GONE'; };",
+      "const rows = () => rowNames(body).length;",
+      "",
+      "window.test('with nothing asked for, the twisty closes a group', () => {",
+      "  const before = rows();",
+      "  clickTwisty('motor');",
+      "  return 'rows=' + before + '->' + rows() + ' open=' + openOf('motor');",
+      "});",
+      "window.test('and it closes it with a preset on too', () => {",
+      "  pick('Varying');",
+      "  // Explicit, not inherited from the case above: what is under test is a CLICK, so the",
+      "  // group is put in a known state first.",
+      "  const settle = (want) => { if (openOf('motor') !== want) clickTwisty('motor'); };",
+      "  settle(true);",
+      "  const before = rows();",
+      "  clickTwisty('motor');",
+      "  const closed = openOf('motor') === false;",
+      "  const after = rows();",
+      "  clickTwisty('motor');",
+      "  return 'rows=' + before + '->' + after + ' closedByClick=' + closed",
+      "    + ' reopened=' + openOf('motor') + ' rows=' + rows();",
+      "});",
+      "window.test('and with something typed', () => {",
+      "  const filter = body.querySelector('.modelica-studio-search');",
+      "  filter.value = 'phi';",
+      "  filter.dispatchEvent(new Event('input', { bubbles: true }));",
+      "  if (openOf('motor') !== true) clickTwisty('motor');",
+      "  const before = rows();",
+      "  clickTwisty('motor');",
+      "  return 'rows=' + before + '->' + rows() + ' open=' + openOf('motor');",
+      "});",
+      "window.test('PROBE the last heading, past the budget', () => {",
+      "  pick('All');",
+      "  const filter = body.querySelector('.modelica-studio-search');",
+      "  filter.value = '';",
+      "  filter.dispatchEvent(new Event('input', { bubbles: true }));",
+      "  const groups = () => Array.from(body.querySelectorAll('.modelica-studio-series-group'));",
+      "  // The heading AT the budget cut is the interesting one: opening it can only add rows the",
+      "  // budget has no room for, and the row is dropped when an opened heading has nothing under",
+      "  // it — the control disappearing under the cursor that just clicked it.",
+      "  const all = Array.from(body.querySelectorAll('.modelica-studio-series-row, .modelica-studio-series-group'));",
+      "  const tail = all.slice(-3);",
+      "  const heading = tail.filter((el) => el.classList.contains('modelica-studio-series-group'))",
+      "    .filter((el) => !el.classList.contains('is-open'))",
+      "    .pop();",
+      "  const lastKind = tail.map((el) => (el.classList.contains('modelica-studio-series-group') ? 'group:' + el.querySelector('.modelica-studio-series-group-name').textContent + (el.classList.contains('is-open') ? '(open)' : '(closed)') : 'row')).join(' | ');",
+      "  if (!heading) return 'no closed heading in the last three rows: ' + lastKind;",
+      "  const name = heading.querySelector('.modelica-studio-series-group-name').textContent;",
+      "  const before = rows();",
+      "  heading.querySelector('.modelica-studio-series-twisty').dispatchEvent(new MouseEvent('click', { bubbles: true }));",
+      "  const still = groups().some((g) => g.querySelector('.modelica-studio-series-group-name').textContent === name);",
+      "  return 'tail=' + lastKind + ' opened=' + name + ' rows=' + before + '->' + rows()",
+      "    + ' headingSurvived=' + still;",
+      "});",
+      "window.finish();",
+    ].join("\n")
+  );
+  if (out.skip) return;
+  assert.ok(!out.fatal, `${out.fatal} :: ${JSON.stringify(out.errors ?? [])}`);
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const d = Object.fromEntries(out.results.map((r) => [r.name, r.detail]));
+
+  assert.match(
+    d["with nothing asked for, the twisty closes a group"],
+    /open=false$/,
+    "the arrangement works when nothing is asked for"
+  );
+  assert.match(
+    d["and it closes it with a preset on too"],
+    /closedByClick=true/,
+    "and it must work with a preset on, which is where it did not"
+  );
+  assert.match(
+    d["and it closes it with a preset on too"],
+    /reopened=true/,
+    "and it opens again: the search does not hold it shut either"
+  );
+  assert.match(
+    d["and with something typed"],
+    /open=false$/,
+    "and with a filter typed: the reader's decision wins over the search opening groups for them"
+  );
+});
+
 test("the list can be narrowed by preset, not only by typing", async () => {
   // Asked for as "filter presets, like showing only the active traces": the list
   // is every variable the model has, and the question asked of it is nearly

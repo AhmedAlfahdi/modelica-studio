@@ -199,9 +199,12 @@ test("checking a trace does not move it", () => {
   const choose = /private currentTraceRows\([\s\S]*?\n  \}/.exec(view);
   assert.ok(choose, "the rows are chosen in one place");
   assert.match(choose[0], /const roots = this\.traceTree\(\)/, "the rows are the tree's, in its order");
+  // The exact call, because it is the contract: the tree, the reader's arrangement, their
+  // decisions, the search and the budget, and nothing else. `decided` is what lets a twisty
+  // work while the list is narrowed.
   assert.match(
     choose[0],
-    /return traceRows\(roots, \{ expanded: this\.expandedGroups, match, budget \}\)/,
+    /return traceRows\(roots, \{[\s\S]*?expanded: this\.expandedGroups,[\s\S]*?decided: this\.decidedGroups,[\s\S]*?match,[\s\S]*?budget,[\s\S]*?\}\)/,
     "and are handed straight to the renderer"
   );
   assert.ok(!/\.sort\(/.test(choose[0]), "nothing reorders them on the way out");

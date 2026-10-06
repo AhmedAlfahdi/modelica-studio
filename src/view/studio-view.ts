@@ -2825,6 +2825,11 @@ export class ModelicaStudioView extends ItemView {
     // be rebuilt, which would otherwise drop focus on every keystroke.
     filter.addEventListener("input", () => {
       this.seriesFilter = filter.value;
+      // A new question opens the way to its own answers, so what the reader had folded for the
+      // previous one is forgotten — a filter shows its matches wherever they are. What they fold
+      // WHILE a question is asked stands, which is the point: the twisty has to work with a
+      // filter or a preset on, and it did not.
+      this.decidedGroups.clear();
       const caret = filter.selectionStart ?? filter.value.length;
       // A new filter is a new list, so it opens at the top: keeping the old
       // offset would show the middle of a set the reader has not seen.
@@ -2856,6 +2861,9 @@ export class ModelicaStudioView extends ItemView {
       b.addEventListener("click", () => {
         if (this.seriesPreset === preset.id) return;
         this.seriesPreset = preset.id;
+        // Same reasoning as the filter: a different question, so the previous answers'
+        // arrangement is not carried into it.
+        this.decidedGroups.clear();
         // A different set of rows: the reader's place in the old one means nothing.
         this.seriesScroll = 0;
         this.renderInspector();
@@ -2940,7 +2948,14 @@ export class ModelicaStudioView extends ItemView {
           })
       : undefined;
 
-    return traceRows(roots, { expanded: this.expandedGroups, match, budget });
+    // `decided` as well as `expanded`: with a search on, a group opens for its matches unless
+    // the reader has said otherwise about that one.
+    return traceRows(roots, {
+      expanded: this.expandedGroups,
+      decided: this.decidedGroups,
+      match,
+      budget,
+    });
   }
 
   /**

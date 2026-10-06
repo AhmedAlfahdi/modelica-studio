@@ -7,6 +7,17 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A trace group can be collapsed while the list is narrowed.** Reported as "sometimes the
+  collapsing of traces does not work", and the sometimes was precise: with a preset or a filter
+  on, `traceRows` opened every group with children as soon as a match predicate existed, so the
+  reader's own arrangement was ignored. The twisty still drew its chevron, still answered the
+  click and still said "Collapse pipe" to a screen reader, and nothing moved. A new question —
+  a different preset, or typing in the filter — still opens the way to its own answers, because
+  that is what a search is for; but a group the reader folds WHILE the question is asked now
+  stays folded, and opens again from the same control.
+
 ## [0.6.2] — 2026-10-06
 
 ### Changed

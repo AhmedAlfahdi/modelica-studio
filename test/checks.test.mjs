@@ -1035,3 +1035,27 @@ test("what the plugin writes outside the vault is bounded, and the docs say so",
   assert.match(readme, /temporary folder/, "the README says where the compiler writes");
   assert.match(readme, /removed when\s+the plugin starts|removed when the plugin starts/, "and that those folders are cleaned up");
 });
+
+test("no test file declares the same test twice", () => {
+  // A guard written the day it was needed. Two scripted edits to the trace-list file copied a
+  // block instead of moving it — one duplicated the 142-line geometry test outright, and the
+  // other left a copy of one test's assertions inside another — and the suite stayed GREEN
+  // through both: a duplicated test passes exactly like the original, so the only symptom was
+  // a count nobody was watching (`970` where `968` was expected). The dead copy also pinned
+  // behaviour that had been deliberately changed, which is how it was finally noticed.
+  //
+  // Nothing about a runtime assertion can see this. Reading the files can.
+  const files = fs.readdirSync(path.join(repoRoot, "test")).filter((f) => f.endsWith(".test.mjs"));
+  assert.ok(files.length > 10, `the test files are found (${files.length})`);
+  const duplicated = [];
+  for (const file of files) {
+    const source = fs.readFileSync(path.join(repoRoot, "test", file), "utf8");
+    const names = [...source.matchAll(/^\s*test\(\s*"((?:[^"\\]|\\.)*)"/gm)].map((m) => m[1]);
+    const seen = new Set();
+    for (const name of names) {
+      if (seen.has(name)) duplicated.push(`${file}: ${name}`);
+      seen.add(name);
+    }
+  }
+  assert.deepEqual(duplicated, [], "every test name appears once, so a copy cannot hide as a pass");
+});

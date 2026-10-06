@@ -229,10 +229,13 @@ export function traceRows(
     expanded?: ReadonlySet<string>;
     match?: (name: string) => boolean;
     budget?: number;
+    /** Groups the reader has opened or closed by hand. */
+    decided?: ReadonlySet<string>;
   } = {}
 ): TraceRows {
   const expanded = options.expanded ?? new Set<string>();
   const match = options.match;
+  const decided = options.decided ?? new Set<string>();
   const budget = options.budget ?? Number.POSITIVE_INFINITY;
   const rows: TraceRow[] = [];
   let matched = 0;
@@ -257,7 +260,15 @@ export function traceRows(
       return [];
     }
     const children = node.children.filter(kept);
-    const open = children.length > 0 && (expanded.has(node.path) || match !== undefined);
+    // A search opens the groups on the way to its own answers, because the rows it keeps ARE
+    // the answer — but not a group the reader has opened or closed themselves. Without that,
+    // every twisty in the list did nothing at all while a preset or a filter was on: it drew a
+    // chevron, answered the click, said "Collapse pipe" to a screen reader, and nothing moved.
+    // Reported as "sometimes the collapsing of traces does not work", and the sometimes was
+    // exactly this.
+    const open =
+      children.length > 0 &&
+      (expanded.has(node.path) || (match !== undefined && !decided.has(node.path)));
     const own: TraceRow[] = [];
     if (isMatch(node)) shown++;
     own.push({ node, depth, open });
