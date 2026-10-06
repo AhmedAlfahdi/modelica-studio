@@ -7,6 +7,8 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+## [0.6.2] — 2026-10-06
+
 ### Changed
 
 - **The unit control has no tooltip.** It said "Unit for phi0" and drew over the very list it
@@ -14,6 +16,21 @@ version is 0, a minor bump may include changes that are not backward compatible.
   nothing else, so an accessible name written that way becomes one — the name now comes from the
   field's own `<label>`, associated with `for` on the value and `aria-labelledby` on the unit
   control, which names both for a screen reader and draws nothing.
+- **Every unit is a control beside its value, not text in the label.** Reported from a screenshot
+  of a HeatCapacitor: `C J/K` printed the unit in the label, while every field whose unit had
+  alternatives put it in a box on the right — so one panel looked like two, and the ones without
+  a dropdown looked like they were missing something. A unit with no alternatives is drawn as the
+  same box now: same border, same padding, exactly as tall as the input beside it, muted, and
+  nothing to open because there is no list. The label carries the name and nothing else.
+- **An initial value shows its unit, and the value in it.** `T (initial)` showed a bare number
+  while the trace list and the cursor drew the same quantity in the type's own unit: the field
+  looked its unit up under its own name, `T.start`, which no compiler reports — the unit belongs
+  to `T`. The lookup uses the variable now, so an initial value reads `20` in `°C` on a
+  `ThermodynamicTemperature` and a display unit chosen there is written as `T.displayUnit`,
+  never `T.start.displayUnit`, which no compiler resolves.
+- **The unit picker no longer carries a tooltip.** It said "Model unit: Ω", which is the first
+  entry of the list the control opens — and a tooltip over an open dropdown covers the field the
+  reader is choosing for.
 
 ### Fixed
 
@@ -29,9 +46,6 @@ version is 0, a minor bump may include changes that are not backward compatible.
   The version guard in `test/library.test.mjs` exists for exactly this and caught it; the cache
   round trip is now asserted too, so a resolver test can no longer pass while the app reads an
   index that cannot answer.
-
-### Fixed
-
 - **A parameter's unit is found when the model writes it the way MSL does.** `parameter SI.Inertia
   J` — an import alias, which is how the standard library spells nearly every unit — resolved to
   nothing, so a rotational inertia showed no unit at all while a voltage showed one. Two things
@@ -44,9 +58,6 @@ version is 0, a minor bump may include changes that are not backward compatible.
   real components (`Inertia`, `Resistor`, `Capacitor`, `Mass`, `SpringDamper`) and asserts both
   the spelling and the unit, so a fixture that drifts from the library fails instead of agreeing
   with itself.
-
-### Fixed
-
 - **Two tooltips, in two styles, over one row.** Reported from a photo of the trace list: the
   browser's own tooltip from `title` and Obsidian's from `aria-label`, drawn at the same time.
   Obsidian draws a tooltip from `aria-label` and never from `title`, so the plugin's own rule —
@@ -61,27 +72,6 @@ version is 0, a minor bump may include changes that are not backward compatible.
   inspector is rebuilt when the library arrives, and the memo of type → unit is dropped first,
   because it holds the `{}` the empty index answered with. A test that only counted the rebuild
   passed while every field stayed empty; the assertion is on the pickers now.
-
-### Changed
-
-- **Every unit is a control beside its value, not text in the label.** Reported from a screenshot
-  of a HeatCapacitor: `C J/K` printed the unit in the label, while every field whose unit had
-  alternatives put it in a box on the right — so one panel looked like two, and the ones without
-  a dropdown looked like they were missing something. A unit with no alternatives is drawn as the
-  same box now: same border, same padding, exactly as tall as the input beside it, muted, and
-  nothing to open because there is no list. The label carries the name and nothing else.
-- **An initial value shows its unit, and the value in it.** `T (initial)` showed a bare number
-  while the trace list and the cursor drew the same quantity in the type's own unit: the field
-  looked its unit up under its own name, `T.start`, which no compiler reports — the unit belongs
-  to `T`. The lookup uses the variable now, so an initial value reads `20` in `°C` on a
-  `ThermodynamicTemperature` and a display unit chosen there is written as `T.displayUnit`,
-  never `T.start.displayUnit`, which no compiler resolves.
-
-### Changed
-
-- **The unit picker no longer carries a tooltip.** It said "Model unit: Ω", which is the first
-  entry of the list the control opens — and a tooltip over an open dropdown covers the field the
-  reader is choosing for.
 
 ## [0.6.1] — 2026-10-06
 
