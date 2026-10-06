@@ -17,7 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { runInDom, DOM_PREAMBLE } from "./helpers/dom-runner.mjs";
 import { repoRoot } from "./helpers/build.mjs";
-import { PLUGIN_CSS, THEME_CSS } from "./helpers/theme-css.mjs";
+import { THEME_VARS, PLUGIN_CSS, THEME_CSS } from "./helpers/theme-css.mjs";
 
 const ROOT = repoRoot;
 
@@ -27,7 +27,7 @@ const HEAD = [
   `import { ModelicaStudioView } from "${ROOT}/src/view/studio-view";`,
   "",
   "const style = document.createElement('style');",
-  `style.textContent = ${JSON.stringify(THEME_CSS + PLUGIN_CSS)};`,
+  `style.textContent = ${JSON.stringify(THEME_VARS + THEME_CSS + PLUGIN_CSS)};`,
   "document.head.appendChild(style);",
   "document.body.classList.add('theme-dark');",
   "",

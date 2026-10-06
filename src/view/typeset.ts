@@ -29,10 +29,15 @@
  * nearly-right unit is.
  */
 
-/** One piece of a name, with the type it is drawn in. */
+/**
+ * One piece of a name or a unit, with the type it is drawn in.
+ *
+ * `sup` comes from units (`m·s-2` as m·s with a raised `-2`); a name has no superscript,
+ * and a unit has no derivative dot.
+ */
 export interface Run {
   text: string;
-  kind: "base" | "sub" | "sep";
+  kind: "base" | "sub" | "sep" | "sup";
   /** Derivative dots to draw over this run. */
   dot?: number;
 }

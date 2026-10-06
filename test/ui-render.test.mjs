@@ -1968,7 +1968,9 @@ test("a Boolean parameter is a choice, and anything else is still typed", async 
   assert.equal(d["and it shows that nothing is overridden yet"], '""', "default selected when unset");
   assert.equal(d["choosing a value is committed"], "r1.useSupport=true", "the choice reaches the editor");
   assert.equal(d["a number is still a text field"], "INPUT", "a Real stays a text field");
-  assert.match(d["and keeps its unit in the label"], /R \(Ω\)/, "units still shown, as a symbol");
+  // No parentheses since the unit is drawn as runs: it is smaller, muted and its own element,
+  // so the styling separates it from the name — and the symbol still replaces `Ohm`.
+  assert.match(d["and keeps its unit in the label"], /R Ω/, "units still shown, as a symbol");
   assert.equal(
     d["an expression binding is not put in a select"],
     "INPUT",

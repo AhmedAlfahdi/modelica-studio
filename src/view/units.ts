@@ -26,6 +26,8 @@
  * worse than an ugly one, because it reads as authoritative.
  */
 
+import type { Run } from "./typeset";
+
 /**
  * One unit token: a name with an optional exponent attached (`s-1`, `m2`), or a
  * bare number, which is how the compiler writes the dimensionless unit (`1`).
@@ -82,6 +84,74 @@ export function formatUnit(unit: string): string {
   for (const [pattern, symbol] of SYMBOLS) out = out.replace(pattern, symbol);
   out = out.replace(MICRO, "$1µ");
   out = out.replace(EXPONENT, (_match, base: string, exponent: string) => base + raise(exponent));
+  return out.replace(/\./g, "·");
+}
+
+/**
+ * The unit as runs of type, for the surfaces that can set an exponent properly.
+ *
+ * The exponent is the reason this exists. As a Unicode glyph `⁻²` it measures 5px of ink
+ * at 11px, and no stylesheet can grow it without growing the unit's own letters — so the
+ * part of the unit that carries its meaning was the smallest thing on the row. A run is a
+ * real digit at a size the renderer chooses, raised: 85% of the unit, weight 500, which
+ * measures 6px and, more to the point, has strokes.
+ *
+ * The runs join back into the FLAT spelling (`m·s-2`, symbols replaced, dot as a middot),
+ * which is what makes them copyable and what the tests compare against. `formatUnit`
+ * stays for the places that need one string and no markup: a tooltip, a log line, the
+ * `_info.json` projection, and anywhere the reader will copy the text.
+ */
+export function unitRuns(unit: string): Run[] {
+  const runs = formatRuns(unit);
+  return runs.length > 0 ? runs : [];
+}
+
+/**
+ * The unit as runs, or the compiler's own string as one plain run when it is not a shape
+ * this understands — the same all-or-nothing rule as `formatUnit`.
+ */
+function formatRuns(raw: string): Run[] {
+  const text = raw.trim();
+  if (!text) return [];
+  if (!isUnitGrammar(text)) return [{ text, kind: "base" }];
+  const out: Run[] = [];
+  // The token split, with the exponent captured: names keep their letters, an attached
+  // number becomes a run of its own.
+  const TOKEN_WITH_EXPONENT = /([A-Za-z%_][A-Za-z0-9_]*?)(-?\d+)(?![A-Za-z0-9_])/g;
+  let cursor = 0;
+  for (const match of text.matchAll(TOKEN_WITH_EXPONENT)) {
+    const at = match.index ?? 0;
+    if (at > cursor) out.push({ text: symbolise(text.slice(cursor, at)), kind: "base" });
+    out.push({ text: symbolise(match[1]), kind: "base" });
+    out.push({ text: match[2], kind: "sup" });
+    cursor = at + match[0].length;
+  }
+  if (cursor < text.length) out.push({ text: symbolise(text.slice(cursor)), kind: "base" });
+  return merge(out);
+}
+
+/**
+ * Adjacent runs of the same kind, joined.
+ *
+ * The split above falls wherever a token ends — `m·` then `s` — which draws identically but
+ * makes one unit read as four runs: more to measure, more to draw, and a `textContent`
+ * nobody can predict. Merging is what makes the runs join back into the flat spelling.
+ */
+function merge(runs: Run[]): Run[] {
+  const out: Run[] = [];
+  for (const run of runs) {
+    const last = out[out.length - 1];
+    if (last && last.kind === run.kind && !last.dot && !run.dot) last.text += run.text;
+    else out.push({ ...run });
+  }
+  return out;
+}
+
+/** The symbol replacements and the multiplication dot, on one piece of the string. */
+function symbolise(piece: string): string {
+  let out = piece;
+  for (const [pattern, symbol] of SYMBOLS) out = out.replace(pattern, symbol);
+  out = out.replace(MICRO, "$1µ");
   return out.replace(/\./g, "·");
 }
 

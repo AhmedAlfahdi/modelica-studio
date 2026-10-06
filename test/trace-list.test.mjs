@@ -17,7 +17,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runInDom, DOM_PREAMBLE } from "./helpers/dom-runner.mjs";
 import { repoRoot } from "./helpers/build.mjs";
-import { PLUGIN_CSS, THEME_CSS } from "./helpers/theme-css.mjs";
+import { THEME_VARS, PLUGIN_CSS, THEME_CSS } from "./helpers/theme-css.mjs";
 
 const ROOT = repoRoot;
 
@@ -26,7 +26,10 @@ const HEAD = [
   `import { ModelicaStudioView } from "${ROOT}/src/view/studio-view";`,
   "",
   "const style = document.createElement('style');",
-  `style.textContent = ${JSON.stringify(THEME_CSS + PLUGIN_CSS)};`,
+  // THEME_VARS first: a token the app defines is not in its rules, and a page without it
+  // reads an inherited colour as though it were the rule's -- which is how the unit-match mark
+  // measured black instead of the accent.
+  `style.textContent = ${JSON.stringify(THEME_VARS + THEME_CSS + PLUGIN_CSS)};`,
   "document.head.appendChild(style);",
   "document.body.classList.add('theme-dark');",
   "",
@@ -781,6 +784,45 @@ test("a unit is shown with the variable it belongs to, not with the model", asyn
       "    + ' sameUnitColour=' + (style(unit(undrawn)).color === style(unit(drawn)).color)",
       "    + ' unitColour=' + style(unit(undrawn)).color;",
       "});",
+      "window.test('an exponent is a real superscript, sized by us', () => {",
+      "  // It was a Unicode glyph: 5px of ink at 11px, and no stylesheet could grow it without",
+      "  // growing the unit's letters. A `<sup>` at 0.85em, weight 500, is a digit with strokes.",
+      // The absurd unit the fixture gives `der(motor.phiMechanical)` is the useful case: three
+      // exponents, one of them negative.
+      "  const span = rowFor('der(motor.phiMechanical)').querySelector('.modelica-studio-series-unit');",
+      "  const sups = Array.from(span.querySelectorAll('sup.modelica-studio-run-sup'));",
+      "  const style = sups.length ? getComputedStyle(sups[0]) : null;",
+      "  return 'flat=' + span.getAttribute('data-unit')",
+      "    + ' text=' + span.textContent",
+      "    + ' sups=' + sups.map((x) => x.textContent).join('|')",
+      "    + ' base=' + getComputedStyle(span).fontSize",
+      "    + ' sup=' + (style ? style.fontSize : 'NONE')",
+      "    + ' weight=' + (style ? style.fontWeight : '')",
+      "    + ' raised=' + (style ? parseFloat(style.verticalAlign) > 0 : '');",
+      "});",
+      "window.test('rows sharing a unit are marked when one is pointed at', () => {",
+      "  const list = body.querySelector('.modelica-studio-series');",
+      "  const marked = () => Array.from(body.querySelectorAll('.modelica-studio-series-unit.is-same-unit'))",
+      "    .map((s) => s.getAttribute('data-unit'));",
+      "  const withUnit = (unit) => Array.from(body.querySelectorAll('.modelica-studio-series-unit'))",
+      "    .filter((s) => s.getAttribute('data-unit') === unit).length;",
+      "  const target = rowFor('motor.la.v').querySelector('.modelica-studio-series-unit');",
+      "  const before = marked().length;",
+      "  target.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));",
+      "  const after = marked().length;",
+      "  const colour = getComputedStyle(target).color;",
+      "  list.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }));",
+      "  return 'before=' + before + ' after=' + after + ' expected=' + withUnit('V')",
+      "    + ' colour=' + colour + ' cleared=' + marked().length;",
+      "});",
+      "window.test('and the same happens from the keyboard', () => {",
+      "  const list = body.querySelector('.modelica-studio-series');",
+      "  const box = rowFor('motor.la.v').querySelector('input');",
+      "  box.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));",
+      "  const marked = body.querySelectorAll('.modelica-studio-series-unit.is-same-unit').length;",
+      "  box.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));",
+      "  return 'marked=' + marked + ' cleared=' + body.querySelectorAll('.modelica-studio-series-unit.is-same-unit').length;",
+      "});",
       "window.test('a variable with no unit gets no unit', () =>",
       "  'bare=' + (bareRow.querySelector('.modelica-studio-series-unit') ? 'SHOWN' : 'absent')",
       "    + ' name=' + bareRow.dataset.name);",
@@ -801,7 +843,10 @@ test("a unit is shown with the variable it belongs to, not with the model", asyn
   );
   assert.equal(
     d["a derivative is read as a reader writes it, and kept whole on the row"],
-    "shown=km²·s⁻⁴·A⁻¹·g title=Unit: km²·s⁻⁴·A⁻¹·g exact=[km2.s-4.A-1.g]",
+    // The unit's text is the FLAT spelling now — `km2·s-4·A-1·g` — because the exponents are
+    // `<sup>` elements rather than glyphs. It is what the element's text amounts to, what a
+    // copy takes away, and what `data-unit` matches on; the raised form is what is drawn.
+    "shown=km2·s-4·A-1·g title=Unit: km2·s-4·A-1·g exact=[km2.s-4.A-1.g]",
     "the row is readable and the tooltip still carries the compiler's own string"
   );
   assert.equal(
@@ -813,6 +858,21 @@ test("a unit is shown with the variable it belongs to, not with the model", asyn
     d["a unit is legible even on a row that is not drawn"],
     "drawn=true undrawnRow=1 undrawnName=0.62 undrawnUnit=1 drawnName=1 drawnUnit=1 sameUnitColour=true unitColour=rgb(170, 170, 170)",
     "the row dims through its parts, the unit is exempt, and it uses the muted token the theme defines"
+  );
+  assert.equal(
+    d["an exponent is a real superscript, sized by us"],
+    "flat=km2·s-4·A-1·g text=km2·s-4·A-1·g sups=2|-4|-1 base=11px sup=9.35px weight=500 raised=true",
+    "the unit joins back into the compiler's spelling, and the exponent is ours to size"
+  );
+  assert.equal(
+    d["rows sharing a unit are marked when one is pointed at"],
+    "before=0 after=4 expected=4 colour=rgb(139, 108, 239) cleared=0",
+    "pointing at a row marks the rows in the same unit, and leaving clears it"
+  );
+  assert.equal(
+    d["and the same happens from the keyboard"],
+    "marked=4 cleared=0",
+    "the same question is asked by tabbing to a trace"
   );
   assert.equal(
     d["a variable with no unit gets no unit"],

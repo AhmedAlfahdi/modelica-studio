@@ -11,7 +11,7 @@
 import type { SimResult, SimSeries } from "../omc/backend";
 import { planAxes, type AxisPlan } from "./axes";
 import { typesetName, type Run } from "./typeset";
-import { formatUnit } from "./units";
+import { unitRuns } from "./units";
 
 export interface SeriesStyle {
   color: string;
@@ -334,8 +334,20 @@ const LEGEND_ROW_H = 18;
 const LEGEND_FONT = 12;
 const LEGEND_UNIT_FONT = 11;
 /** A subscript, and how far below the baseline it sits. */
-const LEGEND_SUB_SCALE = 0.72;
+const LEGEND_SUB_SCALE = 0.82;
 const LEGEND_SUB_DROP = 0.28;
+/**
+ * An exponent: 85% of the unit's size, raised.
+ *
+ * Not a Unicode glyph, which is what the unit used to be and what measured 5px of ink at
+ * 11px with no way to grow it. A real digit at 85% with weight 500 measures 6px and has
+ * strokes. 100% was rendered and rejected: at the unit's own size the exponent reads as
+ * another letter, and only the raise says it is an exponent.
+ */
+const LEGEND_SUP_SCALE = 0.85;
+const LEGEND_SUP_RISE = 0.34;
+/** The weight for a subscript or an exponent: a small stroke at 400 washes out. */
+const RUN_WEIGHT = 500;
 /** Between a run of the name and the next: subscripts sit close, components apart. */
 const RUN_GAP = 0;
 
@@ -352,11 +364,18 @@ const READOUT_UNIT_FONT = 10;
 /** Between the name and its unit, and between the unit and the `=`. */
 const READOUT_GAP = 6;
 
+/** The font a run is drawn in, so measuring and drawing cannot disagree. */
+function runFont(run: Run, base: number): string {
+  if (run.kind === "sub") return `${RUN_WEIGHT} ${Math.round(base * LEGEND_SUB_SCALE)}px sans-serif`;
+  if (run.kind === "sup") return `${RUN_WEIGHT} ${Math.round(base * LEGEND_SUP_SCALE)}px sans-serif`;
+  return `${base}px sans-serif`;
+}
+
 /** How wide the runs measure, drawn at `base` px. */
 function runsWidth(ctx: CanvasRenderingContext2D, runs: Run[], base: number): number {
   let width = 0;
   for (const run of runs) {
-    ctx.font = `${run.kind === "sub" ? Math.round(base * LEGEND_SUB_SCALE) : base}px sans-serif`;
+    ctx.font = runFont(run, base);
     width += ctx.measureText(run.text).width + RUN_GAP;
   }
   return width;
@@ -406,10 +425,10 @@ function drawRuns(
 ): number {
   let cx = x;
   for (const run of runs) {
-    const size = run.kind === "sub" ? Math.round(base * LEGEND_SUB_SCALE) : base;
-    ctx.font = `${size}px sans-serif`;
+    ctx.font = runFont(run, base);
     ctx.fillStyle = colour;
-    ctx.fillText(run.text, cx, run.kind === "sub" ? y + base * LEGEND_SUB_DROP : y);
+    const dy = run.kind === "sub" ? base * LEGEND_SUB_DROP : run.kind === "sup" ? -base * LEGEND_SUP_RISE : 0;
+    ctx.fillText(run.text, cx, y + dy);
     const width = ctx.measureText(run.text).width;
     if (run.dot) {
       // Over the middle of the variable it differentiates — never over the
@@ -788,16 +807,12 @@ export function drawPlot(
       // The unit first, because it is the part that must not be cut: the name gives
       // way to it. Measured at its own size, since a raised exponent is a different
       // string, not a smaller font.
-      const unit = s.unit?.trim() ? formatUnit(s.unit) : "";
-      let unitW = 0;
-      if (unit !== "") {
-        ctx.font = `${LEGEND_UNIT_FONT}px sans-serif`;
-        unitW = ctx.measureText(unit).width;
-      }
+      const unit = s.unit?.trim() ? unitRuns(s.unit) : [];
+      const unitW = unit.length > 0 ? runsWidth(ctx, unit, LEGEND_UNIT_FONT) : 0;
       const full = typesetName(s.name);
       const nameMax = stripW - 19 - 4 - (unitW > 0 ? unitW + 7 : 0);
       let nameRuns = fitRuns(ctx, full, LEGEND_FONT, nameMax);
-      let showUnit = unit !== "";
+      let showUnit = unit.length > 0;
       if (showUnit && nameRuns.length < full.length) {
         // The unit is the part that gives way. Beside a second axis the strip is
         // narrow, and a row whose NAME is cut cannot be matched to a curve at all,
@@ -810,14 +825,11 @@ export function drawPlot(
       }
       ctx.fillStyle = theme.foreground;
       const after = drawRuns(ctx, lx + 19, ly, nameRuns, LEGEND_FONT, theme.foreground);
-      if (showUnit) {
-        ctx.font = `${LEGEND_UNIT_FONT}px sans-serif`;
+      if (showUnit && unit.length > 0) {
         // Muted, and after the name: the unit qualifies the value, it is not part of
-        // the variable's name.
-        // The theme's quiet tone: `axis` is the colour its own labels use, so the unit
-        // recedes the same way the tick values do.
-        ctx.fillStyle = theme.axis;
-        ctx.fillText(unit, after + 7, ly + 1);
+        // the variable's name. The theme's quiet tone: `axis` is the colour its own labels
+        // use, so the unit recedes the same way the tick values do.
+        drawRuns(ctx, after + 7, ly + 1, unit, LEGEND_UNIT_FONT, theme.axis);
       }
       ly += LEGEND_ROW_H;
     }
@@ -881,11 +893,11 @@ export function drawPlot(
     for (const s of visible.slice(0, opts.cursorRows ?? 6)) {
       const v = sampleAt(result.time, s.values, cursorAt);
       if (v === undefined) continue;
-      const unit = s.unit?.trim() ?? "";
+      const unit = s.unit?.trim();
       lines.push({
         shape: "pair",
         name: typesetName(s.name),
-        unit: unit ? formatUnit(unit) : "",
+        unit: unit ? unitRuns(unit) : [],
         value: formatTick(v),
       });
       const split = splitFamilyName(s.name);
@@ -923,7 +935,7 @@ export function drawPlot(
       const eqW = pairs.length > 0 ? measure("= ", font) : 0;
       const width = (line: ReadoutLine) => {
         if (line.shape === "text") return measure(runsText(line.runs), font);
-        const unitW = line.unit ? measure(line.unit, unitFont) + gap : 0;
+        const unitW = line.unit.length > 0 ? runsWidth(ctx, line.unit, unitFont) + gap : 0;
         return runsWidth(ctx, line.name, font) + unitW + gap + eqW + valueW;
       };
       // A long qualified name would otherwise push the box across the plot: the NAME gives
@@ -932,7 +944,7 @@ export function drawPlot(
       const widest = Math.max(...lines.map(width));
       const nameBudget = (line: ReadoutLine) => {
         if (line.shape === "text") return 0;
-        const unitW = line.unit ? measure(line.unit, unitFont) + gap : 0;
+        const unitW = line.unit.length > 0 ? runsWidth(ctx, line.unit, unitFont) + gap : 0;
         const fixed = unitW + gap + eqW + valueW + 2 * padX;
         return Math.max(24, boxMax - fixed);
       };
@@ -965,12 +977,10 @@ export function drawPlot(
         }
         ctx.textAlign = "left";
         const after = drawRuns(ctx, bx + padX, y, line.name, font, theme.foreground);
-        if (line.unit) {
-          ctx.font = `${unitFont}px sans-serif`;
+        if (line.unit.length > 0) {
           // The theme's own quiet tone, as in the legend: a unit qualifies the value, it is
           // not part of the variable's name.
-          ctx.fillStyle = theme.axis;
-          ctx.fillText(line.unit, after + gap, y + 1);
+          drawRuns(ctx, after + gap, y + 1, line.unit, unitFont, theme.axis);
         }
         ctx.font = `${font}px sans-serif`;
         ctx.fillStyle = theme.foreground;
@@ -995,7 +1005,7 @@ export function drawPlot(
  * words (the time, the deltas below the table).
  */
 type ReadoutLine =
-  | { shape: "pair"; name: Run[]; unit: string; value: string }
+  | { shape: "pair"; name: Run[]; unit: Run[]; value: string }
   | { shape: "text"; runs: Run[] };
 
 /** The runs as the one string they read as, for a line that is drawn as text. */

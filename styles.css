@@ -915,6 +915,11 @@ body.modelica-studio-resizing .workspace-leaf-content canvas {
   font-style: italic;
 }
 
+.modelica-studio-field-unit {
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
 .modelica-studio-solve-unit {
   font-family: var(--font-monospace);
   font-size: 13px;
@@ -1384,11 +1389,32 @@ body.modelica-studio-resizing .workspace-leaf-content canvas {
   white-space: nowrap;
 }
 
-/* A subscript in a variable's name: `_rel`, `[i]`. The browser's own `<sub>` sizing is
-   kept — it is a shade larger than the legend's, because the list is where a name is
-   matched rather than skimmed. */
-.modelica-studio-run-sub {
-  font-size: 0.76em;
+/* A subscript in a variable's name: `_rel`, `[i]` — and an exponent in a unit: `m·s-2`.
+   Both are 85% at weight 500. Measured: the subscript's ink goes 7px -> 8px against a 9px
+   base, and an exponent drawn this way 5px -> 6px against the Unicode glyph it replaced,
+   with strokes rather than a hairline. A small stroke at weight 400 in the light theme is
+   where "hard to read" comes from as much as the size is. */
+.modelica-studio-run-sub,
+.modelica-studio-run-sup {
+  font-size: 0.85em;
+  font-weight: 500;
+}
+
+.modelica-studio-run-sup {
+  vertical-align: 0.34em;
+}
+
+/* The unit's own runs sit in the unit's colour; the exponent is not a link. */
+.modelica-studio-series-unit .modelica-studio-run-sup,
+.modelica-studio-field-unit .modelica-studio-run-sup,
+.modelica-studio-solve-unit .modelica-studio-run-sup {
+  color: inherit;
+}
+
+/* Every row sharing the unit under the pointer. Colour, not opacity: the row's dimming
+   means "not drawn" and is already using opacity, so this cannot fight it. */
+.modelica-studio-series-unit.is-same-unit {
+  color: var(--text-accent);
 }
 
 /* The derivative dot, drawn on the run's own box so it sits over the VARIABLE and

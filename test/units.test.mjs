@@ -14,7 +14,7 @@ import path from "node:path";
 import { buildLibs } from "./helpers/build.mjs";
 
 const LIB = buildLibs("units-lib", ["src/view/units.ts"]);
-const { formatUnit } = await import(path.join(LIB, "units.js"));
+const { formatUnit, unitRuns } = await import(path.join(LIB, "units.js"));
 
 test("the symbols a reader writes replace the ones the compiler spells out", () => {
   assert.equal(formatUnit("Ohm"), "Ω", "a resistance");
@@ -60,6 +60,31 @@ test("every unit this vault has produced comes out as expected", () => {
   for (const [input, output] of Object.entries(expected)) {
     assert.equal(formatUnit(input), output, `${input} -> ${output}`);
   }
+});
+
+test("a unit is drawn as runs, so its exponent can be a real size", () => {
+  // The exponent as a Unicode glyph measured 5px of ink at 11px, and no stylesheet could
+  // grow it without growing the unit's letters. A run is a digit the renderer sizes.
+  const shape = (unit) => unitRuns(unit).map((r) => `${r.kind}:${r.text}`).join(" · ");
+  const flat = (unit) => unitRuns(unit).map((r) => r.text).join("");
+
+  assert.equal(shape("m.s-1"), "base:m·s · sup:-1", "the dot is a middot, the exponent is its own run");
+  assert.equal(shape("kg/m3"), "base:kg/m · sup:3");
+  assert.equal(shape("J/(kg.K)"), "base:J/(kg·K)", "no exponent, no superscript run");
+  assert.equal(shape("Ohm"), "base:Ω", "the symbols are replaced here too");
+  assert.equal(shape("uF"), "base:µF");
+  assert.equal(shape("degC"), "base:°C");
+  assert.equal(shape("1/K"), "base:1/K", "the dimensionless numerator keeps its own shape");
+  assert.equal(shape("km2.s-4.A-1.g"), "base:km · sup:2 · base:·s · sup:-4 · base:·A · sup:-1 · base:·g");
+  assert.equal(shape("H2O"), "base:H2O", "digits inside a name are not an exponent");
+  assert.equal(shape("kg^2"), "base:kg^2", "and what is not unit grammar is one plain run");
+  assert.deepEqual(unitRuns(""), [], "nothing to draw for no unit");
+
+  // The runs join back into the flat spelling: that is what makes them copyable, and what
+  // the DOM's textContent amounts to.
+  assert.equal(flat("m.s-1"), "m·s-1");
+  assert.equal(flat("km2.s-4.A-1.g"), "km2·s-4·A-1·g");
+  assert.equal(flat("m.s-1").replace(/-1$/, ""), "m·s", "and the exponent is separable from the unit");
 });
 
 test("a bare number is the dimensionless unit, not an exponent", () => {

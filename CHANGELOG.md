@@ -9,6 +9,23 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ### Changed
 
+- **An exponent is drawn, not spelled.** A unit's exponent was a Unicode glyph — `m·s⁻¹` — which
+  measures 5px of ink at 11px, and no stylesheet can grow it without growing the unit's own
+  letters. The part of the unit that carries its meaning was the smallest thing on the row. It
+  is a run now, at 85% of the unit's size, weight 500, raised: 6px of ink with strokes rather
+  than a hairline. Subscripts went the same way, 0.76em to 0.85em (7px to 8px against a 9px
+  base), on the reasoning that a small stroke at weight 400 in the light theme is where "hard to
+  read" comes from as much as the size is. 100% was rendered and rejected: at the unit's own
+  size an exponent reads as another letter, and only the raise says what it is.
+  `formatUnit` keeps the plain string for tooltips, log lines and anything copied; the runs join
+  back into the flat spelling (`m·s-1`), which is what `data-unit` matches on.
+- **Rows sharing a unit are marked, when you point at one.** The question a column of `kg/s`,
+  `Pa`, `m·s²` raises is "what else is in this unit?", and colouring the column by dimension
+  would have answered it by putting fifty-odd units' worth of hue on screen — against a swatch
+  that already spends colour on which curve is which. It is an interaction instead: point at a
+  row, or tab to one, and every row whose unit matches takes the accent colour on the unit text.
+  Colour rather than opacity, because the row's dimming already means "not drawn".
+
 - **The cursor readout speaks the same language as the legend.** The legend learned to typeset
   a name and carry its unit; the box over the plot still said `orifice.m_flow = 0.9844` while
   the legend beside it said `orifice.m_flow  kg/s`. It is a table now — the name typeset in the

@@ -49,7 +49,7 @@ import {
   type TraceRows,
 } from "./series-tree";
 import { typesetName } from "./typeset";
-import { formatUnit } from "./units";
+import { renderUnit } from "./unit-dom";
 import { describeError } from "../errors";
 import { collectParameters, sweepableParameters } from "./parameters";
 import type { TreeNode as PackageNode } from "../modelica/library";
@@ -2504,8 +2504,14 @@ export class ModelicaStudioView extends ItemView {
     // `T.start` reads better as "T (initial)".
     const label = p.isStart
       ? `${p.name.replace(/\.start$/, "")} (initial)`
-      : p.name + (p.unit ? ` (${formatUnit(p.unit)})` : "");
+      : p.name;
     const el = row.createEl("label", { text: label });
+    // The unit rides beside the name as runs, so an exponent is a real one: `m·s⁻¹` in a
+    // 12px label was the same hairline glyph the trace rows had.
+    if (p.unit) {
+      el.createSpan({ text: " " });
+      renderUnit(el, p.unit, "modelica-studio-field-unit");
+    }
     if (p.comment) el.setAttribute("aria-label", p.comment);
 
     const stored = inst.params[p.name];
@@ -2844,6 +2850,42 @@ export class ModelicaStudioView extends ItemView {
     // it had to be found again.
     list.scrollTop = place.top;
     list.addEventListener("scroll", () => place.remember(list.scrollTop));
+    this.wireUnitMatching(list);
+  }
+
+  /**
+   * Say which other rows share the unit under the pointer.
+   *
+   * Asked for as "unit matching": the question a reader has while scanning a column of
+   * `kg/s`, `Pa`, `m·s⁻²` is "what else is in this unit?", and colouring the whole column by
+   * dimension would have answered it by putting fifty-odd units' worth of hue on screen. So
+   * the marking is an interaction rather than a taxonomy: point at one row, and every row
+   * whose unit matches takes the accent colour — on the unit text, not the row, so it cannot
+   * fight the opacity that says "not drawn".
+   *
+   * Toggled on the spans that are already there rather than by re-rendering: this list is
+   * rebuilt on every check and every keystroke in the filter, and a re-render on pointer
+   * movement would be both wasteful and a way to move the reader's place.
+   *
+   * Keyboard included, because the rows' controls are focusable: the same question is asked
+   * by tabbing to a trace.
+   */
+  private wireUnitMatching(list: HTMLElement): void {
+    if (WIRED_LISTS.has(list)) return;
+    WIRED_LISTS.add(list);
+    const mark = (root: Element | null) => {
+      const unit = root?.querySelector(".modelica-studio-series-unit")?.getAttribute("data-unit") ?? "";
+      for (const span of Array.from(list.querySelectorAll(".modelica-studio-series-unit"))) {
+        span.toggleClass("is-same-unit", unit !== "" && span.getAttribute("data-unit") === unit);
+      }
+    };
+    const rowOf = (target: EventTarget | null) =>
+      target instanceof Element ? target.closest(".modelica-studio-series-row") : null;
+    list.addEventListener("pointerover", (ev) => mark(rowOf(ev.target)));
+    list.addEventListener("pointerleave", () => mark(null));
+    // `focusin` rather than `focus`: it bubbles, so one listener covers every box.
+    list.addEventListener("focusin", (ev) => mark(rowOf(ev.target)));
+    list.addEventListener("focusout", () => mark(null));
   }
 
   /** A group row: what can be opened, and how much is inside it. */
@@ -2909,9 +2951,7 @@ export class ModelicaStudioView extends ItemView {
     // tooltip keeps the compiler's exact spelling, which is the one to copy.
     const unit = series.unit?.trim();
     if (unit) {
-      const label = formatUnit(unit);
-      const span = el.createSpan({ cls: "modelica-studio-series-unit", text: label });
-      span.setAttribute("title", `Unit: ${label}`);
+      renderUnit(el, unit, "modelica-studio-series-unit");
     }
     if (row.node.children.length > 0) this.renderTraceCount(el, row.node, drawn);
   }
@@ -5165,6 +5205,18 @@ export class ModelicaStudioView extends ItemView {
 /** Smallest height the results pane can be dragged to, in pixels. */
 
 /** Components listed per package before the user narrows the search. */
+/**
+ * Lists already listening for a unit match.
+ *
+ * Keyed by the element rather than held on the view, because that is what the listener
+ * belongs to: the list is rebuilt whenever the filter or a checkbox changes, the same element
+ * is reused, and the wiring has to happen once for it. As an instance field this was also one
+ * `Object.create(prototype)` test fixture away from being `undefined` — the fields a class
+ * body initialises are exactly the ones such a fixture skips, and this one hung a whole page
+ * before it was found.
+ */
+const WIRED_LISTS = new WeakSet<HTMLElement>();
+
 const SEARCH_LIMIT = 200;
 
 /** Variables listed before the filter must be used to narrow them. */

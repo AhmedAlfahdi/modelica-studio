@@ -656,17 +656,30 @@ test("the legend typesets a name: subscripts low, the derivative dot above", () 
     arcs.every((a) => a.r < 3),
     "a dot, not a blob"
   );
-  // The unit rides after the name, and the raised exponent is a character rather than
-  // a second font size — so the same string works in the tooltip and the list too.
-  const unit = texts.find((t) => t.label === "m·s⁻¹");
+  // The unit rides after the name, and its exponent is a RUN at a size this chooses.
+  //
+  // It was a Unicode glyph, and this test used to insist on that — one string for the list,
+  // the tooltip and the canvas. The reason is gone: the glyph measured 5px of ink at 11px and
+  // no stylesheet could grow it without growing the unit's letters, so the part of the unit
+  // that carries its meaning was the smallest thing drawn. `m·s` + a raised `-1` at 85% of
+  // the unit's size measures 6px and has strokes.
+  const unitBase = texts.find((t) => t.label === "m·s");
+  const exponent = texts.find((t) => t.label === "-1");
   assert.ok(
-    unit,
-    `the unit is drawn as characters, not as a second font size: ${JSON.stringify(texts.map((t) => t.label))}`
+    unitBase && exponent,
+    `the unit is drawn in runs: ${JSON.stringify(texts.map((t) => t.label))}`
   );
-  assert.ok(unit.x > sub.x, "and after the name it belongs to");
+  assert.ok(unitBase.x > sub.x, "after the name it belongs to");
+  assert.ok(exponent.x > unitBase.x, "with its exponent after its letters");
+  assert.ok(exponent.y < unitBase.y, "raised above the baseline");
+  const px = (t) => Number(/([0-9.]+)px/.exec(t.font)?.[1] ?? 0);
   assert.ok(
-    !texts.some((t) => /^[⁰¹²³⁴⁵⁶⁷⁸⁹⁻]+$/.test(t.label)),
-    "the exponent is never a run of its own: one string works in the list, the tooltip and here"
+    px(exponent) < px(unitBase) && px(exponent) >= px(unitBase) * 0.8,
+    `at 85% of the unit, not a hairline (${exponent.font} against ${unitBase.font})`
+  );
+  assert.ok(
+    /^500 /.test(exponent.font) && /^500 /.test(String(sub.font)),
+    `and at weight 500, because a small stroke at 400 washes out (${exponent.font})`
   );
   assert.equal(
     typesetMod.typesetName("der(damper.v_rel)").filter((r) => r.dot).length,

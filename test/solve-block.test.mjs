@@ -14,7 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runInDom, DOM_PREAMBLE } from "./helpers/dom-runner.mjs";
-import { PLUGIN_CSS, THEME_CSS } from "./helpers/theme-css.mjs";
+import { THEME_VARS, PLUGIN_CSS, THEME_CSS } from "./helpers/theme-css.mjs";
 
 const ROOT = "/mnt/data/projects/Modelica-Plugin";
 
@@ -25,7 +25,7 @@ const HEAD = [
   "",
   "/** The plugin's real stylesheet, against the theme variables it competes with. */",
   "const style = document.createElement('style');",
-  `style.textContent = ${JSON.stringify(THEME_CSS + PLUGIN_CSS)};`,
+  `style.textContent = ${JSON.stringify(THEME_VARS + THEME_CSS + PLUGIN_CSS)};`,
   "document.head.appendChild(style);",
   "",
   "/** One macrotask, so the solve's continuation has run. */",
