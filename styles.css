@@ -1927,7 +1927,14 @@ body.modelica-studio-resizing .workspace-leaf-content canvas {
 }
 
 .mst-code-ln.is-flash {
-  background: var(--text-highlight-bg);
+  /* The line a change just landed on. `--text-highlight-bg` was the highlight variable until
+     Obsidian 1.14, which added the six named highlight colours and stopped DEFINING the old
+     name — it survives only inside the app's own fallback chain
+     (`--highlight-background: var(--text-highlight-bg, var(--highlight-background-yellow))`).
+     Used alone it resolves to nothing, so the flash had no background at all on 1.14. The old
+     name first and the new one as the fallback, which is the app's own expression and works on
+     both. */
+  background: var(--text-highlight-bg, var(--highlight-background-yellow));
 }
 
 .mst-code-ln.has-error {
