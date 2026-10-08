@@ -36,6 +36,10 @@ export interface ParsedClass {
   /** Fully qualified name including enclosing packages. */
   qualifiedName: string;
   extendsTypes: string[];
+  /** Each `extends` clause, verbatim, so it can be written back unchanged. */
+  extendsClauses: string[];
+  /** A `Documentation` annotation, verbatim, when the class has one. */
+  documentation?: string;
   /**
    * A short class definition's target: `type Voltage = Real` gives `Real`.
    *
@@ -306,6 +310,7 @@ class Parser {
       qualifiedName: [...prefix, name].join("."),
       isPartial: modifiers.includes("partial"),
       extendsTypes: [],
+      extendsClauses: [],
       components: [],
       connections: [],
       equations: [],
@@ -354,9 +359,17 @@ class Parser {
       // theme's own colour, and the Help window could not list Blocks at all.
       while (!this.isEof() && !this.at(";")) {
         if (this.at("annotation")) {
+          const docStart = this.peek().start;
           this.dropStack.push(cls.unparsedGraphics);
           this.parseAnnotationInto(cls, null);
           this.dropStack.pop();
+          // Prose the reader wrote about the class. Kept verbatim rather than understood: the
+          // parser has no business reformatting HTML, and dropping it loses documentation that
+          // exists nowhere else.
+          // `peek()` is the `;` that ends the class-level annotation, so the slice is exactly
+          // the annotation text.
+          const slice = this.sourceSlice(docStart, this.peek().start);
+          if (/annotation\s*\(\s*Documentation\b/.test(slice)) cls.documentation = slice.trim();
           break;
         }
         this.next();
@@ -470,6 +483,7 @@ class Parser {
 
       // extends clause
       if (this.at("extends")) {
+        const startOff = this.peek().start;
         this.next();
         const t = this.peek();
         const typeName = this.parseTypeName();
@@ -477,7 +491,11 @@ class Parser {
         void t;
         // Possible modifier `( ... )`
         if (this.at("(")) this.parseModifierAssignments();
-        // Optional annotation
+        // Optional annotation. It belongs to the class (an icon is how a class is drawn), so it
+        // is NOT part of the clause text: writing it back inside the clause as well would
+        // duplicate it.
+        const clauseEnd = this.at("annotation") ? this.peek().start : this.at(";") ? this.peek().end : this.peek().start;
+        cls.extendsClauses.push(this.sourceSlice(startOff, clauseEnd).replace(/\s+/g, " ").trim());
         if (this.at("annotation")) this.parseAnnotationInto(cls, null);
         this.eat(";");
         continue;
@@ -2045,6 +2063,9 @@ export function toDiagramModel(
       params: extractParams(c.modifiers),
       prefixes: declarationPrefixes(c.prefixes),
       suffixDims: c.suffixDims,
+      // `protected` is part of the interface: writing it back as public publishes what the class
+      // was hiding.
+      ...(c.visibility === "protected" ? { visibility: "protected" as const } : {}),
     }));
 
   const components = declared
@@ -2062,17 +2083,37 @@ export function toDiagramModel(
       prefixes: declarationPrefixes(c.prefixes),
       suffixDims: c.suffixDims,
       condition: c.condition,
+      ...(c.visibility === "protected" ? { visibility: "protected" as const } : {}),
     }));
 
-  const known = new Set(components.map((c) => c.id));
-  const connections = cls.connections.filter(
-    (cn) => known.has(cn.from.component) && known.has(cn.to.component)
-  );
+  // EVERY connection is kept. This used to drop any whose endpoints were not components of the
+  // class, which quietly deleted the wiring of a model that connects to a connector of its own:
+  //
+  //   connect(springDamper.flange_b, inertia1.flange_a);
+  //   connect(inertia1.flange_b, flange_b);          <- a bare instance, no component on the left
+  //
+  // The parser records that second form as a port with no component — it is legal, common, and
+  // `serializeConnection` writes it back verbatim — so filtering it here meant the text was right
+  // at the parse and gone by the save. Three of the seven connections in the book's `BasicPlant`,
+  // in a model that still looked plausible afterwards.
+  const nothing = (ref: { component: string; port: string }) => !ref.component && !ref.port;
+  const connections = cls.connections.filter((cn) => !nothing(cn.from) && !nothing(cn.to));
 
   void lookup;
   return {
     name: cls.name,
+    // Classes declared INSIDE this one. The editor writes one class, so it cannot write these:
+    // the save path refuses rather than flatten them into the outer model, which is how a
+    // `package` full of models would become one empty model.
+    ...(cls.nested?.length ? { nestedClasses: cls.nested.map((n) => n.name) } : {}),
     comment: cls.comment,
+    // What the class said about itself. Each of these was parsed and dropped on the way out, so
+    // a model that extends a base class, is `partial`, or draws its own icon came back without
+    // them — the base class being the one that changes what the model IS.
+    ...(cls.isPartial ? { partial: true } : {}),
+    ...(cls.extendsClauses?.length ? { extends: cls.extendsClauses } : {}),
+    ...(cls.icon?.length ? { icon: cls.icon } : {}),
+    ...(cls.documentation ? { documentation: cls.documentation } : {}),
     components,
     variables,
     equations: cls.equations,
@@ -2106,6 +2147,13 @@ const KEPT_PREFIXES = new Set([
   "stream",
   "replaceable",
   "parameter",
+  // `final` is not decoration: it forbids anyone modifying the declaration further down the
+  // hierarchy, so dropping it silently re-opens something the author closed.
+  "final",
+  // Causality, on a declaration or on a connector's member. Dropping it turns a block's output
+  // into a state the outside world can write to.
+  "input",
+  "output",
   "constant",
 ]);
 

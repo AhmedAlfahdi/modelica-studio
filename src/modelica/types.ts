@@ -258,6 +258,13 @@ export interface VariableInstance {
    * does — wrote every declaration back bare. Six of them in one introductory example.
    */
   comment?: string;
+  /**
+   * `protected` when the declaration sits in a protected section.
+   *
+   * The keyword is part of the interface, not decoration: a protected declaration is invisible to
+   * everything that uses the class, and writing it back as public changes what the class offers.
+   */
+  visibility?: "public" | "protected";
   id: string;
   type: string;
   params: Record<string, string>;
@@ -271,6 +278,8 @@ export interface ComponentInstance {
   id: string;
   /** The declaration's comment, as written. See `VariableInstance.comment`. */
   comment?: string;
+  /** `protected` when the declaration sits in a protected section. */
+  visibility?: "public" | "protected";
   /** Fully qualified class name. */
   className: string;
   placement: Placement;
@@ -345,6 +354,44 @@ export interface DiagramModel {
    * empty `equation` section, which OpenModelica rejects as under-determined.
    */
   equations?: string[];
+  /**
+   * Names of classes declared inside this one, when there are any.
+   *
+   * The editor models ONE class, so a class that contains others cannot be written back without
+   * losing them — and a `package` is nothing but nested classes, so writing one would replace a
+   * library with an empty model. The save path refuses while this is non-empty and says so.
+   */
+  nestedClasses?: string[];
+  /**
+   * `partial model`, as written.
+   *
+   * Not decoration: a partial class is not instantiable, so writing it back as complete changes
+   * what the class is and lets something use a model that has no equations of its own.
+   */
+  partial?: boolean;
+  /**
+   * The `extends` clauses, verbatim, one per line.
+   *
+   * A model that extends something without its base class is a different model — the equations,
+   * the parameters and the connectors all come from there. This was parsed and never written, so
+   * every architecture-style model in the book lost it on the first save.
+   */
+  extends?: string[];
+  /**
+   * The class's own `Icon` graphics.
+   *
+   * Kept so the class goes on looking like itself where it is used. Written back as an
+   * `annotation(Icon(...))`, normalised rather than verbatim: the parser already resolves the
+   * graphics into the class's coordinate system.
+   */
+  icon?: Graphic[];
+  /**
+   * A `Documentation` annotation, verbatim.
+   *
+   * The HTML documentation a library author writes. Verbatim because it is prose, and no reader
+   * of this file has any business reformatting it.
+   */
+  documentation?: string;
   /**
    * The `initial equation` section, verbatim.
    *

@@ -31,6 +31,7 @@
  */
 
 import { tokenize, type Token } from "./lexer";
+import { missingTokens } from "./loss";
 import { findClass, parseModelica, toDiagramModel, type ParsedClass } from "./parser";
 import {
   serializeComponent,
@@ -398,6 +399,13 @@ function withDescription(text: string, desc: string | undefined): string {
  */
 export function structureLostBy(source: string, rebuilt: string): string[] {
   const lost: string[] = [];
+  // The general check first, and it is the one that keeps finding things: a list of known-bad
+  // shapes is always one shape behind, and every severe bug this plugin has had was a shape
+  // nobody had thought to list. This compares what the source SAID with what the rewrite says,
+  // token by token, ignoring only annotations.
+  for (const tok of missingTokens(source, rebuilt).slice(0, 5)) {
+    lost.push(`the ${tok} the source had`);
+  }
   try {
     const from = parseModelica(source)[0];
     const to = parseModelica(rebuilt)[0];

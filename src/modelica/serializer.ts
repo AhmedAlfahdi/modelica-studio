@@ -200,22 +200,76 @@ export function serializeDiagram(
   const ind = opts.indent ?? "  ";
   const lines: string[] = [];
 
+  const prefix = model.partial ? "partial " : "";
   const header = model.comment
-    ? `model ${model.name} ${quote(model.comment)}`
-    : `model ${model.name}`;
+    ? `${prefix}model ${model.name} ${quote(model.comment)}`
+    : `${prefix}model ${model.name}`;
   lines.push(header);
+
+  // The base classes, verbatim. Without them the model is not the model: equations, parameters
+  // and connectors all arrive through `extends`, and this line was never written.
+  for (const clause of model.extends ?? []) {
+    lines.push(`${ind}${clause}`);
+  }
+
+  // The class's own Icon, so it goes on looking like itself where it is used. Regenerated from
+  // the parsed graphics — which are already in the class's coordinate system — rather than kept
+  // as text, because an icon is graphics and this file owns how graphics are written.
+  if ((model.icon ?? []).length) {
+    lines.push(`${ind}annotation(Icon(graphics={`);
+    for (const g of model.icon ?? []) lines.push(`${ind}${ind}${serializeGraphic(g)},`);
+    // `}))`, not `))`: the opening brace of `graphics={` has to be closed. Written as `))` the
+    // annotation is not valid Modelica, and the parser then reads the rest of the class as part
+    // of an unbalanced expression — the model came back EMPTY after one save.
+    lines.push(`${ind}}));`);
+  }
+
+  // Documentation is prose and is written back exactly as it was read.
+  if (model.documentation) lines.push(`${ind}${model.documentation}`);
+  if ((model.extends ?? []).length || (model.icon ?? []).length || model.documentation) {
+    lines.push("");
+  }
+
+  // Declarations, public first and protected after, which is the order the grammar allows. A
+  // `protected` section is part of the interface: writing its declarations back as public
+  // publishes what the class was hiding.
+  const publicVars = (model.variables ?? []).filter((v) => v.visibility !== "protected");
+  const protectedVars = (model.variables ?? []).filter((v) => v.visibility === "protected");
+  const publicComps = model.components.filter((c) => c.visibility !== "protected");
+  const protectedComps = model.components.filter((c) => c.visibility === "protected");
 
   // Variable declarations. Emitted without a Placement: a variable has no
   // position, and giving it one is what put three stacked boxes on the canvas.
-  for (const v of model.variables ?? []) {
+  for (const v of publicVars) {
     lines.push(serializeVariable(v, ind));
   }
-  if ((model.variables ?? []).length) lines.push("");
+  if (publicVars.length) lines.push("");
 
   // Component declarations
-  if (model.components.length) {
+  if (publicComps.length) {
     lines.push(`${ind}// Components`);
-    for (const c of model.components) {
+    for (const c of publicComps) {
+      lines.push(
+        ind +
+          serializeComponent(
+            c.className,
+            c.id,
+            c.placement,
+            c.params,
+            c.prefixes,
+            c.suffixDims,
+            c.condition,
+            c.comment
+          )
+      );
+    }
+    lines.push("");
+  }
+
+  if (protectedVars.length || protectedComps.length) {
+    lines.push("protected");
+    for (const v of protectedVars) lines.push(serializeVariable(v, ind));
+    for (const c of protectedComps) {
       lines.push(
         ind +
           serializeComponent(
@@ -235,11 +289,12 @@ export function serializeDiagram(
 
   // Free graphics live in the model's own Diagram layer
   if (model.graphics.length) {
-    lines.push(`${ind}annotation(Diagram(`);
+    lines.push(`${ind}annotation(Diagram(graphics={`);
     for (const g of model.graphics) {
       lines.push(`${ind}${ind}${serializeGraphic(g)},`);
     }
-    lines.push(`${ind}));`);
+    // Same missing brace as the Icon above: `Diagram(graphics={…})`, not `Diagram(…)`.
+    lines.push(`${ind}}));`);
     lines.push("");
   }
 
@@ -289,17 +344,87 @@ export function serializeDiagram(
  * declaration. Writing it as a modifier produced `Real e(e=0.9)`, which is
  * not what the model said.
  */
+/**
+ * Turn modifier entries into the text inside the parentheses.
+ *
+ * `head.rest=value` becomes `head(rest=value)`, and members of the SAME head are gathered into
+ * one set: `head(a=1, b=2)`. Both writers need this and only one had it, so a record variable
+ * declared `Complex s(re(final unit="1"), im(final unit="1"))` — MSL's quasi-static switches,
+ * and every machine in `Electrical.QuasiStatic` — came back as `s(re.final unit="1")`, which is
+ * not Modelica: `final unit` is a modifier prefix and its member, not an identifier, so the
+ * dotted form cannot express it while the parenthesised one is exactly what was written.
+ *
+ * A `head` that also has a plain value is ONE declaration with a binding —
+ * `p_ambient(displayUnit="bar") = 101325` — because emitting them separately reads as two
+ * modifiers, and the round trip lost the value.
+ */
+/**
+ * Fold a valueless modifier into the member it prefixes.
+ *
+ * `parameter Integer m(final min=1) = 3` parses to `{final: "", min: "1", m: "3"}`: a modifier
+ * prefix is written without a value, so the parser records it as a key with an empty one. Both
+ * writers skipped empty values — reasonably, they are usually nothing — and every `final` in
+ * the class went with them. MSL's machine models have seven in one class, and each is a
+ * modification the author forbade.
+ *
+ * Only the known prefixes are folded. An empty value that is not one of these stays as it was:
+ * a key with no value and no meaning is not something to invent one for.
+ */
+const MODIFIER_PREFIXES = new Set(["final", "each", "redeclare"]);
+function mergeModifierPrefixes(entries: Array<[string, string]>): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  let pending = "";
+  for (const [k, v] of entries) {
+    if (v === "" && MODIFIER_PREFIXES.has(k)) {
+      pending = pending ? `${pending} ${k}` : k;
+      continue;
+    }
+    out.push([pending ? `${pending} ${k}` : k, v]);
+    pending = "";
+  }
+  if (pending) out.push([pending, ""]);
+  return out;
+}
+
+function renderModifiers(entries: Array<[string, string]>): string {
+  const nested = new Map<string, string[]>();
+  const plain: Array<[string, string]> = [];
+  for (const [k, v] of mergeModifierPrefixes(entries)) {
+    const dot = k.indexOf(".");
+    if (dot < 0) {
+      plain.push([k, v]);
+      continue;
+    }
+    const head = k.slice(0, dot);
+    const list = nested.get(head) ?? [];
+    list.push(`${k.slice(dot + 1)}=${v}`);
+    nested.set(head, list);
+  }
+  const parts: string[] = [];
+  for (const [k, v] of plain) {
+    const members = nested.get(k);
+    if (members) {
+      parts.push(`${k}(${members.join(", ")}) = ${v}`);
+      nested.delete(k);
+      continue;
+    }
+    parts.push(`${k}=${v}`);
+  }
+  for (const [head, members] of nested) parts.push(`${head}(${members.join(", ")})`);
+  return parts.join(", ");
+}
+
 export function serializeVariable(v: VariableInstance, indent = ""): string {
-  const entries = Object.entries(v.params).filter(
-    ([, value]) => value !== undefined && value !== null && value !== ""
-  );
+  const entries = mergeModifierPrefixes(
+    Object.entries(v.params).filter(([, value]) => value !== undefined && value !== null)
+  ).filter(([, value]) => value !== "");
   const binding = entries.find(([k]) => k === "=" || k === v.id);
   const mods = entries.filter(([k]) => k !== "=" && k !== v.id);
   // BOTH, when a declaration has both: `parameter Real x(unit = "V") = 5` is a
   // modifier list AND a binding. Emitting only the binding silently dropped the
   // unit, which is a quiet loss rather than a loud one -- the model still
   // compiled, with the wrong declaration.
-  const modList = mods.length ? `(${mods.map(([k, value]) => `${k}=${value}`).join(", ")})` : "";
+  const modList = mods.length ? `(${renderModifiers(mods)})` : "";
   const tail = binding ? `${modList}=${binding[1]}` : modList;
   const pre = v.prefixes?.length ? `${v.prefixes.join(" ")} ` : "";
   // The declaration's comment, which this never wrote: a rebuild stripped every one of them,
@@ -374,7 +499,7 @@ export function serializeComponent(
 
   const nested = new Map<string, string[]>();
   const plain: Array<[string, string]> = [];
-  for (const [k, v] of Object.entries(params)) {
+  for (const [k, v] of mergeModifierPrefixes(Object.entries(params))) {
     if (v === undefined || v === null || v === "") continue;
     if (isRedeclarePackage && (k === "Medium" || k === "redeclare" || k === "package")) continue;
     // The mark itself, and the id-keyed copy of the SAME binding when there is one. With no
@@ -456,9 +581,21 @@ export function serializeConnection(
 
 /** Remove the common leading whitespace from a block of lines. */
 function dedent(lines: string[]): string[] {
+  // The FIRST line is skipped when the common indent is measured, and that is the whole point of
+  // this function. A captured statement starts at its first token, so line one has no indent of
+  // its own; including it makes the minimum zero, nothing is dedented, and every line but the
+  // first gains `ind` on each save. Writing a `for` loop twice moved its body two spaces right
+  // each time — the file churned forever and the diff grew without bound. Measured on the book's
+  // `Rod_ForLoop`: `    end for;` came back as `      end for;`.
   const indents = lines
+    .slice(1)
     .filter((l) => l.trim().length > 0)
     .map((l) => /^[ \t]*/.exec(l)![0].length);
   const common = indents.length ? Math.min(...indents) : 0;
-  return common ? lines.map((l) => (l.length >= common ? l.slice(common) : l)) : lines;
+  // Line one is left alone as well: it has no indent of its own, so slicing it removes its first
+  // `common` CHARACTERS. That turned `for i in 2:(n-1) loop` into `r i in 2:(n-1) loop` and
+  // `k[1]*C[1]*C[2]` into `[1]*C[1]*C[2]` — a corrupt file, not a cosmetic one.
+  return common
+    ? lines.map((l, i) => (i === 0 || l.length < common ? l : l.slice(common)))
+    : lines;
 }

@@ -7,6 +7,40 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+### Added
+
+- **A corpus test: parse → write → parse, over the standard library, this vault and the plugin's
+  own examples**, asserting the only property that matters to someone whose file is being
+  rewritten — **no loss may be silent**. Either the writer keeps what the source said, or
+  `structureLostBy` reports that a rebuild would not write it, and the save path leaves the file
+  alone. The comparison is a multiset of identifiers, keywords, numbers and string contents,
+  annotations excluded, because a list of known-bad constructs is always one construct behind.
+  It replaces guesswork with measurement, and it is calibrated against a synthetic loss so it
+  cannot pass by measuring nothing.
+
+### Fixed
+
+- **Nine ways the writer lost part of a model**, every one of them found by the sweep above and
+  every one of them silent:
+  - a `connect` whose endpoint is a connector of the class itself (`connect(inertia1.flange_b,
+    flange_b)`) was parsed as a port with no component and then **dropped**: three of the seven
+    connections in the book's `BasicPlant` disappeared, and the model still looked plausible.
+  - `protected` sections were never written, so every protected declaration was published.
+  - `partial` was never written: a class that is not instantiable came back instantiable.
+  - `extends` was never written — **a model lost its base class**, and with it the equations,
+    parameters and connectors it inherits.
+  - the class's own `Icon` was never written, so a model stopped looking like itself wherever it
+    is used; the `Diagram` annotation beside it was written with a missing brace, which is not
+    valid Modelica.
+  - `final` on a modifier (`parameter Integer m(final min=1) = 3`) was dropped, because a modifier
+    prefix parses as a key with no value and both writers skipped empty values.
+  - `input` and `output` were dropped from declarations.
+  - a modifier prefix inside a nested modification (`s(re(final unit="1"))`) was written as
+    `s(re.final unit="1")`, which is not Modelica.
+  - writing a statement twice shifted its continuation lines two spaces right every time — 839 of
+    2801 classes had a write that was not a fixed point. `dedent` measured the common indent
+    including the statement's first line, which never carries one, so nothing was dedented.
+
 ### Fixed
 
 - **A parameter is not a box on the diagram.** Reported as "a lot of useless blocks that almost
