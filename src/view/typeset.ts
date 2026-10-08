@@ -49,10 +49,45 @@ const UNSUPPORTED = /[']|previous\(/;
  * The runs a name is drawn as, or a single plain run when it is not a shape this
  * understands.
  */
-export function typesetName(name: string): Run[] {
+/**
+ * How a derivative is written, because a dot is drawn by hand and lands where the font cannot
+ * help it.
+ *
+ * The plugin has no glyph outlines, only `measureText`, so a dot over a run is placed by
+ * arithmetic: the centre of the run's advance width, above its cap height. That is right for a
+ * single narrow letter and wrong for anything else — `gamma` puts the dot over the middle of
+ * five glyphs, `T` needs it above the cap where a small dot reads as a speck, and a run with a
+ * subscript has no single centre at all. A reader reported exactly that, with a plot full of
+ * them.
+ *
+ * So the notation is a choice, and the default is the one that cannot go wrong:
+ *
+ *  - `prime` — `V'`, `V''`. A spacing character beside the letter, not an anchor over it, so
+ *    every font draws it and every measurement counts it. Newton's own notation.
+ *  - `der` — `der(V)`. What the model and the trace list say, so the legend and the list agree
+ *    and a name can be grepped for.
+ *  - `leibniz` — `dV/dt`. Names the variable being differentiated against, which is what makes
+ *    it unambiguous on a plot of things that are not all time derivatives.
+ *  - `dot` — `V̇`. The convention the plugin used first, kept for anyone who wants the look and
+ *    does not mind where the dot lands.
+ */
+export type DerivativeNotation = "dot" | "prime" | "der" | "leibniz";
+
+let notation: DerivativeNotation = "prime";
+
+/** Set the notation every name is drawn in. Called when the setting loads or changes. */
+export function setDerivativeNotation(next: DerivativeNotation): void {
+  notation = next;
+}
+
+export function derivativeNotation(): DerivativeNotation {
+  return notation;
+}
+
+export function typesetName(name: string, mode: DerivativeNotation = notation): Run[] {
   if (UNSUPPORTED.test(name)) return [{ text: name, kind: "base" }];
 
-  // Peel the derivatives first: the dots belong to what is inside.
+  // Peel the derivatives first: what they modify is what is inside.
   let dots = 0;
   let inner = name;
   for (;;) {
@@ -61,6 +96,10 @@ export function typesetName(name: string): Run[] {
     dots++;
     inner = wrapped[1];
   }
+
+  // `der(V)` is already what the source says: drawn as it stands, which is also the one
+  // notation whose legend can be typed into the filter.
+  if (dots > 0 && mode === "der") return [{ text: name, kind: "base" }];
 
   const runs: Run[] = [];
   const parts = inner.split(".");
@@ -84,11 +123,25 @@ export function typesetName(name: string): Run[] {
   });
 
   if (dots > 0) {
-    // Over the last thing that is a variable, not over its subscript.
-    for (let i = runs.length - 1; i >= 0; i--) {
-      if (runs[i].kind === "base") {
-        runs[i] = { ...runs[i], dot: dots };
-        break;
+    const last = (() => {
+      for (let i = runs.length - 1; i >= 0; i--) if (runs[i].kind === "base") return i;
+      return -1;
+    })();
+    if (last >= 0) {
+      if (mode === "prime") {
+        // A tick BESIDE the letter. ASCII, not U+2032: the legend is drawn on a canvas in the
+        // reader's own font, and an apostrophe is in every one of them.
+        runs[last] = { ...runs[last], text: runs[last].text + "'".repeat(dots) };
+      } else if (mode === "leibniz") {
+        // `dV/dt`, or `d²V/dt²` — the order rides on the `d`, where a superscript already goes.
+        const base = runs[last].text;
+        runs[last] = { ...runs[last], text: base };
+        runs.splice(last, 0, { text: "d", kind: "sep" });
+        runs.push({ text: "/dt", kind: "sep" });
+        if (dots > 1) runs.splice(last + 1, 0, { text: String(dots), kind: "sup" });
+      } else {
+        // Over the last thing that is a variable, not over its subscript.
+        runs[last] = { ...runs[last], dot: dots };
       }
     }
   }

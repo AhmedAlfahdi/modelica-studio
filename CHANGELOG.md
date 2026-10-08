@@ -5,6 +5,19 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). From 1.0.0 a change
 that breaks a model, a setting or a note is a major version.
 
+## [1.1.0] — 2026-10-08
+
+### Added
+
+- **A choice of derivative notation: `V'`, `der(V)`, `dV/dt` or `V̇`.** The Newton dot is
+  *drawn* by the plugin — it has no glyph outlines, only the run's advance width — so it lands
+  in the middle of `gamma`, too low over a tall `T`, and nowhere in particular on a name with a
+  subscript. A prime is a character beside the letter: the font places it and the measurement
+  counts it, which is why it is now the default. `der(V)` is the name as the model and the trace
+  list write it, so a legend label can be typed into the filter; `dV/dt` names what is being
+  differentiated against; `V̇` is there for anyone who wants the look. Settings → Derivative
+  notation.
+
 ## [1.0.0] — 2026-10-08
 
 **1.0.** The interface is settled: what this release does, it does on purpose, and the limits below are the ones that are left rather than the ones nobody has looked for. The version stops moving by default — a change that breaks a model, a setting or a note will now be a major version, not a patch.

@@ -588,6 +588,15 @@ test("a trace wide enough to fill the plot is drawn under the quiet ones", () =>
 });
 
 test("the legend typesets a name: subscripts low, the derivative dot above", () => {
+  // The DOT notation, asked for before anything is drawn: it is a choice now, and the default is
+  // a prime — a character the font places rather than a mark this plugin positions.
+  // Through the PLOT module: it is bundled on its own here, so setting it on the typeset module
+  // the test imported would set it on a copy, and the legend would go on drawing primes.
+  // BOTH copies of the module. Every file is bundled on its own in this test build, so the
+  // legend draws through one copy of the typeset module and this test's own `typesetName` calls
+  // reach another; setting one and asserting on the other is how this failed twice.
+  plotMod.setDerivativeNotation("dot");
+  typesetMod.setDerivativeNotation("dot");
   // The legend is where a curve is READ, so it says `damper.s_rel` as a subscript and
   // `der(damper.s_rel)` as a dotted `s`. The trace LIST keeps plain names — it is an
   // identifier surface — so this is the one place the two spellings differ, on purpose.
@@ -1212,6 +1221,14 @@ test("the cursor readout is sized by its own setting, box and all", () => {
 });
 
 test("the readout says a variable the way the legend does, with its unit", () => {
+  // Same notation as the legend test: the dot this one reads is drawn, not typed.
+  // Through the PLOT module: it is bundled on its own here, so setting it on the typeset module
+  // the test imported would set it on a copy, and the legend would go on drawing primes.
+  // BOTH copies of the module. Every file is bundled on its own in this test build, so the
+  // legend draws through one copy of the typeset module and this test's own `typesetName` calls
+  // reach another; setting one and asserting on the other is how this failed twice.
+  plotMod.setDerivativeNotation("dot");
+  typesetMod.setDerivativeNotation("dot");
   // Reported from a screenshot of the two side by side: the legend had learned to typeset
   // names and carry units, and the box over the plot had not. One said
   // `orifice.m_flow  kg/s` and the other said `orifice.m_flow = 0.9844`.

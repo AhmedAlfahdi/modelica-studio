@@ -219,10 +219,11 @@ async function cropToScene(win, image, rect) {
 }
 app.whenReady().then(async () => {
   // A watchdog: a scene that never resolves should fail the run, not hang it.
-  // Three minutes, not one. The guard exists so a scene that never resolves fails instead of
-  // hanging, and the run got longer: each solve block is a real OpenModelica initialisation
-  // before the page is even loaded.
-  const guard = setTimeout(() => { console.log("TIMED OUT waiting for a scene"); app.exit(1); }, 180000);
+  // Five minutes. The guard exists so a scene that never resolves fails instead of hanging, and
+  // the run keeps getting longer: each solve block is a real OpenModelica initialisation before
+  // the page is loaded, and 180s was close enough to the real duration to fail one run in three
+  // — which reads as a broken scene rather than a slow one.
+  const guard = setTimeout(() => { console.log("TIMED OUT waiting for a scene"); app.exit(1); }, 300000);
   void guard;
   // Shown, and not offscreen. Both alternatives fail for the images that matter here:
   // in offscreen mode capturePage returns an empty surface for anything drawn into a

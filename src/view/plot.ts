@@ -11,6 +11,14 @@
 import type { SimResult, SimSeries } from "../omc/backend";
 import { planAxes, type AxisPlan } from "./axes";
 import { typesetName, type Run } from "./typeset";
+
+/**
+ * The notation the legend and the readout draw in, re-exported.
+ *
+ * So a caller that draws through this module can set it on the SAME instance: a test build, and
+ * any consumer that bundles this file on its own, would otherwise set it on a copy.
+ */
+export { setDerivativeNotation, derivativeNotation, type DerivativeNotation } from "./typeset";
 import { unitRuns } from "./units";
 
 export interface SeriesStyle {

@@ -8,6 +8,7 @@
 
 import { Notice, PluginSettingTab, SecretComponent, Setting, type TextComponent } from "obsidian";
 import type ModelicaStudioPlugin from "./main";
+import { setDerivativeNotation, type DerivativeNotation } from "./view/typeset";
 import { FolderSuggest } from "./view/folder-suggest";
 // The snap distance is defined by the plot, which has to clamp whatever it is
 // given: the slider offers exactly the range the plot will honour, so the number
@@ -25,6 +26,7 @@ import {
   resetPreferences,
   STROKE_SCALE_MAX,
   STROKE_SCALE_MIN,
+  DERIVATIVE_NOTATIONS,
 } from "./settings-merge";
 import { confirm } from "./view/confirm";
 
@@ -653,6 +655,33 @@ export class ModelicaStudioSettingTab extends PluginSettingTab {
     // is a single scale — a connector asking for 0.5 draws a double line, and a
     // graphic asking for 0.5 draws the same weight — so the numbers mean the same
     // thing on both sliders, and linking them keeps the library's ratio.
+    new Setting(containerEl)
+      .setName("Derivative notation")
+      .setDesc(
+        "How der(x) is written in a plot legend and in the readout. The Newton dot is drawn " +
+          "by this plugin from the text's width alone, so it sits off-centre over a wide name " +
+          "like gamma or a tall one like T; a prime is a character beside the letter, which " +
+          "the font places and the measurement counts. The model and the trace list are not " +
+          "affected either way."
+      )
+      .addDropdown((d) => {
+        for (const option of DERIVATIVE_NOTATIONS) d.addOption(option.id, option.label);
+        d.setValue(this.plugin.settings.derivativeNotation);
+        const hint = containerEl.createDiv({ cls: "modelica-studio-muted" });
+        const show = (id: string) =>
+          hint.setText(DERIVATIVE_NOTATIONS.find((s) => s.id === id)?.hint ?? "");
+        show(this.plugin.settings.derivativeNotation);
+        d.onChange(async (v) => {
+          this.plugin.settings.derivativeNotation = v as DerivativeNotation;
+          setDerivativeNotation(v as DerivativeNotation);
+          show(v);
+          await this.plugin.saveSettings();
+          // The legend is drawn on a canvas, so it has to be told.
+          this.plugin.getView()?.refreshPlot();
+          this.plugin.refreshEmbeds();
+        });
+      });
+
     const strokeCommit = async () => {
       await this.plugin.saveSettings();
       this.plugin.getView()?.refreshDiagram();

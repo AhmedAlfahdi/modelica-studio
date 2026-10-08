@@ -42,6 +42,7 @@ import {
 } from "./view/embed";
 import { createBackend, SimulationError, type SimulationBackend } from "./omc/backend";
 import { SolveBlock, starterSolveSource } from "./view/solve-block";
+import { setDerivativeNotation } from "./view/typeset";
 import { detectOmc, installHint, type OmcInstallation } from "./omc/locate";
 import { appendCappedLine, logLine } from "./log-file";
 import { emptyDiagram, type DiagramModel } from "./modelica/types";
@@ -1152,6 +1153,9 @@ export default class ModelicaStudioPlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    // Before anything is drawn: the legend reads this, and a plot rendered with the previous
+    // session's notation and corrected later is a flash of the wrong label.
+    setDerivativeNotation(this.settings.derivativeNotation);
     // Move an old plaintext key into the keychain before anything can use it.
     await this.migrateLegacyAiKey();
     this.diag("ai: " + describeSecretPresence(this.app, secretNameOf(this.settings.ai)));

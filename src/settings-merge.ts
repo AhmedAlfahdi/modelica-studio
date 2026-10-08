@@ -1,4 +1,5 @@
 import { AI_DEFAULTS } from "./ai/prompts";
+import type { DerivativeNotation } from "./view/typeset";
 import type { AiConfig } from "./ai/prompts";
 
 /**
@@ -33,6 +34,35 @@ export interface ChartState {
  * wrong once in a way nothing else could catch.
  */
 
+/**
+ * The derivative notations offered, in the order the setting lists them.
+ *
+ * `prime` first because it is the default: it is the only one that cannot be drawn wrong, since
+ * it is a character beside the letter rather than a mark placed over it by arithmetic.
+ */
+export const DERIVATIVE_NOTATIONS: Array<{ id: DerivativeNotation; label: string; hint: string }> = [
+  {
+    id: "prime",
+    label: "V' — prime",
+    hint: "der(V) is drawn as V'. A character beside the letter, so it is positioned by the font and measured with the name.",
+  },
+  {
+    id: "der",
+    label: "der(V) — as written",
+    hint: "The name as the model and the trace list write it, so the legend and the list agree and the label can be typed into the filter.",
+  },
+  {
+    id: "leibniz",
+    label: "dV/dt — Leibniz",
+    hint: "Names the variable being differentiated against. Wider, and the clearest where not everything plotted is a time derivative.",
+  },
+  {
+    id: "dot",
+    label: "V̇ — dot",
+    hint: "The Newton dot, placed over the letter. Every font draws the letter, but the dot is positioned by this plugin: over a wide name it can sit off-centre.",
+  },
+];
+
 export interface ModelicaStudioSettings {
   /**
    * The plugin version whose notes have been shown, so they are shown once.
@@ -63,6 +93,15 @@ export interface ModelicaStudioSettings {
 
   /** Palette packages, in display order. */
   paletteRoots: string[];
+
+  /**
+   * How a derivative is written in a plot legend: `V'`, `der(V)`, `dV/dt` or `V̇`.
+   *
+   * A display choice rather than a modelling one — the model is untouched — and it exists
+   * because the Newton dot is drawn by this plugin from `measureText` alone, which puts it
+   * off-centre over anything wider than a single letter.
+   */
+  derivativeNotation: DerivativeNotation;
 
   /**
    * Vault folder that models are saved into, relative to the vault root.
@@ -323,6 +362,8 @@ export const DEFAULT_SETTINGS: ModelicaStudioSettings = {
   tolerance: 1e-6,
   solver: "",
   paletteRoots: [],
+  // `prime`: the only notation whose mark is placed by the font rather than by this plugin.
+  derivativeNotation: "prime",
   modelFolder: "Modelica",
   modelFiles: {},
   excludedLibraries: "",

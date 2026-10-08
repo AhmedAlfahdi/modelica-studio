@@ -839,7 +839,10 @@ test("the variables are folded into the components their names describe", async 
   // is already drawn under the cursor.
   assert.equal(
     d["a name is drawn as runs: subscripts low, a derivative dotted"],
-    "sub=flow label=motor.internalThermalPort.heatPortPermanentMagnet.Q_flow dots=1 text=phiMechanical",
+    // `dots=NONE` and a trailing prime: the derivative notation is a setting, and the default is
+    // a prime because a dot is drawn by this plugin from the run's width alone while a prime is
+    // placed by the font. The dot's own shapes are asserted in `typeset.test.mjs`.
+    "sub=flow label=motor.internalThermalPort.heatPortPermanentMagnet.Q_flow dots=NONE text=phiMechanical'",
     "the same tokenizer the legend uses, so the two surfaces agree"
   );
   assert.equal(
