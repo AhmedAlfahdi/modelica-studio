@@ -9,6 +9,16 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ### Fixed
 
+- **The tab names the model that is open.** Reported as two titles at the top, the tab's being
+  the wrong one: it said `FluidPipe` above a header that said `NewtonCooling`. Both read the same
+  model name, but the TAB's label lives in Obsidian's leaf, which re-reads `getDisplayText` only
+  when `updateHeader` is called — and only `refreshChrome` did that, while loading an example or
+  a model from the list goes through the status path, which refreshed the header alone. That path
+  already carried a comment about a three-way mismatch of tab, header and canvas from an earlier
+  round; the leaf was the piece it still did not touch.
+
+### Fixed
+
 - **An `initial equation` stays an initial equation, and a declaration keeps its comment.** Asked
   as "why is this not working", with an introductory Newton-cooling model — and the answer was
   that the plugin rewrote the file as a different model. `initial equation` was read as an

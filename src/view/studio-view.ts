@@ -5027,7 +5027,13 @@ export class ModelicaStudioView extends ItemView {
     // HeatExchanger.mo, and the canvas held RLC, because loading an example wrote a status
     // line without touching either of them. `refreshTitle` does not write the status, so
     // this cannot recurse.
+    //
+    // The LEAF has to be told as well, and was not: loading an example or a model from the
+    // list goes through here, and only `refreshChrome` asked Obsidian to re-read the tab's
+    // label. So the tab kept the previous model — FluidPipe, in the report — while the header
+    // beside it named the one that was actually open.
     this.refreshTitle();
+    this.refreshLeafTitle();
   }
 
   // `setBusy` and `setButtonBusy` are imported from `./busy`, so the studio and an
@@ -5119,8 +5125,19 @@ export class ModelicaStudioView extends ItemView {
   private refreshChrome(): void {
     this.renderStatus();
     this.refreshTitle();
-    // The tab's label comes from `getDisplayText`, and Obsidian renders a header when it
-    // chooses. This asks it to; the method is internal, so calling it is optional.
+    this.refreshLeafTitle();
+  }
+
+  /**
+   * Ask Obsidian to re-read `getDisplayText`, which is where the TAB's label comes from.
+   *
+   * Its `updateHeader` does `tabHeaderInnerTitleEl.setText(this.getDisplayText())` — the label is
+   * re-read on request and cached otherwise. The method is internal, so calling it is optional
+   * and every call site has to remember: this one exists because two of them did not, and the
+   * tab kept naming the model that had been open before while the header named the one on
+   * screen. Reported as two titles at the top, the tab's being the wrong one.
+   */
+  private refreshLeafTitle(): void {
     const leaf = this.leaf as unknown as { updateHeader?: () => void };
     leaf?.updateHeader?.();
   }

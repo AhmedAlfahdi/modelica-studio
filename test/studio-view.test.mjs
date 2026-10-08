@@ -138,7 +138,13 @@ const MOUNT_SETUP = [
   "  adoptModel: () => {}, setModelFromSource: () => {}, persist: () => {}, promptNewModel: () => {},",
   "  showSetupHelp: () => {},",
   "};",
-  "const view = new ModelicaStudioView({}, plugin);",
+  "// A leaf that records `updateHeader`, which is what re-reads `getDisplayText` for the tab.",
+  "let leafUpdates = 0;",
+  "const leaf = { updateHeader: () => { leafUpdates++; } };",
+  "const view = new ModelicaStudioView(leaf, plugin);",
+  "// The stub's `ItemView` does not keep the leaf, and the view reaches for `this.leaf` to ask",
+  "// Obsidian to relabel the tab. Set here, as `app` and `containerEl` are just below.",
+  "view.leaf = leaf;",
   "view.app = app;",
   "view.containerEl = document.body.createDiv();",
   "view.contentEl = view.containerEl.createDiv();",
@@ -173,6 +179,17 @@ test("the header follows the model that is open, and the tab names it", async ()
       "window.test('mount', () => mountError || firstHeader);",
       "window.test('after loading another model', () => loadError || secondHeader);",
       "window.test('and the tab label names the model', () => view.getDisplayText());",
+      "window.test('and Obsidian is asked to relabel the tab', () => {",
+      // The gap this test had: it read the header and `getDisplayText`, both of which were
+      // right, while the TAB kept the previous model. The label lives in the leaf, and the
+      // leaf only re-reads it when `updateHeader` is called — on the status path it was not,
+      // so the tab said FluidPipe above a header that said NewtonCooling.
+      "  leafUpdates = 0;",
+      "  plugin.model = { name: 'FluidPipe', components: [], connections: [], equations: [] };",
+      "  plugin.settings.modelFiles.FluidPipe = 'Modelica/FluidPipe.mo';",
+      "  view.setStatus('Loaded example: FluidPipe');",
+      "  return 'updates=' + leafUpdates + ' label=' + view.getDisplayText();",
+      "});",
       "window.test('a status line refreshes it too', () => {",
       // Loading an example writes a status line and nothing else. The header used to keep
       // the previous model through that, which is how a reader ended up looking at RLC on a
@@ -202,6 +219,11 @@ test("the header follows the model that is open, and the tab names it", async ()
     "and it follows the model when another one is loaded -- the bug was that it did not"
   );
   assert.equal(by["and the tab label names the model"], "Modelica Studio — TankOrifice");
+  assert.equal(
+    by["and Obsidian is asked to relabel the tab"],
+    "updates=1 label=Modelica Studio — FluidPipe",
+    "the leaf is told, so the tab and the header cannot disagree"
+  );
   assert.equal(
     by["a status line refreshes it too"],
     "RLC | Modelica/RLC.mo | modified",
