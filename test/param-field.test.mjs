@@ -275,9 +275,12 @@ const HEAD = [
   "    .filter((f) => f.querySelector('label').textContent !== 'Instance name');",
   "  const described = fields.map((f) => {",
   "    const input = f.querySelector('input');",
+  "    // A unit with alternatives is a picker now; one without is the boxed chip it always was.",
   "    const chip = f.querySelector('.modelica-studio-param-unit.is-fixed');",
+  "    const picker = f.querySelector('select.modelica-studio-param-unit');",
+  "    const control = picker ? '<' + picker.value + '>' : chip ? '{' + chip.textContent + '}' : '';",
   "    return f.querySelector('label').textContent + '=' + JSON.stringify(input.value)",
-  "      + '[' + (input.placeholder || '-') + ']' + (chip ? '{' + chip.textContent + '}' : '');",
+  "      + '[' + (input.placeholder || '-') + ']' + control;",
   "  });",
   "  return described.join(' ') + ' | T_is_not_a_parameter=' + (fields.length === 3);",
   "});",
@@ -360,7 +363,7 @@ test("a parameter field with a unit picker keeps its shape", async () => {
   );
   assert.equal(
     d["a model with no components offers its own parameters"],
-    'T_inf=""[No value — the model will not run]{K} T0="363.15"[-]{K} h="0.7"[-] | T_is_not_a_parameter=true',
+    'T_inf=""[No value — the model will not run]<K> T0="363.15"[-]<K> h="0.7"[-] | T_is_not_a_parameter=true',
     "the model's own parameters, unbound ones saying so, units where the compiler knows them"
   );
   assert.equal(

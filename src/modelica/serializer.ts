@@ -206,6 +206,13 @@ export function serializeDiagram(
     : `${prefix}model ${model.name}`;
   lines.push(header);
 
+  // Imports first, as a class writes them: they are what the rest of the file means by its
+  // short names. Dropped, `D.Interfaces.Strength` is an undefined class and the model does not
+  // build.
+  for (const clause of model.imports ?? []) {
+    lines.push(`${ind}${clause}`);
+  }
+
   // The base classes, verbatim. Without them the model is not the model: equations, parameters
   // and connectors all arrive through `extends`, and this line was never written.
   for (const clause of model.extends ?? []) {
@@ -226,6 +233,7 @@ export function serializeDiagram(
 
   // Documentation is prose and is written back exactly as it was read.
   if (model.documentation) lines.push(`${ind}${model.documentation}`);
+  if ((model.imports ?? []).length) lines.push("");
   if ((model.extends ?? []).length || (model.icon ?? []).length || model.documentation) {
     lines.push("");
   }

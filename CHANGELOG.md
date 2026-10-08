@@ -9,6 +9,26 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ### Added
 
+- **A unit picker on a model's own parameters**, the same control a component's parameter has:
+  the field shows the value in the chosen unit and typing is read in it, and the choice is
+  recorded as `displayUnit` on the declaration. A model like the book's `NewtonCooling` is six
+  parameters and an equation, so this is the panel.
+- **`Medium.X` parameters resolve their unit**, through the redeclare the instance itself names:
+  `pipe(redeclare package Medium = Modelica.Media.Water.StandardWater)` makes `Medium.
+  AbsolutePressure` the fluid's own type, and `MassFlowRate` is declared in
+  `PartialMedium` — inherited, so the walk follows `extends`, not just the package path. Every
+  such parameter showed no unit until a run.
+
+### Fixed
+
+- **`import` clauses are kept and written back.** They were skipped by the parser and never
+  written, so a class using a renamed alias — `import D = Modelica.Electrical.Digital;` — could
+  not be rewritten at all: the guard refused, correctly, because dropping the import leaves every
+  aliased name in the file undefined. They are kept verbatim, written first in the class body,
+  and consulted when resolving a type's unit.
+
+### Added
+
 - **A corpus test: parse → write → parse, over the standard library, this vault and the plugin's
   own examples**, asserting the only property that matters to someone whose file is being
   rewritten — **no loss may be silent**. Either the writer keeps what the source said, or

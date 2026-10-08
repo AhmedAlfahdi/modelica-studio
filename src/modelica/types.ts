@@ -363,6 +363,14 @@ export interface DiagramModel {
    */
   nestedClasses?: string[];
   /**
+   * `import` clauses, verbatim, one per line.
+   *
+   * Written back before anything else in the class body. Without them every aliased type name in
+   * the file is undefined, which is why the save path refuses to rebuild a class that has them
+   * rather than dropping them.
+   */
+  imports?: string[];
+  /**
    * `partial model`, as written.
    *
    * Not decoration: a partial class is not instantiable, so writing it back as complete changes

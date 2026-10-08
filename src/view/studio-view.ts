@@ -2527,17 +2527,45 @@ export class ModelicaStudioView extends ItemView {
       this.result?.declaredUnits?.[v.id]?.trim() ||
       this.unitsOfDeclaredType(v.type).unit?.trim() ||
       "";
-    if (unit) {
+    // The same unit control a component's parameter gets, for the same reason: a model's own
+    // parameter is the thing a reader types into most often on a flat model.
+    const choices = unit ? unitChoices(unit, formatUnit(unit)) : [];
+    const declaredDisplay = String(v.params["displayUnit"] ?? "").replace(/^"|"$/g, "");
+    let chosen = choices.length ? choiceFor(choices, declaredDisplay) ?? choices[0] : undefined;
+    const asNumber = stored !== undefined ? Number(stored) : Number.NaN;
+    const known = stored !== undefined && Number.isFinite(asNumber);
+    if (known && chosen) input.value = formatValue(fromBase(asNumber, chosen));
+
+    const commit = () => {
+      // Read in the unit the field is SHOWING, as the component fields do: a reader looking at
+      // `25 degC` who types `30` means 30 degrees, not 30 kelvin.
+      const text = input.value.trim();
+      const parsed = choices.length > 1 ? parseValue(text, choices, chosen) : null;
+      this.editor?.setVariableValue(v.id, parsed ? formatValue(toBase(parsed.value, parsed.choice)) : text);
+      if (chosen && choices.length > 1 && chosen.symbol !== unit) {
+        this.editor?.setVariableModifier(v.id, "displayUnit", `"${chosen.symbol}"`);
+      }
+      void this.runSimulation({ silent: true });
+    };
+    if (unit && !(chosen && choices.length > 1)) {
       row.classList.add("has-unit-control");
       const chip = row.createSpan({ cls: "modelica-studio-param-unit is-fixed" });
       renderUnit(chip, unit, "modelica-studio-field-unit", false);
     }
-
-    const commit = () => {
-      const text = input.value.trim();
-      this.editor?.setVariableValue(v.id, text);
-      void this.runSimulation({ silent: true });
-    };
+    if (chosen && choices.length > 1) {
+      row.addClass("has-unit-picker");
+      const picker = row.createEl("select", { cls: "modelica-studio-param-unit" });
+      // No `aria-label` and no `title`: the field's own label is on screen and names the control.
+      picker.setAttribute("aria-labelledby", `${fieldId}-label`);
+      for (const c of choices) {
+        picker.createEl("option", { value: c.id ?? c.symbol, text: c.symbol });
+      }
+      picker.value = chosen.id ?? chosen.symbol;
+      picker.addEventListener("change", () => {
+        chosen = choices.find((c) => (c.id ?? c.symbol) === picker.value) ?? chosen;
+        commit();
+      });
+    }
     input.addEventListener("change", commit);
     input.addEventListener("keydown", (ev) => {
       if (ev.key === "Enter") input.blur();
@@ -2677,8 +2705,13 @@ export class ModelicaStudioView extends ItemView {
     // description is written by a build, so until one has happened the compiler has said nothing
     // — and a field with no unit and no picker reads as the feature having gone away.
     const declared = this.result?.declaredUnits?.[`${inst.id}.${member}`];
+    // A parameter whose type is written `Medium.X` is the FLUID's `X`, which the instance names
+    // in its own redeclare: `Modelica.Fluid.Pipes.DynamicPipe pipe(redeclare package Medium =
+    // Modelica.Media.Water.StandardWater, ...)`. Asked literally, `Medium.AbsolutePressure` is a
+    // class nothing has heard of, so every such parameter showed no unit until a run.
+    const medium = this.mediumParameterUnits(inst, p.type);
     const typed = this.unitsOfDeclaredType(p.type);
-    const unit = p.unit?.trim() || declared?.trim() || typed.unit?.trim() || "";
+    const unit = p.unit?.trim() || declared?.trim() || typed.unit?.trim() || medium.unit?.trim() || "";
     // The alternatives, decided here rather than at the picker below, because whether there IS
     // a picker decides what the unit is rendered in.
     const allChoices = unitChoices(unit, unit ? formatUnit(unit) : "");
@@ -3215,9 +3248,92 @@ export class ModelicaStudioView extends ItemView {
       : library?.lookup
         ? (n: string, from?: string) => library.lookup?.(n, from)
         : null;
-    const found = resolve ? unitsOfType(name, (n, from) => resolve(n, from) as never) : {};
+    // An aliased name is expanded through the model's own `import` clauses first: `D.Interfaces.
+    // Strength` is `Modelica.Electrical.Digital.Interfaces.Strength`, and the library has never
+    // heard of `D`. Both spellings are cached under the name the model used, because that is the
+    // name every caller has.
+    const expanded = this.expandImportAlias(name);
+    const found = resolve
+      ? unitsOfType(expanded, (n, from) => resolve(this.expandImportAlias(n), from) as never)
+      : {};
     this.typeUnitsCache.set(name, found);
     return found;
+  }
+
+  /**
+   * The units of a `Medium.X` parameter, through the instance's own redeclare.
+   *
+   * Two steps, because the member may not be on the medium itself. `Medium.MassFlowRate` is
+   * declared in `Modelica.Media.Interfaces.PartialMedium`, which every medium EXTENDS, so a
+   * lookup qualified by the medium's own name cannot find it — the declaration is inherited.
+   * The walk is over `extends` and bounded, because a library class graph is not a tree.
+   */
+  private mediumParameterUnits(inst: ComponentInstance, type: string | undefined): TypeUnits {
+    const EMPTY_UNITS: TypeUnits = {};
+    const name = (type ?? "").trim();
+    if (!name.startsWith("Medium.")) return EMPTY_UNITS;
+    const medium = (inst.params?.Medium ?? "").trim();
+    if (!medium || medium.includes("(")) return EMPTY_UNITS;
+    const rest = name.slice("Medium.".length);
+    const direct = this.unitsOfDeclaredType(`${medium}.${rest}`);
+    if (direct.unit) return direct;
+
+    type Lib = {
+      get?: (n: string) => { extendsTypes?: string[]; components?: Array<{ name: string; type: string }>; nested?: Array<{ name: string; type?: string }> } | undefined;
+    };
+    const library = this.plugin.library as Lib | undefined;
+    if (!library?.get) return EMPTY_UNITS;
+    const seen = new Set<string>();
+    const queue: string[] = [medium];
+    while (queue.length && seen.size < 16) {
+      const className = queue.shift() as string;
+      if (seen.has(className)) continue;
+      seen.add(className);
+      const cls = library.get(className);
+      if (!cls) continue;
+      // A nested declaration of the member's name wins: `PartialMedium` declares
+      // `replaceable type MassFlowRate = SI.MassFlowRate` inside itself.
+      const nested = (cls.nested ?? []).find((n) => n.name === rest);
+      if (nested) {
+        const found = this.unitsOfDeclaredType(`${className}.${rest}`);
+        if (found.unit) return found;
+      }
+      const declared = (cls.components ?? []).find((c) => c.name === rest);
+      if (declared) {
+        const found = this.unitsOfDeclaredType(declared.type);
+        if (found.unit) return found;
+      }
+      for (const base of cls.extendsTypes ?? []) queue.push(base);
+    }
+    return EMPTY_UNITS;
+  }
+
+  /**
+   * Replace a leading import alias with what it stands for.
+   *
+   * `import D = Modelica.Electrical.Digital;` makes `D.Interfaces.Strength` a type name. Renamed
+   * aliases are common in hand-written and generated Modelica and invisible to the library
+   * index, which knows qualified names. Only the leading segment is substituted — an alias is a
+   * package reference, and the rest of the path is relative to it.
+   */
+  private expandImportAlias(typeName: string): string {
+    const name = typeName.trim();
+    if (!name) return name;
+    const imports = this.plugin.model?.imports ?? [];
+    if (imports.length === 0) return name;
+    const head = name.split(".")[0];
+    for (const clause of imports) {
+      // `import D = Target;` — also the `import Target;` form, which introduces Target's own
+      // last segment as the alias.
+      const match = /^import\s+([A-Za-z_]\w*)\s*=\s*([A-Za-z_][\w.]*)\s*$/.exec(clause);
+      if (match && match[1] === head) return `${match[2]}${name.slice(head.length)}`;
+      const plain = /^import\s+([A-Za-z_][\w.]*)\s*$/.exec(clause);
+      if (plain) {
+        const last = plain[1].split(".").pop();
+        if (last === head) return `${plain[1]}${name.slice(head.length)}`;
+      }
+    }
+    return name;
   }
 
   /** Type-name → its units, so the walk is not repeated per field. */

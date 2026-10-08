@@ -38,6 +38,14 @@ export interface ParsedClass {
   extendsTypes: string[];
   /** Each `extends` clause, verbatim, so it can be written back unchanged. */
   extendsClauses: string[];
+  /**
+   * Each `import` clause, verbatim.
+   *
+   * An import is what makes `SI.Temperature` mean anything, and a model written with renamed
+   * aliases (`import D = Modelica.Electrical.Digital;`) is unreadable without them: dropping the
+   * clause turns every aliased name in the file into an undefined one.
+   */
+  imports: string[];
   /** A `Documentation` annotation, verbatim, when the class has one. */
   documentation?: string;
   /**
@@ -311,6 +319,7 @@ class Parser {
       isPartial: modifiers.includes("partial"),
       extendsTypes: [],
       extendsClauses: [],
+      imports: [],
       components: [],
       connections: [],
       equations: [],
@@ -508,9 +517,15 @@ class Parser {
         continue;
       }
 
-      // import
+      // import — kept verbatim. It was skipped, and skipping it meant a class using a renamed
+      // alias could not be written back at all: `import D = Modelica.Electrical.Digital;` is
+      // what makes `D.Interfaces.Strength` a type, and the guard refuses a rebuild that would
+      // drop it. Verbatim because an import is a reference, not something to re-derive.
       if (this.at("import")) {
+        const startOff = this.peek().start;
         while (!this.isEof() && !this.at(";")) this.next();
+        const endOff = this.at(";") ? this.peek().end : this.peek().start;
+        cls.imports.push(this.sourceSlice(startOff, endOff).replace(/\s+/g, " ").trim());
         this.eat(";");
         continue;
       }
@@ -2112,6 +2127,7 @@ export function toDiagramModel(
     // them — the base class being the one that changes what the model IS.
     ...(cls.isPartial ? { partial: true } : {}),
     ...(cls.extendsClauses?.length ? { extends: cls.extendsClauses } : {}),
+    ...(cls.imports?.length ? { imports: cls.imports } : {}),
     ...(cls.icon?.length ? { icon: cls.icon } : {}),
     ...(cls.documentation ? { documentation: cls.documentation } : {}),
     components,
