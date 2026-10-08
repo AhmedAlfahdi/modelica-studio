@@ -73,6 +73,7 @@ import type {
   ComponentClass,
   ComponentInstance,
   DiagramModel,
+  VariableInstance,
   ParameterDef,
 } from "../modelica/types";
 import { serializeDiagram } from "../modelica/serializer";
@@ -2310,6 +2311,21 @@ export class ModelicaStudioView extends ItemView {
         });
         return;
       }
+      // A model can have no components at all — the book's flat examples are exactly that —
+      // and then its own `parameter` declarations are the whole interface. Nothing selected
+      // used to mean an empty panel and a hint to drag a component in, which for such a model
+      // is advice that cannot be taken.
+      if (this.renderModelParameters(parent)) {
+        // Once the parameters are on screen, the hint is only useful when there is
+        // something to select.
+        if ((this.plugin.model.components ?? []).length > 0) {
+          parent.createDiv({
+            cls: "modelica-studio-empty",
+            text: "Select a component to edit it, or drag one in from the palette.",
+          });
+        }
+        return;
+      }
       parent.createDiv({
         cls: "modelica-studio-empty",
         text: "Select a component to edit it, or drag one in from the palette.",
@@ -2407,6 +2423,69 @@ export class ModelicaStudioView extends ItemView {
     }
 
     this.renderParameterFields(parent, inst, def);
+    // The model's own parameters last, and in both branches: they are not the component's, and
+    // hiding them whenever something happens to be selected would make them unfindable.
+    this.renderModelParameters(parent);
+  }
+
+  /**
+   * The model's own `parameter` declarations, as fields.
+   *
+   * Returns whether there was anything to draw, so the caller can decide what an empty panel
+   * should say. A component's parameters are edited through the component; these belong to the
+   * class itself — `parameter Real T_inf = 298.15` — and they are what a flat model is made of.
+   */
+  private renderModelParameters(parent: HTMLElement): boolean {
+    const declared = (this.plugin.model.variables ?? []).filter((v) =>
+      (v.prefixes ?? []).includes("parameter")
+    );
+    if (declared.length === 0) return false;
+    parent.createDiv({ cls: "modelica-studio-section", text: "Model parameters" });
+    for (const v of declared) this.renderModelParamField(parent, v);
+    return true;
+  }
+
+  /** One declaration of the model itself: its name, its value, and its unit. */
+  private renderModelParamField(parent: HTMLElement, v: VariableInstance): void {
+    const row = parent.createDiv({ cls: "modelica-studio-field" });
+    const label = row.createEl("label", { text: v.id });
+    const fieldId = `modelica-studio-field-${++fieldSeq}`;
+    label.setAttribute("id", `${fieldId}-label`);
+    if (v.comment) label.setAttribute("aria-label", v.comment);
+
+    // The binding is recorded under the declaration's own name, which is the key the parser
+    // records it under and `serializeVariable` writes back.
+    const stored = v.params[v.id];
+    const input = row.createEl("input", { type: "text", value: stored ?? "" });
+    input.setAttribute("id", fieldId);
+    label.setAttribute("for", fieldId);
+    // An unbound parameter is the case that matters: `parameter Real T_inf;` gives the compiler
+    // nothing, and it refuses to translate the model at all. Empty with a word about it, rather
+    // than an empty box that looks like a bug.
+    if (stored === undefined) input.placeholder = "No value — the model will not run";
+
+    // The unit, when the compiler named one or the declared type carries it. No picker here: a
+    // display unit on a declaration is a modifier on that declaration, which is a separate
+    // write, and a unit nobody can change is better than one that lies.
+    const unit =
+      this.result?.declaredUnits?.[v.id]?.trim() ||
+      this.unitsOfDeclaredType(v.type).unit?.trim() ||
+      "";
+    if (unit) {
+      row.classList.add("has-unit-control");
+      const chip = row.createSpan({ cls: "modelica-studio-param-unit is-fixed" });
+      renderUnit(chip, unit, "modelica-studio-field-unit", false);
+    }
+
+    const commit = () => {
+      const text = input.value.trim();
+      this.editor?.setVariableValue(v.id, text);
+      void this.runSimulation({ silent: true });
+    };
+    input.addEventListener("change", commit);
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") input.blur();
+    });
   }
 
   /**

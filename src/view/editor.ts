@@ -2031,6 +2031,25 @@ export class SchematicEditor {
     return `${cleaned}${i}`;
   }
 
+  /**
+   * Set a DECLARATION's own value — `parameter Real T_inf = 298.15`.
+   *
+   * Not a component's parameter: this is the model's own `parameter` declaration, and for a
+   * flat model like the book's NewtonCooling those declarations ARE the interface. There was no
+   * way to give them a value at all — the inspector edits components, and a model with none
+   * showed an empty canvas and a hint to drag one in. The value lives under the declaration's
+   * own name in `params`, which is the key the parser records a binding under and the one
+   * `serializeVariable` writes after the modifier list.
+   */
+  setVariableValue(id: string, value: string): void {
+    const v = (this.model.variables ?? []).find((x) => x.id === id);
+    if (!v) return;
+    this.beginEdit(`set ${id}`);
+    if (value === "") delete v.params[id];
+    else v.params[id] = value;
+    this.commitEdit();
+  }
+
   setParam(id: string, name: string, value: string): void {
     const inst = this.instanceOf(id);
     if (!inst) return;

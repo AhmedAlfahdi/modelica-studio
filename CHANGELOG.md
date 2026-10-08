@@ -7,6 +7,21 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+### Added
+
+- **A model's own parameters, as fields.** `model NewtonCooling` has no components, so the
+  Selection panel could only say "select a component to edit it" — and its six `parameter`
+  declarations, which are the whole interface of a model like that, could not be given values at
+  all. OpenModelica refuses to translate an unbound parameter ("Parameter T_inf has neither value
+  nor start value, and is fixed during initialization"), and inspector values could not rescue it:
+  they are passed as simulation overrides, after the step that fails. The panel now lists the
+  model's own `parameter` declarations — name, value, and the unit where the compiler or the
+  declared type supplies one — and typing a value writes it into the declaration, which is what
+  the compiler was waiting for. A parameter with no value says so, because an empty box on a model
+  that will not run looks like a bug rather than a missing number.
+  Shown whether or not a component is selected: they belong to the class, not to the selection.
+  The hint to drag a component in stays for a model that has nothing else to show.
+
 ### Fixed
 
 - **The tab names the model that is open.** Reported as two titles at the top, the tab's being
