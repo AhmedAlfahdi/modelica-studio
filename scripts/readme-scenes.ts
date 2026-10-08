@@ -13,6 +13,7 @@ import { drawPlot, plotThemeFrom, seriesColor } from "../src/view/plot";
 import { currentTheme } from "../src/render/theme";
 import { HelpModal } from "../src/view/help-modal";
 import { EmbeddedDiagram } from "../src/view/embed";
+import { SolveBlock } from "../src/view/solve-block";
 import { overlayResults } from "../src/view/family";
 import { DEFAULT_SETTINGS } from "../src/settings-merge";
 
@@ -371,6 +372,84 @@ window.__sceneEmbed = async (data) => {
 window.__sceneEmbedPlot = async (data) => {
   try {
     return await embedScene(document.getElementById("embedPlot")!, data, true);
+  } catch (err) {
+    return fail(err);
+  }
+};
+
+/**
+ * Solve blocks in a note, as a reader meets them.
+ *
+ * The real `SolveBlock` for each: the real dialect parser, the real typesetting of the relation
+ * and the real answer panel. The values are the ones the Node side got from OpenModelica —
+ * `stopTime: 0`, the plugin's own path — so only the spawning is stubbed, exactly as in the
+ * embed scene above.
+ *
+ * Three blocks rather than one, because one answer looks like a calculator. These are the
+ * reasons the feature exists: an unknown that appears twice and is isolated by no algebra, a
+ * system answered whole, and a unit that comes from the compiler and appears nowhere in the
+ * note.
+ */
+/**
+ * Put the rendered equation where the block asked for it.
+ *
+ * The block calls Obsidian's `renderMath`, which in this page is the test stub: it hands back
+ * the LaTeX as text, which is right for a test and wrong for a picture. The Node side rendered
+ * the same LaTeX with KaTeX and sent HTML, keyed by the LaTeX it came from, so this matches on
+ * content rather than on order.
+ */
+async function typesetMath(host: HTMLElement, math: Record<string, string>) {
+  await new Promise((r) => setTimeout(r, 20));
+  for (const el of Array.from(host.querySelectorAll("[data-latex]"))) {
+    const html = math[el.getAttribute("data-latex") ?? ""];
+    if (!html) continue;
+    // The whole LINE, not just the maths element: the stub leaves the equation's source text
+    // beside what it returned, so replacing the element alone leaves the same equation twice on
+    // screen — once typeset and once as symbols, which is what the first version of this picture
+    // showed.
+    const line = el.closest(".modelica-studio-solve-line") ?? el;
+    const holder = document.createElement("div");
+    holder.className = "readme-math";
+    holder.innerHTML = html;
+    line.replaceChildren(holder);
+  }
+}
+
+window.__sceneSolve = async (data) => {
+  try {
+    const host = document.getElementById("solve")!;
+    host.textContent = "";
+    host.style.width = "760px";
+    // A note has margins; the plugin pane does not.
+    host.style.padding = "18px 22px";
+    for (const solved of data.solves) {
+      const frame = host.createDiv({ cls: "readme-solve-block" });
+      const block = new SolveBlock(
+        {
+          backend: stubBackend({
+            time: [0],
+            series: solved.series,
+            compileMs: 0,
+            simulateMs: 0,
+            reusedBinary: false,
+            warnings: [],
+          }),
+          report: () => {},
+          setupHelp: () => {},
+        } as never,
+        frame,
+        solved.source
+      );
+      block.mount();
+      // The answer arrives from a promise, so the picture has to wait for the panel to be
+      // built: captured before it resolves, every block would show "solving…".
+      for (let i = 0; i < 100; i++) {
+        await new Promise((r) => setTimeout(r, 20));
+        if (frame.querySelector(".modelica-studio-solve-row, .modelica-studio-solve-problem")) break;
+      }
+    }
+    await typesetMath(host, data.solvesMath ?? {});
+    return { ...box(host) };
   } catch (err) {
     return fail(err);
   }

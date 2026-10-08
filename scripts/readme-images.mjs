@@ -115,6 +115,25 @@ const THEME_VARS = `
  */
 const ICONS = fs.readFileSync(path.join(ROOT, "scripts/readme-icons.json"), "utf8");
 
+/**
+ * KaTeX, for the equations in the solve-block picture.
+ *
+ * The block asks Obsidian for its maths, and Obsidian's MathJax cannot be loaded into a bare
+ * `file://` page: it spawns a speech worker, a worker cannot `importScripts` across origins, and
+ * the page hangs until the renderer gives up. The LaTeX is rendered in Node instead — same
+ * `modelicaToLatex`, same equations — and only the stylesheet and fonts are needed here.
+ */
+const KATEX = (() => {
+  const dist = path.join(ROOT, "node_modules", "katex", "dist");
+  if (!fs.existsSync(path.join(dist, "katex.min.css"))) return "";
+  fs.mkdirSync(path.join(TMP, "katex", "fonts"), { recursive: true });
+  fs.copyFileSync(path.join(dist, "katex.min.css"), path.join(TMP, "katex", "katex.min.css"));
+  for (const font of fs.readdirSync(path.join(dist, "fonts"))) {
+    fs.copyFileSync(path.join(dist, "fonts", font), path.join(TMP, "katex", "fonts", font));
+  }
+  return '<link rel="stylesheet" href="./katex/katex.min.css">';
+})();
+
 const page = path.join(TMP, "index.html");
 fs.writeFileSync(
   page,
@@ -131,11 +150,13 @@ fs.writeFileSync(
 </style>
 <body class="theme-dark">
 <script>window.__ICON_SVGS__ = ${ICONS};</script>
+${KATEX}
 <div id="diagram" class="shot"></div>
 <div id="plot" class="shot"></div>
 <div id="embed" class="shot"></div>
 <div id="embedPlot" class="shot"></div>
 <div id="studio" class="shot"></div>
+<div id="solve" class="shot"></div>
 <div id="hover" class="shot" style="width: 900px;"></div>
 <div id="sweep" class="shot" style="width: 900px;"></div>
 <div id="help" class="shot" style="width: 640px; padding: 14px;"></div>
@@ -159,6 +180,11 @@ fs.writeFileSync(
     model: data.model,
     defs: data.defs,
     palette: data.palette,
+    // Solved blocks, with the values OpenModelica returned. Passed through rather than
+    // re-listed: a hand-written list here is how a scene ends up rendering something the Node
+    // side never produced.
+    solves: data.solves,
+    solvesMath: data.solvesMath,
   })
 );
 
@@ -193,7 +219,10 @@ async function cropToScene(win, image, rect) {
 }
 app.whenReady().then(async () => {
   // A watchdog: a scene that never resolves should fail the run, not hang it.
-  const guard = setTimeout(() => { console.log("TIMED OUT waiting for a scene"); app.exit(1); }, 60000);
+  // Three minutes, not one. The guard exists so a scene that never resolves fails instead of
+  // hanging, and the run got longer: each solve block is a real OpenModelica initialisation
+  // before the page is even loaded.
+  const guard = setTimeout(() => { console.log("TIMED OUT waiting for a scene"); app.exit(1); }, 180000);
   void guard;
   // Shown, and not offscreen. Both alternatives fail for the images that matter here:
   // in offscreen mode capturePage returns an empty surface for anything drawn into a
@@ -287,6 +316,8 @@ app.whenReady().then(async () => {
     ["studio", "window.__sceneStudio(" + DATA + ")"],
     ["embed", "window.__sceneEmbed(" + DATA + ")"],
     ["embedPlot", "window.__sceneEmbedPlot(" + DATA + ")"],
+    // A note-shaped scene: solve blocks, as a reader meets them.
+    ["solve", "window.__sceneSolve(" + DATA + ")"],
   ];
   for (const theme of ["light", "dark"]) {
     win.setContentSize(1000, 900);

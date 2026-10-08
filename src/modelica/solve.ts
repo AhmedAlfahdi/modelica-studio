@@ -233,21 +233,48 @@ function readSolveDirective(text: string): string | null {
  * which semicolons are real, so the split is done on tokens and the original text
  * is sliced between them — the statement keeps the user's own spelling.
  */
+/**
+ * Tokens that mean the line is not finished, so a break after one is a wrap rather than a new
+ * statement: `x = 1 +\n 2`.
+ */
+const CONTINUES_AFTER = new Set(["+", "-", "*", "/", "^", "=", ",", ".", ":", "<", ">", "and", "or"]);
+/** Tokens that mean the line did not start a statement: a continuation of the one above. */
+const CONTINUES_BEFORE = new Set(["+", "-", "*", "/", "^", ")", "]", "}", ",", "and", "or", ".", "then", "else"]);
+
+/**
+ * Split a block into statements.
+ *
+ * ON SEMICOLONS **AND NEWLINES**. This dialect is line-shaped — `//@ solve x` and then one
+ * statement per line, the way a note reads — and splitting on `;` alone merged
+ * `2*x + y = 7` with the `x - y = 2` under it into a single "equation". The plugin then said the
+ * block "multiplies without a `*`", because `7` and `x` were adjacent tokens in what it took to
+ * be one statement, and README's own two-unknown example stopped solving. Anything inside
+ * brackets stays whole, and a line ending in an operator is a wrap rather than a new statement.
+ */
 export function splitStatements(src: string): string[] {
-  const tokens = tokenize(src);
+  const tokens = tokenize(src).filter((token) => token.type !== "eof");
   const out: string[] = [];
   let start = 0;
   let depth = 0;
 
-  for (const token of tokens) {
-    if (token.type === "eof") break;
-    if (token.type !== "punct") continue;
-    if (token.value === "(" || token.value === "[" || token.value === "{") depth++;
-    else if (token.value === ")" || token.value === "]" || token.value === "}") depth = Math.max(0, depth - 1);
-    else if (token.value === ";" && depth === 0) {
-      out.push(src.slice(start, token.start).trim());
-      start = token.end;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.type === "punct") {
+      if (token.value === "(" || token.value === "[" || token.value === "{") depth++;
+      else if (token.value === ")" || token.value === "]" || token.value === "}") {
+        depth = Math.max(0, depth - 1);
+      } else if (token.value === ";" && depth === 0) {
+        out.push(src.slice(start, token.start).trim());
+        start = token.end;
+        continue;
+      }
     }
+    const next = tokens[i + 1];
+    if (!next || depth !== 0) continue;
+    if (!src.slice(token.end, next.start).includes("\n")) continue;
+    if (CONTINUES_AFTER.has(token.value) || CONTINUES_BEFORE.has(next.value)) continue;
+    out.push(src.slice(start, token.end).trim());
+    start = next.start;
   }
 
   const tail = src.slice(start).trim();
@@ -283,6 +310,9 @@ export function hasImplicitMultiplication(equation: string): boolean {
   for (let i = 1; i < tokens.length; i++) {
     const previous = tokens[i - 1];
     const current = tokens[i];
+    // On ONE line, and nothing between them. `2 x` is implicit multiplication; `2\nx` is two
+    // statements that a caller failed to split, and saying so is the caller's business.
+    if (equation.slice(previous.end, current.start).replace(/[ \t]/g, "").length > 0) continue;
     const endsValue =
       previous.type === "number" ||
       (previous.type === "punct" && (previous.value === ")" || previous.value === "]"));

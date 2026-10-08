@@ -2,8 +2,30 @@
 
 Notable changes to Modelica Studio. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
-[semantic versioning](https://semver.org/spec/v2.0.0.html). While the major
-version is 0, a minor bump may include changes that are not backward compatible.
+[semantic versioning](https://semver.org/spec/v2.0.0.html). From 1.0.0 a change
+that breaks a model, a setting or a note is a major version.
+
+## [1.0.0] — 2026-10-08
+
+**1.0.** The interface is settled: what this release does, it does on purpose, and the limits below are the ones that are left rather than the ones nobody has looked for. The version stops moving by default — a change that breaks a model, a setting or a note will now be a major version, not a patch.
+
+### Added
+
+- **The calculation block, shown.** Three `modelica-solve` blocks as a reader meets them in
+  a note: an equation whose unknown appears twice and is isolated by no algebra, a system
+  answered whole, and Ohm's law answered with `R = 200 Ω` — a unit that appears nowhere in
+  the note and comes from the declared type. The pictures are rendered from the plugin's own
+  block and the answers OpenModelica returned, so a block that stops solving stops producing
+  an image.
+
+### Fixed
+
+- **A block's statements are split on newlines, not only on semicolons.** This dialect is
+  line-shaped — `//@ solve x` and one statement per line — and splitting on `;` alone merged
+  `2*x + y = 7` with the `x - y = 2` beneath it into one equation. The plugin then said the
+  block "multiplies without a `*`", because `7` and `x` were adjacent in what it took to be a
+  single statement, and the README's own two-unknown example stopped solving. Juxtaposition
+  is now only juxtaposition when the tokens are adjacent on one line.
 
 ## [0.6.4] — 2026-10-08
 

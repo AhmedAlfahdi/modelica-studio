@@ -18,11 +18,11 @@ your machine, and read the result as a plot — in the studio, or in the note it
 
 **Status: pre-1.0**, and experimental — it works, its examples are verified
 numerically against independent calculations, and there are rough edges. See
-[Beta status](#beta-status).
+[Maturity and limits](#maturity-and-limits).
 
 - [Install](#install) · [What it does](#what-it-does) ·
   [Worked examples](#worked-examples) · [Documentation](#documentation) ·
-  [Beta status](#beta-status) · [Licence](#license)
+  [Maturity and limits](#maturity-and-limits) · [Licence](#license)
 
 ---
 
@@ -61,9 +61,8 @@ strips the `obsidian://` scheme, so a link here would go nowhere.
 ### With BRAT, which keeps it updated
 
 [BRAT](https://tfthacker.com/BRAT) installs a plugin straight from its GitHub
-releases and updates it for you. The plugin is pre-1.0, so the version numbers are
-0.x; from 0.3.0 the releases are ordinary releases rather than pre-releases, and the
-0.2.0-beta.* line stays available for anyone pinning an older build.
+releases and updates it for you. Releases are ordinary releases rather than pre-releases,
+and the 0.2.0-beta.* line stays available for anyone pinning an older build.
 
 1. Install **BRAT** from Settings → Community plugins → Browse.
 2. In BRAT's settings, **Add Beta Plugin**.
@@ -239,11 +238,22 @@ directive can set.
 ### A calculation, solved instead of typed
 
 A fenced `modelica-solve` block holds a relationship rather than a number, and the
-answer is recomputed when the note opens:
+answer is recomputed when the note opens. Three of them, as they appear in a note:
 
-> `sqrt(x) + x^2 - 56 = 67`
->
-> **x = 10.940400921**
+<table>
+<tr>
+<td width="50%"><img src="docs/images/solve-light.png" alt="Three solve blocks in a note: an equation with the unknown on both sides, a system of two equations, and Ohm's law with a unit (light theme)"></td>
+<td width="50%"><img src="docs/images/solve-dark.png" alt="The same three solve blocks (dark theme)"></td>
+</tr>
+<tr>
+<td><sub>Light theme</sub></td><td><sub>Dark theme</sub></td>
+</tr>
+</table>
+
+The first is the equation above: `x` appears twice and no algebra isolates it. The
+second is a system, answered whole — solving for one of two unknowns leaves the
+reader doing the rest. The third writes Ohm's law and gets `R = 200 Ω`, a unit that
+appears nowhere in the note and comes from the declared type.
 
 The unknown does not have to be alone on the left of anything. The block asks
 OpenModelica for the model's **initialisation** — the nonlinear solve it performs
@@ -478,9 +488,16 @@ The reference is in [`docs/`](docs/), one page per subject.
 | [AI baseline](docs/ai-baseline.md) | One model measured, and what the measurement does not establish |
 | [Bug audit](docs/audit-2026-09-24.md) | Every module read, and what the reading turned up |
 
-## Beta status
+## Maturity and limits
 
-Experimental, and it wants more testing. Specifically:
+**1.0.** The plugin is finished in the sense that matters for use: what it does, it does
+on purpose, the interface is settled, and the limits below are the ones that are left rather
+than the ones nobody has looked for. Its output is checked against a corpus — the standard
+library, this vault and the built-in examples are parsed, written and parsed again, and every
+class must either survive the write or be reported as one the write would lose, in which case
+the file is left alone.
+
+What is still true, and worth knowing before you trust it with work:
 
 - **Requires Obsidian 1.11.4+**, for the keychain the AI feature stores its key
   in. Earlier builds are refused rather than downgraded to plain-text storage.
@@ -494,8 +511,10 @@ Experimental, and it wants more testing. Specifically:
   but an array port is not captured, so a class with one is reported rather than
   silently mis-drawn. Unsupported constructs surface as compiler errors rather
   than silently.
-- **The audit covers the built-in examples, not your models.** A hand-built model
-  may hit a parser or serializer limitation the examples do not.
+- **The audit covers the built-in examples and a corpus, not your models.** A
+  hand-built model may hit a parser or serializer limitation the others do not —
+  and when the writer cannot reproduce something, the save is refused and the file
+  is left as it is rather than rewritten smaller.
 - **Listed in the community directory, and not manually reviewed.** It is installable
   from **Browse** like any other community plugin, which means it passed the
   submission checks the directory runs — the automated ones, over this repository's
