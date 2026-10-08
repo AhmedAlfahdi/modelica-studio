@@ -225,7 +225,8 @@ export function serializeDiagram(
             c.params,
             c.prefixes,
             c.suffixDims,
-            c.condition
+            c.condition,
+            c.comment
           )
       );
     }
@@ -242,20 +243,31 @@ export function serializeDiagram(
     lines.push("");
   }
 
-  // Equations
-  lines.push("equation");
-  for (const cn of model.connections) {
-    lines.push(ind + serializeConnection(cn.from.component, cn.from.port, cn.to.component, cn.to.port, cn.points, cn.color));
-  }
-  // Hand-written equations, kept verbatim from the source. The block is
-  // dedented by its common leading whitespace and then re-indented as a unit,
-  // so a `when` body keeps its relative shape without accumulating two spaces
-  // of drift on every save.
-  for (const eq of model.equations ?? []) {
-    for (const line of dedent(eq.split("\n"))) {
-      lines.push(line.length ? ind + line : line);
+  // The sections, each under its own keyword. `initial equation` is not an `equation`: reading
+  // it as one rewrote a state's initial condition as an ordinary equation, which is a different
+  // model. An algorithm keeps its own keyword too, being order rather than equations.
+  const writeSection = (keyword: string, statements: string[], always = false) => {
+    if (statements.length === 0 && !always) return;
+    lines.push(keyword);
+    for (const statement of statements) {
+      // Dedented by its common leading whitespace and re-indented as a unit, so a `when` or an
+      // `if` body keeps its relative shape without drifting two spaces on every save.
+      for (const line of dedent(statement.split("\n"))) {
+        lines.push(line.length ? ind + line : line);
+      }
     }
-  }
+    lines.push("");
+  };
+  const connectionLines = model.connections.map(
+    (cn) =>
+      ind + serializeConnection(cn.from.component, cn.from.port, cn.to.component, cn.to.port, cn.points, cn.color)
+  );
+  writeSection("initial equation", model.initialEquations ?? []);
+  writeSection("initial algorithm", model.initialAlgorithm ?? []);
+  // Always written, even with nothing in it: a model that has no equations is still a class, and
+  // the panel and the tests both read the section as the sign that the body was understood.
+  writeSection("equation", [...connectionLines, ...(model.equations ?? [])], true);
+  writeSection("algorithm", model.algorithm ?? []);
 
   lines.push(`end ${model.name};`);
   return lines.join("\n") + "\n";
@@ -290,7 +302,10 @@ export function serializeVariable(v: VariableInstance, indent = ""): string {
   const modList = mods.length ? `(${mods.map(([k, value]) => `${k}=${value}`).join(", ")})` : "";
   const tail = binding ? `${modList}=${binding[1]}` : modList;
   const pre = v.prefixes?.length ? `${v.prefixes.join(" ")} ` : "";
-  return `${indent}${pre}${v.type} ${v.id}${v.suffixDims ?? ""}${tail};`;
+  // The declaration's comment, which this never wrote: a rebuild stripped every one of them,
+  // and the class comment above it was kept, so the loss was invisible until a file was read.
+  const say = v.comment ? ` ${quote(v.comment)}` : "";
+  return `${indent}${pre}${v.type} ${v.id}${v.suffixDims ?? ""}${tail}${say};`;
 }
 
 /** Emit one component declaration. */
@@ -303,7 +318,9 @@ export function serializeComponent(
   /** Dimensions written after the name, e.g. `[Medium.nX]`. */
   suffixDims = "",
   /** Enabling condition of a conditional declaration, e.g. `use_p_in`. */
-  condition = ""
+  condition = "",
+  /** The declaration's own comment, written after the annotation-placement. */
+  comment = ""
 ): string {
   // `redeclare package Medium = X` is stored as three separate entries, because
   // the parser records each modifier keyword on its own. Emitting only `Medium=X`
@@ -403,7 +420,8 @@ export function serializeComponent(
   // The binding comes after the modifier list, which is where Modelica wants it:
   // `Real x(start = 1) = 5`.
   const bind = binding ? ` = ${binding}` : "";
-  return `${pre}${className} ${id}${dims}${modStr}${cond}${bind} ${ann};`;
+  const say = comment ? ` ${quote(comment)}` : "";
+  return `${pre}${className} ${id}${dims}${modStr}${cond}${bind}${say} ${ann};`;
 }
 
 /** serializePlacement already returns `Placement(...)`; avoid double wrapping. */

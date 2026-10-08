@@ -7,6 +7,24 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An `initial equation` stays an initial equation, and a declaration keeps its comment.** Asked
+  as "why is this not working", with an introductory Newton-cooling model — and the answer was
+  that the plugin rewrote the file as a different model. `initial equation` was read as an
+  equation section: the `initial` keyword was consumed, the body kept, and the distinction thrown
+  away, so `T = T0` — the only thing that gives the state a starting value — came back as an
+  ordinary equation. Every declaration comment was dropped too, while the class comment was kept,
+  which is why the loss was easy to miss: six comments in that one model, and they are the only
+  documentation its declarations have.
+- **An `algorithm` section is kept, and no longer costs the parser its place.** It used to be
+  skipped statement by statement, and the parser lost track inside it: `Math/Nonlinear.mo`
+  parsed as 361 classes where it declares 61, nested
+  `Examples.quadratureLobatto1.Modelica.Modelica.Modelica`, while real declarations like
+  `Examples.QuadratureLobatto3` were missed. The section is captured verbatim now and written
+  back under its own keyword — an algorithm is order, not equations, which is exactly what the
+  old comment was right about and what skipping it got wrong.
+
 ## [0.6.3] — 2026-10-06
 
 ### Fixed

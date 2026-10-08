@@ -786,8 +786,14 @@ end T;
   // And they survive serialization exactly, including the parameter binding and
   // the modifier list.
   const out = serializeDiagram(model);
-  assert.match(out, /^\s*parameter Real e=0\.9;/m, `parameter binding preserved:\n${out}`);
-  assert.match(out, /^\s*Real h\(start=1, fixed=true\);/m, `modifiers preserved:\n${out}`);
+  // With the declaration's comment, which the rebuild used to drop: the class comment was
+  // written and this was not, so saving a model stripped the only documentation it had.
+  assert.match(
+    out,
+    /^\s*parameter Real e=0\.9 "Coefficient of restitution";/m,
+    `parameter binding and comment preserved:\n${out}`
+  );
+  assert.match(out, /^\s*Real h\(start=1, fixed=true\) "Height";/m, `modifiers preserved:\n${out}`);
   assert.doesNotMatch(out, /e\(e=/, "a parameter's own value is not written as a modifier");
 
   // Round-trip.
@@ -1143,4 +1149,128 @@ test("a parameter named like its instance is a modifier, not a binding", () => {
     const flat = (text) => text.replace(/\s*=\s*/g, "=");
     assert.equal(flat(written), flat(declaration), `written back: ${declaration}`);
   }
+});
+
+test("an initial equation stays an initial equation, and a declaration keeps its comment", () => {
+  // Reported as "why is this not working", with an introductory Newton-cooling model. Two
+  // answers, and this is the second one: the plugin rewrote the file as a DIFFERENT model.
+  //
+  // `initial equation` was read as an equation section. The `initial` keyword was consumed, the
+  // body kept, and the distinction thrown away — so `T = T0`, the only thing that gives the
+  // state a starting value, came back as an ordinary equation. OpenModelica happens to sort such
+  // an equation into the initial system, so the *numbers* often survive; the file does not, and
+  // a model where the two readings differ would quietly simulate differently.
+  //
+  // And every declaration comment was dropped, while the class comment was kept: six of them
+  // here, and they are the only documentation these declarations have.
+  const source = [
+    'model NewtonCooling "An example of Newton\'s law of cooling"',
+    '  parameter Real T_inf = 298.15 "Ambient temperature";',
+    '  parameter Real T0 = 363.15 "Initial temperature";',
+    '  parameter Real h = 0.7 "Convective cooling coefficient";',
+    '  parameter Real A = 1.0 "Surface area";',
+    '  parameter Real m = 0.1 "Mass of thermal capacitance";',
+    '  parameter Real c_p = 1.2 "Specific heat";',
+    '  Real T "Temperature";',
+    "initial equation",
+    '  T = T0 "Specify initial value for T";',
+    "equation",
+    '  m*c_p*der(T) = h*A*(T_inf-T) "Newton\'s law of cooling";',
+    "end NewtonCooling;",
+  ].join("\n");
+  const written = serializerMod.serializeDiagram(
+    toDiagramModel(parseModelica(source)[0], () => undefined)
+  );
+
+  // The section keywords, in the order the grammar wants them.
+  assert.match(written, /^initial equation$/m, "the initial section is its own section");
+  assert.match(written, /^equation$/m, "and the ordinary one is still there");
+  assert.ok(
+    written.indexOf("initial equation") < written.indexOf("\nequation"),
+    "initial first, then equation"
+  );
+  // The initial equation is inside the initial section, not the ordinary one.
+  const initialPart = written.slice(written.indexOf("initial equation"), written.indexOf("\nequation"));
+  assert.match(initialPart, /T = T0/, "the initial condition is where it was written");
+
+  // Every comment, including the class's and each declaration's.
+  for (const phrase of [
+    "An example of Newton's law of cooling",
+    "Ambient temperature",
+    "Initial temperature",
+    "Convective cooling coefficient",
+    "Surface area",
+    "Mass of thermal capacitance",
+    "Specific heat",
+    "Temperature",
+    "Specify initial value for T",
+    "Newton's law of cooling",
+  ]) {
+    assert.ok(written.includes(phrase), `kept: ${phrase}`);
+  }
+
+  // And it is stable: writing what was written changes nothing more.
+  const again = serializerMod.serializeDiagram(
+    toDiagramModel(parseModelica(written)[0], () => undefined)
+  );
+  assert.equal(again, written, "a second round trip is byte for byte the same");
+});
+
+test("an algorithm is kept as an algorithm, not dropped and not turned into equations", () => {
+  // It used to be skipped outright — "an algorithm's meaning is the order of its assignments,
+  // and re-emitting it as an equation would misrepresent it" — which was right about the risk
+  // and wrong about the cure: a model with an algorithm lost it on the first save. It keeps its
+  // own keyword now, so the order it means is the order it keeps.
+  const source = "model M\n  Real x;\nalgorithm\n  x := 1;\n  x := x + 1;\nequation\n  der(x) = 0;\nend M;";
+  const written = serializerMod.serializeDiagram(
+    toDiagramModel(parseModelica(source)[0], () => undefined)
+  );
+  assert.match(written, /^algorithm$/m, "the algorithm section is written");
+  assert.match(written, /x := 1;/, "with its statements");
+  assert.match(written, /x := x \+ 1;/, "in order");
+  // The equation section is what lies between its keyword and the algorithm's: the algorithm
+  // legitimately comes after it, which is what the first version of this assertion forgot.
+  const equationPart = written.slice(written.indexOf("\nequation"), written.indexOf("\nalgorithm"));
+  assert.ok(!/x := 1;/.test(equationPart), "and they are not in the equation section");
+});
+
+test("an algorithm section does not take the parser's place away", { skip: !MSL }, () => {
+  // The bug this pins was invisible for as long as the count was trusted. Skipping an algorithm
+  // statement by statement lost the parser's place inside it, and it re-entered the enclosing
+  // package instead of leaving it: `Math/Nonlinear.mo` parsed as 361 classes where it declares
+  // 61, nested `Examples.quadratureLobatto1.Modelica.Modelica.Modelica`, while real ones —
+  // `Examples.QuadratureLobatto3` among them — were missed. Capturing the section keeps it in
+  // step. Measured on the real file, because no fixture has an algorithm of MSL's shape.
+  const file = path.join(MSL, "Math", "Nonlinear.mo");
+  if (!fs.existsSync(file)) return;
+  const classes = parseModelica(fs.readFileSync(file, "utf8"));
+  const names = [];
+  const walk = (list, prefix) => {
+    for (const c of list) {
+      names.push(prefix + c.name);
+      walk(c.nested ?? [], `${prefix}${c.name}.`);
+    }
+  };
+  walk(classes, "");
+
+  // The declarations the file really has, at the paths it really has them.
+  for (const expected of [
+    "Examples",
+    "Examples.QuadratureLobatto3",
+    "Examples.UtilityFunctions.fun1",
+    "Interfaces",
+    "quadratureLobatto",
+    "solveOneNonlinearEquation",
+  ]) {
+    assert.ok(names.includes(expected), `found: ${expected}`);
+  }
+  // And not one phantom: `Modelica.Modelica` is the parser re-entering the root library, which
+  // only the lost-place bug produced. (A class may legally share its package's name — MSL has
+  // `…Spice3.Internal.Model.Model` — so this looks for that exact repetition and not a pattern.)
+  assert.deepEqual(
+    names.filter((n) => n.includes("Modelica.Modelica")),
+    [],
+    "no class is nested inside a copy of the library root"
+  );
+  assert.ok(names.length < 120, `${names.length} classes, not the 361 the lost-place bug invented`);
 });

@@ -243,6 +243,13 @@ export interface ParameterDef {
  * the model rather than discarded.
  */
 export interface VariableInstance {
+  /**
+   * The declaration's comment, as written: `parameter Real h "Convective cooling coefficient"`.
+   *
+   * The class comment was kept and this was not, so a rebuild — which is what a diagram edit
+   * does — wrote every declaration back bare. Six of them in one introductory example.
+   */
+  comment?: string;
   id: string;
   type: string;
   params: Record<string, string>;
@@ -254,6 +261,8 @@ export interface VariableInstance {
 export interface ComponentInstance {
   /** Instance name, e.g. "r1" */
   id: string;
+  /** The declaration's comment, as written. See `VariableInstance.comment`. */
+  comment?: string;
   /** Fully qualified class name. */
   className: string;
   placement: Placement;
@@ -328,6 +337,26 @@ export interface DiagramModel {
    * empty `equation` section, which OpenModelica rejects as under-determined.
    */
   equations?: string[];
+  /**
+   * The `initial equation` section, verbatim.
+   *
+   * A section of its own, and it has to stay one: the parser read the `initial` keyword and then
+   * recorded only that it was looking at an equation section, so `T = T0` was written back as an
+   * ORDINARY equation. A model whose state is pinned in `initial equation` — the standard way,
+   * and what every introductory example does — came back as a different model, and the file on
+   * disk was rewritten that way.
+   */
+  initialEquations?: string[];
+  /**
+   * An `algorithm` section, verbatim.
+   *
+   * Kept because dropping it is worse than keeping it: an algorithm is order, not equations, so
+   * it is re-emitted under its own keyword rather than folded into `equation`. It used to be
+   * skipped entirely, and a model that had one lost it on the first save.
+   */
+  algorithm?: string[];
+  /** An `initial algorithm` section, verbatim. */
+  initialAlgorithm?: string[];
   connections: Connection[];
   /** Free-floating annotations/text placed in the diagram layer. */
   graphics: Graphic[];

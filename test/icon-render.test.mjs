@@ -546,7 +546,21 @@ const UNDER_PARSED_BASELINE = 46;
  * file yielded 128 classes instead of 160, dropping `Continuous.Filter`
  * entirely. Nothing failed -- fewer classes means fewer icons to compare.
  */
-const CLASS_COUNT_BASELINE = 15600;
+/**
+ * How many classes the standard library must still yield, as a floor.
+ *
+ * It went DOWN, and that is the point worth recording: an `algorithm` section used to be skipped
+ * statement by statement, and the parser lost its place inside it — re-entering the enclosing
+ * package instead of leaving it. `Math/Nonlinear.mo` came back with 361 "classes" where it
+ * declares 61, nested `Examples.quadratureLobatto1.Modelica.Modelica.Modelica`, while real
+ * declarations like `Examples.QuadratureLobatto3` were missed. Capturing the section verbatim
+ * keeps the parser in step, and this count is what is left: real classes, none invented.
+ *
+ * A floor rather than an equality, because a new MSL version adds classes and nothing here
+ * should fail because a library grew. What a floor cannot see is INVENTION — inventing classes
+ * keeps a count up — which is why `test/parser.test.mjs` pins the file that exposed it.
+ */
+const CLASS_COUNT_BASELINE = 14500;
 
 test("every class's own Icon annotation is read completely", { skip: !MSL && "no MSL installed" }, () => {
   // The check that would have caught, on the day it was written, every bug this
@@ -603,6 +617,7 @@ test("every class's own Icon annotation is read completely", { skip: !MSL && "no
   }
 
   assert.ok(withIconBody > 1000, `the sweep actually ran: ${withIconBody} classes with an Icon body`);
+
   assert.ok(
     totalClasses >= CLASS_COUNT_BASELINE,
     `the library still parses as many classes as it used to: ${totalClasses} < ${CLASS_COUNT_BASELINE}` +

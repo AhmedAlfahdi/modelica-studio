@@ -67,6 +67,12 @@ export interface ParsedClass {
    * code is worse than one that loses it.
    */
   equations: string[];
+  /** The `initial equation` section, verbatim — see `DiagramModel.initialEquations`. */
+  initialEquations: string[];
+  /** An `algorithm` section, verbatim. */
+  algorithm: string[];
+  /** An `initial algorithm` section, verbatim. */
+  initialAlgorithm: string[];
   /** Icon-layer graphics (short class name "Icon" or the class's own default icon). */
   icon: Graphic[];
   /**
@@ -303,6 +309,9 @@ class Parser {
       components: [],
       connections: [],
       equations: [],
+      initialEquations: [],
+      algorithm: [],
+      initialAlgorithm: [],
       icon: [],
       unparsedGraphics: [],
       componentIcons: [],
@@ -382,7 +391,10 @@ class Parser {
      * Only there are bare statements equations. Outside it a statement starting
      * with an identifier is a declaration being parsed, not text to keep.
      */
-    let inEquations = false;
+    // Which section the statements are being read from. `initial equation` used to be read as
+    // `equation`: the keyword was consumed, the body kept, and the distinction lost — so a state
+    // pinned in an initial equation was written back as an ordinary one.
+    let section: "none" | "equation" | "initial" | "algorithm" | "initialAlgorithm" = "none";
     while (!this.isEof()) {
       // End of this class?
       //
@@ -441,11 +453,18 @@ class Parser {
         continue;
       }
       if (this.at("equation") || this.at("algorithm") || this.at("initial")) {
-        // `algorithm` and `initial` are not captured: an algorithm's meaning is
-        // the order of its assignments, and re-emitting it as an equation would
-        // misrepresent it. Only `equation` is kept.
-        inEquations = this.peek().value === "equation";
-        this.next();
+        // Every section is captured VERBATIM and re-emitted under its own keyword. An algorithm
+        // is order rather than equations, so it is kept as an algorithm — which is what the
+        // first version of this was right to worry about and wrong to solve by skipping it: a
+        // model with an algorithm lost it on the first save.
+        const keyword = this.next().value;
+        if (keyword === "initial") {
+          const which = this.at("algorithm") ? "initialAlgorithm" : "initial";
+          if (this.at("algorithm") || this.at("equation")) this.next();
+          section = which;
+        } else {
+          section = keyword === "algorithm" ? "algorithm" : "equation";
+        }
         continue;
       }
 
@@ -487,9 +506,14 @@ class Parser {
 
       // A statement with no structural form. Inside the equation section it is
       // kept verbatim; anywhere else it is skipped as before.
-      if (inEquations && (this.isStatementStart() || this.atIdent())) {
+      if (section !== "none" && (this.isStatementStart() || this.atIdent())) {
         const statement = this.captureStatement();
-        if (statement) cls.equations.push(statement);
+        if (statement) {
+          if (section === "equation") cls.equations.push(statement);
+          else if (section === "initial") cls.initialEquations.push(statement);
+          else if (section === "algorithm") cls.algorithm.push(statement);
+          else cls.initialAlgorithm.push(statement);
+        }
         continue;
       }
       if (this.isStatementStart()) {
@@ -2004,6 +2028,7 @@ export function toDiagramModel(
     .map((c) => ({
       id: c.name,
       type: c.type,
+      ...(c.comment ? { comment: c.comment } : {}),
       params: extractParams(c.modifiers),
       prefixes: declarationPrefixes(c.prefixes),
       suffixDims: c.suffixDims,
@@ -2014,6 +2039,7 @@ export function toDiagramModel(
     .map((c) => ({
       id: c.name,
       className: c.type,
+      ...(c.comment ? { comment: c.comment } : {}),
       placement: c.placement ?? {
         extent: [-10, -10, 10, 10],
         rotation: 0,
@@ -2037,6 +2063,9 @@ export function toDiagramModel(
     components,
     variables,
     equations: cls.equations,
+    initialEquations: cls.initialEquations,
+    algorithm: cls.algorithm,
+    initialAlgorithm: cls.initialAlgorithm,
     connections,
     graphics: cls.diagram.length ? cls.diagram : [],
   };
