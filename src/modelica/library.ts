@@ -616,6 +616,7 @@ export class LibraryIndex {
     const cls = this.lookup(name);
     if (!cls) return undefined;
 
+
     const { ports: rawPorts, parameters, icons } = this.collectInherited(cls);
     // A class that draws nothing itself may still carry a picture on one of its
     // components; use it rather than showing an empty symbol.
@@ -659,6 +660,10 @@ export class LibraryIndex {
     const result: ComponentClass = {
       name: cls.qualifiedName,
       shortName: cls.name,
+      // The element kind, which is what tells a scalar `type` from a `connector` or a `model`:
+      // the index recorded it at parse time, and a caller deciding whether a declaration is a
+      // drawn component needs it.
+      kind: cls.kind,
       comment: cls.comment,
       icon: effectiveIcon,
       diagram: cls.diagram,

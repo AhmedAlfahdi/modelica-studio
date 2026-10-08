@@ -752,7 +752,11 @@ test("a parameter qualifier is kept, so a record stays a parameter", () => {
 end T;
 `;
   const model = toDiagramModel(findClass(parseModelica(src), "T"), () => undefined);
-  const record = model.components.find((c) => c.id === "cellData");
+  // A `parameter` is a declaration, not a symbol on a schematic: a record with no icon, no ports
+  // and no position was drawn as a grey box, which is the "useless blocks" a reader reported.
+  // The prefix is what matters here, and it travels with the declaration either way.
+  const record = [...model.components, ...(model.variables ?? [])].find((c) => c.id === "cellData");
+  assert.ok(record, "the declaration is kept");
   assert.ok(record.prefixes?.includes("parameter"), "the parameter prefix survives parsing");
   const out = serializeDiagram(model);
   assert.match(out, /parameter\s+Modelica\.Electrical\.Batteries\.ParameterRecords\.CellData cellData/);

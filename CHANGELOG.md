@@ -7,6 +7,27 @@ version is 0, a minor bump may include changes that are not backward compatible.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A parameter is not a box on the diagram.** Reported as "a lot of useless blocks that almost
+  always appear when generated code does", stacked on each other with the type's name in the
+  middle. The split between a drawn component and a declaration was a test of the TYPE'S
+  SPELLING — `Real` was a variable, `Modelica.Units.SI.Temperature` was not — so every parameter
+  written with a full type name, which is how generated code writes them, became a component: a
+  grey box with no icon, no ports and nothing to wire, piled at the same coordinates. A
+  `parameter` or a `constant` is now a declaration whatever its type is called, and the library
+  is asked about the rest: a type that resolves to a `type` declaration — `SI.Temperature`,
+  `StateSelect` — is a scalar, so `Modelica.Units.SI.Temperature T(start = 350, fixed = true)` is
+  a state rather than a symbol. Measured on the reported model: four boxes before, none after.
+  The library's answer carries the element kind for that, and `patchDiagramEdits` takes the same
+  lookup so its partition still matches the view's — a mismatch there refuses a valid edit.
+- **A state's initial value is reachable again.** The other half of the same report: `T` was a
+  box, and the panel for it said "this component has no parameters", so `start` — the one number
+  a reader needs — was in the code pane only. The Selection tab's model section now lists the
+  model's own declarations: `parameter` values under Model parameters, and each declaration's
+  `start` and `fixed` under Initial values. The AI prompt says to put no Placement on a
+  declaration, which is where the blocks came from in the first place.
+
 ### Added
 
 - **A model's own parameters, as fields.** `model NewtonCooling` has no components, so the

@@ -190,6 +190,14 @@ export interface PortDef {
 export interface ComponentClass {
   /** Fully qualified name, e.g. Modelica.Electrical.Analog.Basic.Resistor */
   name: string;
+  /**
+   * The element kind: `model`, `block`, `connector`, `type`, `record`, `package`, …
+   *
+   * Load-bearing for the split between a schematic component and a declaration:
+   * `Modelica.Units.SI.Temperature` is a `type`, so `parameter SI.Temperature T_inf` is a
+   * variable, while `Modelica.Blocks.Interfaces.RealInput` is a `connector` and is drawn.
+   */
+  kind?: string;
   /** Short name, e.g. Resistor */
   shortName: string;
   comment?: string;

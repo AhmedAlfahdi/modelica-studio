@@ -462,7 +462,9 @@ export default class ModelicaStudioPlugin extends Plugin {
       // later run with "Base class Medium not found in scope TwoOutletTank"
       // (see modelica/text-edit). So the diagram's changes are written INTO the
       // text, and only the declarations it owns are touched.
-      const patched = patchDiagramEdits(this.modelSource, this.model);
+      const patched = patchDiagramEdits(this.modelSource, this.model, {
+        lookup: (n) => this.library.component(n),
+      });
       if (patched) {
         this.patchNote = "";
         return patched.text;

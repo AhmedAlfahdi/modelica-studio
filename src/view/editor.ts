@@ -2050,6 +2050,26 @@ export class SchematicEditor {
     this.commitEdit();
   }
 
+  /**
+   * Set one of a declaration's modifiers — `T(start = 300)`.
+   *
+   * The initial value of a state is a modifier on the DECLARATION, not a binding of its own, so
+   * `setVariableValue` is the wrong write for it: that one is `parameter Real T_inf = 298.15`.
+   * Both are needed, and a model whose states are declared with full type names used to show the
+   * first and hide the second behind a box on the diagram.
+   */
+  setVariableModifier(id: string, key: string, value: string): void {
+    const v = (this.model.variables ?? []).find((x) => x.id === id);
+    if (!v) return;
+    // FLAT, not dotted: `T(start = 350)` puts its modifiers directly on the declaration, so the
+    // parser records `start` and `fixed` where a component's nested member would be `r.R`. The
+    // serializer reads the same keys back as the modifier list.
+    this.beginEdit(`set ${id}.${key}`);
+    if (value === "") delete v.params[key];
+    else v.params[key] = value;
+    this.commitEdit();
+  }
+
   setParam(id: string, name: string, value: string): void {
     const inst = this.instanceOf(id);
     if (!inst) return;

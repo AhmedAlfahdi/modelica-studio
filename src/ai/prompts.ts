@@ -525,6 +525,13 @@ and it is still the wrong answer when the reader asked for a mechanism.
 - Declare a component for every part, using its full MSL path.
 - Give EVERY component a Placement(transformation(extent={{x1,y1},{x2,y2}})),
   so it lands on the canvas rather than at the origin.
+- Give NO Placement to a parameter or a variable. A parameter such as
+  SI.Temperature T_inf = 300 is a quantity, not a symbol: it has no position, and the compiler
+  ignores a Placement on one. Writing it anyway is the commonest way a generated
+  model fills the diagram with grey boxes stacked at the origin, because a
+  declaration with a full type name and an annotation looks exactly like a
+  component to everything that reads the file. The reader sees six parameters
+  drawn on top of each other and no way to tell they are not parts.
 - **Lay them out.** Place components on a grid about 200 units apart along the
   signal path, left to right. Two components at the same coordinates are drawn on
   top of each other, which looks like one block and cannot be wired by hand.

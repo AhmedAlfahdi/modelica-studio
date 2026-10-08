@@ -2439,10 +2439,66 @@ export class ModelicaStudioView extends ItemView {
     const declared = (this.plugin.model.variables ?? []).filter((v) =>
       (v.prefixes ?? []).includes("parameter")
     );
-    if (declared.length === 0) return false;
-    parent.createDiv({ cls: "modelica-studio-section", text: "Model parameters" });
-    for (const v of declared) this.renderModelParamField(parent, v);
+    // The states' initial values are modifiers on their declarations — `T(start = 300)` — and
+    // they belong in the same panel: a declaration shown with full type names used to be drawn
+    // as a box on the diagram, whose panel then said "this component has no parameters", so the
+    // one number a reader needs to change was unreachable from here.
+    // A declaration's modifiers are FLAT on it — `T(start = 350, fixed = true)` records `start`
+    // and `fixed` — where a component's nested member would be `r.R`. `fixed` is here too: it is
+    // what makes a start value the initial condition rather than a suggestion.
+    const withStart = (this.plugin.model.variables ?? [])
+      .map((v) => ({
+        v,
+        keys: (["start", "fixed"] as const).filter((k) => typeof v.params[k] === "string"),
+      }))
+      .filter((entry) => entry.keys.length > 0);
+    if (declared.length === 0 && withStart.length === 0) return false;
+
+    if (declared.length > 0) {
+      parent.createDiv({ cls: "modelica-studio-section", text: "Model parameters" });
+      for (const v of declared) this.renderModelParamField(parent, v);
+    }
+    if (withStart.length > 0) {
+      parent.createDiv({ cls: "modelica-studio-section", text: "Initial values" });
+      for (const { v, keys } of withStart) {
+        for (const key of keys) this.renderModelModifierField(parent, v, key);
+      }
+    }
     return true;
+  }
+
+  /** One modifier of a declaration: `T(start = 300)`, labelled `T (initial)`. */
+  private renderModelModifierField(parent: HTMLElement, v: VariableInstance, key: string): void {
+    const row = parent.createDiv({ cls: "modelica-studio-field" });
+    const label = row.createEl("label", {
+      text: key === "start" ? `${v.id} (initial)` : `${v.id} (${key})`,
+    });
+    const fieldId = `modelica-studio-field-${++fieldSeq}`;
+    label.setAttribute("id", `${fieldId}-label`);
+    const input = row.createEl("input", {
+      type: "text",
+      value: v.params[key] ?? "",
+    });
+    input.setAttribute("id", fieldId);
+    label.setAttribute("for", fieldId);
+    const unit =
+      this.result?.declaredUnits?.[v.id]?.trim() ||
+      this.unitsOfDeclaredType(v.type).unit?.trim() ||
+      "";
+    if (unit) {
+      row.classList.add("has-unit-control");
+      const chip = row.createSpan({ cls: "modelica-studio-param-unit is-fixed" });
+      renderUnit(chip, unit, "modelica-studio-field-unit", false);
+    }
+    const commit = () => {
+      const text = input.value.trim();
+      this.editor?.setVariableModifier(v.id, key, text);
+      void this.runSimulation({ silent: true });
+    };
+    input.addEventListener("change", commit);
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") input.blur();
+    });
   }
 
   /** One declaration of the model itself: its name, its value, and its unit. */

@@ -40,6 +40,7 @@ import {
   serializeVariable,
 } from "./serializer";
 import type {
+  ComponentClass,
   ComponentInstance,
   DiagramModel,
   Graphic,
@@ -143,7 +144,17 @@ export interface PatchResult {
 export function patchDiagramEdits(
   source: string,
   model: DiagramModel,
-  opts: { indent?: string } = {}
+  opts: {
+    indent?: string;
+    /**
+     * The library lookup, so this partitions declarations exactly as the view did.
+     *
+     * A `parameter SI.Temperature T_inf` is a variable to the view — which knows the type is a
+     * `type` — and this has to agree, because the two partitions are compared: a mismatch makes
+     * the edit look like it does not describe the model, and it is refused.
+     */
+    lookup?: (className: string) => ComponentClass | undefined;
+  } = {}
 ): PatchResult | undefined {
   if (!source.trim()) return refuse("the source is empty");
   const ind = opts.indent ?? "  ";
@@ -183,7 +194,7 @@ export function patchDiagramEdits(
   };
   const ambiguous = (name: string) => (byName.get(name)?.length ?? 0) > 1;
 
-  const fromSource = toDiagramModel(cls, () => undefined);
+  const fromSource = toDiagramModel(cls, opts.lookup ?? (() => undefined));
   const edits: Edit[] = [];
   const changes: string[] = [];
 
@@ -335,7 +346,9 @@ export function patchDiagramEdits(
   if (overlaps(edits)) return refuse("two edits overlap");
 
   const text = applyEdits(source, edits);
-  if (!verifies(text, model)) return refuse("the result does not describe the model");
+  if (!verifies(text, model, opts.lookup ?? (() => undefined))) {
+    return refuse("the result does not describe the model");
+  }
   return { text, changes };
 }
 
@@ -429,7 +442,11 @@ export function structureLostBy(source: string, rebuilt: string): string[] {
  * strict about the things a lost declaration would change, and silent about
  * formatting, because formatting is the file's business.
  */
-function verifies(text: string, model: DiagramModel): boolean {
+function verifies(
+  text: string,
+  model: DiagramModel,
+  lookup: (className: string) => ComponentClass | undefined
+): boolean {
   let cls: ParsedClass | undefined;
   try {
     cls = findClass(parseModelica(text), model.name);
@@ -437,7 +454,7 @@ function verifies(text: string, model: DiagramModel): boolean {
     return false;
   }
   if (!cls) return false;
-  const after = toDiagramModel(cls, () => undefined);
+  const after = toDiagramModel(cls, lookup);
 
   if (after.components.length !== model.components.length) return false;
   const byId = new Map(after.components.map((c) => [c.id, c]));

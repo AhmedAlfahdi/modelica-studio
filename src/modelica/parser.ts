@@ -2018,13 +2018,26 @@ export function isBuiltinType(type: string): boolean {
 
 export function toDiagramModel(
   cls: ParsedClass,
-  lookup: (className: string) => ComponentClass | undefined
+  lookup: (className: string) => ComponentClass | undefined,
 ): DiagramModel {
   const declared = cls.components.filter((c) => c.type && c.name);
-  // Split variables from components. Both are declarations, but only one kind
-  // is drawn.
+  // Split variables from components. Both are declarations, but only one kind is drawn.
+  //
+  // Three signals, and spelling alone is the weakest of them: `Real` is a variable, but
+  // `Modelica.Units.SI.Temperature` is the same thing said in full, and a `parameter` or a
+  // `constant` is never a symbol on a schematic whatever its type is called. The library knows
+  // the rest — a type that resolves to a `type` declaration is a scalar, a state or an enum.
+  const isVariable = (c: ParsedComponent): boolean => {
+    if (isBuiltinType(c.type)) return true;
+    const prefixes = declarationPrefixes(c.prefixes) ?? [];
+    if (prefixes.includes("parameter") || prefixes.includes("constant")) return true;
+    // The library answers, when the caller has one: a type that resolves to a `type`
+    // declaration — `SI.Temperature`, `StateSelect` — is a scalar, so the declaration is a
+    // variable. Without a library this is false and the two signals above decide.
+    return lookup(c.type)?.kind === "type";
+  };
   const variables: VariableInstance[] = declared
-    .filter((c) => isBuiltinType(c.type))
+    .filter(isVariable)
     .map((c) => ({
       id: c.name,
       type: c.type,
@@ -2035,7 +2048,7 @@ export function toDiagramModel(
     }));
 
   const components = declared
-    .filter((c) => !isBuiltinType(c.type))
+    .filter((c) => !isVariable(c))
     .map((c) => ({
       id: c.name,
       className: c.type,
