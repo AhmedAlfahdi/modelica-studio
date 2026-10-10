@@ -320,6 +320,14 @@ export class ModelicaStudioView extends ItemView {
   }
   /** Which bottom tab is showing. */
   private bottomTab: ResultsTab = "plot";
+  /**
+   * True while the Run log is in front because a run FAILED, rather than because it was chosen.
+   *
+   * `showRunLog` brings the log forward on a failure, which is right — and it was the last thing
+   * ever to touch the tab: a successful run afterwards left the plot behind it, so Simulate
+   * appeared to do nothing until the reader clicked the Plot tab by hand.
+   */
+  private logShownByFailure = false;
   /** Header of the bottom pane, whose actions depend on the tab. */
   private bottomBarEl: HTMLElement | null = null;
   private bottomActionsEl: HTMLElement | null = null;
@@ -3621,6 +3629,8 @@ export class ModelicaStudioView extends ItemView {
           // No mode switch: every tab is a view of the results now, so clicking
           // one only chooses what to show.
           this.bottomTab = resultsTabState(this.bottomTab, id);
+          // Chosen, not forced: a success no longer moves it.
+          this.logShownByFailure = false;
           this.applyBottomTab();
         });
         this.bottomTabEls[id] = b;
@@ -5535,6 +5545,14 @@ export class ModelicaStudioView extends ItemView {
       // A successful run clears the failure marker, so the tab only carries one
       // while the last run is actually broken.
       this.clearLogBadge();
+      // ...and it shows its RESULT. Without this the plot stayed behind the log for the rest of
+      // the session: the failure had put the log in front, and nothing ever took it away, so
+      // pressing Simulate looked like it did nothing at all.
+      if (this.bottomTab === "log" && this.logShownByFailure) {
+        this.bottomTab = "plot";
+        this.logShownByFailure = false;
+        this.applyBottomTab();
+      }
       this.resetZoom();
       this.plugin.diag(
         `sim ${ranName}: t=${result.time[0]}..${result.time[result.time.length - 1]}` +
@@ -5694,6 +5712,11 @@ export class ModelicaStudioView extends ItemView {
    */
   private showRunLog(failure: string): void {
     this.bottomTab = "log";
+    // Remembered so a later SUCCESS can undo it. Reported: a first run failed, the pane came to
+    // the log as it should, and every run after it succeeded with the plot still hidden behind
+    // the log tab — "clicking Simulate doesn't show the plot". A tab the reader chose is theirs
+    // to keep, so only an automatic switch is undone.
+    this.logShownByFailure = true;
     this.applyBottomTab();
     this.renderRunLog();
     this.setLogBadge(failure);

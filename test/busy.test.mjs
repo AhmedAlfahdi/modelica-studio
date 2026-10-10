@@ -551,3 +551,81 @@ test("a sweep that cannot prepare does not leave the studio stuck", async () => 
   assert.equal(d["and the next sweep runs normally"].busy, false, "and finished cleanly");
   assert.equal(d["and the next sweep runs normally"].marked, false, "with the pane clear");
 });
+
+test("a failed run brings the log forward, and the next good one brings the plot back", async () => {
+  // Reported: "upon saving the generated AI code, clicking simulate from the code view doesn't
+  // show the plot; I had to switch to diagram view and click simulate to make the plot appear."
+  //
+  // A failure brings the Run log to the front, which is right — and it was the LAST thing to touch
+  // the tab. Every run after it succeeded with the plot still hidden behind the log, so pressing
+  // Simulate looked like it did nothing at all until the reader clicked the Plot tab by hand.
+  const out = await runInDom(
+    [
+      HEAD,
+      "const { view, pane } = makeView();",
+      // The fixture stubs the log so a failure needs no pane DOM; this test is about what the
+      // failure does to the TAB, so it uses the real one — `private` is compile-time only.
+      "view.showRunLog = ModelicaStudioView.prototype.showRunLog;",
+      "view.renderRunLog = () => {};",
+      "view.wiringWarning = () => '';",
+      "view.bottomTab = 'plot';",
+      // A class field, and `Object.create` skips the class body that initialises it.
+      "view.logShownByFailure = false;",
+      "view.plotHost = document.createElement('div');",
+      "view.logHost = document.createElement('div');",
+      "view.emptyEl = document.createElement('div');",
+      "view.bottomActionsEl = document.createElement('div');",
+      "document.body.append(view.plotHost, view.logHost, view.emptyEl, view.bottomActionsEl);",
+      "view.applyBottomTab();",
+      "const shown = () => ({",
+      "  tab: view.bottomTab,",
+      "  pinned: view.logShownByFailure,",
+      "  plot: !view.plotHost.classList.contains('modelica-studio-hidden'),",
+      "  log: !view.logHost.classList.contains('modelica-studio-hidden'),",
+      "});",
+      "const first = shown();",
+      // A run that fails, then a run that works, on the SAME view: the pin is per-view state.
+      "view.plugin.backend = { simulate: async () => { throw new Error('Error: h is not a class'); } };",
+      "await view.runSimulation().catch(() => {});",
+      "const failed = shown();",
+      "view.busy = false;",
+      "view.plugin.backend = { simulate: async () => ({",
+      "  time: [0, 1], series: [{ name: 'h', values: [1, 0], unit: 'm' }],",
+      "  warnings: [], compileMs: 0, simulateMs: 0, reusedBinary: true }) };",
+      "await view.runSimulation().catch(() => {});",
+      "const recovered = shown();",
+      // And a reader who chooses the log keeps it: only an automatic switch is undone.
+      "view.showRunLog('boom');",
+      "view.bottomTab = 'log';",
+      "view.logShownByFailure = false;",
+      "view.busy = false;",
+      "await view.runSimulation().catch(() => {});",
+      "const chosen = shown();",
+      "window.test('before anything runs', () => JSON.stringify(first));",
+      "window.test('after a failure', () => JSON.stringify(failed));",
+      "window.test('after a success', () => JSON.stringify(recovered));",
+      "window.test('after choosing the log', () => JSON.stringify(chosen));",
+      "window.finish();",
+    ].join("\n")
+  );
+  assert.ok(!out.skip, `skipped: ${out.skip}`);
+  assert.ok(!out.fatal, out.fatal);
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const by = Object.fromEntries(out.results.map((r) => [r.name, r.detail]));
+  assert.equal(by["before anything runs"], '{"tab":"plot","pinned":false,"plot":true,"log":false}');
+  assert.equal(
+    by["after a failure"],
+    '{"tab":"log","pinned":true,"plot":false,"log":true}',
+    "the log comes forward, with the plot behind it"
+  );
+  assert.equal(
+    by["after a success"],
+    '{"tab":"plot","pinned":false,"plot":true,"log":false}',
+    "and a run that works shows its result, instead of leaving it behind the log"
+  );
+  assert.equal(
+    by["after choosing the log"],
+    '{"tab":"log","pinned":false,"plot":false,"log":true}',
+    "a tab the reader chose is theirs to keep"
+  );
+});

@@ -5,6 +5,18 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). From 1.0.0 a change
 that breaks a model, a setting or a note is a major version.
 
+## [1.1.3] — 2026-10-11
+
+### Fixed
+
+- **A run that works shows its result, even after one that failed.** Reported: *"upon saving the
+  generated AI code, clicking simulate from the code view doesn't show the plot; I had to switch
+  to diagram view and click simulate to make the plot appear."* A failure brings the Run log to the
+  front, which is right — and it was the last thing ever to touch that tab, so every run after it
+  succeeded with the plot still hidden behind the log. The next successful run now brings the plot
+  back; a tab the reader chose is left alone, and the marker the log carries is cleared by a
+  success as it already was.
+
 ## [1.1.2] — 2026-10-11
 
 ### Fixed
