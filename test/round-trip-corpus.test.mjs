@@ -179,7 +179,7 @@ function pluginExampleSources() {
 
 function checkOne(label, text, sourceOfClass) {
   const classes = writableClasses(parseModelica(text));
-  const report = { checked: 0, silent: [], unstable: [], threw: [] };
+  const report = { checked: 0, silent: [], doubled: [], unstable: [], threw: [] };
   for (const cls of classes) {
     report.checked++;
     let written;
@@ -192,11 +192,25 @@ function checkOne(label, text, sourceOfClass) {
     const before = multiset(tokens(sourceOfClass(cls)));
     const after = multiset(tokens(written));
     const missing = [];
+    const extra = [];
     for (const [tok, count] of before) {
       // `protected` may legitimately appear fewer times: several sections come back as one.
       if (tok === "protected") continue;
       const have = after.get(tok) ?? 0;
       if (have < count) missing.push(count - have > 1 ? `${tok}×${count - have}` : tok);
+    }
+    for (const [tok, count] of after) {
+      // The two the write may add: a section keyword its own layout introduces, and `protected`
+      // for the single section it merges several of.
+      if (tok === "equation" || tok === "protected" || tok === "algorithm") continue;
+      const had = before.get(tok) ?? 0;
+      if (count > had) extra.push(count - had > 1 ? `${tok}×${count - had}` : tok);
+    }
+    if (extra.length && !report.doubled.some((line) => line.startsWith(`${label} ${cls.name}:`))) {
+      // Reported the same way as a loss: either the write says what the source said, or the
+      // guard names what it would not write.
+      const guard = structureLostBy(text.slice(cls.startOffset, cls.endOffset), written);
+      if (guard.length === 0) report.doubled.push(`${label} ${cls.name}: ${extra.slice(0, 10).join(" ")}`);
     }
     if (missing.length) {
       // THE PROPERTY, and the only one that matters to a reader whose file is being rewritten:
@@ -228,7 +242,7 @@ function checkOne(label, text, sourceOfClass) {
 
 test("every model the plugin ships survives its own write unchanged", () => {
   // Self-contained: no library and no vault needed, so this half always runs.
-  const report = { checked: 0, silent: [], unstable: [], threw: [] };
+  const report = { checked: 0, silent: [], doubled: [], unstable: [], threw: [] };
   for (const { label, text } of pluginExampleSources()) {
     const one = checkOne(label, text, (cls) => text.slice(cls.startOffset, cls.endOffset));
     report.checked += one.checked;
@@ -243,13 +257,14 @@ test("every model the plugin ships survives its own write unchanged", () => {
     [],
     "every class either survives the write or is reported as one the write would lose"
   );
+  assert.deepEqual(withoutKnown(report.doubled), [], "and nothing is written twice");
   assert.deepEqual(withoutKnown(report.unstable), [], "writing what was written settles after one pass");
 });
 
 test("and so does every model in the standard library and the vault", { skip: !MSL && "no MSL installed" }, () => {
   const files = corpusFiles();
   assert.ok(files.length > 100, `the corpus is real: ${files.length} files`);
-  const report = { checked: 0, silent: [], unstable: [], threw: [] };
+  const report = { checked: 0, silent: [], doubled: [], unstable: [], threw: [] };
   for (const file of files) {
     let text;
     try {
@@ -311,6 +326,7 @@ test("and so does every model in the standard library and the vault", { skip: !M
     [],
     "every class either survives the write or is reported as one the write would lose"
   );
+  assert.deepEqual(withoutKnown(report.doubled).slice(0, 12), [], "and nothing is written twice");
   assert.deepEqual(withoutKnown(report.unstable).slice(0, 12), [], "settles after one pass");
 });
 

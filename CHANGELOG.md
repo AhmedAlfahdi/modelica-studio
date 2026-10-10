@@ -5,6 +5,24 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). From 1.0.0 a change
 that breaks a model, a setting or a note is a major version.
 
+## [1.1.1] — 2026-10-10
+
+### Fixed
+
+- **A declaration's comment was written TWICE when its initial value changed**, which OpenModelica
+  refuses outright: *"Expected token of type SEMICOLON, got 'Height above the floor' of type
+  STRING"*, and then *"Class DampedBounce not found in scope &lt;top&gt;"*. `serializeVariable`
+  writes the comment the parser read — the fix that makes a rebuild keep it — and the patcher
+  added the source's description on top of that, so one declaration came back as:
+
+  `Real h(start=11, fixed=true) "Height above the floor" "Height above the floor";`
+
+  Nothing on this side minded: this parser reads a doubled comment happily, and every test stayed
+  green, while the model stopped compiling the moment a reader changed one initial value. The
+  patcher no longer adds a description a declaration already carries, and the corpus check now
+  fails on a token written twice as well as one written never — it only looked for losses, which
+  is how a duplicate got through.
+
 ## [1.1.0] — 2026-10-08
 
 ### Added

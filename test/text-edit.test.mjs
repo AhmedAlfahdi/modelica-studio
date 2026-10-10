@@ -345,3 +345,49 @@ test("an untouched connection keeps the annotation arguments the writer does not
   assert.match(res.text, /smooth=Smooth\.Bezier/, "and so did the smoothing");
   assert.doesNotMatch(res.text, /connect\(r2\.y, r3\.u\)/, "while the deleted wire is gone");
 });
+
+test("changing an initial value does not write the declaration's comment twice", () => {
+  // Reported from a run log, twice over two days, on a model that had been working:
+  //
+  //   Expected token of type SEMICOLON, got 'Height above the floor' of type STRING
+  //   Class DampedBounce not found in scope <top>.
+  //
+  // `serializeVariable` writes the comment the parser read — that fix is what makes a rebuild
+  // keep it — and the patcher added the source's description on top of that, so the patched
+  // declaration carried it TWICE:
+  //
+  //   Real h(start=11, fixed=true) "Height above the floor" "Height above the floor";
+  //
+  // OpenModelica refuses that outright, and this parser reads it happily, so nothing on this
+  // side noticed: the model stopped compiling the moment a reader changed one initial value.
+  const source = [
+    'model DampedBounce "A ball bouncing until it comes to rest"',
+    '  parameter Real e=0.8 "Coefficient of restitution";',
+    '  Real h(start=4, fixed=true) "Height above the floor";',
+    '  Real v "Vertical velocity";',
+    "equation",
+    "  der(h) = v;",
+    "  der(v) = -9.81;",
+    "end DampedBounce;",
+  ].join("\n");
+
+  const model = toDiagramModel(parseModelica(source)[0], () => undefined);
+  model.variables.find((x) => x.id === "h").params["start"] = "11";
+
+  const patched = patchDiagramEdits(source, model);
+  assert.ok(patched, `the patch applies: ${lastPatchRefusal() ?? ""}`);
+  const text = typeof patched === "string" ? patched : patched.text;
+  assert.equal(
+    (text.match(/"Height above the floor"/g) ?? []).length,
+    1,
+    `the description is written once:\n${text}`
+  );
+  assert.match(
+    text,
+    /Real h\(start=11, fixed=true\) "Height above the floor";/,
+    `and in the right place:\n${text}`
+  );
+  // The whole point: what it wrote is a model, not just something this parser tolerates.
+  const back = toDiagramModel(parseModelica(text)[0], () => undefined);
+  assert.equal(back.variables.find((x) => x.id === "h").comment, "Height above the floor");
+});

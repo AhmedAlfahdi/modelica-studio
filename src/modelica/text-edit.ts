@@ -377,8 +377,26 @@ function descriptionOf(source: string, tokens: Token[], stmt: Stmt): string | un
 }
 
 /** Re-insert a description into freshly emitted declaration text. */
+/**
+ * Whether a declaration already carries its description.
+ *
+ * `serializeVariable` writes the comment the parser read, so the patcher adding the source's
+ * description as well produced TWO strings on one declaration:
+ *
+ *   Real h(start=11, fixed=true) "Height above the floor" "Height above the floor";
+ *
+ * Nothing on this side noticed — the parser is happy with a doubled comment, and every test
+ * stayed green — while OpenModelica refused the file outright: "Expected token of type SEMICOLON,
+ * got 'Height above the floor' of type STRING". The reader saw their model stop compiling after
+ * changing one initial value. A description just before the `;`, or before the annotation that
+ * follows it, is already there.
+ */
+function hasDescription(text: string): boolean {
+  return /"[^"]*"\s*;\s*$/.test(text) || /"[^"]*"\s+annotation\s*\(/.test(text);
+}
+
 function withDescription(text: string, desc: string | undefined): string {
-  if (!desc) return text;
+  if (!desc || hasDescription(text)) return text;
   const at = text.lastIndexOf(" annotation(");
   if (at >= 0) return `${text.slice(0, at)} ${desc}${text.slice(at)}`;
   return text.endsWith(";") ? `${text.slice(0, -1)} ${desc};` : `${text} ${desc}`;
