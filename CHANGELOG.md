@@ -5,6 +5,22 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). From 1.0.0 a change
 that breaks a model, a setting or a note is a major version.
 
+## [1.1.2] — 2026-10-11
+
+### Fixed
+
+- **Generate says why it cannot run, instead of appearing to do nothing.** Reported as "I gave
+  the AI a prompt and when I clicked Generate there was no response": every way the request can
+  stop before it is sent reported itself in one status line at the bottom of the pane, and the row
+  the button is on did not change at all — so a click that could not do anything looked exactly
+  like a click that did nothing. Each stop now writes to the row, raises a notification, and names
+  the next step.
+- **The missing-compiler message says what to do.** With no `omc` on the machine there is nothing
+  to compile or repair, so a generation cannot start — and that is the state this was reported
+  from. It now names the setting and the Help button rather than only the problem.
+- **A secret name with no key behind it is distinguished from no secret at all.** The two need
+  different fixes — paste the key again, or choose one — and they were one message.
+
 ## [1.1.1] — 2026-10-10
 
 ### Fixed

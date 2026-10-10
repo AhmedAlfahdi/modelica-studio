@@ -107,7 +107,7 @@ import { checkModel, ModelProblem } from "../modelica/checks";
 import { createCodeEditor, CodeEditorHandle, Diagnostic } from "./code-editor";
 import { AiError, buildMessages, chat } from "../ai/client";
 import { GenerationOutcome, generateModel } from "../ai/generate";
-import { DEFAULT_TIMEOUT_SECONDS } from "../ai/prompts";
+import { DEFAULT_TIMEOUT_SECONDS, secretNameOf } from "../ai/prompts";
 import type { SimResult, SimSeries } from "../omc/backend";
 
 export const VIEW_TYPE_MODELICA = "modelica-studio-view";
@@ -1572,24 +1572,56 @@ export class ModelicaStudioView extends ItemView {
    * It ends when the model compiles, when the model stops making progress, or
    * when the attempt ceiling is reached — and it says which.
    */
+  /**
+   * A request that cannot start, said where it will be seen.
+   *
+   * A status line was not enough: the row with the button on it stayed as it was, so a click that
+   * could not do anything looked exactly like a click that did nothing at all. The row carries
+   * the reason, the notification makes it hard to miss, and both name the next step.
+   */
+  private stopAiRun(message: string): void {
+    new Notice(`Modelica: ${message}`, 10000);
+    this.setAiProgress(message);
+    this.setStatus(message);
+    this.toggleAiRow(true);
+  }
+
   private async runAiRequest(repair = false): Promise<void> {
-    if (this.aiBusy) return;
+    if (this.aiBusy) {
+      this.stopAiRun("A run is already going. Press Stop to end it, or wait for it to finish.");
+      return;
+    }
     const cfg = this.plugin.settings.ai;
     if (!this.plugin.aiKey()) {
-      this.setStatus(
-        "No AI key available. Choose or create a secret in the plugin settings under AI assistance."
+      // Say WHICH way it is missing, because the advice differs: a name with nothing behind it
+      // means the keychain lost the secret (or this vault never had it), and no name at all means
+      // one was never chosen. Reported as "I clicked Generate and nothing happened" — the row the
+      // reader is looking at did not change, and the only feedback was a status line at the
+      // bottom of the pane.
+      const name = secretNameOf(cfg);
+      this.stopAiRun(
+        name
+          ? `The secret "${name}" is set but Obsidian's keychain returned nothing for it. ` +
+            `Paste the key again under Settings → AI assistance, or choose another secret.`
+          : "No AI key is set. Open Settings → AI assistance and choose or create one."
       );
-      this.toggleAiRow(true);
       return;
     }
     if (!this.plugin.backend) {
-      this.setStatus("OpenModelica was not found, so a generated model could not be checked.");
+      // The one that actually stops a generation on a machine that had it yesterday: the AI is
+      // asked to write a model, then the loop compiles and repairs it, so with no compiler there
+      // is nothing to ask FOR. Say what to do about it rather than only what is wrong.
+      this.stopAiRun(
+        "OpenModelica was not found, so a generated model could not be compiled or repaired. " +
+          "Install it, or set the path to omc under Settings → Modelica Studio → OpenModelica. " +
+          "The Help button shows the setup."
+      );
       return;
     }
 
     const prompt = repair ? repairInstruction(this.lintFindings()) : (this.aiInput?.value.trim() ?? "");
     if (!prompt) {
-      this.setStatus("Describe the model you want first.");
+      this.stopAiRun("Describe the model you want first, then press Generate.");
       this.aiInput?.focus();
       return;
     }

@@ -108,7 +108,8 @@ test("the DOM listener still works where the page does see the key", async () =>
  */
 const MOUNT_SETUP = [
   `import { ModelicaStudioView } from "${ROOT}/src/view/studio-view";`,
-  `import { StubVault, Scope } from "${ROOT}/test/helpers/obsidian-stub";`,
+  `import { StubVault, Scope, Notice } from "${ROOT}/test/helpers/obsidian-stub";`,
+  `import { secretNameOf } from "${ROOT}/src/ai/prompts";`,
   "",
   "const vault = new StubVault();",
   "vault.add('Modelica/MassSpringDamper.mo', 'model MassSpringDamper\\nend MassSpringDamper;');",
@@ -118,6 +119,7 @@ const MOUNT_SETUP = [
   "const plugin = {",
   "  app, manifest: { id: 'modelica-studio', version: '0.3.16', author: 'A' },",
   "  settings: { modelFolder: 'Modelica', modelFiles: { MassSpringDamper: 'Modelica/MassSpringDamper.mo' },",
+  "    ai: { secretName: 'my-secret', model: 'deepseek-flash', baseUrl: 'https://api.example/v1' },",
   "    wireScale: 0.9, symbolStrokeScale: 1.9, syncStrokeScale: false, showInstanceLabels: true, labelScale: 1,",
   "    hoverParameters: false, diagramReadoutScale: 1, plotReadoutScale: 1, paletteRoots: [], modelStopTimes: {}, charts: {} },",
   "  model: { name: 'MassSpringDamper', components: [], connections: [], equations: [] },",
@@ -190,6 +192,45 @@ test("the header follows the model that is open, and the tab names it", async ()
       "  view.setStatus('Loaded example: FluidPipe');",
       "  return 'updates=' + leafUpdates + ' label=' + view.getDisplayText();",
       "});",
+      "window.test('Generate with a secret name that has no key behind it', () => {",
+      // Reported as "I clicked Generate and nothing happened". The row the button lives on did
+      // not change and the only feedback was a status line at the bottom of the pane, so a click
+      // that could not do anything looked exactly like a click that did nothing.
+      "  Notice.messages.length = 0;",
+      "  plugin.aiKey = () => null;",
+      "  view.aiInput.value = 'model the inner working of an AC, electrical, thermal, mechanical';",
+      "  view.aiGoBtn.click();",
+      "  const text = (view.aiRow.textContent || '').replace(/\\s+/g, ' ').slice(0, 260);",
+      "  return 'row=' + text + ' || notices=' + Notice.messages.length;",
+      "});",
+      "window.test('and with no secret chosen at all', () => {",
+      "  Notice.messages.length = 0;",
+      "  plugin.settings.ai.secretName = '';",
+      "  plugin.aiKey = () => null;",
+      "  view.aiGoBtn.click();",
+      "  return 'row=' + (view.aiRow.textContent || '').replace(/\\s+/g, ' ').slice(0, 260)",
+      "    + ' || notices=' + Notice.messages.length;",
+      "});",
+      "window.test('and with a key but nothing typed', () => {",
+      "  Notice.messages.length = 0;",
+      "  plugin.settings.ai.secretName = 'my-secret';",
+      "  plugin.aiKey = () => 'sk-test';",
+      // A compiler, because the check for one comes first and this case is about the prompt.
+      "  plugin.backend = { simulate: async () => ({}) };",
+      "  view.aiInput.value = '';",
+      "  view.aiGoBtn.click();",
+      "  return 'row=' + (view.aiRow.textContent || '').replace(/\\s+/g, ' ').slice(0, 260)",
+      "    + ' || notices=' + Notice.messages.length;",
+      "});",
+      "window.test('and with a key and a prompt but no compiler', () => {",
+      "  Notice.messages.length = 0;",
+      "  plugin.aiKey = () => 'sk-test';",
+      "  plugin.backend = null;",
+      "  view.aiInput.value = 'model an AC';",
+      "  view.aiGoBtn.click();",
+      "  return 'row=' + (view.aiRow.textContent || '').replace(/\\s+/g, ' ').slice(0, 260)",
+      "    + ' || notices=' + Notice.messages.length;",
+      "});",
       "window.test('a status line refreshes it too', () => {",
       // Loading an example writes a status line and nothing else. The header used to keep
       // the previous model through that, which is how a reader ended up looking at RLC on a
@@ -219,6 +260,28 @@ test("the header follows the model that is open, and the tab names it", async ()
     "and it follows the model when another one is loaded -- the bug was that it did not"
   );
   assert.equal(by["and the tab label names the model"], "Modelica Studio — TankOrifice");
+  // Every way Generate can stop without asking the provider says so, on the row and in a
+  // notification. The message names WHICH way the key is missing, because the advice differs.
+  assert.match(
+    by["Generate with a secret name that has no key behind it"],
+    /row=.*secret "my-secret" is set but Obsidian's keychain returned nothing.*\|\| notices=1/,
+    "a named secret with nothing behind it says exactly that"
+  );
+  assert.match(
+    by["and with no secret chosen at all"],
+    /row=.*No AI key is set.*\|\| notices=1/,
+    "and no secret at all says that instead"
+  );
+  assert.match(
+    by["and with a key but nothing typed"],
+    /row=.*Describe the model you want first.*\|\| notices=1/,
+    "an empty prompt is told to say what it wants"
+  );
+  assert.match(
+    by["and with a key and a prompt but no compiler"],
+    /row=.*OpenModelica was not found.*Install it, or set the path to omc under Settings.*\|\| notices=1/,
+    "and a missing compiler is named as the reason nothing can be checked"
+  );
   assert.equal(
     by["and Obsidian is asked to relabel the tab"],
     "updates=1 label=Modelica Studio — FluidPipe",
