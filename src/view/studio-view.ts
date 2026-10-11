@@ -5451,17 +5451,31 @@ export class ModelicaStudioView extends ItemView {
 
   async runSimulation(opts: { silent?: boolean } = {}): Promise<void> {
     if (this.busy) return;
-    // Which model this run belongs to. A compile takes seconds, and the model can
-    // be replaced while it runs; everything after the `await` used to re-read
-    // `this.plugin.model`, so a finished run was adopted as the NEW model's result
-    // and published under its name. Identity is the test, because every model
-    // change replaces the object.
+    // What is on screen is what runs: the code editor holds edits that have not been parsed
+    // into the model yet, and simulating the previous version of the source would be a lie about
+    // what was tested.
+    //
+    // THE FLUSH COMES FIRST, and that order is the whole fix. `flushEditorIntoModel` REPLACES
+    // the model object (`adoptModel`), so capturing `ranModel` above it meant every run started
+    // from the code view with edited source compared the model to itself, decided the studio had
+    // "moved on", and threw its own result away — a run that did nothing at all, which is what
+    // was reported twice. From the diagram view the flush is a no-op, which is why Simulate
+    // worked there and why the difference looked like the view rather than the order.
+    //
+    // A run that cannot parse the editor's text does not run at all: it would compile the
+    // PREVIOUS source and draw a plot of a model the reader is not looking at.
+    if (!this.flushEditorIntoModel()) {
+      const why = this.codeProblemText();
+      this.setStatus(`Not run — the code does not parse. ${why}`.trim());
+      new Notice(`Modelica: the code does not parse, so nothing was run. ${why}`.trim(), 8000);
+      return;
+    }
+    // Which model this run belongs to. A compile takes seconds, and the model can still be
+    // replaced while it runs; everything after the `await` used to re-read `this.plugin.model`,
+    // so a finished run was adopted as the NEW model's result and published under its name.
+    // Identity is the test, because every model change replaces the object.
     const ranModel = this.plugin.model;
     const ranName = ranModel.name;
-    // What is on screen is what runs: the code editor holds edits that have not
-    // been parsed into the model yet, and simulating the previous version of the
-    // source would be a lie about what was tested.
-    this.flushEditorIntoModel();
     if (!this.plugin.backend) {
       if (!opts.silent) this.plugin.showSetupHelp();
       return;

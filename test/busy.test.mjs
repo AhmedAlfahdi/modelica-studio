@@ -97,7 +97,9 @@ const HEAD = [
   "  view.checking = false;",
   "  view.family = [];",
   "  view.seriesStyles = {};",
-  "  view.flushEditorIntoModel = () => {};",
+  "  // TRUE, like the real one when there is nothing to flush: the run now stops when the",
+  "  // editor cannot be parsed into a model, so the return value is load-bearing.",
+  "  view.flushEditorIntoModel = () => true;",
   "  view.seedVisible = () => {};",
   "  view.drawResults = () => {};",
   "  view.drawFullScreen = () => {};",
@@ -505,6 +507,7 @@ test("a sweep that cannot prepare does not leave the studio stuck", async () => 
       "view.plugin.sourceForSave = () => { throw new Error('the source could not be produced'); };",
       `import { Notice } from "${ROOT}/test/helpers/obsidian-stub";`,
       "Notice.messages.length = 0;",
+      "Notice.messages.length = 0;",
       "let threw = '';",
       "try { await view.runSweep('e', '0.4, 0.8'); } catch (e) { threw = String(e.message); }",
       "await settle();",
@@ -627,5 +630,91 @@ test("a failed run brings the log forward, and the next good one brings the plot
     by["after choosing the log"],
     '{"tab":"log","pinned":false,"plot":false,"log":true}',
     "a tab the reader chose is theirs to keep"
+  );
+});
+
+test("editing the code and pressing Simulate runs what is on screen", async () => {
+  // Reported twice: "when updating the code and pressing simulate in the code view it doesn't
+  // do anything", and "I had to switch to diagram view and click simulate to make the plot
+  // appear". One cause for both.
+  //
+  // The run captured `this.plugin.model` BEFORE flushing the editor into it — and the flush
+  // REPLACES the model object. So the run compared the model with itself, decided the studio had
+  // "moved on", and discarded its own result: nothing drawn, nothing said beyond a status line.
+  // From the diagram view the flush is a no-op, which is why it worked there, and why the
+  // difference looked like the view.
+  const out = await runInDom(
+    [
+      HEAD,
+      `import { parseModelica, toDiagramModel } from "${ROOT}/src/modelica/parser";`,
+      "const statuses = [];",
+      "const { view, pane } = makeView({ setStatus: (t) => statuses.push(String(t)),",
+      "  setCodeStatus: (t) => statuses.push(String(t)) });",
+      // The real flush, and the smallest editor it can be given: a value and a baseline.
+      "delete view.flushEditorIntoModel;",
+      "view.mode = 'code';",
+      "view.codeBaseline = 'model Ball\\n  Real h;\\nequation\\n  der(h) = -1;\\nend Ball;';",
+      "view.codeEditor = { getValue: () => view.codeBaseline };",
+      "view.codeDiagEl = document.createElement('div');",
+      "view.editor = { setModel: () => {}, scheduleFit: () => {} };",
+      "view.codeEditor.setDiagnostics = () => {};",
+      "let adopted = 0;",
+      "view.plugin.parseSource = (text) => {",
+      "  const classes = parseModelica(text);",
+      "  return classes.length ? toDiagramModel(classes[0], () => undefined) : null;",
+      "};",
+      "view.plugin.adoptModel = (m) => { adopted++; view.plugin.model = m; };",
+      "let asked = 0;",
+      "const result = () => ({ time: [0, 1], series: [{ name: 'h', values: [1, 0], unit: 'm' }],",
+      "  warnings: [], compileMs: 0, simulateMs: 0, reusedBinary: true });",
+      "view.plugin.backend = { simulate: async () => { asked++; return result(); } };",
+      // 1. The editor holds an EDIT: the reader typed a comment into the code.
+      "view.codeEditor = { getValue: () => view.codeBaseline.replace('  Real h;', '  Real h; // edited'),",
+      "  setDiagnostics: () => {} };",
+      "view.plugin.sourceForSave = () => view.codeEditor.getValue();",
+      "let threw = '';",
+      "await view.runSimulation({ silent: true }).catch((e) => { threw = String(e && e.message || e); });",
+      "const afterEdit = { asked, adopted, plotted: Boolean(view.result), threw, status: String(view.statusMessage) };",
+      // 2. Code that does not parse must not run the PREVIOUS source and draw it.
+      "view.busy = false;",
+      "asked = 0;",
+      "view.result = null;",
+      // A source the plugin cannot turn into a model at all. The parser RECOVERS from most
+      // syntax errors, so this is the shape that actually reaches this branch: no class in it.
+      "view.codeEditor = { getValue: () => '// nothing here yet\\n',",
+      "  setDiagnostics: () => {} };",
+      "view.plugin.sourceForSave = () => view.codeEditor.getValue();",
+      "threw = '';",
+      "statuses.length = 0;",
+      "await view.runSimulation({ silent: true }).catch((e) => { threw = String(e && e.message || e); });",
+      "const said = statuses.join(' | ');",
+      "const afterBroken = { asked, plotted: Boolean(view.result), threw, said };",
+      "window.test('after editing the code', () => JSON.stringify(afterEdit));",
+      "window.test('after breaking the code', () => JSON.stringify(afterBroken));",
+      "window.finish();",
+    ].join("\n")
+  );
+  assert.ok(!out.skip, `skipped: ${out.skip}`);
+  assert.ok(!out.fatal, out.fatal);
+  for (const r of out.results) assert.ok(r.ok, `${r.name}: ${r.error ?? ""}`);
+  const by = Object.fromEntries(out.results.map((r) => [r.name, r.detail]));
+  assert.match(
+    by["after editing the code"],
+    /"asked":1,"adopted":1,"plotted":true/,
+    "the edited source is flushed, the run asks the compiler, and its result is KEPT"
+  );
+  assert.ok(
+    !/discarded/.test(by["after editing the code"]),
+    `the result is not thrown away as belonging to another model: ${by["after editing the code"]}`
+  );
+  assert.match(
+    by["after breaking the code"],
+    /"asked":0,"plotted":false/,
+    `and code that does not parse runs nothing, rather than the previous source: ${by["after breaking the code"]}`
+  );
+  assert.match(
+    by["after breaking the code"],
+    /no model class|does not parse/,
+    `with a reason that says so: ${by["after breaking the code"]}`
   );
 });

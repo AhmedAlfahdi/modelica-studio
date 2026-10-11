@@ -5,6 +5,22 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). From 1.0.0 a change
 that breaks a model, a setting or a note is a major version.
 
+## [1.1.4] — 2026-10-12
+
+### Fixed
+
+- **Simulate in the Code view runs what is on screen.** Reported twice — *"when updating the code
+  and pressing simulate in the code view it doesn't do anything"*, and before that *"I had to
+  switch to diagram view and click simulate"* — and it was one line of ordering. The run captured
+  the model **before** flushing the editor into it, and the flush *replaces* the model object
+  (`adoptModel`), so the run then compared the model with itself, decided the studio had "moved
+  on", and threw away its own result. Nothing drawn, nothing said but a status line. From the
+  diagram view the flush is a no-op, which is why it worked there and why the difference looked
+  like the view rather than the order.
+- **Code that cannot become a model does not run the previous one.** A flush that fails used to be
+  ignored, so a parse error in the editor quietly compiled the *old* source and drew a plot of a
+  model the reader was not looking at. The run now stops and says why.
+
 ## [1.1.3] — 2026-10-11
 
 ### Fixed
