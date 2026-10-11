@@ -391,3 +391,36 @@ test("changing an initial value does not write the declaration's comment twice",
   const back = toDiagramModel(parseModelica(text)[0], () => undefined);
   assert.equal(back.variables.find((x) => x.id === "h").comment, "Height above the floor");
 });
+
+test("a value typed into the panel is written into the source, not refused", () => {
+  // The other half of the same bug. The patcher re-parses what it wrote and compares it with the
+  // model it was given, so a model whose binding disagreed with itself was refused outright —
+  // every panel edit fell through to the rebuild. This is the acceptance test for that: the edit
+  // must go in through the FAST path, which is the one that keeps comments, `previous(...)` and
+  // everything else the rebuild would have to reproduce.
+  const source = [
+    "model NewtonCooling",
+    '  parameter Real T_inf = 300.0 "Ambient temperature";',
+    "  parameter Real h = 0.7;",
+    "  Real T;",
+    "equation",
+    "  der(T) = -h*(T - T_inf);",
+    "end NewtonCooling;",
+  ].join("\n");
+
+  const model = toDiagramModel(parseModelica(source)[0], () => undefined);
+  const v = model.variables.find((x) => x.id === "T_inf");
+  // What `SchematicEditor.setVariableValue` writes, both keys.
+  v.params["T_inf"] = "320.0";
+  v.params["="] = "320.0";
+
+  const patched = patchDiagramEdits(source, model);
+  assert.ok(patched, `the patch applies rather than refusing: ${lastPatchRefusal() ?? ""}`);
+  const text = typeof patched === "string" ? patched : patched.text;
+  assert.match(text, /parameter Real T_inf=320\.0 "Ambient temperature";/, text);
+  // And the model it produced still has the comment: the fast path's whole reason to exist.
+  assert.equal(
+    toDiagramModel(parseModelica(text)[0], () => undefined).variables.find((x) => x.id === "T_inf").comment,
+    "Ambient temperature"
+  );
+});

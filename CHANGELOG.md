@@ -5,6 +5,20 @@ Notable changes to Modelica Studio. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html). From 1.0.0 a change
 that breaks a model, a setting or a note is a major version.
 
+## [1.1.5] — 2026-10-12
+
+### Fixed
+
+- **A value typed into the parameter panel is written through the fast path again, and not
+  refused.** A declaration's binding is recorded twice — under its own name, which the inspector
+  reads, and under `"="`, which is what says "this is a binding, not a modifier of a member"
+  (`Real x = 0` against `Inductor L(L=18)`). The editor wrote one and left the other, so the model
+  disagreed with itself; the patcher re-parses what it wrote and compares, refused every such
+  edit, and the save fell through to a full rebuild. Nothing was lost — the rebuild writes the
+  right text — but the path that exists to preserve what a rebuild cannot reproduce was closed,
+  and on a model the rebuild *would* lose something the reader's edit never reached the file at
+  all. Both keys now move together, and clearing a value clears both.
+
 ## [1.1.4] — 2026-10-12
 
 ### Fixed

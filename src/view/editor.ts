@@ -2045,8 +2045,22 @@ export class SchematicEditor {
     const v = (this.model.variables ?? []).find((x) => x.id === id);
     if (!v) return;
     this.beginEdit(`set ${id}`);
-    if (value === "") delete v.params[id];
-    else v.params[id] = value;
+    if (value === "") {
+      delete v.params[id];
+      delete v.params["="];
+    } else {
+      v.params[id] = value;
+      // BOTH keys, because the parser records a declaration's binding twice: under its own name
+      // (`toParameterDef` reads that one) and under `"="`, which is what says "this is a
+      // BINDING, not a modifier of a member" — `Real x = 0` against `Inductor L(L=18)`.
+      //
+      // Writing one and not the other left the model disagreeing with itself, and the patcher —
+      // which re-parses what it wrote and compares — refused every edit made from the panel:
+      // "the result does not describe the model". The value still reached the file through the
+      // rebuild that follows a refusal, so nothing was lost, but the fast path was closed and a
+      // model the rebuild could not reproduce would leave the reader's edit unwritten.
+      v.params["="] = value;
+    }
     this.commitEdit();
   }
 

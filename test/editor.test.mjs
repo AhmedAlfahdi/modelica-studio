@@ -3503,3 +3503,27 @@ test("a name keeps clear of the PINS, not just the artwork", () => {
     );
   }
 });
+
+test("typing a value into a model parameter keeps both of the binding's keys in step", () => {
+  // A declaration's binding is recorded TWICE — under its own name, which `toParameterDef` reads,
+  // and under `"="`, which is what says "this is a binding, not a modifier of a member":
+  // `Real x = 0` against `Inductor L(L=18)`. Writing one and not the other left the model
+  // disagreeing with itself, and the patcher — which re-parses what it wrote and compares —
+  // refused EVERY edit made from the panel: "the result does not describe the model". The value
+  // still reached the file through the rebuild that follows, so nothing was lost, but the fast
+  // path was closed on a model the rebuild could not reproduce the reader's edit would never be
+  // written at all.
+  const { editor } = makeEditor();
+  const model = editor.getModel();
+  model.variables = [{ id: "T_inf", type: "Real", params: { T_inf: "300.0", "=": "300.0" } }];
+  editor.setVariableValue("T_inf", "320.0");
+  const after = editor.getModel().variables[0].params;
+  assert.equal(after["T_inf"], "320.0", "the value the parameter panel shows");
+  assert.equal(after["="], "320.0", "and the mark that makes it a binding, not a member modifier");
+
+  // Clearing it removes both, so an empty field is an unbound parameter rather than a stale one.
+  editor.setVariableValue("T_inf", "");
+  const cleared = editor.getModel().variables[0].params;
+  assert.equal(cleared["T_inf"], undefined);
+  assert.equal(cleared["="], undefined);
+});
